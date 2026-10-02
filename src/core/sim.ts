@@ -1,7 +1,7 @@
 // Hoops 2K27 shared simulation core. DOM-free: runs in the browser (every mode) and in Node (tests, servers).
 // Ported from the four near-identical mode copies; NP (players per team) and the physics backend are flags.
 // Game coordinates: x 0..940, y 0..500 (10 px = 1 ft), z up (rim z=100). Team 0 attacks the RIGHT hoop.
-import { TM, SP, SIG, OV, ov2, type Tuple } from "./data";
+import { TM, SP, OV, ov2, formOf, type Tuple } from "./data";
 import { pose3, handPos } from "./pose";
 import { RAP, rapStep, rapSyncPlayers } from "./physics";
 
@@ -183,7 +183,7 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
         skin: a[7], x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, f: 0, ph: 0, mode: "i", t: 0, cd: 0, rl: 0, mt: 0,
         ai: {}, in: { dx: 0, dy: 0 },
         stt: { pts: 0, reb: 0, ast: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, blk: 0 },
-        my: a === MYP.t, sg: SIG[a[0]] || {}, slow: 0, sbw: 0, sv: 0, tp: null, pf: 0, bn: 1, bx: 0, by: 0,
+        my: a === MYP.t, sg: formOf(a[0]), slow: 0, sbw: 0, sv: 0, tp: null, pf: 0, bn: 1, bx: 0, by: 0,
         hr: a[8], bd: a[9], ht: a[10], bk: a[11], no: a[12],
       }),
     ),
@@ -416,6 +416,7 @@ export function launch(p: Player) {
   B.fl = 0;
   B.dk = 0;
   B.gn = 0;
+  B.abv = -1;
   B.wv = [0, 0, 0];
   if (p.sv === 6 && Math.random() < 0.9) {
     B.dk = 1;
@@ -1032,7 +1033,8 @@ export function bstep(dt: number) {
       B.vx = -B.vx * 0.6;
       snd(200, 0.05, "square");
     }
-    if (pz >= 100 && B.z < 100 && B.vz < 0 && d < RR - 1.2 && B.sh && !B.sc) {
+    if (B.sh && B.z >= 100 && d < RR + 2) B.abv = b; // was above this rim
+    if (B.sh && !B.sc && B.vz < 0 && ((pz >= 100 && B.z < 100 && d < RR - 1.2) || (B.abv === b && B.z < 97 && B.z > 80 && d < RR - 0.6))) {
       B.sc = 1;
       const t = b ? 0 : 1,
         pts = B.ft ? 1 : B.three && B.last.tm === t ? 3 : 2;
@@ -1066,8 +1068,10 @@ export function bstep(dt: number) {
       fin = 0;
     }
     if (B.sc && B.z > 60 && B.z < 100 && d < RR + 3) {
-      B.vx *= 0.9;
-      B.vy *= 0.9;
+      // the net grabs the ball: horizontal motion dies, the drop slows, then it falls out the bottom
+      B.vx *= 0.86;
+      B.vy *= 0.86;
+      if (B.z > 82) B.vz *= 0.975;
     }
   }
   if (!RA && B.z < BR) {
@@ -1090,7 +1094,9 @@ export function bstep(dt: number) {
   }
   if (B.sc) return;
   if (ftq) return;
-  if (B.sh && B.vz < 0 && B.z > 88 && B.z < 135 && (Math.hypot(B.x - HXs[0], B.y - HY) < 14 || Math.hypot(B.x - HXs[1], B.y - HY) < 14)) return;
+  // Cylinder rule: nobody may touch a live shot in the imaginary cylinder above either rim (no goaltending / basket
+  // interference), so a green that rattles or drops in can't be snatched out of the net by a jumping rebounder.
+  if (B.sh && B.mode === "air" && B.z > 55 && (Math.hypot(B.x - HXs[0], B.y - HY) < 22 || Math.hypot(B.x - HXs[1], B.y - HY) < 22)) return;
   // Contest for the loose ball: jumpers and defenders first, with some randomness.
   SORTP.length = 0;
   for (const p of P) {
@@ -1584,23 +1590,25 @@ function collide() {
       }
     }
 }
-// ---- physics net (verlet mesh; the ball pushes points) ----
+// ---- physics net: 16-strand diamond weave, 6 rings, verlet; the ball collides with strands, not just knots ----
+const NS = 16,
+  NR = [
+    [7.5, 100],
+    [6.9, 96.4],
+    [6.2, 92.8],
+    [5.5, 89.4],
+    [4.9, 86.2],
+    [4.5, 83.2],
+  ];
 export const NETS = HXs.map((hx) => {
   const p: any[] = [],
     c: any[] = [],
-    S = 12,
-    R = [
-      [7.5, 100],
-      [6.4, 93],
-      [5.4, 86],
-      [4.6, 80],
-    ],
     gr: any[][] = [];
-  for (let r = 0; r < 4; r++) {
+  for (let r = 0; r < NR.length; r++) {
     gr.push([]);
-    for (let k = 0; k < S; k++) {
-      const a = (k / S) * 6.283 + (r % 2 ? 3.1416 / S : 0),
-        q: any = { x: hx + Math.cos(a) * R[r][0], y: HY + Math.sin(a) * R[r][0], z: R[r][1], f: r === 0 };
+    for (let k = 0; k < NS; k++) {
+      const a = (k / NS) * 6.283 + (r % 2 ? 3.1416 / NS : 0),
+        q: any = { x: hx + Math.cos(a) * NR[r][0], y: HY + Math.sin(a) * NR[r][0], z: NR[r][1], f: r === 0 };
       q.px = q.x;
       q.py = q.y;
       q.pz = q.z;
@@ -1608,38 +1616,47 @@ export const NETS = HXs.map((hx) => {
       gr[r].push(q);
     }
   }
-  const L = (a: any, b: any) => c.push([a, b, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)]);
-  for (let r = 1; r < 4; r++)
-    for (let k = 0; k < S; k++) {
-      L(gr[r][k], gr[r - 1][k]);
-      L(gr[r][k], gr[r - 1][(k + 1) % S]);
-      L(gr[r][k], gr[r][(k + 1) % S]);
+  // [a, b, rest length, stiffness, strand?] - strands are drawn; ring ties only hold the shape
+  const L = (a: any, b: any, k: number, draw = 1) => c.push([a, b, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z), k, draw]);
+  for (let r = 1; r < NR.length; r++)
+    for (let k = 0; k < NS; k++) {
+      const o = r % 2 ? 0 : -1; // odd rings sit between the knots of the ring above
+      L(gr[r][k], gr[r - 1][(k + o + NS) % NS], 1);
+      L(gr[r][k], gr[r - 1][(k + o + 1) % NS], 1);
     }
-  return { p, c };
+  for (let k = 0; k < NS; k++) L(gr[NR.length - 1][k], gr[NR.length - 1][(k + 1) % NS], 0.6); // bottom hem
+  for (let r = 1; r < NR.length - 1; r++) for (let k = 0; k < NS; k++) L(gr[r][k], gr[r][(k + 1) % NS], 0.18, 0); // soft hoop ties
+  return { p, c, hx, quiet: 0 };
 });
+const SEGR = BR + 0.45;
 export function netSim(dt: number) {
   for (const N of NETS) {
+    const near = Math.hypot(B.x - N.hx, B.y - HY) < 20 && B.z > 70 && B.z < 112 && !B.owner;
+    if (!near && N.quiet > 90) continue; // fully settled and nothing touching it
+    N.quiet = near ? 0 : N.quiet + 1;
     for (const q of N.p) {
       if (q.f) continue;
-      const vx = (q.x - q.px) * 0.95,
-        vy = (q.y - q.py) * 0.95,
-        vz = (q.z - q.pz) * 0.95;
+      const vx = (q.x - q.px) * 0.965,
+        vy = (q.y - q.py) * 0.965,
+        vz = (q.z - q.pz) * 0.965;
       q.px = q.x;
       q.py = q.y;
       q.pz = q.z;
       q.x += vx;
       q.y += vy;
-      q.z += vz - g * dt * dt * 0.6;
+      q.z += vz - g * dt * dt * 0.5;
     }
-    for (let it = 0; it < 4; it++) {
+    for (let it = 0; it < 7; it++) {
       for (const c of N.c) {
         const a = c[0],
           b = c[1],
           dx = b.x - a.x,
           dy = b.y - a.y,
           dz = b.z - a.z,
-          d = Math.hypot(dx, dy, dz) || 1,
-          f = ((d - c[2]) / d) * 0.5;
+          d = Math.hypot(dx, dy, dz) || 1;
+        // strings resist stretching fully but compress freely (rope, not rods)
+        if (d < c[2] && c[3] >= 1) continue;
+        const f = ((d - c[2]) / d) * 0.5 * c[3];
         if (!a.f) {
           a.x += dx * f;
           a.y += dy * f;
@@ -1651,23 +1668,41 @@ export function netSim(dt: number) {
           b.z -= dz * f;
         }
       }
-      if (!B.owner)
-        for (const q of N.p) {
-          if (q.f) continue;
-          const dx = q.x - B.x,
-            dy = q.y - B.y,
-            dz = q.z - B.z,
-            d = Math.hypot(dx, dy, dz);
-          if (d < BR + 1.2 && d > 0) {
-            const s = (BR + 1.2 - d) / d;
-            q.x += dx * s;
-            q.y += dy * s;
-            q.z += dz * s;
+      if (near)
+        for (const c of N.c) {
+          if (!c[4]) continue;
+          const a = c[0],
+            b = c[1],
+            sx = b.x - a.x,
+            sy = b.y - a.y,
+            sz = b.z - a.z,
+            l2 = sx * sx + sy * sy + sz * sz || 1,
+            t = clamp(((B.x - a.x) * sx + (B.y - a.y) * sy + (B.z - a.z) * sz) / l2, 0, 1),
+            cx = a.x + sx * t - B.x,
+            cy = a.y + sy * t - B.y,
+            cz = a.z + sz * t - B.z,
+            d = Math.hypot(cx, cy, cz);
+          if (d < SEGR && d > 0) {
+            const push = (SEGR - d) / d;
+            for (const [q, w] of [
+              [a, 1 - t],
+              [b, t],
+            ] as [any, number][]) {
+              if (q.f) continue;
+              q.x += cx * push * w;
+              q.y += cy * push * w;
+              q.z += cz * push * w + (B.vz < 0 ? B.vz * dt * 0.06 * w : 0); // drag the mesh down with a falling ball
+            }
           }
         }
     }
   }
 }
+/** Is the ball inside a net right now (between rim and hem)? Used to slow a swish realistically. */
+export const inNet = () => {
+  for (const hx of HXs) if (Math.hypot(B.x - hx, B.y - HY) < RR - 0.5 && B.z < 100 && B.z > 82) return true;
+  return false;
+};
 
 // ---- instant replays: allocation-free ring buffer of positions + poses ----
 export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz"];

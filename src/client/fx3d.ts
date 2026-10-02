@@ -25,7 +25,7 @@ const MotionBlurShader = {
 
 export interface Fx {
   render(dt: number): void;
-  setLevel(ql: number, on: boolean, w: number, h: number): void;
+  setLevel(ql: number, on: boolean, w: number, h: number, ao?: boolean): void;
   setMotion(vx: number, vy: number, amt: number): void;
 }
 
@@ -34,10 +34,10 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
   const C = new EffectComposer(R, rt);
   const rp = new RenderPass(S, cam);
   const ao = new SSAOPass(S, cam, W, H);
-  ao.kernelRadius = 0.6;
+  ao.kernelRadius = 0.45;
   ao.minDistance = 0.0006;
   ao.maxDistance = 0.04;
-  const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.32, 0.45, 0.82);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.22, 0.35, 0.92);
   const mb = new ShaderPass(MotionBlurShader as any);
   const gm = new ShaderPass(GammaCorrectionShader);
   C.addPass(rp);
@@ -52,11 +52,11 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
       if (on) C.render();
       else R.render(S, cam);
     },
-    setLevel(ql, enabled, w, h) {
+    setLevel(ql, enabled, w, h, aoOn = false) {
       on = enabled && ql > 0;
-      ao.enabled = ql >= 2;
+      ao.enabled = aoOn;
       bloom.enabled = ql >= 1;
-      bloom.strength = ql >= 2 ? 0.32 : 0.24;
+      bloom.strength = ql >= 2 ? 0.22 : 0.16;
       C.setPixelRatio(R.getPixelRatio());
       C.setSize(w, h);
       ao.setSize(Math.round(w * R.getPixelRatio() * 0.5), Math.round(h * R.getPixelRatio() * 0.5));

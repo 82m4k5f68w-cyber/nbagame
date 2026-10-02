@@ -292,3 +292,36 @@ export const CL: Record<string, Record<string, number[]>> = {
     Porzingis: { a: 0.3, l: -0.15 },
     Holmgren: { a: 0.28, l: -0.08 },
   };
+
+/**
+ * Every player gets a recognisable shooting form: a deterministic signature from his name (so it is the same on every
+ * machine and online), with the hand-tuned SIG entries taking precedence. Only the look of the motion changes; meter
+ * timing and the green window never do.
+ *   a  set-point height (+ higher)        f  elbow flare            l  lean (- = fade back)
+ *   k  knee/leg load at release           g  guide hand drops off    w  wrist snap
+ *   dp dip of the ball at the gather      ft follow-through hold     lk leg kick on release
+ *   tw upper-body twist                   gh guide-hand thumb push
+ */
+export function formOf(name: string) {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619);
+  const r = () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
+  const f: Record<string, number> = {
+    a: (r() - 0.5) * 0.36,
+    f: (r() - 0.5) * 0.12,
+    l: (r() - 0.5) * 0.16,
+    k: r() * 0.16,
+    g: r() * 0.35,
+    w: (r() - 0.5) * 0.3,
+    dp: r() * 0.45,
+    ft: r(),
+    lk: r() < 0.3 ? 0.15 + r() * 0.25 : 0,
+    tw: (r() - 0.5) * 0.3,
+    gh: r() < 0.25 ? 0.3 + r() * 0.3 : 0,
+  };
+  return { ...f, ...(SIG[name] || {}) };
+}

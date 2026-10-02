@@ -12,6 +12,7 @@ export const V = {
   stick: null as null | number[], // virtual joystick (mobile)
   perf: null as null | { fps: number; lvl: number; scale: number },
   onResize: null as null | (() => void),
+  shake: null as null | ((a: number) => void),
   focus: 0, // which controller this screen follows (CT index)
   focusP: () => P[(CT[V.focus] || CT[0] || { idx: 0 }).idx],
 };

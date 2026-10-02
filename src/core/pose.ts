@@ -32,6 +32,16 @@ export function clip(p: Player, k: number) {
   o.tL += (g.k || 0) * (k > 0.5 ? 1 : 0);
   o.aL -= (g.g || 0) * 0.4 * (k > 0.7 ? (k - 0.7) / 0.3 : 0);
   o.wR *= 1 + (g.w || 0);
+  // personal touches
+  const rel = k > 0.72 ? Math.min(1, (k - 0.72) / 0.28) : 0;
+  o.aR += (g.ft || 0) * 0.25 * rel; // holds the follow-through up high
+  o.wR += (g.ft || 0) * 0.35 * rel;
+  o.tR += (g.lk || 0) * (k > 0.6 ? 1 : 0); // leg kick
+  o.kR += (g.lk || 0) * 0.9 * (k > 0.6 ? 1 : 0);
+  o.ty += (g.tw || 0) * Math.sin(Math.min(1, k) * 3.14);
+  o.aL += (g.gh || 0) * 0.35 * up;
+  o.zL += (g.gh || 0) * 0.25 * up;
+  if (k < 0.3) o.aR -= (g.dp || 0) * Math.sin((k / 0.3) * 3.14) * 0.6; // dip before the rise
   if (CK[p.sv] === "curry" && p.sbw > 0) {
     o.ln -= 0.22;
     o.tR -= 0.2;
@@ -77,6 +87,13 @@ export function pose3(p: Player) {
     aL = aR = 1;
     eL = eR = 1.7;
     cr = 0.5;
+    if (PRO && p.sg) {
+      // personal load: ball height at the gather and elbow flare
+      aR -= (p.sg.dp || 0) * 0.5;
+      aL -= (p.sg.dp || 0) * 0.4;
+      sz += p.sg.f || 0;
+      cr += (p.sg.k || 0) * 0.6;
+    }
     if (PRO && p.sg && p.sg.cl) {
       aR = 0.6;
       eR = 1.3;
