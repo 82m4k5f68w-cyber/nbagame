@@ -11,3 +11,11 @@ const ch = fs.readFileSync("src/modes/classic/index.html", "utf8"),
 if (/<\/script/i.test(cj)) throw new Error("classic game.js contains </script");
 fs.writeFileSync(`${D}/modes/classic.html`, ch.replace('<script src="game.js"></script>', () => "<script>\n" + cj + "</script>"));
 console.log("hub", (hub.length / 1e6).toFixed(2), "MB; modes written");
+// Artifact copy (claude.ai wraps the document itself): title first, no doctype/html/head/body tags.
+{
+  let a = hub.replace(/<!DOCTYPE html>/i, "").replace(/<html[^>]*>/i, "").replace(/<\/html>\s*$/i, "");
+  a = a.replace(/<head>/i, "").replace(/<\/head>/i, "").replace(/<body>/i, "").replace(/<\/body>/i, "");
+  a = a.replace(/<meta charset="utf-8">/i, "").replace(/<meta name="viewport"[^>]*>/i, "");
+  a = a.replace(":root{--bg:#06070e;", ":root{color-scheme:dark;--bg:#06070e;");
+  fs.writeFileSync(`${D}/artifact.html`, a.trimStart());
+}
