@@ -254,6 +254,7 @@ export function encodeFx(max: number): any[] {
     else if (f.k === "s") out.push([f.id, "s", f.f, f.d, f.ty, f.v]);
     else if (f.k === "x") out.push([f.id, "x", f.v]);
     else if (f.k === "end") out.push([f.id, "e", f.w]);
+    else if (f.k === "shake" || f.k === "slow" || f.k === "chant") out.push([f.id, "g", f.k, f.v || 0]);
   }
   return out.reverse();
 }
@@ -269,6 +270,8 @@ export function decodeFx(e: any[]): any {
       return { id: e[0], k: "x", v: e[2] };
     case "e":
       return { id: e[0], k: "end", w: e[2] };
+    case "g":
+      return { id: e[0], k: e[2], v: e[3] };
   }
   return null;
 }

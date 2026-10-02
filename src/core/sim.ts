@@ -354,6 +354,7 @@ export const shotRat = (p: Player, D0: number, isFT: boolean) =>
   (isFT ? p.c * 0.8 + 15 : D0 < 90 ? p.i : D0 < 237 ? (p.c + p.i) / 2 : p.c) + (p.heat || 0) * 2;
 export function launch(p: Player) {
   p.rl = 1;
+  p.perf = 0;
   const H = cfg.hand ? handPos(p) : null,
     HK = H && H[2] > 40 && H[2] < 170,
     hx = hoop(p.tm),
@@ -395,6 +396,10 @@ export function launch(p: Player) {
       const tt = TEMPO ? (p.tp == null ? 9 : p.tp) : p.mt;
       gr = tt >= cen - wt && tt <= cen + wt + 0.03;
     }
+    if (gr && !lay && Math.abs((TEMPO ? (p.tp == null ? 9 : p.tp) : p.mt) - cen) < 0.012) {
+      txtW("PERFECT RELEASE", p.x, p.y, 118, "#7CFC7C");
+      p.perf = 1;
+    }
     if (!gr && !lay)
       txtW(TEMPO && p.tp == null ? "NO TEMPO" : (TEMPO ? p.tp > cen : p.mt > cen) ? "LATE" : "EARLY", p.x, p.y, 95, "#ff9966");
   } else gr = Math.random() < clamp((rat / 100) * 0.75 + 0.1 - cx * 0.45 + (p.sbw > 0 ? 0.1 : 0), 0.05, 0.95);
@@ -415,6 +420,9 @@ export function launch(p: Player) {
   B.z = z0;
   B.fl = 0;
   B.flBy = null;
+  B.clk = clock;
+  B.q = q;
+  B.rim = 99;
   B.dk = 0;
   B.gn = 0;
   B.abv = -1;
@@ -426,7 +434,17 @@ export function launch(p: Player) {
     p.hitX = (p.x - fd.x) / dl;
     p.hitY = (p.y - fd.y) / dl;
   }
-  if (p.sv === 6 && Math.random() < 0.9) {
+  if (p.sv === 6 && (p.oop || Math.random() < 0.9)) {
+    p.oop = 0;
+    const vic = P.find((o) => o.tm !== p.tm && o.z > 8 && Math.hypot(o.x - p.x, o.y - p.y) < 22);
+    if (vic) {
+      txtW("POSTERIZED!", vic.x, vic.y, 115, "#ff5a5a");
+      vic.hitT = 0.45;
+      vic.hitX = (vic.x - p.x) / (Math.hypot(vic.x - p.x, vic.y - p.y) || 1);
+      vic.hitY = (vic.y - p.y) / (Math.hypot(vic.x - p.x, vic.y - p.y) || 1);
+      fx({ k: "shake", v: 0.8 });
+      fx({ k: "slow", v: 0.9 });
+    } else fx({ k: "shake", v: 0.45 });
     if (fd) {
       B.fl = 1;
       B.flBy = fd;
@@ -456,7 +474,7 @@ export function launch(p: Player) {
     return;
   }
   const rap = useRap(),
-    mk = lay ? Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) : gr && Math.random() < 0.98 - cx * 0.25,
+    mk = lay ? Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) : gr && (p.perf || Math.random() < 0.98 - cx * 0.25),
     a = Math.random() * 6.28,
     off = mk ? (rap ? 0.3 : 1.2) : 9 + Math.random() * 7,
     tx = hx + Math.cos(a) * off,
@@ -704,7 +722,8 @@ export function step(p: Player, dt: number) {
     }
     if (has && (i.pass || i.e || i.lob)) {
       const r = i.pass || pick(p, i);
-      if (r && !PREDICT) pass(p, r, i.lob ? 2 : undefined);
+      const lobIt = !i.lob && !isH(p) && r && r.j >= 55 && Math.hypot(hoop(r.tm) - r.x, HY - r.y) < 100 && Math.random() < 0.6;
+      if (r && !PREDICT) pass(p, r, i.lob || lobIt ? 2 : undefined);
     } else if (i.e && p.cd <= 0) {
       p.cd = 0.8; // steals are OFF by design (user request): reach-ins do nothing
     }
@@ -1071,6 +1090,7 @@ export function bstep(dt: number) {
       snd(200, 0.05, "square");
     }
     if (B.sh && B.z >= 100 && d < RR + 2) B.abv = b; // was above this rim
+    if (B.sh && d < 20) B.rim = Math.min(B.rim ?? 99, Math.hypot(d - RR, B.z - 100)); // closest approach to the iron
     if (B.sh && !B.sc && B.vz < 0 && ((pz >= 100 && B.z < 100 && d < RR - 1.2) || (B.abv === b && B.z < 97 && B.z > 80 && d < RR - 0.6))) {
       B.sc = 1;
       const t = b ? 0 : 1,
@@ -1093,6 +1113,14 @@ export function bstep(dt: number) {
         if (B.last.heat === 3) txtW("ON FIRE!", B.last.x, B.last.y, 105, "#ff9a2e");
       }
       txtW("+" + pts, hx > 470 ? hx - 50 : hx + 20, HY, 125, pts === 3 ? "#ffd23f" : "#fff");
+      if (!B.ft && !B.dk && (B.rim ?? 99) > BR + 1.1) txtW(pts === 3 ? "SPLASH!" : "SWISH!", hx, HY, 140, "#9fe7ff");
+      if (!B.ft && B.clk != null && B.clk < 1.5 && clock <= 0.05) {
+        const lead = sc[t] > sc[1 - t] && sc[t] - pts <= sc[1 - t];
+        txt(B.q >= 4 && lead ? "GAME WINNER!" : "BUZZER BEATER!", 480, 170, "#ffd23f");
+        fx({ k: "slow", v: 1.6 });
+        fx({ k: "shake", v: 0.6 });
+        RQ = 1;
+      }
       snd(900, 0.25, "sine", 0.1);
       if (ftq) ftq.next = 1.3;
       else if (B.fl) {
@@ -1157,6 +1185,7 @@ export function bstep(dt: number) {
     if (d < (rc ? 26 : 12) && B.z > p.z + (rc ? -8 : 2) && B.z < p.z + 68 + p.j * 0.2 + (rc && B.ptype === 2 ? 55 : 0)) {
       if (B.mode === "pass" && p !== B.to) continue;
       if (B.mode === "air" && B.age < 0.5 && (B.vz > 0 || p.tm === B.last.tm)) continue;
+      const oop = B.mode === "pass" && B.ptype === 2 && p === B.to && p.j >= 45 && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 110 && !ftq && inb <= 0;
       if (B.sh && B.last && !B.sc) p.stt.reb++;
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
       B.owner = p;
@@ -1169,6 +1198,17 @@ export function bstep(dt: number) {
         PCNT[0] = PCNT[1] = 0;
       }
       snd(180, 0.05, "square");
+      if (oop) {
+        // ALLEY-OOP: catch it in the air and throw it down
+        p.mode = "s";
+        p.t = 0.27;
+        p.sv = 6;
+        p.rl = 0;
+        p.vz = Math.max(p.vz, 175);
+        p.oop = 1;
+        txtW("ALLEY-OOP!", p.x, p.y, 120, "#ffd23f");
+        exc(1);
+      }
       break;
     }
   }
@@ -1271,6 +1311,7 @@ export function upd(dt: number) {
     return;
   }
   if (clock > 0 && !ftq && inb <= 0) clock = Math.max(0, clock - dt);
+  if (q >= 4 && Math.abs(sc[0] - sc[1]) <= 6 && B.owner && Math.floor(T / 2.6) !== Math.floor((T - dt) / 2.6)) fx({ k: "chant", tm: 1 - pos });
   if (B.owner && !ftq && inb <= 0) shot -= dt;
   if (shot <= 0 && !ftq) {
     txt("SHOT CLOCK!", 470, 200, "#ff6b4a");

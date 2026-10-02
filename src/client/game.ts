@@ -311,6 +311,9 @@ function drainFx() {
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
     else if (f.k === "x") audio.EXC = f.v;
     else if (f.k === "end") endGame();
+    else if (f.k === "shake") V.shake && V.shake(f.v);
+    else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
+    else if (f.k === "chant") audio.chant();
   }
 }
 export const resetFx = (id: number) => (lastFx = id);
@@ -435,7 +438,8 @@ function overlay() {
 
 // ---------------- loop ----------------
 let last = performance.now(),
-  ACC = 0;
+  ACC = 0,
+  slowT = 0;
 export const STEP = 1 / 60;
 function loop(n: number) {
   requestAnimationFrame(loop);
@@ -448,7 +452,11 @@ function loop(n: number) {
   gpPoll();
   if (NET.role === "guest") NET.guestFrame(dt);
   else if (G.S === "play" || G.RPL) {
-    ACC += dt;
+    // slow motion for the big moments (offline): the sim runs at 35% speed for a beat
+    if (slowT > 0) {
+      slowT -= dt;
+      ACC += dt * 0.35;
+    } else ACC += dt;
     let k = 0;
     while (ACC >= STEP && k < 6) {
       G.upd(STEP);
