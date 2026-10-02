@@ -414,11 +414,24 @@ export function launch(p: Player) {
   B.y = y0;
   B.z = z0;
   B.fl = 0;
+  B.flBy = null;
   B.dk = 0;
   B.gn = 0;
   B.abv = -1;
   B.wv = [0, 0, 0];
+  const fd = isFT ? null : shootingFoul(p, lay);
+  if (fd) {
+    p.hitT = 0.4; // the shooter wears the contact
+    const dl = Math.hypot(p.x - fd.x, p.y - fd.y) || 1;
+    p.hitX = (p.x - fd.x) / dl;
+    p.hitY = (p.y - fd.y) / dl;
+  }
   if (p.sv === 6 && Math.random() < 0.9) {
+    if (fd) {
+      B.fl = 1;
+      B.flBy = fd;
+      fx({ k: "shake", v: 0.5 });
+    }
     B.dk = 1;
     B.x = hx;
     B.y = HY;
@@ -430,7 +443,7 @@ export function launch(p: Player) {
     snd(150, 0.2, "square", 0.12);
     return;
   }
-  if (blk && blk.z > 10 && Math.hypot(blk.x - p.x, blk.y - p.y) < 24 && Math.random() < 0.08 + (ct * 0.3 * blk.d) / 100) {
+  if (!fd && blk && blk.z > 10 && Math.hypot(blk.x - p.x, blk.y - p.y) < 24 && Math.random() < 0.08 + (ct * 0.3 * blk.d) / 100) {
     B.vx = (p.x - blk.x) * 8 + (Math.random() - 0.5) * 80;
     B.vy = (Math.random() - 0.5) * 120;
     B.vz = 60;
@@ -452,7 +465,6 @@ export function launch(p: Player) {
     dy = ty - y0,
     D = Math.hypot(dx, dy) || 1,
     dz = 100 - z0;
-  const fd = !lay && !isFT && blk && Math.hypot(blk.x - p.x, blk.y - p.y) < 24 && blk.z > 3 && Math.random() < 0.1 ? blk : null;
   if (fd && !mk) {
     B.owner = p;
     B.mode = "held";
@@ -460,7 +472,10 @@ export function launch(p: Player) {
     foul(fd, p, "SHOOTING", 1, three);
     return;
   }
-  if (fd) B.fl = 1;
+  if (fd) {
+    B.fl = 1;
+    B.flBy = fd;
+  }
   let th = D < 90 ? 1.15 : D < 200 ? 1.0 : D < 300 ? 0.92 : D < 400 ? 1.02 : 1.1;
   for (let k = 0; k < 8 && D * Math.tan(th) - dz < 8 && th < 1.45; k++) th += 0.08;
   let ge = g,
@@ -550,6 +565,16 @@ export function step(p: Player, dt: number) {
   p.scr = Math.max(0, (p.scr || 0) - dt);
   p.setT = (p.setT || 0) - dt;
   p.manT = (p.manT || 0) - dt;
+  p.hitT = Math.max(0, (p.hitT || 0) - dt);
+  p.landT = Math.max(0, (p.landT || 0) - dt);
+  {
+    // smoothed acceleration along the facing direction (body leans into it)
+    const ax = (p.vx - (p.pvx || 0)) / dt,
+      ay = (p.vy - (p.pvy || 0)) / dt;
+    p.acc = (p.acc || 0) * 0.85 + (ax * Math.cos(p.f) + ay * Math.sin(p.f)) * 0.15;
+    p.pvx = p.vx;
+    p.pvy = p.vy;
+  }
   {
     const sv2 = Math.hypot(p.vx, p.vy);
     p.en = Math.max(0, Math.min(1, (p.en == null ? 1 : p.en) - (i.sp && sv2 > 150 ? dt * 0.1 : -dt * 0.04)));
@@ -775,6 +800,7 @@ export function step(p: Player, dt: number) {
     p.vz -= g * dt;
     p.z += p.vz * dt;
     if (p.z <= 0) {
+      if (p.vz < -120) p.landT = Math.min(0.28, -p.vz / 900); // absorb the landing
       p.z = 0;
       p.vz = 0;
     }
@@ -839,6 +865,17 @@ export function ai(p: Player, dt: number) {
         a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
         a.r = 0;
       }
+    }
+    // Use the ball screen: come off the screener's shoulder, away from the trapped defender, toward the rim.
+    const pl = PLAY[t];
+    if (pl && pl.kind === "pnr" && pl.use === p && (pl.ph === "set" || (pl.ph === "out" && T - pl.setAt < 2.2))) {
+      const sc = pl.scr,
+        dx = sc.x - pl.def.x,
+        dy = sc.y - pl.def.y,
+        dl = Math.hypot(dx, dy) || 1;
+      if (pl.ph === "set") mv(p, sc.x + (dx / dl) * 16 + (oh - sc.x) * 0.08, sc.y + (dy / dl) * 16, 1.15);
+      else mv(p, oh + (oh > 470 ? -90 : 90), HY + (p.y < HY ? -40 : 40), 1.15);
+      i.sp = 1;
     }
     a.pt -= dt;
     if (a.pt < 0) {
@@ -1058,7 +1095,16 @@ export function bstep(dt: number) {
       txtW("+" + pts, hx > 470 ? hx - 50 : hx + 20, HY, 125, pts === 3 ? "#ffd23f" : "#fff");
       snd(900, 0.25, "sine", 0.1);
       if (ftq) ftq.next = 1.3;
-      else if (B.fl) startFT(B.last, 1);
+      else if (B.fl) {
+        txtW("AND ONE!", B.last.x, B.last.y, 110, "#ffd23f");
+        STAT.andOnes++;
+        if (B.flBy) {
+          tf[B.flBy.tm]++;
+          B.flBy.pf++;
+        }
+        exc(1);
+        startFT(B.last, 1);
+      }
       else {
         rs = 1.4;
         pend = 1 - t;
@@ -1343,85 +1389,141 @@ function ftIn(dt: number) {
   }
 }
 export const OFFS: (Player | null)[] = [null, null];
-const ACT = [
-  { c: -1, done: 0 },
-  { c: -1, done: 0 },
-];
+/** Game counters (tests / tuning): screens that connected, shooting fouls, and-ones. */
+export const STAT = { screens: 0, shootFouls: 0, andOnes: 0, fouls: 0 };
+/**
+ * Half-court plays. One per possession window (~5.5 s), chosen from personnel:
+ *  pnr   - big sets a ball screen on the handler's defender, plants, then rolls (or pops if he can shoot)
+ *  pin   - best off-ball shooter starts on the block and curls up off a pindown at the elbow
+ *  flare - screener sets a back-screen so a shooter drifts to the weak-side wing
+ * Everyone else spaces to corners/wings and cuts backdoor when overplayed.
+ * A screener in phase "set" is planted (no movement, setT > 0): defenders who run into him are stopped (collide()).
+ */
+export interface Play {
+  kind: "pnr" | "pin" | "flare";
+  t0: number;
+  scr: Player; // screener
+  use: Player; // player using the screen
+  def: Player; // defender being screened
+  ph: "go" | "set" | "out";
+  sx: number;
+  sy: number;
+  setAt: number;
+}
+export const PLAY: (Play | null)[] = [null, null];
+const manOf = (o: Player) => {
+  const t = 1 - o.tm;
+  for (const d of P) if (d.tm === t && d.manT > 0 && d.man === P.indexOf(o)) return d;
+  return P[t * cfg.NP + o.k];
+};
+function newPlay(t: number): Play | null {
+  const h = B.owner,
+    ms = P.filter((q) => q.tm === t && q !== h);
+  if (!h || ms.length < 2) return null;
+  const big = [...ms].sort((a, b) => b.ht * b.bk + b.i / 60 - (a.ht * a.bk + a.i / 60))[0],
+    sh = [...ms].sort((a, b) => b.c + 30 * ((b.sg && b.sg.off) || 0) - (a.c + 30 * ((a.sg && a.sg.off) || 0)))[0],
+    r = Math.random();
+  // Curry-style shooters get pindowns/flares; otherwise pick-and-roll is the bread and butter
+  const kind: Play["kind"] = sh.c >= 82 && sh !== big && r < 0.5 ? (r < 0.3 ? "pin" : "flare") : "pnr";
+  const scr = kind === "pnr" ? big : ms.filter((q) => q !== sh).sort((a, b) => b.ht * b.bk - a.ht * a.bk)[0],
+    use = kind === "pnr" ? h : sh;
+  return { kind, t0: T, scr, use, def: manOf(use), ph: "go", sx: 0, sy: 0, setAt: 0 };
+}
 function offBall(p: Player, t: number) {
-  const NP = cfg.NP,
-    hx = hoop(t),
-    dir = hx > 470 ? -1 : 1,
-    tt = T + t * 1.7,
-    ph = tt % 3.6,
-    cyc = Math.floor(tt / 3.6),
-    side = cyc % 2 ? 1 : -1,
-    h = B.owner,
-    ms = P.filter((q) => q.tm === t && q !== h),
-    S = ACT[t];
+  if (cfg.NP < 2) return false;
+  const hx = hoop(t),
+    dir = hx > 470 ? -1 : 1, // from the hoop toward half court
+    h = B.owner;
+  let pl = PLAY[t];
+  if (!pl || T - pl.t0 > 5.5 || pl.use.tm !== t || (pl.kind === "pnr" && pl.use !== h) || pl.scr === h) pl = PLAY[t] = newPlay(t);
   OFFS[t] = null;
-  if (ms.length < 2) return false;
-  if (S.c !== cyc) {
-    S.c = cyc;
-    S.done = 0;
+  if (!pl) return false;
+  const { scr, use } = pl,
+    def = (pl.def = manOf(use)),
+    side = use.y < HY ? -1 : 1;
+  // screen spot: on the defender's hip, on the side the user will run past
+  if (pl.ph !== "set") {
+    if (pl.kind === "pnr") {
+      const mid = HY - use.y > 0 ? 1 : -1; // screen toward the middle of the floor
+      pl.sx = def.x + dir * 6;
+      pl.sy = def.y + mid * 13;
+    } else if (pl.kind === "pin") {
+      pl.sx = hx + dir * 120;
+      pl.sy = HY + side * 70;
+    } else {
+      pl.sx = hx + dir * 175;
+      pl.sy = HY - side * 40;
+    }
   }
-  const big = (a: Player, b: Player) => b.ht * b.bk - a.ht * a.bk,
-    sh = ms.reduce((a, q) => (!a || q.c + 30 * ((q.sg && q.sg.off) || 0) > a.c + 30 * ((a.sg && a.sg.off) || 0) ? q : a), null);
-  if (cyc % 2 === 0) {
-    if (sh.c < 70) return false;
-    const scr = ms.filter((q) => q !== sh).sort(big)[0],
-      df = P[(1 - t) * NP + sh.k],
-      post = [hx + dir * 130, HY + side * 85];
-    if (ph < 1.9 && Math.hypot(scr.x - df.x, scr.y - df.y) < 40) {
-      df.scr = Math.max(df.scr || 0, 0.6);
-      scr.setT = 0.5;
-    }
-    if (ph > 1.7 && Math.hypot(sh.x - df.x, sh.y - df.y) > 38) OFFS[t] = sh;
-    if (p === sh) {
-      const g = ph < 0.9 ? [hx + dir * 60, HY - side * 150] : ph < 1.9 ? [post[0] + dir * 8, post[1] - side * 14] : [hx + dir * 215, HY + side * 125];
-      mv(p, g[0], g[1], ph < 1.9 ? 1.2 : 0.9);
-      return true;
-    }
-    if (p === scr) {
-      if (ph < 1.9) mv(p, post[0] * 0.6 + df.x * 0.4, post[1] * 0.6 + df.y * 0.4, 1.1);
-      else mv(p, hx + dir * 38, HY + side * 22, 1);
-      return true;
-    }
-    return cut(p, t);
-  }
-  const sc0 = ms.filter((q) => q !== sh || ms.length < 3).sort(big)[0],
-    d1 = P[(1 - t) * NP + h.k],
-    dd = P[(1 - t) * NP + sc0.k],
-    spot = [d1.x + (hx - d1.x) * 0.1, d1.y + (HY - d1.y) * 0.1];
-  if (ph > 2 && Math.hypot(sc0.x - dd.x, sc0.y - dd.y) > 38) OFFS[t] = sc0;
-  if (p !== sc0) {
-    if (p.sg && p.sg.off >= 0.9) {
-      const a = T * 1.1 + p.k;
-      mv(p, hx + dir * (195 + 25 * Math.sin(a * 1.3)), HY + Math.sin(a) * 185, 1.1);
-      return true;
-    }
-    return cut(p, t);
-  }
-  if (ph < 1.5) {
-    mv(p, spot[0], spot[1], 1.15);
-    if (Math.hypot(p.x - d1.x, p.y - d1.y) < 26) {
-      p.setT = 0.5;
-      d1.scr = Math.max(d1.scr || 0, 0.6);
+  if (p === scr) {
+    if (pl.ph === "go") {
+      mv(p, pl.sx, pl.sy, 1.2);
+      if (Math.hypot(p.x - pl.sx, p.y - pl.sy) < 7 || T - pl.t0 > 2.6) {
+        pl.ph = "set";
+        pl.setAt = T;
+      }
+    } else if (pl.ph === "set") {
+      p.in.dx = p.in.dy = 0; // planted
+      p.vx *= 0.5;
+      p.vy *= 0.5;
+      p.setT = 0.25;
+      if (T - pl.setAt > (pl.kind === "pnr" ? 1.25 : 1.5)) pl.ph = "out";
+    } else {
+      // roll hard to the rim, or pop to the arc if he can shoot
+      const pop = scr.c >= 80 && scr.i < 85,
+        g = pop ? [hx + dir * 225, HY + side * -60] : [hx + dir * 30, HY + side * 14];
+      mv(p, g[0], g[1], 1.2);
+      if (!pop && Math.hypot(p.x - hx, p.y - HY) < 90 && Math.hypot(manOf(p).x - p.x, manOf(p).y - p.y) > 30) OFFS[t] = p;
+      if (pop && Math.hypot(manOf(p).x - p.x, manOf(p).y - p.y) > 40) OFFS[t] = p;
     }
     return true;
   }
-  if (!S.done) {
-    S.done = 1;
-    if (Math.random() < 0.45) {
-      d1.man = t * NP + sc0.k;
-      d1.manT = 2.5;
-      dd.man = t * NP + h.k;
-      dd.manT = 2.5;
-      txtW("SWITCH", dd.x, dd.y, 95, "#9ad");
+  if (p === use && pl.kind !== "pnr") {
+    if (pl.ph === "go") mv(p, hx + dir * 28, HY + side * 60, 1); // set up low
+    else {
+      // run tight off the screener's shoulder, then up to the wing/top
+      const g = pl.kind === "pin" ? [hx + dir * 230, HY + side * 95] : [hx + dir * 220, HY - side * 150];
+      const nearS = Math.hypot(p.x - scr.x, p.y - scr.y) > 22 && pl.ph === "set";
+      mv(p, nearS ? scr.x + dir * 4 : g[0], nearS ? scr.y + side * 9 : g[1], 1.25);
+      if (Math.hypot(def.x - p.x, def.y - p.y) > 34 && Math.hypot(p.x - hx, p.y - HY) > 180) OFFS[t] = p;
     }
+    return true;
   }
-  const roll = sc0.i >= 75 && sc0.c < 80,
-    g = roll ? [hx + dir * 42, HY + side * 18] : [hx + dir * 215, HY + side * 105];
-  mv(p, g[0], g[1], 1.05);
+  // spacing + backdoor cuts for everyone else
+  const ms = P.filter((q) => q.tm === t && q !== h && q !== scr && q !== use),
+    spots = [
+      [hx + dir * 15, HY - 230],
+      [hx + dir * 15, HY + 230],
+      [hx + dir * 190, HY - 175],
+      [hx + dir * 190, HY + 175],
+      [hx + dir * 250, HY],
+    ],
+    k = ms.indexOf(p);
+  if (k < 0) return false;
+  const used = new Set<number>();
+  const pick = (q: Player) => {
+    let b = 0,
+      bd = 1e9;
+    spots.forEach((sp, j) => {
+      if (used.has(j)) return;
+      const d = Math.hypot(sp[0] - q.x, sp[1] - q.y) + (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 ? 400 : 0);
+      if (d < bd) (bd = d), (b = j);
+    });
+    used.add(b);
+    return spots[b];
+  };
+  let spot = spots[0];
+  for (const q of ms) {
+    const sp = pick(q);
+    if (q === p) spot = sp;
+  }
+  const md = manOf(p),
+    deny = Math.hypot(md.x - p.x, md.y - p.y) < 20 && Math.hypot(md.x - hx, md.y - HY) > Math.hypot(p.x - hx, p.y - HY) - 5;
+  if (deny && Math.random() < 0.02) p.ai.cutT = T;
+  if (p.ai.cutT && T - p.ai.cutT < 1.1) {
+    mv(p, hx + dir * 25, HY + (p.y < HY ? -18 : 18), 1.25); // backdoor
+    if (Math.hypot(md.x - p.x, md.y - p.y) > 26) OFFS[t] = p;
+  } else mv(p, spot[0] + Math.sin(T * 0.8 + p.k) * 10, spot[1], 0.95);
   return true;
 }
 function loose(p: Player, t: number) {
@@ -1493,6 +1595,34 @@ export function pickClip(p: Player, D: number, lay: boolean) {
   if (p.st === 3) return 3;
   return p.st === 1 ? 1 : 0;
 }
+/**
+ * Shooting-foul contact model. A foul needs real contact: a hard closeout into the shooter's space, a defender flying
+ * sideways through him (jumping straight up = verticality, rarely a foul), or bodies already touching. Good defenders
+ * foul less; drives to the rim and strong finishers draw more. Returns the fouling defender or null.
+ */
+function shootingFoul(p: Player, lay: boolean): Player | null {
+  let best = null,
+    bp = 0;
+  for (const o of P) {
+    if (o.tm === p.tm) continue;
+    const dx = p.x - o.x,
+      dy = p.y - o.y,
+      d = Math.hypot(dx, dy) || 1;
+    if (d > 28) continue;
+    const close = (o.vx * dx + o.vy * dy) / d, // speed toward the shooter
+      hs = Math.hypot(o.vx, o.vy);
+    let c = 0;
+    c += clamp((close - 50) / 220, 0, 1) * 0.32; // late, hard closeout
+    if (o.z > 4) c += hs > 50 ? 0.3 : 0.03; // flying in vs. straight up
+    if (d < 15) c += 0.14; // already chest to chest
+    if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2;
+    c *= 1.2 - o.d / 220;
+    if (c > bp) (bp = c), (best = o);
+  }
+  if (!best || Math.random() >= clamp(bp, 0, 0.6)) return null;
+  STAT.shootFouls++;
+  return best;
+}
 /** Raw contest (0..1.5) from the closest defender within 6 ft; airborne defenders count 1.5x. */
 function contestRaw(p: Player): [number, Player | null] {
   const fr = lagFrame(p);
@@ -1542,6 +1672,30 @@ function collide() {
           mC = C.bk * C.ht * (C.setT > 0 ? 3 : C.postA ? 1.7 : 1),
           rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny,
           ov = 16 - d;
+        for (const [sc0, df] of [
+          [A, C],
+          [C, A],
+        ])
+          if (sc0.setT > 0 && df.tm !== sc0.tm && df !== B.owner) {
+            if (!(df.scr > 0)) {
+              STAT.screens++;
+              df.scr = 0.55; // hits the screen: stopped dead for half a second
+              df.hitT = 0.35;
+              df.hitX = -nx * (df === A ? -1 : 1);
+              df.hitY = -ny * (df === A ? -1 : 1);
+              if (isH(B.owner) || isH(df)) txtW("SCREEN", sc0.x, sc0.y, 88, "#9ad");
+              const pl = PLAY[sc0.tm];
+              // the screener's defender switches onto the ball handler some of the time
+              if (pl && pl.kind === "pnr" && Math.random() < 0.35) {
+                const sd = manOf(sc0),
+                  NP = cfg.NP;
+                sd.man = sc0.tm * NP + pl.use.k;
+                sd.manT = 3;
+                df.man = sc0.tm * NP + sc0.k;
+                df.manT = 3;
+              }
+            }
+          }
         A.x += (nx * ov * mC) / (mA + mC);
         A.y += (ny * ov * mC) / (mA + mC);
         C.x -= (nx * ov * mA) / (mA + mC);
@@ -1567,6 +1721,12 @@ function collide() {
             }
           }
           if (hit > 60) {
+            // both bodies react to the bump, away from each other
+            A.hitT = C.hitT = Math.min(0.35, hit / 500);
+            A.hitX = nx;
+            A.hitY = ny;
+            C.hitX = -nx;
+            C.hitY = -ny;
             for (const q of [A, C]) {
               if (hit > 120) q.slow = Math.max(q.slow, 0.12);
               if (q.mode === "c" || q.mode === "s") q.bmp = Math.min(1, (q.bmp || 0) + hit / 260);

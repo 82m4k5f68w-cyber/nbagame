@@ -310,6 +310,46 @@ export function pose3(p: Player) {
       cr = 0.2;
     }
   }
+  // Planted screener: wide base, knees bent, arms folded across the chest.
+  if (p.setT > 0 && md === "i" && !air && !has) {
+    hz = 0.32;
+    cr = 0.3;
+    kL = kR = 0.55;
+    tL = tR = 0.25;
+    aL = aR = 0.95;
+    eL = eR = 2.1;
+    sz = -0.25;
+    zL = -0.25;
+    ln = 0.08;
+  }
+  // Pro Play contact + weight: bumps rock the torso away from the hit, landings sink into the knees,
+  // and players lean into acceleration.
+  if (PRO) {
+    if (p.hitT > 0) {
+      const k = Math.min(1, p.hitT / 0.3),
+        cf = Math.cos(p.f),
+        sf = Math.sin(p.f),
+        fw = (p.hitX || 0) * cf + (p.hitY || 0) * sf,
+        sd = -(p.hitX || 0) * sf + (p.hitY || 0) * cf;
+      ln += fw * 0.38 * k;
+      rz -= sd * 0.32 * k;
+      ty += sd * 0.25 * k;
+      if (md === "i" && !has) {
+        aL += 0.5 * k;
+        aR += 0.35 * k;
+      }
+    }
+    if (p.landT > 0 && md !== "s") {
+      const k = p.landT / 0.28;
+      cr += 0.4 * k;
+      kL += 0.55 * k;
+      kR += 0.55 * k;
+      tL += 0.3 * k;
+      tR += 0.3 * k;
+      ln += 0.12 * k;
+    }
+    if (md === "i" && !air) ln += clamp((p.acc || 0) / 2600, -0.14, 0.2);
+  }
   if (p.postA) {
     cr = 0.45;
     ln = 0.25;
