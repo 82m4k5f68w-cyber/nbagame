@@ -29,10 +29,11 @@ try {
   const Gp = await page("guest");
   await Gp.evaluate((c) => { document.getElementById("nm").value = "Guesty"; document.getElementById("cd").value = c; document.getElementById("jn").click(); }, code);
   await Gp.waitForTimeout(1500);
+  await Gp.waitForSelector('[data-sd="1"]', { timeout: 30000 });
   await Gp.evaluate(() => document.querySelector('[data-sd="1"]').click());
   await Gp.waitForTimeout(800);
   await Gp.evaluate(() => document.getElementById("rd").click());
-  await Gp.waitForTimeout(1200);
+  await H.waitForFunction(() => window.H2K.NET && document.getElementById("go") && !document.getElementById("go").style.opacity, null, { timeout: 30000 });
   const lobby = await H.evaluate(() => document.getElementById("ov").innerText.replace(/\s+/g, " ").slice(0, 200));
   console.log("host lobby:", lobby);
   await H.evaluate(() => document.getElementById("go").click());

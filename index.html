@@ -84,11 +84,30 @@ canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 .ed label,.opts label{display:flex;flex-direction:column;font-size:12px;width:140px;gap:2px}.opts input{background:#1c2140;color:#fff;border:1px solid #3a4280;border-radius:8px;padding:6px}#pts{width:100%;font-weight:800;color:#ffd23f;font-size:13px}
 .bxw{width:100%;max-width:640px;overflow:auto}.bx{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}.bx th,.bx td{padding:4px 6px;text-align:center;border-bottom:1px solid #ffffff18}.bx th:first-child,.bx td:first-child{text-align:left}.bx th{color:#ffd23f;font-size:11px;letter-spacing:1px}
 .opts{background:rgba(255,255,255,.04);border:1px solid #ffffff14;border-radius:16px;padding:10px 12px;backdrop-filter:blur(6px)}.card{border:1px solid #ffffff22!important;border-radius:14px!important;backdrop-filter:blur(4px)}
+
+/* --- menu polish --- */
+:root{--bg:#0b0c14;--fg:#eef0ff;color-scheme:dark}
+body{background:var(--bg);color:var(--fg)}
+#ov{position:fixed;inset:0;z-index:50;overflow-y:auto;overscroll-behavior:contain;padding:48px 16px 24px}
+#ov[style*="none"]{display:none}
+#ov .card{padding-bottom:30px}
+#ov #g{max-width:900px}
+#ov .setw{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;width:100%;max-width:900px}
+#ov .setw .opts{margin:0;max-width:none;justify-content:flex-start;align-content:flex-start}
+#ov .setw .opts h3{width:100%;margin:0 0 2px;font:800 11px system-ui;letter-spacing:3px;color:#ffd23f;text-align:left}
+#ov .opts b{text-align:left;margin-top:6px}
+#ov .hint{font-size:11px;opacity:.6;margin:4px 0 0}
+#ov .card:focus-visible,#ov button:focus-visible,#ov input:focus-visible,#ov select:focus-visible{outline:3px solid #4fd1ff;outline-offset:2px}
+#pz{display:flex;flex-direction:column;gap:8px;min-width:240px}
+#pz button{background:#1c2140;color:#fff;border:1px solid #3a4280;border-radius:12px;padding:12px 18px;font:800 15px system-ui;cursor:pointer}
+#pz button:hover{background:#e8541e;border-color:#ffd23f}
+@media (max-width:520px){#g{grid-template-columns:1fr 1fr}#g button{padding:8px}.logo{font-size:30px}}
+@media (prefers-reduced-motion:reduce){#ov *,#ov::before{animation:none!important;transition:none!important}.card{opacity:1!important}}
 </style>
 </head><body>
 <div id="hub"><canvas id="bg"></canvas><div class="wrap">
 <header><div class="brand">HOOPS<b>2K27</b></div><nav><button data-t="play" class="on">Play</button><button data-t="log">Update Log<i id="nw">NEW</i></button><button data-t="how">Controls</button></nav></header>
-<section id="play"><div class="hero"><div class="ball">🏀</div><div class="logo">HOOPS 2K27</div><div class="sub">NEXT-LEVEL BASKETBALL · v2.5</div><div class="stats"><span><b>7</b> teams</span><span><b>35</b> players</span><span><b>5</b> modes</span><span><b>3D</b> WebGL + physics</span><span><b>2</b> players local</span></div></div><div class="grid" id="grid"></div></section>
+<section id="play"><div class="hero"><div class="ball">🏀</div><div class="logo">HOOPS 2K27</div><div class="sub">NEXT-LEVEL BASKETBALL · v3.0</div><div class="stats"><span><b>7</b> teams</span><span><b>35</b> players</span><span><b>5</b> modes</span><span><b>3D</b> WebGL + physics</span><span><b>Online</b> + local 2P</span></div></div><div class="grid" id="grid"></div></section>
 <section id="log" hidden><div class="panel" id="logp"></div></section>
 <section id="how" hidden><div class="panel"><h4>MOVE &amp; SHOOT</h4><div class="keys" id="k1"></div><h4>DRIBBLE &amp; POST</h4><div class="keys" id="k2"></div><h4>GAME</h4><div class="keys" id="k3"></div><h4>PLAYER 2 (LOCAL)</h4><div class="keys" id="k4"></div><h4>GAMEPAD</h4><div class="keys" id="k5"></div></div></section>
 <div class="foot">Unofficial fan project · rosters, ratings and shot styles are approximate · tap “← Modes” in a game to return</div></div>

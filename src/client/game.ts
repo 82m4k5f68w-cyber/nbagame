@@ -31,7 +31,8 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   cfg.hand = o.r3d;
   cfg.replays = true;
   V.r3d = o.r3d;
-  MYM = o.my ? 1 : 0;
+  loadSet();
+  if (o.my != null && o.my) MYM = 1;
   IN.MP2 = o.mp ? 1 : 0;
   C = $("#c") as HTMLCanvasElement;
   X = ($("#h") as HTMLCanvasElement).getContext("2d")!;
@@ -65,12 +66,39 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     }
   };
   bindInput();
+  addEventListener("keydown", (e) => {
+    if (menuKeys) menuKeys(e);
+    if ((e.code === "Escape" || e.code === "KeyP") && !NET.role && !G.RPL && (G.S === "play" || G.S === "pause")) {
+      e.preventDefault();
+      G.S === "pause" ? resume() : pause();
+    }
+  });
+  addEventListener("blur", () => !NET.role && !G.RPL && G.S === "play" && pause());
   GS.booted = 1;
   (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
   if (o.online) NET.openLobby();
   else menu();
   requestAnimationFrame(loop);
+}
+
+// ---------------- settings (remembered per browser) ----------------
+function loadSet() {
+  try {
+    const o = JSON.parse(localStorage.getItem("h2k_set") || "{}");
+    if (o.m != null) V.METER = o.m;
+    if (o.s != null) IN.TEMPO = o.s;
+    if (o.p != null) cfg.PRO = o.p;
+    if (o.cm != null) V.CAMM = o.cm;
+    if (o.q != null) V.QL = o.q;
+    if (o.fx != null) V.FX = !!o.fx;
+    if (o.my != null) MYM = o.my;
+  } catch (e) {}
+}
+function saveSet() {
+  try {
+    localStorage.setItem("h2k_set", JSON.stringify({ m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, my: MYM }));
+  } catch (e) {}
 }
 
 // ---------------- menus ----------------
@@ -92,11 +120,23 @@ export function menu() {
     });
   if (SEL >= N) SEL = 0;
   ov.style.setProperty("--tc", IT[SEL].c);
-  ov.innerHTML = `<div class="ball">🏀</div><div class="logo">HOOPS<span>2K27</span></div><div class="sub">${NP > 1 ? "5v5 NBA GAME" : "1v1 SHOWDOWN — PICK YOUR STAR"} · PRO PHYSICS · TEMPO SHOOTING</div><div id="g">${IT.map((t, i) => `<button class="card${i === SEL ? " sel" : ""}" data-i="${i}" style="--i:${i % 12};--c:${t.c}"><i>${t.n.slice(0, 3).toUpperCase()}</i><b>${t.n}</b><small>${t.sub}</small><em>OVR ${t.o}</em></button>`).join("")}</div><div id="pv"></div><div class="opts"><b>PLAYERS</b>${opt("", "mp", 0, IN.MP2, "1 Player")}${opt("", "mp", 1, IN.MP2, "2 Players (keyboard)")}<button id="online">🌐 Play online</button><b>P2 = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</b><b>PLAYER MODE</b>${opt("", "my", 0, MYM, "Pick a team")}${opt("", "my", 1, MYM, "My Player")}<button id="edit">✎ Edit my player</button><b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}<b>SHOOTING</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}${
-    V.r3d
-      ? `<b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}`
-      : ""
-  }<b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div><button class="big" id="tip">TIP OFF ▶</button>`;
+  ov.innerHTML = `<div class="logo">HOOPS<span>2K27</span></div><div class="sub">${NP > 1 ? "5V5 · PICK YOUR TEAM" : "1V1 SHOWDOWN · PICK YOUR STAR"} · ${V.r3d ? "3D ARENA" : "2D COURT"}</div><div id="g" role="listbox" aria-label="Choose">${IT.map(
+    (t, i) =>
+      `<button class="card${i === SEL ? " sel" : ""}" role="option" aria-selected="${i === SEL}" data-i="${i}" style="--i:${i % 12};--c:${t.c}"><i>${esc(t.n.slice(0, 3).toUpperCase())}</i><b>${esc(t.n)}</b><small>${esc(t.sub)}</small><em>OVR ${t.o}</em></button>`,
+  ).join("")}</div><div id="pv"></div>
+  <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → choose · Enter tip off · Esc pauses in game</p>
+  <div class="setw">
+   <div class="opts"><h3>MATCH</h3><b>PLAYERS</b>${opt("", "mp", 0, IN.MP2, "1 Player")}${opt("", "mp", 1, IN.MP2, "2 Players (keyboard)")}<button id="online">🌐 Play online</button>
+    <b>PLAYER MODE</b>${opt("", "my", 0, MYM, "Pick a team")}${opt("", "my", 1, MYM, "My Player")}<button id="edit">✎ Edit my player</button>
+    <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
+   <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
+   ${
+     V.r3d
+       ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "Bloom · AO · blur · reflections")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}</div>`
+       : ""
+   }
+  </div>
+  <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p>`;
   const pv = () => {
     $("#pv").innerHTML =
       IT[SEL].pl
@@ -107,21 +147,36 @@ export function menu() {
         .join("") + '<p class="lg">bars: 3PT · INSIDE · SPEED</p>';
   };
   pv();
-  ov.querySelectorAll<HTMLElement>(".card").forEach(
-    (b) =>
-      (b.onclick = () => {
-        SEL = +b.dataset.i!;
-        ov.querySelectorAll(".card").forEach((c) => c.classList.toggle("sel", c === b));
-        ov.style.setProperty("--tc", IT[SEL].c);
-        pv();
-      }),
-  );
+  const pickCard = (i: number, focus = false) => {
+    SEL = (i + N) % N;
+    ov.querySelectorAll<HTMLElement>(".card").forEach((c, k) => {
+      c.classList.toggle("sel", k === SEL);
+      c.setAttribute("aria-selected", String(k === SEL));
+      if (k === SEL && focus) c.focus();
+    });
+    ov.style.setProperty("--tc", IT[SEL].c);
+    pv();
+  };
+  ov.querySelectorAll<HTMLElement>(".card").forEach((b) => (b.onclick = () => pickCard(+b.dataset.i!)));
+  menuKeys = (e: KeyboardEvent) => {
+    if (G.S !== "menu" || ov.style.display === "none" || !document.getElementById("tip")) return;
+    if ((e.target as HTMLElement)?.closest?.("input,select")) return;
+    const cols = Math.max(1, Math.round(($("#g").clientWidth || 600) / 208));
+    if (e.code === "ArrowRight") pickCard(SEL + 1, true);
+    else if (e.code === "ArrowLeft") pickCard(SEL - 1, true);
+    else if (e.code === "ArrowDown") pickCard(SEL + cols, true);
+    else if (e.code === "ArrowUp") pickCard(SEL - cols, true);
+    else if (e.code === "Enter") startLocal(SEL);
+    else return;
+    e.preventDefault();
+  };
   $("#tip").onclick = () => startLocal(SEL);
   const grp = (k: string, f: (v: number) => void) =>
     ov.querySelectorAll<HTMLElement>(`[data-${k}]`).forEach(
       (b) =>
         (b.onclick = () => {
           f(+b.dataset[k]!);
+          saveSet();
           ov.querySelectorAll(`[data-${k}]`).forEach((c) => c.classList.toggle("on", c === b));
         }),
     );
@@ -130,6 +185,7 @@ export function menu() {
   grp("p", (v) => (cfg.PRO = v));
   grp("cm", (v) => (V.CAMM = v));
   grp("q", (v) => (V.QL = v));
+  grp("fx", (v) => (V.FX = !!v));
   grp("my", (v) => (MYM = v));
   grp("mp", (v) => (IN.MP2 = v));
   $("#edit").onclick = edMy;
@@ -203,6 +259,34 @@ function edMy() {
     menu();
   };
 }
+let menuKeys: ((e: KeyboardEvent) => void) | null = null;
+/** Pause (offline games): the sim stops ticking; the menu offers resume / restart / settings / quit. */
+function pause() {
+  G.setS("pause");
+  ov.style.display = "flex";
+  ov.innerHTML = `<div class="logo" style="font-size:38px">PAUSED</div><div class="sub">${esc(G.cl[0])} ${G.sc[0]} — ${G.sc[1]} ${esc(G.cl[1])} · Q${G.q}</div><div id="pz">
+  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button><button id="prs">↻ Restart game</button><button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
+  $("#pr").onclick = resume;
+  const re = () => (saveSet(), pause());
+  if (V.r3d) {
+    $("#pc").onclick = () => ((V.CAMM = (V.CAMM + 1) % 4), re());
+    $("#pf").onclick = () => ((V.FX = !V.FX), re());
+  }
+  $("#pm").onclick = () => ((V.METER = (V.METER + 1) % 4), re());
+  $("#pt").onclick = () => {
+    IN.TEMPO = 1 - IN.TEMPO;
+    for (const c of CT) c.tempo = IN.TEMPO;
+    re();
+  };
+  $("#prs").onclick = () => startLocal(SEL, { j: lastJ });
+  $("#pq").onclick = menu;
+  ($("#pr") as HTMLElement).focus();
+}
+function resume() {
+  G.setS("play");
+  ov.style.display = "none";
+}
+let lastJ: number | undefined;
 export const esc = (s: any) => String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
 
 /** Local game: P1 on team 0 (+ P2 on team 1 for local 2-player). */
@@ -213,7 +297,7 @@ export function startLocal(i: number, o: { j?: number } = {}) {
   if (IN.MP2) cs.push(G.mkCtrl("p2", 1, false, IN.TEMPO));
   G.setCtrls(cs);
   V.focus = 0;
-  G.start(i, o);
+  lastJ = G.start(i, o);
   ov.style.display = "none";
   lastFx = G.FX.length ? G.FX[G.FX.length - 1].id - 1 : 0;
 }
