@@ -1,5 +1,9 @@
 // Pass accuracy by type (auto / chest / bounce / lob) to a moving receiver, no defenders in the lane.
 import * as G from "../src/core/sim";
+import { rapInit } from "../src/core/physics";
+await rapInit();
+for (const phys of ["rapier", "legacy"] as const) {
+G.cfg.physics = phys;
 G.cfg.NP = 5;
 G.start(1);
 const P = G.P, res: Record<string, any> = {};
@@ -21,4 +25,5 @@ for (const ty of [undefined, 0, 1, 2]) {
   }
   res[ty === undefined ? "auto" : ty] = { caught: ((100 * ok) / n).toFixed(0) + "%", loose: ((100 * loose) / n).toFixed(0) + "%", other: ((100 * wrong) / n).toFixed(0) + "%" };
 }
-console.log(JSON.stringify(res));
+console.log(phys, JSON.stringify(res));
+}

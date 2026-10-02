@@ -99,7 +99,7 @@ export function rapSyncPlayers(P: Player[], B: Ball) {
     if (far) e.b.setTranslation({ x: p.x, y: p.y, z: tz }, true);
     else e.b.setNextKinematicTranslation({ x: p.x, y: p.y, z: tz });
     // Only the airborne ball interacts; the shooter is ignored for 0.35 s after release.
-    e.c.setEnabled(!(B.last === p && B.age < 0.35) && !(B.mode === "air" && B.age < 0.12));
+    e.c.setEnabled(B.mode === "air" && !B.owner && !(B.last === p && B.age < 0.35) && B.age >= 0.12);
   }
   for (let k = P.length; k < pl.length; k++) if (pl[k]) e2(k);
   function e2(k: number) {

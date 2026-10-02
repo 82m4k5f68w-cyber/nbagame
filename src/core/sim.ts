@@ -55,7 +55,7 @@ export const cfg = {
   hand: true, // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
   replays: true,
   MYM: 0,
-  playerBodies: false, // Rapier kinematic player capsules (ball can deflect off bodies)
+  playerBodies: true, // Rapier kinematic player capsules (ball can deflect off bodies)
   input: null as null | ((c: Ctrl) => Input),
 };
 
@@ -321,6 +321,12 @@ export function pass(p: Player, r: Player, ty?: number) {
   PCNT[p.tm]++;
   LASTP[p.tm] = T;
   B.pp = { p, t: T };
+  {
+    // Backspin off the fingertips (lob floats, chest pass snaps, bounce pass checks up off the floor).
+    const h = Math.hypot(B.vx, B.vy) || 1,
+      w = ty === 2 ? 5 : ty === 1 ? 7 : 10;
+    B.wv = [(w * B.vy) / h, (-w * B.vx) / h, 0];
+  }
   snd(260, 0.05, "triangle");
 }
 export function pick(p: Player, i: { dx: number; dy: number }) {
@@ -928,9 +934,26 @@ export function bstep(dt: number) {
   const o = B.owner;
   if (o) {
     {
-      const off = o.mvT > 0 ? Math.sin((o.mvE || 0) * 14) * 7 : 0;
-      B.x = o.x + Math.cos(o.f) * 8 - Math.sin(o.f) * off;
-      B.y = o.y + Math.sin(o.f) * 5 + Math.cos(o.f) * off;
+      const off = o.mvT > 0 ? Math.sin((o.mvE || 0) * 14) * 7 : 0,
+        tx = o.x + Math.cos(o.f) * 8 - Math.sin(o.f) * off,
+        ty = o.y + Math.sin(o.f) * 5 + Math.cos(o.f) * off;
+      if (cfg.PRO && o.mode === "i" && B.hold === o && !PREDICT) {
+        // Dribble physics: the ball has momentum; the hand pulls it with a stiff, critically damped spring,
+        // so crossovers and hard cuts swing it across the body instead of teleporting.
+        const k = 900,
+          c = 2 * Math.sqrt(k);
+        B.dvx = (B.dvx || 0) + ((tx - B.x) * k - (B.dvx || 0) * c) * dt;
+        B.dvy = (B.dvy || 0) + ((ty - B.y) * k - (B.dvy || 0) * c) * dt;
+        B.x += B.dvx * dt;
+        B.y += B.dvy * dt;
+        if (Math.hypot(tx - B.x, ty - B.y) > 14) (B.x = tx), (B.y = ty);
+      } else {
+        B.x = tx;
+        B.y = ty;
+        B.dvx = o.vx;
+        B.dvy = o.vy;
+      }
+      B.hold = o;
     }
     B.z =
       o.mode === "c"
@@ -948,7 +971,8 @@ export function bstep(dt: number) {
     return;
   }
   B.age += dt;
-  const RA = useRap() && B.mode === "air";
+  // Shots, loose balls AND passes fly through Rapier (passes bounce off the real floor; bodies ignore passes).
+  const RA = useRap() && (B.mode === "air" || B.mode === "pass");
   if (!RA) {
     B.vz -= g * dt;
     B.vx *= 1 - 0.1 * dt;

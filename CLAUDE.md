@@ -37,9 +37,11 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Contest: `contestOf(p)` (lag-compensated for remote shooters via `ctrl.lag`), locked at release (`p.cw`). Meters: `hud.ts meter(p)` (4 styles, `V.METER`).
 - Aim: `launch` solves a parabola, then (Rapier) pre-simulates with drag+Magnus and corrects range AND sideways error. This is why greens still go in with real physics.
 - Release point: `pose.ts handPos(p)` — analytic forward kinematics that matches the three.js rig exactly (`tests/fk.ts`), so the server/Node sim releases from the same hand as the 3D client.
-- Physics: `bstep` (legacy ball) vs `physics.ts rapInit/rapStep` (Rapier ball, rim = 24 capsules, board, floor, walls) + `rapSyncPlayers` (kinematic torso capsules, `cfg.playerBodies`).
+- Physics: `bstep` (legacy ball) vs `physics.ts rapInit/rapStep` (Rapier ball, rim = 24 capsules, board, floor, walls). Shots, loose balls and passes (with backspin) fly through Rapier. `rapSyncPlayers`: kinematic torso capsules (`cfg.playerBodies`, on) that only touch a loose/shot ball, never the shooter right after release or passes. Dribble: vertical bounce sim (`dz`) + a critically damped spring pulling the ball to the hand.
 - Net: `NETS/netSim` (verlet mesh; ball pushes points), drawn by both renderers.
-- Animation: `pose3(p)` writes joint angles to `p.q` every sim tick (smoothed when Pro Play is on); clips `CL/clip/pickClip`. Rig + `apply` in `render3d.ts glInit`.
+- Animation: `pose3(p)` writes joint angles to `p.q` every sim tick (smoothed = blended when Pro Play is on); clips `CL/clip/pickClip`.
+  `client/rig3d.ts`: one SkinnedMesh per player (vertex colors, smooth-weighted elbows/knees) on bones that mirror the sim's joints exactly; `applyPose` maps `p.q` to bones; `footIK` plants stance feet and solves two-bone leg IK.
+- Post-processing (`client/fx3d.ts`): MSAA -> SSAO (High) -> bloom -> camera motion blur (fixed 1/60 s shutter) -> gamma; floor = glossy plane over a `Reflector` (High). Toggle: `V.FX`.
 - Rules: `foul/startFT/ftLay/ftTick/ftIn/tech`, shot clock, quarters (4 x `QTRLEN` s), inbounds (`inb`), bonus after 5 team fouls, `endGame` (FX) + box score (`p.stt`).
 - AI: `ai(p)`, `offBall` (pindowns/ball screens/switches; Curry `SIG.Curry.off`), `cut`, `loose` (rebounding), defense inside `ai` (no full-court press, no steals).
 - Passing: `pass(p,r,type)` chest/bounce/lob + in-flight steering; `pick` chooses target from stick direction.
@@ -79,5 +81,4 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Keep steals off (user request). Keep green at top of meter. Keep Curry's off-ball tendency and low-load one-motion form.
 
 ## Known gaps / ideas
-skeletal bone rig + blending + foot IK (feet slide slightly), Rapier bodies for players/dribble,
-bloom/SSAO/motion blur/floor reflections, smoother player models, replays/cameras in 2D, heaves >45 ft only ~73% on green, Classic has no new features.
+replays/cameras in 2D, more teams, season/playoffs, mobile joystick, heaves >45 ft only ~73% on green, Classic has no new features.

@@ -4,6 +4,9 @@ import * as THREE from "three";
 import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, HXs, W3, hoop, NETS } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
+import { makeRig, applyPose, footIK } from "./rig3d";
+import { makeFx } from "./fx3d";
+import { Reflector } from "three/examples/jsm/objects/Reflector.js";
 const qtr = () => qtrN;
 export function glInit(C: HTMLCanvasElement) {
   try {
@@ -163,6 +166,17 @@ export function glInit(C: HTMLCanvasElement) {
       0,
     );
     fl.rotation.x = -Math.PI / 2;
+    const mirror = new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: 960, textureHeight: 540, color: 0x8a8a8a, clipBias: 0.003 });
+    mirror.rotation.x = -Math.PI / 2;
+    mirror.position.y = -0.02;
+    mirror.visible = false;
+    S.add(mirror);
+    const setMirror = (on) => {
+      mirror.visible = on;
+      fl.material.transparent = on;
+      fl.material.opacity = on ? 0.84 : 1;
+      fl.material.needsUpdate = true;
+    };
     const ap2 = ad(
       new THREE.PlaneGeometry(140, 90),
       M(0x15182c, { roughness: 0.85 }),
@@ -440,135 +454,17 @@ export function glInit(C: HTMLCanvasElement) {
       S.add(sp);
       glow.push(sp);
     }
-    const gC = new THREE.CylinderGeometry(1, 1, 1, 14),
-      gS = new THREE.SphereGeometry(1, 20, 14),
-      gB = new THREE.BoxGeometry(1, 1, 1),
-      gT = new THREE.CylinderGeometry(1, 0.82, 1, 16);
-    const mk = (g, col, sx, sy, sz, x, y, z, par, o) => {
-      const k = new THREE.Mesh(g, M(col, o));
-      k.scale.set(sx, sy, sz);
-      k.position.set(x, y, z);
-      k.castShadow = true;
-      par.add(k);
-      return k;
+    const fx = makeFx(R, S, cam, 960, 540),
+      vpPrev = new THREE.Matrix4(),
+      vpNow = new THREE.Matrix4(),
+      MV = new THREE.Vector3(),
+      MV2 = new THREE.Vector3();
+    let lastF = performance.now();
+    const fxLevel = () => {
+      fx.setLevel(V.QL, V.FX, 960, 540);
+      setMirror(V.FX && V.QL >= 2 && lvl >= 4);
     };
-    function rig(p) {
-      const G = new THREE.Group(),
-        bd = new THREE.Group(),
-        k = p.bk,
-        sk = p.skin,
-        hc = sk === "#e8b88f" ? "#3d2a18" : "#121212",
-        jr = { roughness: 0.85 },
-        hr = { roughness: 1 };
-      bd.position.y = 3.2;
-      G.add(bd);
-      const leg = (x) => {
-        const th = new THREE.Group();
-        th.position.set(x, 3.2, 0);
-        mk(gC, sk, 0.24, 1.6, 0.24, 0, -0.8, 0, th);
-        mk(gC, p.col, 0.3 * k, 0.7, 0.3 * k, 0, -0.3, 0, th, jr);
-        const sn = new THREE.Group();
-        sn.position.y = -1.58;
-        mk(gS, sk, 0.2, 0.2, 0.2, 0, 0, 0, sn);
-        mk(gC, sk, 0.17, 1.55, 0.17, 0, -0.78, 0, sn);
-        mk(gC, "#f4f4f4", 0.19, 0.35, 0.19, 0, -1.35, 0, sn);
-        mk(gB, "#fafafa", 0.38, 0.28, 0.78, 0, -1.6, 0.14, sn);
-        mk(gB, "#222", 0.39, 0.06, 0.8, 0, -1.73, 0.14, sn);
-        th.add(sn);
-        G.add(th);
-        return [th, sn];
-      };
-      const [tl, kl] = leg(-0.32),
-        [tr, kr] = leg(0.32);
-      mk(gT, p.col, 0.62 * k, 1, 0.5 * k, 0, 0.15, 0, bd, jr);
-      mk(gT, p.col, 0.78 * k, 1.5, 0.44 * k, 0, 1.25, 0, bd, jr);
-      const [nc2, nx] = cv(128, 128);
-      nx.fillStyle = "#fff";
-      nx.font = "900 84px system-ui";
-      nx.textAlign = "center";
-      nx.fillText(p.no, 64, 96);
-      const nm = new THREE.MeshBasicMaterial({
-          map: TX2(nc2),
-          transparent: true,
-        }),
-        nb = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), nm);
-      nb.position.set(0, 1.35, -0.47);
-      nb.rotation.y = Math.PI;
-      bd.add(nb);
-      const nf = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.45), nm);
-      nf.position.set(0, 1.5, 0.47);
-      bd.add(nf);
-      {
-        const [n3c, n3] = cv(256, 64);
-        n3.fillStyle = "#fff";
-        n3.font = "800 40px system-ui";
-        n3.textAlign = "center";
-        n3.fillText(p.n.split(" ").pop().toUpperCase().slice(0, 11), 128, 46);
-        const np3 = new THREE.Mesh(
-          new THREE.PlaneGeometry(1.4, 0.35),
-          new THREE.MeshBasicMaterial({ map: TX2(n3c), transparent: true }),
-        );
-        np3.position.set(0, 1.88, -0.46);
-        np3.rotation.y = Math.PI;
-        bd.add(np3);
-      }
-      mk(gC, sk, 0.17, 0.35, 0.17, 0, 2.2, 0, bd);
-      const arm = (x) => {
-        const sh = new THREE.Group();
-        sh.position.set(x * k * 0.95, 1.9, 0);
-        mk(gS, sk, 0.25 * k, 0.27, 0.25 * k, 0, 0, 0, sh);
-        mk(gC, sk, 0.16 * k, 1, 0.16 * k, 0, -0.5, 0, sh);
-        const el = new THREE.Group();
-        el.position.y = -1.02;
-        mk(gS, sk, 0.14, 0.14, 0.14, 0, 0, 0, el);
-        mk(gC, sk, 0.13 * k, 0.98, 0.13 * k, 0, -0.49, 0, el);
-        const wr = new THREE.Group();
-        wr.position.y = -1;
-        mk(gB, sk, 0.16, 0.36, 0.1, 0, -0.17, 0.02, wr);
-        el.add(wr);
-        sh.add(el);
-        bd.add(sh);
-        return [sh, el, wr];
-      };
-      const [sL, eL, wL] = arm(-0.88),
-        [sR, eR, wR] = arm(0.88);
-      mk(gS, sk, 0.38, 0.46, 0.4, 0, 2.72, 0.02, bd);
-      mk(gS, sk, 0.08, 0.12, 0.08, 0.38, 2.72, 0, bd);
-      mk(gS, sk, 0.08, 0.12, 0.08, -0.38, 2.72, 0, bd);
-      if (p.hr === 1) mk(gS, hc, 0.4, 0.3, 0.42, 0, 2.88, -0.02, bd, hr);
-      if (p.hr === 2) {
-        mk(gS, hc, 0.42, 0.36, 0.44, 0, 2.86, -0.03, bd, hr);
-        mk(gB, hc, 0.5, 0.9, 0.22, 0, 2.5, -0.36, bd, hr);
-      }
-      if (p.hr === 3) mk(gS, hc, 0.52, 0.5, 0.52, 0, 2.98, -0.04, bd, hr);
-      if (p.bd) mk(gS, hc, 0.3, 0.2, 0.2, 0, 2.47, 0.28, bd, hr);
-      G.scale.setScalar(p.ht / 6.4);
-      S.add(G);
-      return { G, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR };
-    }
-    function apply(p) {
-      const m = p.gl,
-        q = p.q;
-      if (!m || !q) return;
-      const w = W3(p.x, p.y, p.z);
-      m.G.position.set(w[0], w[1] - q.cr * 0.4, w[2]);
-      m.G.rotation.y = Math.PI / 2 - p.f;
-      m.tl.rotation.x = -q.tL;
-      m.tr.rotation.x = -q.tR;
-      m.tl.rotation.z = -(q.hz || 0);
-      m.tr.rotation.z = q.hz || 0;
-      m.kl.rotation.x = q.kL;
-      m.kr.rotation.x = q.kR;
-      m.sL.rotation.x = -q.aL;
-      m.sR.rotation.x = -q.aR;
-      m.sL.rotation.z = -(q.zL == null ? q.sz : q.zL);
-      m.sR.rotation.z = q.sz;
-      m.eL.rotation.x = -q.eL;
-      m.eR.rotation.x = -q.eR;
-      m.wL.rotation.x = -(q.wL || 0);
-      m.wR.rotation.x = -(q.wR || 0);
-      m.bd.rotation.set(q.ln, q.ty, q.rz, "YXZ");
-    }
+    V.onResize = fxLevel;
     const cl2 = new THREE.Vector3(0, 0, 3),
       TV = new THREE.Vector3(),
       PV = new THREE.Vector3();
@@ -578,7 +474,8 @@ export function glInit(C: HTMLCanvasElement) {
       nf = 0,
       lvl = 6,
       lastTot = 0,
-      lastQ = -1;
+      lastQ = -1,
+      lastFX = null;
     V.GL = {
       hand(p) {
         const m = p.gl;
@@ -611,6 +508,11 @@ export function glInit(C: HTMLCanvasElement) {
             if (o.material)
               [].concat(o.material).forEach((mm) => (mm.needsUpdate = true));
           });
+          fxLevel();
+        }
+        if (V.FX !== lastFX) {
+          lastFX = V.FX;
+          fxLevel();
         }
         const tot = sc[0] + sc[1];
         if (tot !== lastTot) {
@@ -640,6 +542,7 @@ export function glInit(C: HTMLCanvasElement) {
               });
             }
             crowdI.count = crowdN;
+            fxLevel();
             V.perf = { fps: Math.round(1000 / ema), lvl, scale };
           }
         }
@@ -649,14 +552,26 @@ export function glInit(C: HTMLCanvasElement) {
           court();
         }
         if (P !== pset) {
-          if (pset) pset.forEach((p) => p.gl && S.remove(p.gl.G));
-          P.forEach((p) => (p.gl = rig(p)));
+          if (pset)
+            pset.forEach((p) => {
+              if (!p.gl) return;
+              S.remove(p.gl.G);
+              p.gl.mesh.geometry.dispose();
+              p.gl.extra.forEach((m) => (m.map && m.map.dispose(), m.dispose()));
+            });
+          P.forEach((p) => {
+            p.gl = makeRig(p, TX2);
+            S.add(p.gl.G);
+          });
           pset = P;
         }
         if (P.length) {
-          P.forEach((p) => {
-            apply(p);
-          });
+          const fdt = Math.min(0.1, (performance.now() - lastF) / 1000);
+          for (const p of P)
+            if (p.gl) {
+              applyPose(p.gl, p);
+              footIK(p.gl, p, fdt, V.QL > 0 && !RPL);
+            }
           const w = W3(B.x, B.y, B.z);
           ball.position.set(w[0], w[1], w[2]);
           ball.rotation.set(B.a * 0.7, 0, B.a);
@@ -705,7 +620,21 @@ export function glInit(C: HTMLCanvasElement) {
           cl2.lerp(TV.set(tl[0], tl[1], tl[2]), 0.14);
           cam.lookAt(cl2);
           cam.updateMatrixWorld();
-          R.render(S, cam);
+          // Motion blur from how far the scene moved on screen this frame (camera pans, fast cuts),
+          // boosted during dribble moves and dunks of the followed player.
+          vpNow.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+          MV.copy(cl2).applyMatrix4(vpNow);
+          MV2.copy(cl2).applyMatrix4(vpPrev);
+          vpPrev.copy(vpNow);
+          const fdt2 = Math.min(0.1, (performance.now() - lastF) / 1000);
+          lastF = performance.now();
+          const fast = p0 && (p0.mvT > 0 || p0.sv === 6) ? 1 : 0,
+            shutter = fdt2 > 0 ? Math.min(1, 1 / 60 / fdt2) : 0, // fixed 1/60 s exposure, independent of frame rate
+            mvx = (MV.x - MV2.x) * 0.5 * shutter,
+            mvy = (MV.y - MV2.y) * 0.5 * shutter,
+            ml = Math.hypot(mvx, mvy);
+          fx.setMotion(ml > 0.05 ? 0 : mvx, ml > 0.05 ? 0 : mvy, V.FX && V.QL >= 2 && fdt2 > 0 ? Math.min(1.5, 0.6 + fast * 0.9) : 0);
+          fx.render(fdt2);
         }
       },
     };
