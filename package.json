@@ -2,11 +2,30 @@
   "name": "hoops2k27",
   "private": true,
   "scripts": {
-    "build": "python3 build.py",
-    "serve": "npx serve dist",
-    "test:fuzz3d": "node tests/fuzz3d.js dist/modes/5v5-3d.html",
-    "test:fuzz2d": "node tests/fuzz2d.js dist/modes/5v5-2d.html",
-    "test:greens": "node tests/greens.js dist/modes/5v5-3d.html",
-    "test:browser": "python3 tests/browser_smoke.py 5v5-3d"
-  }
+    "build": "vite build && node scripts/postbuild.mjs",
+    "dev": "vite",
+    "typecheck": "tsc -p .",
+    "test:greens": "tsx tests/greens.ts",
+    "test:fk": "tsx tests/fk.ts",
+    "test:fuzz": "tsx tests/fuzz.ts",
+    "test:browser": "node tests/browser.mjs",
+    "test": "npm run typecheck && tsx tests/fk.ts && tsx tests/fuzz.ts && tsx tests/greens.ts && tsx tests/curry_greens.ts && tsx tests/passes.ts && tsx tests/dribble_moves.ts",
+    "serve": "npx serve dist"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/ws": "^8.18.2",
+    "playwright": "^1.63.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^5.4.21",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.12.0",
+    "@types/three": "^0.149.0",
+    "three": "^0.149.0",
+    "ws": "^8.22.0"
+  },
+  "type": "module"
 }

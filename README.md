@@ -1,5 +1,5 @@
 # Hoops 2K27
-1. `python3 build.py` -> `dist/hoops2k27-hub.html` (open it in a browser; everything is inside the file).
-2. Dev: edit `src/modes/<mode>/game.js`, rebuild, reload. Serve with `npx serve dist` if your browser blocks `file://` features.
-3. Tests: see `tests/README.md`. Needs Node 18+ for logic tests, Python + `pip install playwright && playwright install chromium` for browser tests.
-Read `CLAUDE.md` for the architecture and `PROMPT.md` for the next tasks.
+1. `npm install && npm run build` -> `dist/hoops2k27-hub.html` (open it in a browser; everything is inside the file).
+2. Dev: `npm run dev` (Vite, hot reload). Shared engine: `src/core/`, browser shell: `src/client/`.
+3. Tests: `npm test` (typecheck + logic tests via tsx, Node 18+), `npm run test:browser` (Playwright + Chromium). See `tests/README.md`.
+Read `CLAUDE.md` for the architecture and `PROMPT.md` for the roadmap.
