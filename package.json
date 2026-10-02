@@ -1,0 +1,12 @@
+{
+  "name": "hoops2k27",
+  "private": true,
+  "scripts": {
+    "build": "python3 build.py",
+    "serve": "npx serve dist",
+    "test:fuzz3d": "node tests/fuzz3d.js dist/modes/5v5-3d.html",
+    "test:fuzz2d": "node tests/fuzz2d.js dist/modes/5v5-2d.html",
+    "test:greens": "node tests/greens.js dist/modes/5v5-3d.html",
+    "test:browser": "python3 tests/browser_smoke.py 5v5-3d"
+  }
+}
