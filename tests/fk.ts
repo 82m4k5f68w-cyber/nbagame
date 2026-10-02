@@ -20,3 +20,17 @@ for (let n = 0; n < 500; n++) {
   worst = Math.max(worst, Math.hypot(h[0] - ref[0], h[1] - ref[1], h[2] - ref[2]));
 }
 console.log("FK max error (game units):", worst.toExponential(2), worst < 1e-3 ? "OK" : "MISMATCH");
+// skeleton(): its right hand must agree with handPos (same chain), on random poses
+import { skeleton } from "../src/core/pose";
+{
+  let worst2 = 0;
+  const out = new Float32Array(60);
+  for (let n = 0; n < 300; n++) {
+    const r = () => (Math.random() - 0.5) * 3;
+    const p: any = { x: 400, y: 250, z: 10, f: r(), ht: 6.6, bk: 1.1, q: { cr: 0.3, ln: r() / 3, ty: r(), rz: r() / 4, aR: r(), sz: r() / 2, eR: r(), wR: r(), aL: r(), eL: r(), tL: r(), tR: r(), kL: r(), kR: r(), hz: 0.1 } };
+    skeleton(p, out);
+    const h = handPos(p, [0, -0.32, 0.05])!;
+    worst2 = Math.max(worst2, Math.hypot(out[57] - h[0], out[58] - h[1], out[59] - h[2]));
+  }
+  console.log("skeleton vs handPos max error:", worst2.toExponential(2), worst2 < 1e-3 ? "OK" : "MISMATCH");
+}

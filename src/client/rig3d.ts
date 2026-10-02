@@ -79,54 +79,86 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   hips.updateMatrixWorld(true);
   const bp = bones.map((b) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
   // ---- smooth geometry ----
-  const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 6, 14);
-  const sph = new THREE.SphereGeometry(1, 20, 14),
+  const sph = new THREE.SphereGeometry(1, 24, 16),
     box = (w: number, h: number, d: number) => roundBox(w, h, d),
-    torso = new THREE.LatheGeometry(
+    // limb along -y from the joint: profile of [radius, y] pairs, lathed (muscle shape, not tubes)
+    limb = (pr: number[][], seg = 16) => new THREE.LatheGeometry(pr.map(([r2, y]) => new THREE.Vector2(r2, y)), seg),
+    torso = limb(
       [
-        [0.0, -0.45],
-        [0.86, -0.42],
-        [0.9, 0.2],
-        [1.0, 0.85],
-        [1.04, 1.25],
-        [0.82, 1.55],
-        [0.0, 1.62],
-      ].map(([a, b]) => new THREE.Vector2(a, b)),
-      20,
-    );
+        [0.0, -0.5],
+        [0.86, -0.47],
+        [0.92, 0.1],
+        [0.97, 0.7],
+        [1.06, 1.15],
+        [1.0, 1.42],
+        [0.66, 1.6],
+        [0.0, 1.64],
+      ],
+      24,
+    ),
+    ring = (r2: number, t: number) => new THREE.TorusGeometry(r2, t, 6, 24).rotateX(Math.PI / 2);
+  // personal style (deterministic per player): accessories and shoe colorway
+  let h = 0;
+  for (const ch of String(p.n)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const trim = isDark(p.col) ? "#f2f2f2" : "#16161c",
+    shoe = h % 3 === 0 ? "#141414" : "#f6f6f6",
+    accent = h % 2 ? p.col : "#e8541e",
+    sock = h % 5 === 0 ? "#141414" : "#f4f4f4",
+    headband = h % 7 === 0,
+    sleeve = h % 4 === 1 ? (h % 8 < 4 ? "#141414" : "#f2f2f2") : null;
   const parts: Part[] = [];
-  for (const [t, kn] of [
-    [I.tl, I.kl],
-    [I.tr, I.kr],
+  for (const [t, kn, sd] of [
+    [I.tl, I.kl, -1],
+    [I.tr, I.kr, 1],
   ]) {
-    // thigh, smooth into the knee
-    put(parts, bp, cap(0.22, 1.2), sk, t, 0, -0.8, 0, 1, 1, 1, { to: kn, axis: "y", from: -L1, len: 0.45, end: "end" });
-    put(parts, bp, cap(0.31 * k, 0.4), p.col, t, 0, -0.32, 0); // shorts
-    put(parts, bp, cap(0.17, 1.25), sk, kn, 0, -0.78, 0, 1, 1, 1, { to: t, axis: "y", from: 0, len: 0.4, end: "start" });
-    put(parts, bp, cap(0.185, 0.2), "#f4f4f4", kn, 0, -1.33, 0); // sock
-    put(parts, bp, box(0.38, 0.26, 0.8), "#fafafa", kn, 0, -1.6, 0.14); // shoe
-    put(parts, bp, box(0.4, 0.07, 0.82), "#222222", kn, 0, -1.73, 0.14); // sole
+    // thigh: thick at the hip, quad bulge, tapering into the knee
+    put(parts, bp, limb([[0.0, 0.05], [0.25, 0.0], [0.27, -0.4], [0.25, -0.9], [0.19, -1.45], [0.17, -1.62], [0.0, -1.66]]), sk, t, 0, 0, 0, 1, 1, 1, { to: kn, axis: "y", from: -L1, len: 0.45, end: "end" });
+    // shorts: long and loose, flared hem, side stripe
+    put(parts, bp, limb([[0.0, 0.12], [0.34 * k, 0.1], [0.37 * k, -0.4], [0.39 * k, -0.86], [0.0, -0.88]], 18), p.col, t, 0, 0, 0);
+    put(parts, bp, box(0.05, 0.8, 0.16), trim, t, sd * 0.37 * k, -0.42, 0);
+    // calf: knee, calf muscle high and behind, slim ankle
+    put(parts, bp, limb([[0.0, 0.08], [0.16, 0.05], [0.17, -0.25], [0.19, -0.5], [0.15, -0.95], [0.11, -1.35], [0.0, -1.42]]), sk, kn, 0, 0, -0.02, 1, 1, 1, { to: t, axis: "y", from: 0, len: 0.4, end: "start" });
+    put(parts, bp, limb([[0.13, -1.12], [0.135, -1.48], [0.0, -1.5]], 12), sock, kn, 0, 0, 0);
+    put(parts, bp, box(0.39, 0.27, 0.82), shoe, kn, 0, -1.6, 0.14); // shoe upper
+    put(parts, bp, box(0.41, 0.08, 0.84), accent, kn, 0, -1.74, 0.14); // midsole in the accent color
+    put(parts, bp, box(0.06, 0.12, 0.42), accent, kn, sd * 0.2, -1.58, 0.12); // swoosh-ish side panel
   }
   put(parts, bp, torso, p.col, I.bd, 0, 0.3, 0, 0.62 * k, 1, 0.42 * k);
-  put(parts, bp, cap(0.15, 0.25), sk, I.bd, 0, 2.2, 0); // neck
-  put(parts, bp, sph, sk, I.bd, 0, 2.72, 0.02, 0.37, 0.45, 0.4); // head
-  put(parts, bp, sph, sk, I.bd, 0.37, 2.72, 0, 0.07, 0.11, 0.07);
-  put(parts, bp, sph, sk, I.bd, -0.37, 2.72, 0, 0.07, 0.11, 0.07);
-  if (p.hr === 1) put(parts, bp, sph, hc, I.bd, 0, 2.88, -0.02, 0.39, 0.3, 0.42);
+  put(parts, bp, ring(0.3, 0.05), trim, I.bd, 0, 1.9, 0.03, 1, 1, 0.9); // collar trim
+  for (const sd of [-1, 1]) put(parts, bp, new THREE.TorusGeometry(0.29 * k, 0.045, 6, 20).rotateY(Math.PI / 2), trim, I.bd, sd * 0.86 * k * 0.95, 1.78, 0); // armholes
+  put(parts, bp, limb([[0.0, 0.0], [0.16, -0.02], [0.15, 0.35], [0.0, 0.38]]), sk, I.bd, 0, 2.02, 0); // neck
+  // head: skull, jaw, ears, face
+  put(parts, bp, sph, sk, I.bd, 0, 2.74, 0.0, 0.36, 0.43, 0.39);
+  put(parts, bp, sph, sk, I.bd, 0, 2.55, 0.08, 0.27, 0.22, 0.3); // jaw
+  for (const sd of [-1, 1]) {
+    put(parts, bp, sph, sk, I.bd, sd * 0.36, 2.72, 0, 0.07, 0.11, 0.07); // ear
+    put(parts, bp, sph, "#f8f8f8", I.bd, sd * 0.13, 2.8, 0.33, 0.065, 0.05, 0.03); // eye white
+    put(parts, bp, sph, "#1a1410", I.bd, sd * 0.13, 2.8, 0.355, 0.035, 0.035, 0.02); // iris
+    put(parts, bp, box(0.15, 0.035, 0.05), hc, I.bd, sd * 0.13, 2.9, 0.34); // brow
+  }
+  put(parts, bp, sph, shade(sk, 0.9), I.bd, 0, 2.7, 0.38, 0.06, 0.09, 0.07); // nose
+  put(parts, bp, box(0.14, 0.03, 0.03), shade(sk, 0.6), I.bd, 0, 2.56, 0.36); // mouth
+  if (p.hr === 1) put(parts, bp, sph, hc, I.bd, 0, 2.86, -0.03, 0.385, 0.3, 0.415);
   if (p.hr === 2) {
     put(parts, bp, sph, hc, I.bd, 0, 2.86, -0.03, 0.41, 0.36, 0.44);
     put(parts, bp, box(0.5, 0.9, 0.22), hc, I.bd, 0, 2.5, -0.36);
   }
   if (p.hr === 3) put(parts, bp, sph, hc, I.bd, 0, 2.98, -0.04, 0.52, 0.5, 0.52);
-  if (p.bd) put(parts, bp, sph, hc, I.bd, 0, 2.47, 0.28, 0.3, 0.2, 0.2);
-  for (const [s, e, w] of [
-    [I.sL, I.eL, I.wL],
-    [I.sR, I.eR, I.wR],
+  if (p.bd) {
+    put(parts, bp, sph, hc, I.bd, 0, 2.47, 0.24, 0.3, 0.18, 0.2);
+    put(parts, bp, box(0.2, 0.05, 0.05), hc, I.bd, 0, 2.62, 0.36); // mustache
+  }
+  if (headband) put(parts, bp, ring(0.375, 0.05), accent, I.bd, 0, 2.94, 0, 1, 1, 1.05);
+  for (const [s2, e, w, sd] of [
+    [I.sL, I.eL, I.wL, -1],
+    [I.sR, I.eR, I.wR, 1],
   ]) {
-    put(parts, bp, sph, p.col, s, 0, 0.02, 0, 0.27 * k, 0.26, 0.27 * k); // shoulder cap (jersey)
-    put(parts, bp, cap(0.15 * k, 0.75), sk, s, 0, -0.5, 0, 1, 1, 1, { to: e, axis: "y", from: -1.02, len: 0.35, end: "end" });
-    put(parts, bp, cap(0.125 * k, 0.78), sk, e, 0, -0.49, 0, 1, 1, 1, { to: s, axis: "y", from: 0, len: 0.3, end: "start" });
-    put(parts, bp, box(0.17, 0.34, 0.11), sk, w, 0, -0.17, 0.02); // hand
+    put(parts, bp, sph, sk, s2, 0, -0.02, 0, 0.25 * k, 0.27, 0.25 * k); // deltoid
+    put(parts, bp, limb([[0.0, 0.0], [0.16 * k, -0.05], [0.17 * k, -0.4], [0.13 * k, -0.85], [0.12 * k, -1.04], [0.0, -1.08]]), sleeve && sd < 0 ? sleeve : sk, s2, 0, 0, 0, 1, 1, 1, { to: e, axis: "y", from: -1.02, len: 0.35, end: "end" });
+    put(parts, bp, limb([[0.0, 0.04], [0.13 * k, 0.0], [0.14 * k, -0.3], [0.1 * k, -0.9], [0.0, -0.98]]), sleeve && sd < 0 ? sleeve : sk, e, 0, 0, 0, 1, 1, 1, { to: s2, axis: "y", from: 0, len: 0.3, end: "start" });
+    put(parts, bp, box(0.18, 0.2, 0.1), sk, w, 0, -0.12, 0.02); // palm
+    put(parts, bp, box(0.17, 0.16, 0.07), shade(sk, 0.94), w, 0, -0.3, 0.035); // fingers
+    put(parts, bp, box(0.06, 0.14, 0.06), sk, w, -sd * 0.1, -0.12, 0.07); // thumb
   }
   // ---- skin attributes + merge (vertex colors, smooth joint weights) ----
   const c = new THREE.Color();
@@ -271,6 +303,14 @@ export function footIK(m: Rig, p: any, dt: number, on: boolean) {
   }
 }
 
+function isDark(hex: string) {
+  const c = new THREE.Color(hex);
+  return c.r * 0.3 + c.g * 0.59 + c.b * 0.11 < 0.45;
+}
+function shade(hex: string, k: number) {
+  const c = new THREE.Color(hex).multiplyScalar(k);
+  return "#" + c.getHexString();
+}
 /** Box with softened edges (a few chamfer segments) so shoes and hands read as shapes, not crates. */
 function roundBox(w: number, h: number, d: number) {
   const g = new THREE.BoxGeometry(w, h, d, 2, 2, 2),

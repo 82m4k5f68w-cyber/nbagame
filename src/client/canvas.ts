@@ -2,6 +2,7 @@
 // Canvas renderers: the 2D broadcast-style court (2D modes) and the software-3D fallback used when WebGL is unavailable.
 // They draw from the shared sim state onto the HUD canvas context.
 import { P, B, T, pos, PC, HXs, HY, RR, W3, isH, NETS } from "../core/sim";
+import { skeleton } from "../core/pose";
 import { pr } from "./view";
 let X: CanvasRenderingContext2D = null as any;
 export const setCanvasCtx = (x: CanvasRenderingContext2D) => (X = x);
@@ -97,136 +98,168 @@ export function hoop2d(b: number) {
   X.stroke();
 }
 export function net2d(b: number) {
-  drawNet(b, pr);
+  // back half of the rim, net strands (shadowed), then the front of the rim on top
   const c = pr(HXs[b], HY, 100);
-  X.strokeStyle = "#ff4d1a";
-  X.lineWidth = 2.5;
+  X.lineWidth = 2.6;
+  X.strokeStyle = "#b8340f";
   X.beginPath();
-  X.ellipse(c[0], c[1], RR, RR * 0.78, 0, 0, 6.3);
+  X.ellipse(c[0], c[1], RR, RR * 0.78, 0, Math.PI, 2 * Math.PI);
+  X.stroke();
+  X.lineCap = "round";
+  for (const [col, w, dy] of [
+    ["rgba(0,0,0,.25)", 1.6, 1],
+    ["rgba(255,255,255,.92)", 1.1, 0],
+  ] as const) {
+    X.strokeStyle = col;
+    X.lineWidth = w;
+    X.beginPath();
+    for (const cn of NETS[b].c) {
+      if (!cn[4]) continue;
+      const u = pr(cn[0].x, cn[0].y, cn[0].z),
+        v = pr(cn[1].x, cn[1].y, cn[1].z);
+      X.moveTo(u[0], u[1] + dy);
+      X.lineTo(v[0], v[1] + dy);
+    }
+    X.stroke();
+  }
+  X.strokeStyle = "#ff5a1f";
+  X.lineWidth = 2.8;
+  X.beginPath();
+  X.ellipse(c[0], c[1], RR, RR * 0.78, 0, 0, Math.PI);
   X.stroke();
 }
+const SK = new Float32Array(60);
+/** 2D player drawn from the same 20-joint skeleton the 3D rig uses (same shooting forms, moves and contact). */
 export function player2d(p: any) {
-  const [sx, sy] = pr(p.x, p.y, p.z),
-    fy = pr(p.x, p.y, 0)[1],
+  const fy = pr(p.x, p.y, 0),
     ctl = isH(p),
-    has = B.owner === p,
-    fx = Math.cos(p.f);
+    sh = Math.max(0.4, 1 - p.z * 0.01);
   X.fillStyle = "rgba(0,0,0,.28)";
   X.beginPath();
-  X.ellipse(sx, fy, 10, 5, 0, 0, 6.3);
+  X.ellipse(fy[0], fy[1], 11 * sh, 5 * sh, 0, 0, 6.3);
   X.fill();
   if (ctl) {
-    X.strokeStyle = "#ffd23f";
+    X.strokeStyle = p.tm ? "#4fd1ff" : "#ffd23f";
     X.lineWidth = 2;
     X.beginPath();
-    X.ellipse(sx, fy, 14, 7, 0, 0, 6.3);
+    X.ellipse(fy[0], fy[1], 15, 7, 0, 0, 6.3);
     X.stroke();
   }
-  const air = p.z > 2,
-    run = Math.hypot(p.vx, p.vy) > 25 && !air,
-    s = Math.sin(p.ph),
-    hip = sy - 26,
-    sh = sy - 48,
-    hd = sy - 57,
-    sw = run ? s * 6 : 0;
-  X.lineCap = "round";
-  X.strokeStyle = p.skin;
-  X.lineWidth = 4.5;
-  X.beginPath();
-  X.moveTo(sx - 2, hip);
-  X.lineTo(sx - 4 + sw, sy - (air ? 10 : run ? Math.max(0, -s) * 4 : 0));
-  X.moveTo(sx + 2, hip);
-  X.lineTo(sx + 4 - sw, sy - (air ? 6 : run ? Math.max(0, s) * 4 : 0));
-  X.stroke();
-  X.strokeStyle = p.col;
-  X.lineWidth = 13;
-  X.beginPath();
-  X.moveTo(sx, hip - 4);
-  X.lineTo(sx, sh);
-  X.stroke();
-  X.strokeStyle = "rgba(0,0,0,.3)";
-  X.lineWidth = 12;
-  X.beginPath();
-  X.moveTo(sx, hip + 3);
-  X.lineTo(sx, hip - 5);
-  X.stroke();
-  X.fillStyle = p.skin;
-  X.beginPath();
-  X.arc(sx + fx * 1.5, hd, 5.5, 0, 6.3);
-  X.fill();
-  X.fillStyle = "#1a1a1a";
-  X.beginPath();
-  X.arc(sx + fx * 1.5, hd - 1, 5.6, 3.3, 6.1);
-  X.fill();
-  let h1, h2;
-  if (p.mode === "s" || p.mode === "c") {
-    const k = p.mode === "c" ? 0 : Math.min(1, p.t / 0.4),
-      e = Math.min(1, k / 0.55),
-      fo = k > 0.7 ? (k - 0.7) / 0.3 : 0;
-    h1 = [
-      sx - 3 + fo * 5,
-      sh - 8 - e * 20 + (k > 0.6 ? (k - 0.6) * 30 : 0) - fo * 10,
-    ];
-    h2 = [
-      sx + 4,
-      sh -
-        6 -
-        e * 26 -
-        (k > 0.55 ? Math.min(1, (k - 0.55) / 0.15) * 6 : 0) +
-        fo * 6,
-    ];
-  } else if (has) {
-    const b = pr(B.x, B.y, B.z);
-    h1 = [b[0], b[1] - 2];
-    h2 = [sx - 7, sh + 12 - s * 3];
-  } else if (air) {
-    h1 = [sx - 6, sy - 84];
-    h2 = [sx + 6, sy - 84];
-  } else if (pos !== p.tm) {
-    h1 = [sx - 14, sh + 6 + Math.sin(T * 8) * 2];
-    h2 = [sx + 14, sh + 6 - Math.sin(T * 8) * 2];
-  } else {
-    h1 = [sx - 8, sh + 14 + s * 5];
-    h2 = [sx + 8, sh + 14 - s * 5];
-  }
-  X.strokeStyle = p.skin;
-  X.lineWidth = 4;
-  X.beginPath();
-  X.moveTo(sx - 5, sh + 1);
-  X.lineTo(h1[0], h1[1]);
-  X.moveTo(sx + 5, sh + 1);
-  X.lineTo(h2[0], h2[1]);
-  X.stroke();
-  if (p.mode === "s" && p.t / 0.4 > 0.55) {
-    const fk = Math.min(1, (p.t / 0.4 - 0.55) / 0.1);
-    X.lineWidth = 3;
+  if (!p.q) return;
+  skeleton(p, SK);
+  const P2 = (i: number) => pr(SK[i * 3], SK[i * 3 + 1], SK[i * 3 + 2]),
+    J = Array.from({ length: 20 }, (_, i) => P2(i)),
+    depth = (i: number) => SK[i * 3 + 1], // larger game y = nearer the camera
+    skin = p.skin,
+    dark = "#1b1b22";
+  const seg = (a: number, b: number, w: number, col: string) => {
+    X.strokeStyle = col;
+    X.lineWidth = w;
     X.beginPath();
-    X.moveTo(h2[0], h2[1]);
-    X.lineTo(h2[0] + 3 * fk, h2[1] + 5 * fk - 1);
+    X.moveTo(J[a][0], J[a][1]);
+    X.lineTo(J[b][0], J[b][1]);
     X.stroke();
-  }
+  };
+  X.lineCap = X.lineJoin = "round";
+  const legL = () => {
+      seg(5, 6, 4.2, skin);
+      seg(6, 7, 4.6, "#f4f4f4");
+      seg(4, 5, 5.4, skin);
+    },
+    legR = () => {
+      seg(9, 10, 4.2, skin);
+      seg(10, 11, 4.6, "#f4f4f4");
+      seg(8, 9, 5.4, skin);
+    },
+    armL = () => {
+      seg(12, 13, 3.6, skin);
+      seg(13, 14, 3.2, skin);
+      seg(14, 15, 3.4, skin);
+    },
+    armR = () => {
+      seg(16, 17, 3.6, skin);
+      seg(17, 18, 3.2, skin);
+      seg(18, 19, 3.4, skin);
+    },
+    body = () => {
+      // shorts: hips to mid-thigh
+      X.fillStyle = p.col;
+      X.beginPath();
+      const mL = [(J[4][0] + J[5][0]) / 2, (J[4][1] + J[5][1]) / 2],
+        mR = [(J[8][0] + J[9][0]) / 2, (J[8][1] + J[9][1]) / 2];
+      X.moveTo(J[4][0] - 2, J[4][1] - 2);
+      X.lineTo(J[8][0] + 2, J[8][1] - 2);
+      X.lineTo(mR[0] + 3, mR[1]);
+      X.lineTo(mL[0] - 3, mL[1]);
+      X.closePath();
+      X.fill();
+      // jersey: a solid trunk, then the tapered outline from hips to shoulders
+      seg(0, 1, 12, p.col);
+      seg(1, 2, 10, p.col);
+      X.beginPath();
+      X.moveTo(J[4][0] - 1, J[4][1]);
+      X.lineTo(J[8][0] + 1, J[8][1]);
+      X.lineTo(J[16][0] + 1, J[16][1] + 1);
+      X.lineTo(J[2][0], J[2][1] + 2);
+      X.lineTo(J[12][0] - 1, J[12][1] + 1);
+      X.closePath();
+      X.fill();
+      X.strokeStyle = "rgba(0,0,0,.25)";
+      X.lineWidth = 1;
+      X.stroke();
+      if (p.no != null) {
+        X.fillStyle = "rgba(255,255,255,.9)";
+        X.font = "900 7px system-ui";
+        X.textAlign = "center";
+        X.fillText(String(p.no), J[1][0], J[1][1] + 3);
+      }
+      seg(2, 3, 3, skin); // neck
+      X.fillStyle = skin;
+      X.beginPath();
+      X.arc(J[3][0], J[3][1], 5.2, 0, 6.3);
+      X.fill();
+      X.fillStyle = p.hr ? dark : "rgba(0,0,0,.15)";
+      X.beginPath();
+      X.arc(J[3][0], J[3][1] - 1.2, p.hr === 3 ? 6.6 : 5.4, Math.PI * 1.05, Math.PI * 1.95);
+      X.fill();
+    };
+  // painter's order: far leg/arm, body, near leg/arm
+  const lFar = depth(6) < depth(10),
+    aFar = depth(14) < depth(18);
+  (lFar ? legL : legR)();
+  (aFar ? armL : armR)();
+  body();
+  (lFar ? legR : legL)();
+  (aFar ? armR : armL)();
 }
 export function ball2d() {
   const f = pr(B.x, B.y, 0),
-    b = pr(B.x, B.y, B.z);
-  X.fillStyle = "rgba(0,0,0,.3)";
+    b = pr(B.x, B.y, B.z),
+    k = Math.max(0.35, 1 - B.z * 0.006);
+  X.fillStyle = `rgba(0,0,0,${0.32 * k})`;
   X.beginPath();
-  X.ellipse(f[0], f[1], 5, 2.5, 0, 0, 6.3);
+  X.ellipse(f[0], f[1], 6 * k, 3 * k, 0, 0, 6.3);
   X.fill();
   X.save();
   X.translate(b[0], b[1]);
-  X.rotate(B.a);
-  X.fillStyle = "#e8651a";
+  const g = X.createRadialGradient(-1.8, -1.8, 0.5, 0, 0, 5.6);
+  g.addColorStop(0, "#ffa357");
+  g.addColorStop(1, "#b9470f");
+  X.fillStyle = g;
   X.beginPath();
-  X.arc(0, 0, 5.5, 0, 6.3);
+  X.arc(0, 0, 5.6, 0, 6.3);
   X.fill();
-  X.strokeStyle = "#4a1d06";
-  X.lineWidth = 1;
+  X.rotate(B.a);
+  X.strokeStyle = "rgba(40,14,3,.85)";
+  X.lineWidth = 0.9;
   X.beginPath();
-  X.moveTo(-5.5, 0);
-  X.lineTo(5.5, 0);
-  X.moveTo(0, -5.5);
-  X.lineTo(0, 5.5);
+  X.moveTo(-5.6, 0);
+  X.lineTo(5.6, 0);
+  X.moveTo(0, -5.6);
+  X.lineTo(0, 5.6);
+  X.stroke();
+  X.beginPath();
+  X.ellipse(0, 0, 2.6, 5.6, 0, 0, 6.3);
   X.stroke();
   X.restore();
 }

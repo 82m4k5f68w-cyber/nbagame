@@ -27,8 +27,9 @@ function fatal(m: string) {
 export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mode: string; online?: boolean }) {
   GS.mode = o.mode;
   cfg.NP = o.np;
-  cfg.physics = o.r3d ? "rapier" : "legacy";
-  cfg.hand = o.r3d;
+  // Both renderers now run the same Rapier ball and hand-accurate release (2D used to get the legacy ball).
+  cfg.physics = "rapier";
+  cfg.hand = true;
   cfg.replays = true;
   V.r3d = o.r3d;
   loadSet();
@@ -50,10 +51,8 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     Object.assign(MYP.d, JSON.parse(localStorage.getItem("h2k_myp") || "{}"));
   } catch (e) {}
   mkT();
-  if (o.r3d) {
-    rapInit();
-    glInit(C);
-  }
+  rapInit();
+  if (o.r3d) glInit(C);
   if (!V.GL) C.style.visibility = o.r3d ? "visible" : "hidden";
   cfg.input = (c) => {
     if ((c as any).remote) return NET.remoteInput(c);

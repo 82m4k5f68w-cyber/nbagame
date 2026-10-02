@@ -429,3 +429,73 @@ export function handPos(p: Player, pt: V = [0, -0.62, 0.1]): number[] | null {
   v = add(v, [w[0], w[1] - q.cr * 0.4, w[2]]);
   return [v[0] * 10 + 470, v[2] * 10 + 250, v[1] * 10];
 }
+
+// ---- full-body forward kinematics (2D renderer, effects): 20 joints in game coordinates ----
+// 0 pelvis 1 chest 2 neck 3 head | 4-7 L hip/knee/ankle/toe | 8-11 R hip/knee/ankle/toe
+// 12-15 L shoulder/elbow/wrist/hand | 16-19 R shoulder/elbow/wrist/hand
+type M3 = Float64Array; // row-major 3x3
+const mm = (a: M3, b: M3, o: M3) => {
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++) o[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c];
+  return o;
+};
+const rot = (ax: 0 | 1 | 2, t: number, o: M3) => {
+  const c = Math.cos(t),
+    s = Math.sin(t);
+  o.fill(0);
+  if (ax === 0) o.set([1, 0, 0, 0, c, -s, 0, s, c]);
+  else if (ax === 1) o.set([c, 0, s, 0, 1, 0, -s, 0, c]);
+  else o.set([c, -s, 0, s, c, 0, 0, 0, 1]);
+  return o;
+};
+const euler = (x: number, y: number, z: number, order: "XYZ" | "YXZ", o: M3) => {
+  const A = rot(0, x, new Float64Array(9)),
+    Bm = rot(1, y, new Float64Array(9)),
+    Cm = rot(2, z, new Float64Array(9)),
+    t = new Float64Array(9);
+  return order === "XYZ" ? mm(mm(A, Bm, t), Cm, o) : mm(mm(Bm, A, t), Cm, o);
+};
+interface Fr {
+  R: M3;
+  t: number[];
+}
+const child = (f: Fr, off: number[], R: M3 | null): Fr => {
+  const t = [0, 1, 2].map((r) => f.R[r * 3] * off[0] + f.R[r * 3 + 1] * off[1] + f.R[r * 3 + 2] * off[2] + f.t[r]);
+  return { R: R ? mm(f.R, R, new Float64Array(9)) : f.R, t };
+};
+const pt = (f: Fr, off: number[]) => child(f, off, null).t;
+/** Joint positions in game coords (x, y, z up), written into out[0..59]. */
+export function skeleton(p: Player, out: Float32Array) {
+  const q = p.q || {},
+    s = p.ht / 6.4,
+    k = p.bk,
+    w = W3(p.x, p.y, p.z);
+  const RG = rot(1, Math.PI / 2 - p.f, new Float64Array(9));
+  for (let i = 0; i < 9; i++) RG[i] *= s;
+  const G: Fr = { R: RG, t: [w[0], w[1] - (q.cr || 0) * 0.4, w[2]] };
+  const bd = child(G, [0, 3.2, 0], euler(q.ln || 0, q.ty || 0, q.rz || 0, "YXZ", new Float64Array(9)));
+  const J: number[][] = [pt(bd, [0, 0, 0]), pt(bd, [0, 1.5, 0]), pt(bd, [0, 2.2, 0]), pt(bd, [0, 2.74, 0])];
+  for (const sd of [-1, 1]) {
+    const tq = sd < 0 ? q.tL || 0 : q.tR || 0,
+      kq = sd < 0 ? q.kL || 0 : q.kR || 0,
+      th = child(G, [sd * 0.32, 3.2, 0], euler(-tq, 0, -sd * (q.hz || 0), "XYZ", new Float64Array(9))),
+      kn = child(th, [0, -1.58, 0], rot(0, kq, new Float64Array(9)));
+    J.push(th.t, kn.t, pt(kn, [0, -1.6, 0]), pt(kn, [0, -1.66, 0.52]));
+  }
+  for (const sd of [-1, 1]) {
+    const a = sd < 0 ? q.aL || 0 : q.aR || 0,
+      e = sd < 0 ? q.eL || 0 : q.eR || 0,
+      wq = sd < 0 ? q.wL || 0 : q.wR || 0,
+      zz = sd < 0 ? -(q.zL == null ? q.sz || 0 : q.zL) : q.sz || 0,
+      sh = child(bd, [sd * 0.88 * k * 0.95, 1.9, 0], euler(-a, 0, zz, "XYZ", new Float64Array(9))),
+      el = child(sh, [0, -1.02, 0], rot(0, -e, new Float64Array(9))),
+      wr = child(el, [0, -1, 0], rot(0, -wq, new Float64Array(9)));
+    J.push(sh.t, el.t, wr.t, pt(wr, [0, -0.32, 0.05]));
+  }
+  J.forEach((v, i) => {
+    out[i * 3] = v[0] * 10 + 470;
+    out[i * 3 + 1] = v[2] * 10 + 250;
+    out[i * 3 + 2] = v[1] * 10;
+  });
+  return out;
+}
