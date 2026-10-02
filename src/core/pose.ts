@@ -302,26 +302,33 @@ export function pose3(p: Player) {
   const q = p.q,
     sm = PRO && q && q.wR != null,
     f = sm ? Math.min(1, DT * 20) : 1,
-    o = q || (p.q = {}),
-    put = (k: string, v: number, raw = false) => (o[k] = sm && !raw && o[k] != null ? o[k] + (v - o[k]) * f : v);
-  put("tL", tL);
-  put("tR", tR);
-  put("kL", kL);
-  put("kR", kR);
-  put("aL", aL);
-  put("aR", aR);
-  put("eL", eL);
-  put("eR", eR);
-  put("sz", sz);
-  put("cr", cr);
-  put("ln", ln);
-  put("rz", rz);
-  put("ty", ty);
-  put("wR", wR, true);
-  put("wL", wL);
-  put("zL", zL == null ? sz : zL);
-  put("hz", hz);
+    o = q || (p.q = {});
+  VALS[0] = tL;
+  VALS[1] = tR;
+  VALS[2] = kL;
+  VALS[3] = kR;
+  VALS[4] = aL;
+  VALS[5] = aR;
+  VALS[6] = eL;
+  VALS[7] = eR;
+  VALS[8] = sz;
+  VALS[9] = cr;
+  VALS[10] = ln;
+  VALS[11] = rz;
+  VALS[12] = ty;
+  VALS[13] = wR;
+  VALS[14] = wL;
+  VALS[15] = zL == null ? sz : zL;
+  VALS[16] = hz;
+  for (let j = 0; j < 17; j++) {
+    const k = QKEYS[j],
+      v = VALS[j];
+    // wR is never smoothed (the wrist flick at release must be crisp)
+    o[k] = sm && j !== 13 && o[k] != null ? o[k] + (v - o[k]) * f : v;
+  }
 }
+const QKEYS = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz"],
+  VALS = new Float64Array(17);
 
 // ---- forward kinematics (mirrors the three.js rig hierarchy exactly) ----
 // G: pos(w0, w1 - cr*0.4, w2), rotY(PI/2 - f), scale ht/6.4 -> body: pos(0,3.2,0) Euler(ln,ty,rz,'YXZ')

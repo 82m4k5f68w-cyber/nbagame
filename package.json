@@ -10,7 +10,11 @@
     "test:fuzz": "tsx tests/fuzz.ts",
     "test:browser": "node tests/browser.mjs",
     "test": "npm run typecheck && tsx tests/fk.ts && tsx tests/fuzz.ts && tsx tests/greens.ts && tsx tests/curry_greens.ts && tsx tests/passes.ts && tsx tests/dribble_moves.ts",
-    "serve": "npx serve dist"
+    "serve": "npx serve dist",
+    "server": "tsx server/relay.ts",
+    "host:dedicated": "tsx server/headless-host.ts",
+    "test:net": "tsx tests/net.ts",
+    "test:online": "node tests/browser_online.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

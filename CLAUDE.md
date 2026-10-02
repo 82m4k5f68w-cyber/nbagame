@@ -49,6 +49,25 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Replays: allocation-free `REC` ring buffer in the core, `startReplay/rplStep/skipReplay`. Input (`input.ts`): keyboard, touch buttons `#tc`, gamepad `gpPoll` (wrapped: blocked in iframes by permissions policy).
 - Debug handle in the browser: `window.H2K = { G (sim module), V, NET, startLocal, menu }`.
 
+## Online multiplayer (src/net, src/client/net, server/)
+- Model: one authoritative sim (the host's browser tab, or a dedicated headless Node host) at fixed 60 Hz; guests send inputs only.
+- Transport = "presence": each peer keeps ONE latest-state object; receivers get the newest (sender-coalesced ~30 Hz, drops OK).
+  Backends: claude.ai `room` capability (published artifact; `client/net/room.ts`), WebSocket relay (`server/relay.ts`, `net/ws.ts`).
+  Never send deltas without a baseline the receiver confirmed; everything else is absolute state.
+- Host presence: `L` lobby (code, slots, sides, teams, ql, pro), `Z` snapshot (`net/protocol.ts encodeSnap`: quantized ints;
+  delta `[gap,diff]` pairs vs the newest tick every guest acked via `zk`, else full), `C` controller map, `A` input acks,
+  `Pg` ping echoes, `E` event ring (texts/sounds/end), `X` box score. Must stay < 4 KiB (checked in `HostSession.pub`).
+- Guest presence: `I` input (stick, held buttons, monotonically increasing edge counters, meter time `mt` / tempo tap `tp`
+  measured on the shooter's own timeline), `zk` ack, `t`/`rt` ping, `D` interpolation delay, `tm`/`rdy` lobby, `tok` reconnect token.
+- Guest (`net/guest.ts`): others rendered from snapshots interpolated ~4-15 ticks in the past (max-filtered clock offset + jitter);
+  own player predicted with `step()` under `setPredict(1)` (no side effects) and reconciled on every snapshot by replaying
+  unacked inputs; small errors are blended, not snapped. Dead balls (inbound, FTs, after scores) freeze prediction like the host.
+- Host (`net/host.ts`): edge counters -> one-shot inputs (press+release in one frame are split across ticks); remote shooters'
+  contests use positions rewound by their latency (`ctrl.lag`, `LAGBUF`); release time clamped to the host's view.
+- Reconnect: seats keep their `tok`; a returning token re-attaches (AI plays the seat meanwhile). Host leaving ends the game.
+- A hidden host tab keeps simulating via a timer (rAF stops when hidden). `npm run server` serves dist + relay;
+  "Create on dedicated server" spawns `server/headless-host.ts` for that room code.
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.
@@ -60,5 +79,5 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Keep steals off (user request). Keep green at top of meter. Keep Curry's off-ball tendency and low-load one-motion form.
 
 ## Known gaps / ideas
-Online multiplayer + anti-lag (none yet; local 2P exists), skeletal bone rig + blending + foot IK (feet slide slightly), Rapier bodies for players/dribble,
+skeletal bone rig + blending + foot IK (feet slide slightly), Rapier bodies for players/dribble,
 bloom/SSAO/motion blur/floor reflections, smoother player models, replays/cameras in 2D, heaves >45 ft only ~73% on green, Classic has no new features.

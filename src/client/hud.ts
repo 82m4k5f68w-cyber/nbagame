@@ -240,8 +240,9 @@ export function hud() {
   X.textAlign = "center";
   X.fillStyle = "#fff";
   X.font = "700 12px system-ui";
-  X.fillText(cl[0].toUpperCase() + " (YOU)", 340, 24);
-  X.fillText(cl[1].toUpperCase(), 620, 24);
+  const me = fp() ? fp().tm : 0;
+  X.fillText(cl[0].toUpperCase() + (me === 0 ? " (YOU)" : ""), 340, 24);
+  X.fillText(cl[1].toUpperCase() + (me === 1 ? " (YOU)" : ""), 620, 24);
   X.font = "800 30px system-ui";
   X.fillText(String(sc[0]), 340, 56);
   X.fillText(String(sc[1]), 620, 56);

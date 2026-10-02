@@ -92,7 +92,11 @@ function mkCtrlRaw(id: string, tm: number): Ctrl {
 /** Effects the shell renders: floating texts (world- or screen-anchored), sounds, crowd excitement, game end. */
 export const FX: any[] = [];
 let fxId = 0;
+/** Client-side prediction mode: step() runs for the local player only, with no side effects on others. */
+export let PREDICT = 0;
+export const setPredict = (v: number) => (PREDICT = v);
 const fx = (o: any) => {
+  if (PREDICT) return;
   o.id = ++fxId;
   FX.push(o);
   if (FX.length > 64) FX.shift();
@@ -625,7 +629,7 @@ export function step(p: Player, dt: number) {
       p.mvS = S;
       p.cd = 0.9;
       if (u) txtW(["", "HESITATION", "SPIN MOVE", "BEHIND THE BACK"][i.mv], p.x, p.y, 100, "#ffd23f");
-      if (dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250) {
+      if (!PREDICT && dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250) {
         d.slow = Math.max(d.slow, 0.7);
         d.scr = Math.max(d.scr || 0, 0.35);
         if (u) txtW("ANKLE BREAKER!", d.x, d.y, 95, "#ff6b6b");
@@ -640,7 +644,7 @@ export function step(p: Player, dt: number) {
     p.cd = 1.6;
     p.bx = -ux / D;
     p.by = -uy / D;
-    P[nearest(1 - p.tm, p.x, p.y)].slow = 0.5 + 0.25 * p.bn;
+    if (!PREDICT) P[nearest(1 - p.tm, p.x, p.y)].slow = 0.5 + 0.25 * p.bn;
     if (hum) txtW(p.bn > 1 ? "DOUBLE STEP-BACK!" : "STEP-BACK!", p.x, p.y, 95, "#ffd23f");
   }
   if (p.mode === "b") {
@@ -668,7 +672,7 @@ export function step(p: Player, dt: number) {
     }
     if (has && (i.pass || i.e || i.lob)) {
       const r = i.pass || pick(p, i);
-      if (r) pass(p, r, i.lob ? 2 : undefined);
+      if (r && !PREDICT) pass(p, r, i.lob ? 2 : undefined);
     } else if (i.e && p.cd <= 0) {
       p.cd = 0.8; // steals are OFF by design (user request): reach-ins do nothing
     }
@@ -710,7 +714,7 @@ export function step(p: Player, dt: number) {
   if (p.mode === "s") {
     if (TEMPO && i.sd && p.tp == null && p.t > 0.03) p.tp = i.tp != null ? clamp(i.tp, p.t - 0.25, p.t + 0.05) : p.t;
     p.t += dt;
-    if (!p.rl && has && p.t >= (D < 90 ? 0.28 : p.st === 1 ? 0.3 : 0.4)) launch(p);
+    if (!p.rl && has && !PREDICT && p.t >= (D < 90 ? 0.28 : p.st === 1 ? 0.3 : 0.4)) launch(p);
     if (p.t > 0.7 && p.z <= 0) {
       p.mode = "i";
       p.vx = p.vy = 0;

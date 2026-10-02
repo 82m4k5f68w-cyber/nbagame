@@ -7,3 +7,6 @@ Run from the package root. Logic tests import the shared core directly (`src/cor
 - browser.mjs [modes...] — `npm run build` first; opens the hub in Chromium, starts each mode, reports renderer (webgl/2d) + Rapier + errors, writes docs/shot-<mode>.png.
 Notes: headless Chromium has no GPU (2-5 fps), so drive the sim with `H2K.G.upd(1/60)` in `page.evaluate`, not by waiting.
 Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inputs through `G.cfg.input` (`sd`=press, `su`=release).
+- net.ts [lag= jitter= drop= seconds=] — relay + dedicated headless host (separate processes) + a guest over an impaired link:
+  delta snapshots, ping, prediction, guest input reaches the host, presence stays < 4 KiB.
+- browser_online.mjs [mode] — two Chromium pages through the relay: create, join by code, sides, ready-up, play.

@@ -576,7 +576,7 @@ export function glInit(C: HTMLCanvasElement) {
       lastR = 0,
       ema = 16,
       nf = 0,
-      lvl = 2,
+      lvl = 6,
       lastTot = 0,
       lastQ = -1;
     V.GL = {
@@ -595,6 +595,7 @@ export function glInit(C: HTMLCanvasElement) {
         const QL = V.QL;
         if (QL !== lastQ) {
           lastQ = QL;
+          lvl = 6;
           R.shadowMap.enabled = QL > 0;
           const ss = QL > 1 ? 2048 : 1024;
           sun.shadow.mapSize.set(ss, ss);
@@ -620,25 +621,26 @@ export function glInit(C: HTMLCanvasElement) {
         if (QL > 0 && (nf & 1) === 0) crowdUpd();
         jumbo();
         const now = performance.now();
-        if (lastR) {
+        // Adaptive quality: scale resolution first, then shadows, then crowd; recover when frames are fast.
+        if (lastR && now - lastR < 250) {
           ema = ema * 0.95 + (now - lastR) * 0.05;
           if (++nf > 90) {
             nf = 0;
-            if (ema > 38 && lvl === 2) {
-              lvl = 1;
-              R.shadowMap.enabled = false;
-              R.setPixelRatio(1);
+            const base = Math.min(devicePixelRatio || 1, [1, 1.25, 1.75][V.QL]);
+            if (ema > 24 && lvl > 0) lvl--;
+            else if (ema < 14 && lvl < 6) lvl++;
+            const scale = [0.55, 0.65, 0.75, 0.85, 1, 1, 1][lvl],
+              wantShadow = V.QL > 0 && lvl >= 2,
+              crowdN = lvl >= 1 ? [0, 700, 1800][V.QL] : Math.min(400, [0, 700, 1800][V.QL]);
+            if (Math.abs(R.getPixelRatio() - base * scale) > 0.01) R.setPixelRatio(base * scale), R.setSize(960, 540, false), V.onResize && V.onResize();
+            if (R.shadowMap.enabled !== wantShadow) {
+              R.shadowMap.enabled = wantShadow;
               S.traverse((o) => {
-                if (o.material)
-                  []
-                    .concat(o.material)
-                    .forEach((mm) => (mm.needsUpdate = true));
+                if (o.material) [].concat(o.material).forEach((mm) => (mm.needsUpdate = true));
               });
-            } else if (ema > 55 && lvl === 1) {
-              V.GL = null;
-              C.style.visibility = "hidden";
-              return;
             }
+            crowdI.count = crowdN;
+            V.perf = { fps: Math.round(1000 / ema), lvl, scale };
           }
         }
         lastR = now;

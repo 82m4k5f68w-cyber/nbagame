@@ -66,7 +66,8 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   };
   bindInput();
   GS.booted = 1;
-  (window as any).H2K = { G, V, NET, startLocal, menu, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  NET.setMenu(menu);
   if (o.online) NET.openLobby();
   else menu();
   requestAnimationFrame(loop);
@@ -340,8 +341,9 @@ function overlay() {
   openMark();
   passMark();
   replayHud();
-  for (const c of CT)
-    if (P[c.idx] !== p0 && !(c as any).remote) {
+  if (!NET.role)
+    for (const c of CT)
+      if (P[c.idx] !== p0) {
       contestFx(P[c.idx]);
       meter(P[c.idx]);
     }
