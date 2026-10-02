@@ -91,6 +91,21 @@ export const snapTick = (a: number[]) => a[0];
 /** Apply a decoded snapshot (or an interpolation of two) onto the local sim objects. */
 export function applySnap(a: number[], b: number[] | null, u: number, skip?: number) {
   const L = (i: number) => (b ? a[i] + (b[i] - a[i]) * u : a[i]);
+  // Cubic Hermite position from two samples and their velocities (px/s): curves through cuts instead of zig-zagging.
+  const span = b ? Math.max(1, b[0] - a[0]) / 60 : 0,
+    u2 = u * u,
+    u3 = u2 * u,
+    h00 = 2 * u3 - 3 * u2 + 1,
+    h10 = u3 - 2 * u2 + u,
+    h01 = -2 * u3 + 3 * u2,
+    h11 = u3 - u2;
+  const H = (i: number, vi: number, sc: number) => {
+    if (!b) return a[i] / sc;
+    const p0 = a[i] / sc,
+      p1 = b[i] / sc;
+    if (Math.abs(p1 - p0) > 60) return u < 0.5 ? p0 : p1; // teleports (inbounds, FTs) snap
+    return h00 * p0 + h10 * span * a[vi] + h01 * p1 + h11 * span * b[vi];
+  };
   const LA = (i: number, s: number) => {
     // interpolate angles the short way round
     if (!b) return a[i] / s;
@@ -118,9 +133,9 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
   G.OFFS[1] = at(a[19]);
   B.owner = at(a[20]);
   B.mode = BMODE[a[21]];
-  B.x = L(22) / 10;
-  B.y = L(23) / 10;
-  B.z = L(24) / 10;
+  B.x = H(22, 25, 10);
+  B.y = H(23, 26, 10);
+  B.z = H(24, 27, 10);
   B.vx = a[25];
   B.vy = a[26];
   B.vz = a[27];
@@ -133,9 +148,9 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
     if (k === skip) continue;
     const p = P[k],
       o = HDR + k * PST;
-    p.x = L(o) / 10;
-    p.y = L(o + 1) / 10;
-    p.z = L(o + 2) / 10;
+    p.x = H(o, o + 3, 10);
+    p.y = H(o + 1, o + 4, 10);
+    p.z = H(o + 2, o + 5, 10);
     p.vx = L(o + 3);
     p.vy = L(o + 4);
     p.vz = L(o + 5);

@@ -61,7 +61,7 @@ export const NET = {
     ${
       kind
         ? `<div class="opts"><b>HOST A GAME</b><button id="cr">Create game (${cfg.NP > 1 ? "5v5" : "1v1"})</button>${kind === "ws" ? '<button id="crd">Create on dedicated server</button>' : ""}
-    <b>JOIN A FRIEND</b><input id="cd" maxlength="4" placeholder="CODE" value="${esc(store.get("h2k_last", ""))}" style="width:90px;text-transform:uppercase;letter-spacing:3px;font-weight:800"><button id="jn">Join</button></div>
+    ${store.get("h2k_last") ? `<b>LAST GAME</b><button id="rj">↻ Rejoin ${esc(store.get("h2k_last"))}</button>` : ""}<b>JOIN A FRIEND</b><input id="cd" maxlength="4" placeholder="CODE" value="${esc(store.get("h2k_last", ""))}" style="width:90px;text-transform:uppercase;letter-spacing:3px;font-weight:800"><button id="jn">Join</button></div>
     <p class="note" style="max-width:520px">Host plays on this device and runs the game; friends join with the 4-letter code. Up to ${cfg.NP > 1 ? "2 humans per side (AI fills the rest)" : "1 human per side"}. Local 2-player stays in the main menu.</p>`
         : `<p style="max-width:520px;color:#ff9966">Online play needs the published Hoops 2K27 page on claude.ai (live rooms) or a Hoops relay server (<code>npm run server</code>). Local 2-player still works from the main menu.</p>`
     }
@@ -76,6 +76,8 @@ export const NET = {
     $("#cr").onclick = () => NET.create(nm()).catch(err);
     const crd = document.getElementById("crd");
     if (crd) crd.onclick = () => NET.createDedicated(nm()).catch(err);
+    const rj = document.getElementById("rj");
+    if (rj) rj.onclick = () => NET.join(store.get("h2k_last"), nm()).catch(err);
     $("#jn").onclick = () => {
       const c = ($("#cd") as HTMLInputElement).value.toUpperCase().replace(/[^A-Z]/g, "");
       if (c.length !== 4) return err(new Error("Enter the 4-letter code"));
@@ -180,7 +182,7 @@ function renderHostLobby() {
     me = L.slots.find((s) => s.id === "host");
   G.setS("menu");
   ov().style.display = "flex";
-  ov().innerHTML = `<div class="logo" style="font-size:34px">GAME <span>${NET.code}</span></div><div class="sub">SHARE THIS CODE · FRIENDS PICK "PLAY ONLINE" → JOIN</div>
+  ov().innerHTML = `<div class="logo" style="font-size:34px">GAME <span>${NET.code}</span></div><div class="sub">SHARE THIS CODE · FRIENDS PICK "PLAY ONLINE" → JOIN</div><button id="cpy" style="margin:4px">⧉ Copy code</button><p class="hint">${[...host.guests.values()].map((g) => esc(clean2(g.st.n)) + " " + (g.ping ? Math.round(g.ping) + " ms" : "…")).join(" · ")}</p>
   ${slotList(L, "host")}
   <div class="opts"><b>YOUR SIDE</b><button data-sd="0" class="${me && me.tm === 0 ? "on" : ""}">Home</button><button data-sd="1" class="${me && me.tm === 1 ? "on" : ""}">Away</button>
   <b>${L.np > 1 ? "TEAMS" : "PLAYERS"}</b>${teamSelect("t0", L.np, L.teams[0])} vs ${teamSelect("t1", L.np, L.teams[1])}
@@ -209,7 +211,16 @@ function renderHostLobby() {
     watchHidden();
   };
   $("#lv").onclick = () => leave();
+  $("#cpy").onclick = () => {
+    const done = () => ($("#cpy").textContent = "Copied ✓");
+    try {
+      navigator.clipboard.writeText(NET.code).then(done, () => ($("#cpy").textContent = NET.code));
+    } catch {
+      $("#cpy").textContent = NET.code;
+    }
+  };
 }
+const clean2 = (n: any) => String(n || "Player").slice(0, 14);
 /** A host tab in the background keeps simulating (browsers stop rAF when hidden). */
 function watchHidden() {
   if (hiddenTimer) return;
@@ -272,6 +283,7 @@ function renderGuestLobby() {
   )}</div>
   ${slotList(L, t!.me)}
   <div class="opts"><b>PICK A SIDE</b><button data-sd="0" class="${mine && mine.tm === 0 ? "on" : ""}">Home</button><button data-sd="1" class="${mine && mine.tm === 1 ? "on" : ""}">Away</button><button data-sd="-1" class="${mine ? "" : "on"}">Watch</button></div>
+  <p class="hint">Ping ${guest.rtt ? Math.round(guest.rtt) + " ms" : "measuring…"}</p>
   <button class="big" id="rd" ${mine ? "" : 'style="opacity:.5"'}>${guest.rdy ? "READY ✓ (tap to cancel)" : "READY UP"}</button><button id="lv" style="margin-top:8px">Leave</button>
   <p class="note">${L.ded ? "Dedicated server: the game starts when every seated player is ready." : "The host starts the game when everyone is ready."}</p>`;
   ov()

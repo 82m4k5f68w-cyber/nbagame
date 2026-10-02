@@ -229,6 +229,20 @@ export class GuestSession {
       applySnap(s0, s1 === s0 ? null : s1, u, skip);
       if (mine) loadP(P[skip!], mine);
       if (latest[17]) applySnap(latest, null, 0); // replays: show exactly what the host shows
+      else if (rt > latest[0]) {
+        // starved: dead-reckon everyone (not me) forward from the newest snapshot, at most 100 ms
+        const ex = Math.min(6, rt - latest[0]) / 60;
+        for (let k = 0; k < P.length; k++)
+          if (k !== this.myIdx) {
+            P[k].x += P[k].vx * ex;
+            P[k].y += P[k].vy * ex;
+          }
+        if (!B.owner) {
+          B.x += B.vx * ex;
+          B.y += B.vy * ex;
+          B.z = Math.max(4, B.z + B.vz * ex);
+        }
+      }
       // The ball sticks to my predicted hands when the host says I have it.
       if (this.myIdx >= 0 && latest[20] === this.myIdx && !G.RPL) B.owner = P[this.myIdx];
     }

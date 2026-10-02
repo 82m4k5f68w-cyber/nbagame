@@ -16,7 +16,7 @@ Unofficial fan project; rosters/ratings are approximations (7 teams, 35 players,
 - `tests/` — `tsx` logic tests against the core + a Playwright browser smoke test (see tests/README.md). `docs/` — screenshots.
 
 ## Mode flags (no more copied modes)
-`cfg.NP` (5 or 1 players per team), `cfg.physics` ('rapier' 3D / 'legacy' 2D), `cfg.hand` (release from the rig's hand),
+`cfg.NP` (5 or 1 players per team), `cfg.physics` ('rapier' in every mode now; 'legacy' still supported), `cfg.hand` (release from the rig's hand),
 `V.r3d` (three.js vs 2D canvas). The hub calls `boot({np, r3d, my, mp})`. Both renderers draw the same `P`/`B` state.
 
 ## World model (game coordinates)
@@ -38,12 +38,15 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Aim: `launch` solves a parabola, then (Rapier) pre-simulates with drag+Magnus and corrects range AND sideways error. This is why greens still go in with real physics.
 - Release point: `pose.ts handPos(p)` — analytic forward kinematics that matches the three.js rig exactly (`tests/fk.ts`), so the server/Node sim releases from the same hand as the 3D client.
 - Physics: `bstep` (legacy ball) vs `physics.ts rapInit/rapStep` (Rapier ball, rim = 24 capsules, board, floor, walls). Shots, loose balls and passes (with backspin) fly through Rapier. `rapSyncPlayers`: kinematic torso capsules (`cfg.playerBodies`, on) that only touch a loose/shot ball, never the shooter right after release or passes. Dribble: vertical bounce sim (`dz`) + a critically damped spring pulling the ball to the hand.
-- Net: `NETS/netSim` (verlet mesh; ball pushes points), drawn by both renderers.
+- Net: `NETS/netSim` 16-strand diamond weave, rope constraints, ball-vs-strand collisions; 3D draws instanced tube strands, 2D projected strands.
 - Animation: `pose3(p)` writes joint angles to `p.q` every sim tick (smoothed = blended when Pro Play is on); clips `CL/clip/pickClip`.
   `client/rig3d.ts`: one SkinnedMesh per player (vertex colors, smooth-weighted elbows/knees) on bones that mirror the sim's joints exactly; `applyPose` maps `p.q` to bones; `footIK` plants stance feet and solves two-bone leg IK.
 - Post-processing (`client/fx3d.ts`): MSAA -> SSAO (High) -> bloom -> camera motion blur (fixed 1/60 s shutter) -> gamma; floor = glossy plane over a `Reflector` (High). Toggle: `V.FX`.
 - Rules: `foul/startFT/ftLay/ftTick/ftIn/tech`, shot clock, quarters (4 x `QTRLEN` s), inbounds (`inb`), bonus after 5 team fouls, `endGame` (FX) + box score (`p.stt`).
-- AI: `ai(p)`, `offBall` (pindowns/ball screens/switches; Curry `SIG.Curry.off`), `cut`, `loose` (rebounding), defense inside `ai` (no full-court press, no steals).
+- AI: `ai(p)`, `offBall` = half-court play system (`PLAY[t]`: pick-and-roll / pindown / flare, screener plants with `setT`, rolls or pops; spacing spots + backdoor cuts), `loose` (rebounding), defense inside `ai` (no full-court press, no steals). Planted screens stop defenders in `collide()` and can force switches.
+- Fouls: `shootingFoul()` contact model (hard closeouts, sideways leaps vs verticality, body contact, drives draw more) -> FTs or and-ones (`B.fl`). Cylinder rule: nobody touches a live shot above either rim. Counters in `STAT`.
+- Highlights: alley-oops (lob to a leaper near the rim), posterizers, SWISH/SPLASH (closest approach to the iron `B.rim`), PERFECT RELEASE (always drops), buzzer beaters / game winners; FX `shake`, `slow`, `chant`.
+- Forms: `data.ts formOf(name)` gives every player a deterministic shooting signature (SIG overrides). `pose.ts skeleton()` = 20-joint FK used by the 2D renderer.
 - Passing: `pass(p,r,type)` chest/bounce/lob + in-flight steering; `pick` chooses target from stick direction.
 - Dribble/post: `i.mv` 1/2/3 (hesitation/spin/BTB), flick-to-cross, post (`i.post`, hook/drop-step/turnaround).
 - 3D rendering: `render3d.ts glInit` (court texture, crowd InstancedMesh, jumbotron, hoops, net, rig; shared material cache); `V.GL.render` (cameras `V.CAMM` 0-3, quality `V.QL`, auto-downgrade). Canvas fallback (`canvas.ts scene3c/segs3c`) if WebGL fails.
