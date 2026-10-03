@@ -10,3 +10,5 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - net.ts [lag= jitter= drop= seconds=] — relay + dedicated headless host (separate processes) + a guest over an impaired link:
   delta snapshots, ping, prediction, guest input reaches the host, presence stays < 4 KiB.
 - browser_online.mjs [mode] — two Chromium pages through the relay: create, join by code, sides, ready-up, play.
+- browser_room.mjs — the published-page path: two pages with a stand-in claude.ai `room` capability; host clicks
+  "Host 5v5" on the home screen, the guest types the code into the home-screen box, sides + ready-up, play.

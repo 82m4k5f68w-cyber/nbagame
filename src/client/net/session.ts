@@ -50,12 +50,30 @@ export const NET = {
   setMenu(f: () => void) {
     menuBack = f;
   },
+  /** Straight from the home screen: host a game or join a code without going through the menus. */
+  async quick(a: { host?: boolean; join?: string }) {
+    ov().style.display = "flex";
+    ov().innerHTML = `<div class="logo" style="font-size:36px">CONNECTING<span>…</span></div><p>${a.join ? "Joining game " + esc(a.join) : "Opening a live room"}</p><div id="nerr" style="color:#ff9966;min-height:18px"></div>`;
+    const kind = await detect();
+    if (!kind) return NET.openLobby();
+    const name = store.get("h2k_name", "") || "Player" + Math.floor(Math.random() * 90 + 10);
+    store.set("h2k_name", name);
+    try {
+      if (a.join) await NET.join(a.join, name);
+      else await NET.create(name);
+    } catch (e) {
+      await NET.openLobby();
+      err(e);
+    }
+  },
   async openLobby() {
+    ov().style.display = "flex";
+    ov().innerHTML = `<div class="logo" style="font-size:36px">CONNECTING<span>…</span></div>`;
     const kind = await detect();
     const name = store.get("h2k_name", "Player");
     ov().style.display = "flex";
     ov().innerHTML = `<div class="logo" style="font-size:40px">PLAY<span>ONLINE</span></div><div class="sub">${
-      kind === "room" ? "LIVE ROOM · EVERYONE ON THIS PAGE CAN JOIN WITH YOUR CODE" : kind === "ws" ? "HOOPS SERVER" : "OFFLINE"
+      kind === "room" ? "LIVE ROOM · FRIENDS ON THIS PAGE JOIN WITH YOUR CODE" : kind === "ws" ? "HOOPS SERVER" : "OFFLINE"
     }</div>
     <div class="opts"><b>YOUR NAME</b><input id="nm" maxlength="14" value="${esc(name)}" style="width:180px"></div>
     ${
@@ -63,7 +81,7 @@ export const NET = {
         ? `<div class="opts"><b>HOST A GAME</b><button id="cr">Create game (${cfg.NP > 1 ? "5v5" : "1v1"})</button>${kind === "ws" ? '<button id="crd">Create on dedicated server</button>' : ""}
     ${store.get("h2k_last") ? `<b>LAST GAME</b><button id="rj">↻ Rejoin ${esc(store.get("h2k_last"))}</button>` : ""}<b>JOIN A FRIEND</b><input id="cd" maxlength="4" placeholder="CODE" value="${esc(store.get("h2k_last", ""))}" style="width:90px;text-transform:uppercase;letter-spacing:3px;font-weight:800"><button id="jn">Join</button></div>
     <p class="note" style="max-width:520px">Host plays on this device and runs the game; friends join with the 4-letter code. Up to ${cfg.NP > 1 ? "2 humans per side (AI fills the rest)" : "1 human per side"}. Local 2-player stays in the main menu.</p>`
-        : `<p style="max-width:520px;color:#ff9966">Online play needs the published Hoops 2K27 page on claude.ai (live rooms) or a Hoops relay server (<code>npm run server</code>). Local 2-player still works from the main menu.</p>`
+        : `<p style="max-width:520px;color:#ff9966">Online play works on the shared Hoops 2K27 link on claude.ai: open it while signed in to claude.ai, then host or enter a friend's code. This copy of the page can't reach the live rooms. Local 2-player still works from the main menu.</p>`
     }
     <div id="nerr" style="color:#ff9966;min-height:18px"></div><button class="big" id="bkm">◀ Back</button>`;
     const nm = () => {
@@ -104,6 +122,20 @@ export const NET = {
     store.set("h2k_last", code);
     t = await connect(code);
     startGuest(code, name);
+  },
+  /** Every frame while in a lobby: re-render if the lobby changed (never depends on callback ordering). */
+  lobbyTick() {
+    if (host && host.L.st === "lobby") {
+      const k = lobbyKey(host.L, 0, host.guests.size);
+      if (k !== shownKey) renderHostLobby();
+    } else if (guest && (!guest.L || guest.L.st === "lobby")) {
+      const k = guest.L ? lobbyKey(guest.L, guest.rdy, Math.round(guest.rtt / 25)) : "none";
+      if (k !== shownKey) renderGuestLobby();
+    }
+  },
+  /** Debug snapshot for tests. */
+  dbg() {
+    return { kind: t && t.kind, me: t && t.me, peers: t ? t.peers().map((p) => [p.id.slice(0, 6), p.me, Object.keys(p.state || {}).join("")]) : [], L: guest && guest.L ? guest.L.st : null, code: NET.code };
   },
   remoteInput(c: Ctrl): Input {
     return host ? host.remoteInput(c) : { dx: 0, dy: 0 };
@@ -176,8 +208,11 @@ function slotList(L: Lobby, me: string) {
       .join("") || '<p class="lg">AI</p>';
   return `<div class="opts" style="align-items:flex-start"><div style="flex:1;min-width:150px"><b>HOME · ${esc(teamName(L.np, L.teams[0]))}</b>${side(0)}</div><div style="flex:1;min-width:150px"><b>AWAY · ${esc(teamName(L.np, L.teams[1]))}</b>${side(1)}</div></div>`;
 }
+let shownKey = "";
+const lobbyKey = (L: Lobby, r: number, x: number) => JSON.stringify([L.st, L.teams, L.ql, L.pro, L.slots.map((s) => [s.id, s.tm, s.rdy, s.on, s.n]), r, x]);
 function renderHostLobby() {
   if (!host) return;
+  shownKey = lobbyKey(host.L, 0, host.guests.size);
   const L = host.L,
     me = L.slots.find((s) => s.id === "host");
   G.setS("menu");
@@ -270,6 +305,7 @@ function startGuest(code: string, name: string) {
 }
 function renderGuestLobby() {
   if (!guest) return;
+  shownKey = guest.L ? lobbyKey(guest.L, guest.rdy, Math.round(guest.rtt / 25)) : "none";
   const L = guest.L;
   ov().style.display = "flex";
   if (!L) {

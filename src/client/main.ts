@@ -11,7 +11,7 @@ const FLAGS: Record<string, { np: number; r3d: boolean }> = {
   "1v1-2d": { np: 1, r3d: false },
 };
 let hubRaf = 0;
-function go(k: string, my: number, mp: number, online = false) {
+function go(k: string, my: number, mp: number, online: any = false) {
   if (k === "classic") {
     const h = classicHtml.replace('<script src="game.js"></script>', () => "<script>\n" + classicJs + "</script>");
     document.open();
@@ -38,7 +38,7 @@ const MODES=[
 {t:'5v5 NBA GAME',ic:'🏆',c:'#1d428a',big:1,tags:['FULL COURT','4 QUARTERS','FOULS · FTs','REPLAYS','BOX SCORE'],hot:'FLAGSHIP',d:'The full game: 7 teams, motion offense, screens, rebounds, free throws and technicals, Pro Play animation, instant replays and a box score.',b:[['▶ 3D','5v5-3d'],['▶ 2D','5v5-2d',0,0,1]]},
 {t:'1V1 SHOWDOWN',ic:'⚡',c:'#7b3fb5',tags:['PICK ANY STAR','FULL COURT'],d:'Pick any of 35 players and duel the CPU with the same physics, fouls and tempo shooting.',b:[['▶ 3D','1v1-3d'],['▶ 2D','1v1-2d',0,0,1]]},
 {t:'MY PLAYER',ic:'🧬',c:'#e8541e',tags:['CREATE-A-PLAYER','SAVED'],d:'Build your own player: ratings, shot form, height, build and look. Play him in 5v5 or 1v1.',b:[['▶ 5v5 3D','5v5-3d',1],['▶ 1v1 3D','1v1-3d',1],['5v5 2D','5v5-2d',1,0,1],['1v1 2D','1v1-2d',1,0,1]]},
-{t:'PLAY ONLINE',ic:'🌐',c:'#0b7a8a',tags:['ROOM CODES','READY-UP','ANTI-LAG'],hot:'NEW',d:'Host a game and share a 4-letter code. Friends join from this page; you play 1v1 or 5v5 with up to 2 humans per side and AI filling the rest.',b:[['▶ 5v5 3D','5v5-3d',0,0,0,1],['▶ 1v1 3D','1v1-3d',0,0,0,1],['5v5 2D','5v5-2d',0,0,1,1],['1v1 2D','1v1-2d',0,0,1,1]]},
+{t:'PLAY ONLINE',ic:'🌐',c:'#0b7a8a',online:1,tags:['NO INSTALL','ROOM CODES','ANTI-LAG'],hot:'NEW',d:'Host a game and send your friend the 4-letter code, or type a friend\'s code below. Works right on this page.',b:[['▶ Host 5v5','5v5-3d',0,0,0,'host'],['▶ Host 1v1','1v1-3d',0,0,0,'host'],['Lobby (2D)','5v5-2d',0,0,1,1]]},
 {t:'LOCAL 2-PLAYER',ic:'🎮',c:'#0f8a5f',tags:['SAME DEVICE','KEYBOARD'],d:'Two people, one keyboard. Player 2 gets the right-side team with arrows, Enter, / . and ,',b:[['▶ 5v5 3D','5v5-3d',0,1],['▶ 1v1 3D','1v1-3d',0,1]]},
 {t:'CLASSIC 1V1',ic:'📼',c:'#007a33',tags:['ORIGINAL','SIDE VIEW'],d:'The original side-view 1v1 with signature shot forms, the double step-back and the hold-and-release meter.',b:[['▶ PLAY','classic']]}];
 const LOG=[
@@ -56,8 +56,10 @@ const K3=[['Skip replay','SPACE'],['Back to menu','← Modes button']];
 const K4=[['Move','arrow keys'],['Shoot','Enter (hold and release)'],['Pass','/'],['Spin / hesitation','. and ,'],['Sprint','Right Shift']];
 const K5=[['Move','left stick'],['Shoot','A (hold and release)'],['Pass / lob','X / B'],['Step-back','Y'],['Hesi / spin','LB / RB'],['Post / sprint','LT / RT'],['Camera','Select']];
 const $=s=>document.querySelector(s);
-$('#grid').innerHTML=MODES.map((m,i)=>`<div class="m${m.big?' big':''}" style="--c:${m.c};--i:${i}"><div class="ic">${m.ic}</div><h2>${m.t}</h2><div class="tags">${m.hot?`<i class="hot">${m.hot}</i>`:''}${m.tags.map(t=>`<i>${t}</i>`).join('')}</div><p>${m.d}</p>${m.b.map(b=>`<button class="${b[4]?'b2':''}" data-g="${b[1]}" data-my="${b[2]||0}" data-mp="${b[3]||0}" data-on="${b[5]||0}">${b[0]}</button>`).join('')}</div>`).join('');
-document.querySelectorAll<HTMLElement>('[data-g]').forEach(b=>b.onclick=()=>go(b.dataset.g!,+b.dataset.my!,+b.dataset.mp!,b.dataset.on==='1'));
+$('#grid').innerHTML=MODES.map((m,i)=>`<div class="m${m.big?' big':''}" style="--c:${m.c};--i:${i}"><div class="ic">${m.ic}</div><h2>${m.t}</h2><div class="tags">${m.hot?`<i class="hot">${m.hot}</i>`:''}${m.tags.map(t=>`<i>${t}</i>`).join('')}</div><p>${m.d}</p>${m.b.map(b=>`<button class="${b[4]?'b2':''}" data-g="${b[1]}" data-my="${b[2]||0}" data-mp="${b[3]||0}" data-on="${b[5]||0}">${b[0]}</button>`).join('')}${m.online?'<div class="jn"><input id="hc" maxlength="4" placeholder="CODE" aria-label="Game code" autocomplete="off"><button id="hj" data-skip="1">JOIN ▶</button><span id="hcm"></span></div>':''}</div>`).join('');
+document.querySelectorAll<HTMLElement>('[data-g]').forEach(b=>b.onclick=()=>go(b.dataset.g!,+b.dataset.my!,+b.dataset.mp!,b.dataset.on==='host'?{host:true}:b.dataset.on==='1'));
+const hc=$('#hc'),hj=$('#hj'),joinIt=()=>{const c=(hc.value||'').toUpperCase().replace(/[^A-Z]/g,'');if(c.length!==4){$('#hcm').textContent='Enter the 4-letter code';hc.focus();return}go('5v5-3d',0,0,{join:c})};
+if(hc){hc.oninput=()=>{hc.value=hc.value.toUpperCase().replace(/[^A-Z]/g,'');$('#hcm').textContent=''};hc.onkeydown=e=>{if(e.key==='Enter')joinIt()};hj.onclick=joinIt;try{const l=localStorage.getItem('h2k_last');if(l)hc.placeholder=l}catch(e){}}
 document.querySelectorAll('.m').forEach(c=>{c.onmousemove=e=>{const r=c.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;c.style.setProperty('--ry',((x-.5)*8)+'deg');c.style.setProperty('--rx',((.5-y)*6)+'deg');c.style.setProperty('--mx',x*100+'%');c.style.setProperty('--my',y*100+'%')};c.onmouseleave=()=>{c.style.setProperty('--rx','0deg');c.style.setProperty('--ry','0deg')}});
 $('#logp').innerHTML=LOG.map((r,i)=>`<div class="rel" style="animation-delay:${i*60}ms"><h3>v${r.v} <span>${r.n}</span>${r.n2?'<em>LATEST</em>':''}<s>${r.d}</s></h3><ul>${r.l.map(x=>`<li>${x}</li>`).join('')}</ul></div>`).join('');
 const kh=(id,a)=>$(id).innerHTML=a.map(x=>`<div><span>${x[0]}</span><kbd>${x[1]}</kbd></div>`).join('');kh('#k1',K1);kh('#k2',K2);kh('#k3',K3);kh('#k4',K4);kh('#k5',K5);

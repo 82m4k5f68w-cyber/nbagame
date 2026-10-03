@@ -24,7 +24,7 @@ function fatal(m: string) {
 }
 
 /** Boot one of the four main modes. np = players per team, r3d = three.js renderer (else 2D court). */
-export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mode: string; online?: boolean }) {
+export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mode: string; online?: boolean | { host?: boolean; join?: string } }) {
   GS.mode = o.mode;
   cfg.NP = o.np;
   // Both renderers now run the same Rapier ball and hand-accurate release (2D used to get the legacy ball).
@@ -76,7 +76,8 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   GS.booted = 1;
   (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
-  if (o.online) NET.openLobby();
+  if (o.online && typeof o.online === "object") NET.quick(o.online);
+  else if (o.online) NET.openLobby();
   else menu();
   requestAnimationFrame(loop);
 }
@@ -439,7 +440,8 @@ function overlay() {
 // ---------------- loop ----------------
 let last = performance.now(),
   ACC = 0,
-  slowT = 0;
+  slowT = 0,
+  coverN = 0;
 export const STEP = 1 / 60;
 function loop(n: number) {
   requestAnimationFrame(loop);
@@ -450,6 +452,7 @@ function loop(n: number) {
   const dt = Math.min(0.1, (n - last) / 1000);
   last = n;
   gpPoll();
+  if (NET.role && G.S !== "play" && !G.RPL) NET.lobbyTick();
   if (NET.role === "guest") NET.guestFrame(dt);
   else if (G.S === "play" || G.RPL) {
     // slow motion for the big moments (offline): the sim runs at 35% speed for a beat
@@ -472,5 +475,7 @@ function loop(n: number) {
     o.oy -= 25 * dt;
   }
   for (let i = TX.length - 1; i >= 0; i--) if (TX[i].t <= 0) TX.splice(i, 1);
-  draw();
+  // Menus and lobbies cover the whole screen: don't burn the GPU on the arena behind them (one frame per second).
+  const covered = ov.style.display !== "none" && G.S !== "play" && !G.RPL;
+  if (!covered || ++coverN % 60 === 0) draw();
 }

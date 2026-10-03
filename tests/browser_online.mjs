@@ -14,7 +14,7 @@ async function page(tag) {
   pg.on("console", (m) => m.type() === "error" && errs.push(tag + " console: " + m.text()));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(300);
-  await pg.evaluate((m) => document.querySelector(`button[data-g="${m}"][data-on="1"]`).click(), mode);
+  await pg.evaluate((m) => (document.querySelector(`button[data-g="${m}"][data-on="1"]`) || document.querySelector('button[data-on="1"]')).click(), mode);
   await pg.waitForTimeout(1500);
   return pg;
 }

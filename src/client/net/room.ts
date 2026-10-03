@@ -40,8 +40,9 @@ export async function detect(): Promise<"room" | "ws" | null> {
   const w = window as any;
   if (new URLSearchParams(location.search).get("ws")) return "ws";
   if (w.claude && typeof w.claude.use === "function") {
+    // On the published page: live rooms only (never guess a server on the page's own host).
     if (roomNs === undefined) roomNs = await w.claude.use("room").catch(() => null);
-    if (roomNs) return "room";
+    return roomNs ? "room" : null;
   }
   return wsUrl() ? "ws" : null;
 }
