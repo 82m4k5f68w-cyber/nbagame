@@ -437,6 +437,7 @@ export const esc = (s: any) => String(s).replace(/[&<>"']/g, (c) => "&#" + c.cha
 
 /** Local game: P1 on team 0 (+ P2 on team 1 for local 2-player). */
 export function startLocal(i: number, o: { j?: number } = {}) {
+  endAt = 0;
   audio.crowdInit();
   cfg.MYM = MYM;
   const cs = [G.mkCtrl("p1", 0, !!MYM, IN.TEMPO)];
@@ -451,15 +452,20 @@ export function startLocal(i: number, o: { j?: number } = {}) {
 }
 
 // ---------------- effects ----------------
-let lastFx = 0;
+let lastFx = 0,
+  endAt = 0;
 function drainFx() {
+  if (endAt && performance.now() >= endAt) {
+    endAt = 0;
+    endGame();
+  }
   for (const f of G.FX) {
     if (f.id <= lastFx) continue;
     lastFx = f.id;
     if (f.k === "s") audio.snd(f.f, f.d, f.ty, f.v);
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
     else if (f.k === "x") audio.EXC = f.v;
-    else if (f.k === "end") endGame();
+    else if (f.k === "end") endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200); // let the confetti fall first
     else if (f.k === "shake") V.shake && V.shake(f.v);
     else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
     else if (f.k === "chant") audio.chant();

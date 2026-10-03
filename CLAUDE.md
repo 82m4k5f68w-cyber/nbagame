@@ -62,7 +62,18 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   greens set CEL 10 (held follow-through); landings split the feet with the drift.
   `footIK` plants stance feet (two-bone IK) and keeps planted feet flat. Animation Studio (`client/animview.ts`): pause menu
   or `?anim`; `H2K.studio()`, `H2K.studioPose(i, t, camAngle)` freezes a pose for screenshots (orbit camera `V.studio`).
-- Post-processing (`client/fx3d.ts`): MSAA -> SSAO (High) -> bloom -> camera motion blur (fixed 1/60 s shutter) -> gamma; floor = glossy plane over a `Reflector` (High). Toggle: `V.FX`.
+- Post-processing (`client/fx3d.ts`, three r186): MSAA HDR render -> SSAO (High) -> Bokeh DOF (replays only, `setDof`) ->
+  bloom (threshold 3.2: HDR input) -> motion blur -> color grade (`setGrade`: contrast/saturation/vignette + home-team tint)
+  -> OutputPass (ACES + sRGB; r153+ tone-maps only the final output) -> SMAA (low-res tiers). Floor = glossy physical
+  plane (per-board roughnessMap + seam bumpMap + scuffs) over a `Reflector` (High, 2048 on desktop). Toggle: `V.FX`.
+- Lighting (render3d): physical units (legacy intensities x PI; spots in candela), near-overhead shadow key (PCF + radius),
+  4 catwalk SpotLights, additive light-shaft cones (Medium+), HDR ceiling panels (bloom). Vertex colors keep the extra
+  sRGB->linear step on purpose (deep palette). Contact-shadow blobs (InstancedMesh) under players + ball.
+- Crowd: instanced bodies/heads/arms/towels (stand by excitement threshold, the wave `waveT` after some buckets), 24 canvas
+  signs, courtside row on chairs. Replay director camera (nearest player to the ball, low angle at the rim) + DOF.
+  Polish: hoop parts shake on dunks (`hoopParts`), glint sprites, confetti when `S==='over'` (final screen waits 4 s).
+- Rig extras: sneakers (sole/toe cap/laces/heel tab, `shoeKind`), jersey side panels + waistband + chest wordmark (`cl[p.tm]`),
+  face detail, hair sub-styles; shorts hems skinned to spring-lagged flap bones (`clothStep`, client only).
 - Rules: `foul/startFT/ftLay/ftTick/ftIn/tech`, shot clock, quarters (4 x `QTRLEN` s), inbounds (`inb`), bonus after 5 team fouls, `endGame` (FX) + box score (`p.stt`).
 - AI: `ai(p)`, `offBall` = half-court play system (`PLAY[t]`: pick-and-roll / pindown / flare, screener plants with `setT`, rolls or pops; spacing spots + backdoor cuts), `loose` (rebounding), defense inside `ai` (no full-court press, no steals). Planted screens stop defenders in `collide()` and can force switches.
 - Fouls: `shootingFoul()` contact model (hard closeouts, sideways leaps vs verticality, body contact, drives draw more) -> FTs or and-ones (`B.fl`). Cylinder rule: nobody touches a live shot above either rim. Counters in `STAT`.

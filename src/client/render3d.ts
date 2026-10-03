@@ -4,10 +4,10 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, HXs, HY, W3, hoop, NETS } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, HXs, HY, W3, hoop, NETS, S as GS } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
-import { makeRig, applyPose, footIK } from "./rig3d";
+import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
 import { makeFx } from "./fx3d";
 
 const DPR = [1, 1.5, 2]; // device pixel ratio cap per quality level
@@ -150,6 +150,29 @@ export function glInit(C: HTMLCanvasElement) {
         c.fillStyle = "rgba(70,40,12,.16)";
         c.fillRect(0, y, TW, 1); // seam
       }
+      // scuff marks: shoe rubber where the action is (paint, top of the key, center circle)
+      {
+        const hot = [
+          [100, 250, 90],
+          [840, 250, 90],
+          [230, 250, 60],
+          [710, 250, 60],
+          [470, 250, 70],
+        ];
+        c.lineCap = "round";
+        for (let n = 0; n < 220; n++) {
+          const h = hot[n % hot.length],
+            a = rnd() * 6.283,
+            r = rnd() * h[2],
+            x = (h[0] + Math.cos(a) * r) * sx,
+            y = (h[1] + Math.sin(a) * r * 1.4) * sy;
+          c.strokeStyle = `rgba(35,22,12,${0.035 + rnd() * 0.06})`;
+          c.lineWidth = 2 + rnd() * 4;
+          c.beginPath();
+          c.arc(x, y, 14 + rnd() * 40, rnd() * 6.3, rnd() * 6.3 + 0.5 + rnd());
+          c.stroke();
+        }
+      }
       // varnish sheen toward center court
       const gl = c.createRadialGradient(TW / 2, TH / 2, 0, TW / 2, TH / 2, TW * 0.6);
       gl.addColorStop(0, "rgba(255,225,180,.05)");
@@ -233,11 +256,53 @@ export function glInit(C: HTMLCanvasElement) {
       c.restore();
       tex.needsUpdate = true;
     }
-    const floorMat = new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.42, clearcoat: 0.3, clearcoatRoughness: 0.32, envMapIntensity: 0.3 });
+    // Surface maps: per-board varnish roughness + grain (the light catches some boards more than others), seams as bump.
+    const [rc, r2] = cv(mob ? 1024 : 2048, mob ? 512 : 1024),
+      [bc2, b2c] = cv(mob ? 1024 : 2048, mob ? 512 : 1024);
+    {
+      const W = rc.width,
+        H = rc.height,
+        bh = Math.max(2, Math.round((1.9 * H) / 500));
+      let sd = 11;
+      const rn = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+      b2c.fillStyle = "#808080";
+      b2c.fillRect(0, 0, W, H);
+      for (let y = 0; y < H; y += bh) {
+        let x = -rn() * 150;
+        while (x < W) {
+          const L = 130 + rn() * 260,
+            g = 95 + rn() * 55; // roughness ~0.37..0.59
+          r2.fillStyle = `rgb(0,${g | 0},0)`;
+          r2.fillRect(x, y, L, bh);
+          for (let k = 0; k < 4; k++) {
+            r2.fillStyle = `rgba(0,${(g + 30) | 0},0,.5)`;
+            r2.fillRect(x + rn() * L, y + rn() * bh, 10 + rn() * 60, 1);
+          }
+          b2c.fillStyle = "#5a5a5a";
+          b2c.fillRect(x, y, 1, bh); // butt joint
+          x += L;
+        }
+        b2c.fillStyle = "#606060";
+        b2c.fillRect(0, y, W, 1); // seam between boards
+      }
+    }
+    const rTex = new THREE.CanvasTexture(rc),
+      bTex = new THREE.CanvasTexture(bc2);
+    rTex.anisotropy = bTex.anisotropy = R.capabilities.getMaxAnisotropy();
+    const floorMat = new THREE.MeshPhysicalMaterial({
+      map: tex,
+      roughness: 1,
+      roughnessMap: rTex,
+      bumpMap: bTex,
+      bumpScale: 0.6,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.22,
+      envMapIntensity: 0.35,
+    });
     const fl = ad(new THREE.PlaneGeometry(94, 50), floorMat, 0, 0, 0);
     fl.rotation.x = -Math.PI / 2;
     fl.castShadow = false;
-    const mirror = new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: 1024, textureHeight: 576, color: 0x777777, clipBias: 0.003 });
+    const mirror = new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: mob ? 1024 : 2048, textureHeight: mob ? 576 : 1152, color: 0x777777, clipBias: 0.003 });
     mirror.rotation.x = -Math.PI / 2;
     mirror.position.y = -0.02;
     mirror.visible = false;
@@ -249,6 +314,37 @@ export function glInit(C: HTMLCanvasElement) {
       floorMat.opacity = on ? 0.88 : 1;
       floorMat.needsUpdate = true;
     };
+    // Contact shadows: soft dark blobs under every player and the ball (always on, even without the shadow map).
+    const [shc, shx] = cv(128, 128);
+    {
+      const gg = shx.createRadialGradient(64, 64, 4, 64, 64, 62);
+      gg.addColorStop(0, "rgba(0,0,0,.62)");
+      gg.addColorStop(0.55, "rgba(0,0,0,.28)");
+      gg.addColorStop(1, "rgba(0,0,0,0)");
+      shx.fillStyle = gg;
+      shx.fillRect(0, 0, 128, 128);
+    }
+    const blobM = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shc), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+      blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), blobM, 11);
+    blobs.frustumCulled = false;
+    blobs.renderOrder = 2;
+    S.add(blobs);
+    const BM = new THREE.Object3D();
+    function blobUpd() {
+      let n = 0;
+      const put2 = (x: number, y: number, z: number, sz: number) => {
+        const w = W3(x, y, 0),
+          k = Math.max(0.15, 1 - z / 70);
+        BM.position.set(w[0], 0.012, w[2]);
+        BM.scale.set(sz * k, 1, sz * k);
+        BM.updateMatrix();
+        blobs.setMatrixAt(n++, BM.matrix);
+      };
+      for (const p of P) if (n < 10) put2(p.x, p.y, p.z, 2.6 * p.bk);
+      put2(B.x, B.y, B.z, 1.1);
+      blobs.count = n;
+      blobs.instanceMatrix.needsUpdate = true;
+    }
     const apron = ad(new THREE.PlaneGeometry(150, 100), M(0x12152a, { roughness: 0.7 }), 0, -0.03, 0);
     apron.rotation.x = -Math.PI / 2;
     apron.castShadow = false;
@@ -294,7 +390,7 @@ export function glInit(C: HTMLCanvasElement) {
         x = (sd === 2 ? -1 : 1) * (47 + off);
         ry = sd === 2 ? Math.PI / 2 : -Math.PI / 2;
       }
-      cpos.push([x, y, z, ry, Math.random() * 6.28]);
+      cpos.push([x, y, z, ry, Math.random() * 6.28, Math.random(), r, Math.atan2(z, x)]); // .., seed, row, arena angle
       // fans wear their team's color more often than not
       const team = Math.random();
       if (team < 0.32) cc.set(PC[0] || "#7b3fb5");
@@ -308,22 +404,143 @@ export function glInit(C: HTMLCanvasElement) {
       m.frustumCulled = false;
       S.add(m);
     }
-    let exc = 0.3;
+    // Front rows get arms; some fans twirl towels; a few hold signs. Everyone sits until the moment lifts them.
+    const AN = CN,
+      armI = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.08, 0.55, 2, 6), M(0xffffff, { roughness: 0.75 }), AN * 2),
+      towI = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.55, 0.4), new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.9 }), 400);
+    for (let i = 0; i < AN; i++) {
+      armI.setColorAt(i * 2, cc.set(SKN[i % SKN.length]));
+      armI.setColorAt(i * 2 + 1, cc);
+    }
+    const towelFans: number[] = [];
+    for (let i = 0; i < CN && towelFans.length < 400; i++) if (cpos[i][5] < 0.16 && cpos[i][6] < 7) towelFans.push(i);
+    towelFans.forEach((fi, k) => towI.setColorAt(k, cc.set(k % 3 === 0 ? PC[0] || "#ffd23f" : "#f4f4f4")));
+    for (const m of [armI, towI]) {
+      m.instanceColor!.needsUpdate = true;
+      m.frustumCulled = false;
+      S.add(m);
+    }
+    // signs (canvas text) held by front-row fans
+    const SIGNS = ["DEFENSE!", "MVP", "LET'S GO!", "SPLASH", "#77", "AND ONE", "POSTERIZED", "BUCKETS", "D-FENSE", "WE BELIEVE", "CLUTCH", "2K27"];
+    const signs: { m: THREE.Mesh; i: number }[] = [];
+    for (let k = 0, i = 0; k < 24 && i < CN; i++) {
+      if (cpos[i][6] > 2 || cpos[i][5] < 0.5 || cpos[i][5] > 0.58) continue;
+      const [sc2, sx2] = cv(256, 128);
+      sx2.fillStyle = k % 2 ? "#fdfdfd" : "#ffe14d";
+      sx2.fillRect(0, 0, 256, 128);
+      sx2.fillStyle = k % 3 === 0 ? "#c8102e" : "#14182c";
+      sx2.font = "900 46px system-ui";
+      sx2.textAlign = "center";
+      sx2.fillText(SIGNS[k % SIGNS.length], 128, 82);
+      const sm = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshStandardMaterial({ map: TX2(sc2), roughness: 0.8, side: THREE.DoubleSide }));
+      S.add(sm);
+      signs.push({ m: sm, i });
+      k++;
+    }
+    let exc = 0.3,
+      waveT = 0,
+      waveA = 0;
+    const AX = new THREE.Vector3(),
+      HQ = new THREE.Quaternion();
     function crowdUpd(n: number) {
+      if (waveT > 0) waveT -= 1 / 30;
+      let ai = 0,
+        ti = 0;
+      const wf = waveA + (6 - waveT) * 1.6; // wave front angle sweeping around the bowl
       for (let i = 0; i < n; i++) {
         const c = cpos[i],
-          hop = Math.max(0, Math.sin(T * (3 + exc * 5) + c[4])) * 0.35 * exc;
-        dm.scale.set(1, 1, 1);
+          seed = c[5],
+          // stand: when the noise beats this fan's threshold, or the wave passes
+          wv = waveT > 0 ? Math.max(0, 1 - Math.abs(Math.atan2(Math.sin(c[7] - wf), Math.cos(c[7] - wf))) / 0.35) : 0,
+          st2 = Math.max(exc > 0.45 + seed * 0.5 ? 1 : 0, wv),
+          hop = Math.max(0, Math.sin(T * (3 + exc * 5) + c[4])) * 0.3 * exc * st2;
         dm.rotation.set(0, c[3], 0);
-        dm.position.set(c[0], c[1] + hop, c[2]);
+        dm.scale.set(1, 0.72 + 0.28 * st2, 1);
+        dm.position.set(c[0], c[1] - 0.28 * (1 - st2) + hop, c[2]);
         dm.updateMatrix();
         bodyI.setMatrixAt(i, dm.matrix);
-        dm.position.y += 0.75;
+        dm.scale.set(1, 1, 1);
+        dm.position.y += 0.62 + 0.13 * st2;
         dm.updateMatrix();
         headI.setMatrixAt(i, dm.matrix);
+        const hy = dm.position.y;
+        // arms (front rows): up and pumping when standing, else hidden at the sides
+        if (c[6] < 5 && ai < AN * 2 - 1) {
+          const up = st2 * (wv > 0.3 ? 1 : 0.6 + 0.4 * Math.sin(T * 6 + c[4])),
+            sinA = Math.sin(c[3]),
+            cosA = Math.cos(c[3]);
+          for (const sd of [-1, 1]) {
+            const ox = cosA * 0.36 * sd,
+              oz = -sinA * 0.36 * sd;
+            dm.position.set(c[0] + ox, hy - 0.45 + up * 0.75, c[2] + oz);
+            AX.set(cosA, 0, -sinA);
+            HQ.setFromAxisAngle(AX, sd * (0.15 + 0.25 * (1 - up)));
+            dm.quaternion.copy(HQ);
+            dm.scale.setScalar(up > 0.05 ? 1 : 0.001);
+            dm.updateMatrix();
+            armI.setMatrixAt(ai++, dm.matrix);
+          }
+          dm.quaternion.identity();
+        }
+        // towel twirl overhead
+        if (ti < towelFans.length && towelFans[ti] === i) {
+          const tw = st2 > 0.5 ? 1 : 0;
+          dm.position.set(c[0], hy + 0.9 * tw, c[2]);
+          dm.rotation.set(0, T * 9 + c[4], 0.4);
+          dm.scale.setScalar(tw ? 1 : 0.001);
+          dm.updateMatrix();
+          towI.setMatrixAt(ti++, dm.matrix);
+        }
+      }
+      for (const sg of signs) {
+        const c = cpos[sg.i],
+          up = exc > 0.5 || waveT > 0 ? 1 : 0;
+        sg.m.visible = sg.i < n;
+        sg.m.position.set(c[0] + Math.sin(c[3]) * 0.5, c[1] + 0.55 + up * 0.85 + Math.sin(T * 4 + c[4]) * 0.08 * up, c[2] + Math.cos(c[3]) * 0.5);
+        sg.m.rotation.set(0, c[3], Math.sin(T * 3 + c[4]) * 0.08 * up);
       }
       bodyI.count = headI.count = n;
-      bodyI.instanceMatrix.needsUpdate = headI.instanceMatrix.needsUpdate = true;
+      armI.count = ai;
+      towI.count = ti;
+      bodyI.instanceMatrix.needsUpdate = headI.instanceMatrix.needsUpdate = armI.instanceMatrix.needsUpdate = towI.instanceMatrix.needsUpdate = true;
+    }
+    // courtside row: detailed fans on chairs along the sideline (the ones the camera sees up close)
+    {
+      const N = 44,
+        chairI = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 1.1, 0.8), M(0x1c1f30, { roughness: 0.6 }), N),
+        cbI = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.32, 0.6, 4, 12), M(0xffffff, { roughness: 0.8 }), N),
+        chI = new THREE.InstancedMesh(new THREE.SphereGeometry(0.24, 16, 12), M(0xffffff, { roughness: 0.6 }), N);
+      for (let k = 0; k < N; k++) {
+        const side = k % 2 ? 1 : -1,
+          x = -36 + (Math.floor(k / 2) / (N / 2 - 1)) * 72 + (Math.random() - 0.5),
+          z = side * 27.6;
+        if (Math.abs(x) < 6) {
+          // scorer's table gap: park this seat out of sight (instances default to the origin = center court)
+          dm.position.set(0, -50, 0);
+          dm.scale.setScalar(0.001);
+          dm.updateMatrix();
+          for (const m of [chairI, cbI, chI]) m.setMatrixAt(k, dm.matrix);
+          continue;
+        }
+        dm.rotation.set(0, side > 0 ? Math.PI : 0, 0);
+        dm.scale.set(1, 1, 1);
+        dm.position.set(x, 0.55, z + side * 0.3);
+        dm.updateMatrix();
+        chairI.setMatrixAt(k, dm.matrix);
+        dm.position.set(x, 1.45, z);
+        dm.updateMatrix();
+        cbI.setMatrixAt(k, dm.matrix);
+        cbI.setColorAt(k, cc.setHSL(Math.random(), 0.3, 0.2 + Math.random() * 0.45));
+        dm.position.set(x, 2.25, z);
+        dm.updateMatrix();
+        chI.setMatrixAt(k, dm.matrix);
+        chI.setColorAt(k, cc.set(SKN[k % SKN.length]));
+      }
+      for (const m of [chairI, cbI, chI]) {
+        if (m.instanceColor) m.instanceColor.needsUpdate = true;
+        m.castShadow = true;
+        S.add(m);
+      }
     }
 
     // ---------------- LED ribbons (courtside + upper ring), emissive so bloom catches them ----------------
@@ -360,6 +577,9 @@ export function glInit(C: HTMLCanvasElement) {
 
     // ---------------- hoops: padded stanchion, arm, glass, shot clock, rim, tube net ----------------
     const shotClocks: { ctx: CanvasRenderingContext2D; tex: THREE.Texture; k: string }[] = [];
+    // per hoop: the parts that shake on a dunk (rim, glass, frame, square, pad, bracket) with their rest heights
+    const hoopParts: { o: THREE.Object3D; y: number; k: number }[][] = [[], []];
+    const glints: THREE.Sprite[] = [];
     for (const b of [0, 1]) {
       const hx = (HXs[b] - 470) * 0.1,
         sg = b ? 1 : -1,
@@ -380,10 +600,19 @@ export function glInit(C: HTMLCanvasElement) {
       sq.position.set(sg * 42.92, 10.6, 0);
       sq.rotation.y = Math.PI / 2;
       S.add(sq);
-      ad(new THREE.BoxGeometry(0.2, 0.2, 6.1), M(0xd23b1a, { roughness: 0.5 }), sg * 43, 9.68, 0); // bottom pad
-      const rim = ad(new THREE.TorusGeometry(0.75, 0.07, 14, 48), M(0xff4d1a, { metalness: 0.55, roughness: 0.3 }), hx, 10, 0);
+      const bpad = ad(new THREE.BoxGeometry(0.2, 0.2, 6.1), M(0xd23b1a, { roughness: 0.5 }), sg * 43, 9.68, 0); // bottom pad
+      const rim = ad(new THREE.TorusGeometry(0.75, 0.07, 14, 48), M(0xff4d1a, { metalness: 0.7, roughness: 0.22 }), hx, 10, 0);
       rim.rotation.x = Math.PI / 2;
-      ad(new THREE.BoxGeometry(0.6, 0.14, 0.42), M(0xff4d1a, { metalness: 0.5, roughness: 0.35 }), sg * 42.6, 10, 0);
+      const brk = ad(new THREE.BoxGeometry(0.6, 0.14, 0.42), M(0xff4d1a, { metalness: 0.5, roughness: 0.35 }), sg * 42.6, 10, 0);
+      for (const [o, k] of [
+        [rim, 1],
+        [brk, 0.8],
+        [bb, 0.35],
+        [frame, 0.35],
+        [sq, 0.35],
+        [bpad, 0.35],
+      ] as [THREE.Object3D, number][])
+        hoopParts[b].push({ o, y: o.position.y, k });
       // shot clock box on top of the backboard, facing the court
       const [sc2, sx2] = cv(128, 64),
         stx = TX2(sc2);
@@ -395,6 +624,97 @@ export function glInit(C: HTMLCanvasElement) {
       face.rotation.y = -sg * (Math.PI / 2);
       S.add(face);
       shotClocks.push({ ctx: sx2, tex: stx, k: "" });
+    }
+    // glints: little star sprites that flash on the rim and the glass edges now and then (bloom makes them sparkle)
+    {
+      const [gc, gx] = cv(64, 64);
+      const gg = gx.createRadialGradient(32, 32, 0, 32, 32, 30);
+      gg.addColorStop(0, "rgba(255,255,255,1)");
+      gg.addColorStop(0.15, "rgba(255,250,235,.6)");
+      gg.addColorStop(1, "rgba(255,255,255,0)");
+      gx.fillStyle = gg;
+      gx.fillRect(0, 0, 64, 64);
+      gx.fillStyle = "rgba(255,255,255,.85)";
+      gx.fillRect(31, 2, 2, 60);
+      gx.fillRect(2, 31, 60, 2);
+      const gm2 = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(gc), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: new THREE.Color(4, 4, 4) });
+      for (const b of [0, 1]) {
+        const hx = (HXs[b] - 470) * 0.1,
+          sg = b ? 1 : -1;
+        for (const [x, y, z] of [
+          [hx - sg * 0.7, 10.05, 0.2],
+          [hx + 0.3, 10.05, -0.65],
+          [sg * 42.93, 13.2, 2.9],
+          [sg * 42.93, 9.72, -2.9],
+        ]) {
+          const g = new THREE.Sprite(gm2.clone());
+          g.position.set(x, y, z);
+          g.scale.setScalar(0.001);
+          S.add(g);
+          glints.push(g);
+        }
+      }
+    }
+    // confetti for the final buzzer (winner's colors + gold), instanced paper squares
+    const CFN = 700,
+      cfI = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.36, 0.24), new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.6, metalness: 0.2 }), CFN),
+      cfs: number[][] = [];
+    cfI.frustumCulled = false;
+    cfI.count = 0;
+    S.add(cfI);
+    let cfOn = 0,
+      wasDk = 0;
+    const hoopShake = [0, 0];
+    function polish(dt: number) {
+      // rim shake: a dunk yanks the rim down, the whole stanchion head rings and settles
+      if (B.dk && !wasDk) hoopShake[B.x > 470 ? 1 : 0] = 1e-6;
+      wasDk = B.dk ? 1 : 0;
+      for (const b of [0, 1]) {
+        if (hoopShake[b] <= 0) continue;
+        const t = (hoopShake[b] += dt),
+          a = Math.exp(-t * 4.5),
+          off = -0.22 * a * Math.cos(t * 24) - 0.12 * Math.exp(-t * 9);
+        for (const h of hoopParts[b]) h.o.position.y = h.y + off * h.k;
+        if (a < 0.01) {
+          hoopShake[b] = 0;
+          for (const h of hoopParts[b]) h.o.position.y = h.y;
+        }
+      }
+      // glints
+      glints.forEach((g, k) => {
+        const f = Math.pow(Math.max(0, Math.sin(T * 0.9 + k * 2.3)), 24);
+        g.scale.setScalar(V.QL >= 1 ? 0.15 + f * 1.4 : 0.001);
+        (g.material as THREE.SpriteMaterial).opacity = f;
+      });
+      // confetti
+      if (GS === "over" && !cfOn) {
+        cfOn = 1;
+        const w = sc[0] >= sc[1] ? 0 : 1,
+          cols = [PC[w] || "#ffd23f", "#ffd23f", "#ffffff", PC[w] || "#7b3fb5"];
+        cfs.length = 0;
+        for (let i = 0; i < CFN; i++) {
+          cfs.push([(Math.random() - 0.5) * 80, 6 + Math.random() * 26, (Math.random() - 0.5) * 44, Math.random() * 6.28, 0.6 + Math.random() * 1.6, Math.random() * 6.28]);
+          cfI.setColorAt(i, new THREE.Color(cols[i % cols.length]));
+        }
+        cfI.instanceColor!.needsUpdate = true;
+        cfI.count = CFN;
+      }
+      if (GS !== "over" && cfOn) (cfOn = 0), (cfI.count = 0);
+      if (cfOn) {
+        for (let i = 0; i < CFN; i++) {
+          const c = cfs[i];
+          c[1] -= dt * (3.2 + Math.sin(T * c[4] + c[5]) * 1.0);
+          c[0] += Math.sin(T * 1.3 + c[5]) * dt * 1.2;
+          if (c[1] < 0.05) c[1] = 0.05; // settles on the floor
+          dm.position.set(c[0], c[1], c[2]);
+          dm.rotation.set(T * c[4] + c[3], T * c[4] * 0.7, c[5]);
+          dm.scale.set(1, 1, 1);
+          dm.updateMatrix();
+          cfI.setMatrixAt(i, dm.matrix);
+        }
+        cfI.instanceMatrix.needsUpdate = true;
+        dm.rotation.set(0, 0, 0);
+      }
     }
     function shotClockDraw() {
       for (const s of shotClocks) {
@@ -589,6 +909,7 @@ export function glInit(C: HTMLCanvasElement) {
     const cl2 = new THREE.Vector3(0, 0, 3),
       TV = new THREE.Vector3(),
       PV = new THREE.Vector3();
+    let rpA = 0;
     let pset: any = null,
       lastR = 0,
       ema = 16,
@@ -617,6 +938,7 @@ export function glInit(C: HTMLCanvasElement) {
         if (tot !== lastTot) {
           lastTot = tot;
           exc = 1;
+          if (Math.random() < 0.3 && waveT <= 0) (waveT = 6), (waveA = Math.random() * 6.283); // the wave
         }
         exc = Math.max(0.3, exc - 0.004);
         const crowdN = QL === 0 ? 0 : QL === 1 || lvl < 3 ? 1300 : CN;
@@ -672,6 +994,7 @@ export function glInit(C: HTMLCanvasElement) {
             if (p.gl) {
               applyPose(p.gl, p);
               footIK(p.gl, p, fdt, QL > 0 && !RPL);
+              clothStep(p.gl, p, fdt);
             }
           const w = W3(B.x, B.y, B.z);
           ball.position.set(w[0], w[1], w[2]);
@@ -696,6 +1019,8 @@ export function glInit(C: HTMLCanvasElement) {
             }
         }
         netUpd();
+        blobUpd();
+        polish(fdt);
         led.offset.x = (T * 0.04) % 1;
         // ---------------- cameras ----------------
         const cm = RPL ? 1 : V.CAMM,
@@ -719,13 +1044,33 @@ export function glInit(C: HTMLCanvasElement) {
           tp = [pw[0] - dr * 13, 8.5, pw[2] + (pw[2] > 0 ? -4 : 4) + 10];
           tl = [pw[0] + dr * 9, 3, pw[2] * 0.6];
         }
+        // Replay director: a tracking close-up on the player nearest the ball (low and looking up when the play is at
+        // the rim: dunks, layups), slowly orbiting, with depth of field focused on him.
+        let dofF = 0;
+        if (RPL && P.length) {
+          let sub = P[0],
+            sd2 = 1e9;
+          for (const q of P) {
+            const d = Math.hypot(q.x - B.x, q.y - B.y);
+            if (d < sd2) (sd2 = d), (sub = q);
+          }
+          const sw = W3(sub.x, sub.y, sub.z),
+            rim = Math.min(Math.abs(B.x - HXs[0]), Math.abs(B.x - HXs[1])) < 110 && (B.z > 45 || sub.z > 10),
+            a = rpA + T * 0.22,
+            dist = rim ? 11 : 14;
+          tp = [sw[0] + Math.cos(a) * dist, rim ? 2.6 : 6, sw[2] + Math.sin(a) * dist];
+          tl = [sw[0], sw[1] + (rim ? 6.5 : 3.6), sw[2]];
+          dofF = Math.hypot(tp[0] - sw[0], tp[1] - tl[1], tp[2] - sw[2]);
+        } else rpA = Math.random() * 6.283; // pick a fresh angle for the next replay
+        fx.setDof(V.FX && QL >= 1 ? dofF : 0);
         const SO = (V as any).studio as { a: number; d: number } | null;
         if (SO && p0) {
           // Animation Studio: close orbit around the player
           const pw = W3(p0.x, p0.y, 0);
           const up = p0.z * 0.1; // follow jumps
-          tp = [pw[0] + Math.cos(SO.a) * SO.d, 5 + up, pw[2] + Math.sin(SO.a) * SO.d];
-          tl = [pw[0], 3.3 + up, pw[2]];
+          const ah = (SO as any).h ?? 3.3; // aim height (ft)
+          tp = [pw[0] + Math.cos(SO.a) * SO.d, ah + 1.7 + up, pw[2] + Math.sin(SO.a) * SO.d];
+          tl = [pw[0], ah + up, pw[2]];
         }
         cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : 0.1);
         cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : 0.14);

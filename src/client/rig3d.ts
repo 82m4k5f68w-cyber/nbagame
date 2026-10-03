@@ -3,7 +3,7 @@
 // smooth-weighted across bones; feet plant on the floor with two-bone leg IK.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { W3 } from "../core/sim";
+import { W3, cl } from "../core/sim";
 import { RIG, hipAb } from "../core/pose";
 
 const L1 = RIG.L1, // thigh (hip -> knee pivot)
@@ -32,6 +32,8 @@ export interface Rig {
   ar: THREE.Bone;
   gL: THREE.Bone;
   gR: THREE.Bone;
+  fl: THREE.Bone[]; // shorts-hem flap bones (one per leg, spring-lagged copies of the thigh)
+  cloth: { x: number; vx: number; z: number; vz: number }[];
   plant: { on: boolean; x: number; y: number; z: number; w: number }[];
   extra: THREE.Material[];
 }
@@ -80,8 +82,10 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     wL = B(0, -RIG.fa, 0),
     wR = B(0, -RIG.fa, 0),
     gL = B(0, -RIG.fing, 0),
-    gR = B(0, -RIG.fing, 0);
-  hips.add(bd, tl, tr);
+    gR = B(0, -RIG.fing, 0),
+    flL = B(-RIG.hipX, RIG.hip, 0),
+    flR = B(RIG.hipX, RIG.hip, 0);
+  hips.add(bd, tl, tr, flL, flR);
   bd.add(ch);
   ch.add(nk, sL, sR);
   nk.add(hd);
@@ -95,8 +99,8 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   eR.add(wR);
   wL.add(gL);
   wR.add(gR);
-  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR"],
-    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR];
+  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR", "flL", "flR"],
+    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, flL, flR];
   const I = Object.fromEntries(names.map((n, i) => [n, i])) as Record<string, number>;
   hips.updateMatrixWorld(true);
   const bp = bones.map((b) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
@@ -127,7 +131,9 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   let h = 0;
   for (const ch of String(p.n)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const trim = isDark(p.col) ? "#f2f2f2" : "#16161c",
-    shoe = h % 3 === 0 ? "#141414" : "#f6f6f6",
+    shoeKind = h % 4, // 0 white, 1 team-color upper, 2 black, 3 white with team-color panels
+    shoe = shoeKind === 1 ? p.col : shoeKind === 2 ? "#141414" : "#f6f6f6",
+    sole = shoeKind === 2 ? "#202020" : "#f4f4f4",
     accent = h % 2 ? p.col : "#e8541e",
     sock = h % 5 === 0 ? "#141414" : "#f4f4f4",
     headband = h % 7 === 0,
@@ -139,20 +145,31 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   ]) {
     // thigh: thick at the hip, quad bulge, tapering into the knee
     put(parts, bp, limb([[0.0, 0.05], [0.25, 0.0], [0.27, -0.4], [0.25, -0.9], [0.19, -1.45], [0.17, -1.62], [0.0, -1.66]]), sk, t, 0, 0, 0, 1, 1, 1, { to: kn, axis: "y", from: -L1, len: 0.45, end: "end" });
-    // shorts: long and loose, flared hem, side stripe
-    put(parts, bp, limb([[0.0, 0.12], [0.34 * k, 0.1], [0.37 * k, -0.4], [0.39 * k, -0.86], [0.0, -0.88]], 18), p.col, t, 0, 0, 0);
-    put(parts, bp, box(0.05, 0.8, 0.16), trim, t, sd * 0.37 * k, -0.42, 0);
+    // shorts: long and loose, flared hem, side stripe; the lower half rides the spring-lagged flap bone (cloth swing)
+    const fb = t === I.tl ? I.flL : I.flR,
+      flap = { to: fb, axis: "y" as const, from: -0.86, len: 0.62, end: "end" as const, max: 0.85 };
+    put(parts, bp, limb([[0.0, 0.12], [0.34 * k, 0.1], [0.37 * k, -0.4], [0.39 * k, -0.86], [0.0, -0.88]], 18), p.col, t, 0, 0, 0, 1, 1, 1, flap);
+    put(parts, bp, box(0.05, 0.8, 0.16), trim, t, sd * 0.37 * k, -0.42, 0, 1, 1, 1, flap);
     // calf: knee, calf muscle high and behind, slim ankle
     put(parts, bp, limb([[0.0, 0.08], [0.16, 0.05], [0.17, -0.25], [0.19, -0.5], [0.15, -0.95], [0.11, -1.35], [0.0, -1.42]]), sk, kn, 0, 0, -0.02, 1, 1, 1, { to: t, axis: "y", from: 0, len: 0.4, end: "start" });
     put(parts, bp, limb([[0.13, -1.12], [0.135, -1.48], [0.0, -1.5]], 12), sock, kn, 0, 0, 0);
     const an = kn === I.kl ? I.al : I.ar;
-    put(parts, bp, box(0.39, 0.27, 0.82), shoe, an, 0, 0, 0.14); // shoe upper (on the ankle bone: rolls through the step)
-    put(parts, bp, box(0.41, 0.08, 0.84), accent, an, 0, -0.14, 0.14); // midsole in the accent color
-    put(parts, bp, box(0.06, 0.12, 0.42), accent, an, sd * 0.2, 0.02, 0.12); // swoosh-ish side panel
+    // sneaker (on the ankle bone: rolls through the step): upper, midsole, outsole, toe cap, panels, heel tab, laces
+    put(parts, bp, box(0.39, 0.27, 0.82), shoe, an, 0, 0, 0.14);
+    put(parts, bp, box(0.41, 0.07, 0.85), sole, an, 0, -0.13, 0.14);
+    put(parts, bp, box(0.4, 0.035, 0.86), shade(sole, 0.55), an, 0, -0.18, 0.14);
+    put(parts, bp, box(0.36, 0.1, 0.24), shoeKind === 3 ? p.col : shade(shoe, 0.88), an, 0, -0.04, 0.47);
+    put(parts, bp, box(0.06, 0.13, 0.46), shoeKind === 3 ? p.col : accent, an, sd * 0.2, 0.02, 0.12);
+    put(parts, bp, box(0.22, 0.16, 0.07), accent, an, 0, 0.08, -0.27);
+    for (let li = 0; li < 3; li++) put(parts, bp, box(0.2, 0.025, 0.035), "#f8f8f8", an, 0, 0.14 - li * 0.012, 0.26 + li * 0.09);
   }
   // torso: pelvis below the waist, chest above, blended through the middle so twists and breathing bend smoothly
   put(parts, bp, torso, p.col, I.bd, 0, 0.3, 0, 0.62 * k, 1, 0.42 * k, { to: I.ch, axis: "y", from: 1.25, len: 0.6, end: "start", max: 1 });
   putT(ring(0.3, 0.05), trim, I.ch, 0, 1.9, 0.03, 1, 1, 0.9); // collar trim
+  // jersey side panels (pelvis -> chest, blended like the torso) and the shorts' waistband
+  for (const sd of [-1, 1])
+    put(parts, bp, box(0.05, 1.55, 0.3 * k), trim, I.bd, sd * 0.6 * k, 0.75, 0, 1, 1, 1, { to: I.ch, axis: "y", from: 1.25, len: 0.6, end: "start", max: 1 });
+  put(parts, bp, new THREE.TorusGeometry(0.56 * k, 0.06, 6, 28).rotateX(Math.PI / 2), trim, I.bd, 0, -0.12, 0, 1, 1, 0.72);
   for (const sd of [-1, 1]) putT(new THREE.TorusGeometry(0.29 * k, 0.045, 6, 20).rotateY(Math.PI / 2), trim, I.ch, sd * 0.86 * k * 0.95, 1.78, 0); // armholes
   putT(limb([[0.0, 0.0], [0.16, -0.02], [0.15, 0.35], [0.0, 0.38]]), sk, I.nk, 0, 2.02, 0); // neck
   // head: skull, jaw, ears, face (on the head bone: it looks around)
@@ -166,13 +183,33 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     putT(box(0.15, 0.035, 0.05), hc, H, sd * 0.13, 2.9, 0.34); // brow
   }
   putT(sph, shade(sk, 0.9), H, 0, 2.7, 0.38, 0.06, 0.09, 0.07); // nose
-  putT(box(0.14, 0.03, 0.03), shade(sk, 0.6), H, 0, 2.56, 0.36); // mouth
-  if (p.hr === 1) putT(sph, hc, H, 0, 2.86, -0.03, 0.385, 0.3, 0.415);
+  putT(box(0.15, 0.03, 0.03), shade(sk, 0.55), H, 0, 2.565, 0.365); // mouth
+  putT(box(0.13, 0.025, 0.03), shade(sk, 0.75), H, 0, 2.54, 0.36); // lower lip
+  for (const sd of [-1, 1]) {
+    putT(box(0.13, 0.025, 0.03), shade(sk, 0.78), H, sd * 0.13, 2.835, 0.335); // upper eyelid
+    putT(sph, shade(sk, 1.05), H, sd * 0.2, 2.68, 0.27, 0.09, 0.07, 0.07); // cheekbone
+  }
+  putT(sph, shade(sk, 0.96), H, 0, 2.43, 0.2, 0.13, 0.09, 0.12); // chin
+  // hair: short styles get a hairline and a sub-style (fade, waves, part); long hair hangs in locks; afros are fuller
+  const sub = (h >> 3) % 3;
+  if (p.hr === 1) {
+    putT(sph, hc, H, 0, 2.86, -0.03, 0.385, 0.3, 0.415);
+    if (sub === 0) putT(sph, shade(hc, 1.35), H, 0, 2.74, -0.04, 0.37, 0.18, 0.4); // faded sides
+    if (sub === 1) for (let w = 0; w < 3; w++) putT(ring(0.2 + w * 0.06, 0.012), shade(hc, 1.6), H, 0, 3.12 - w * 0.03, -0.04 + w * 0.01); // waves
+    if (sub === 2) putT(box(0.02, 0.03, 0.3), shade(sk, 0.85), H, 0.14, 3.13, 0.05); // part line
+    putT(box(0.42, 0.06, 0.04), hc, H, 0, 3.0, 0.33); // hairline over the forehead
+  }
   if (p.hr === 2) {
     putT(sph, hc, H, 0, 2.86, -0.03, 0.41, 0.36, 0.44);
-    putT(box(0.5, 0.9, 0.22), hc, H, 0, 2.5, -0.36);
+    for (let d = 0; d < 9; d++) {
+      const a = Math.PI * (0.25 + (d / 8) * 1.5); // locks around the back and sides
+      putT(new THREE.CylinderGeometry(0.05, 0.035, 0.85, 6), hc, H, Math.cos(a) * 0.36, 2.5, -Math.abs(Math.sin(a)) * 0.34 - 0.04);
+    }
   }
-  if (p.hr === 3) putT(sph, hc, H, 0, 2.98, -0.04, 0.52, 0.5, 0.52);
+  if (p.hr === 3) {
+    putT(sph, hc, H, 0, 2.98, -0.04, 0.52, 0.5, 0.52);
+    putT(sph, shade(hc, 1.15), H, 0, 3.14, -0.02, 0.42, 0.3, 0.42); // texture on the crown
+  }
   if (p.bd) {
     putT(sph, hc, H, 0, 2.47, 0.24, 0.3, 0.18, 0.2);
     putT(box(0.2, 0.05, 0.05), hc, H, 0, 2.62, 0.36); // mustache
@@ -233,7 +270,8 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   const extra: THREE.Material[] = [];
   G.scale.setScalar(p.ht / 6.4);
   const pl = () => ({ on: false, x: 0, y: 0, z: 0, w: 0 });
-  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, plant: [pl(), pl()], extra };
+  const cs = () => ({ x: 0, vx: 0, z: 0, vz: 0 });
+  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, fl: [flL, flR], cloth: [cs(), cs()], plant: [pl(), pl()], extra };
   if (typeof document === "undefined") return rig; // Node (FK parity test): bones + mesh only
   const cy = -RIG.chest; // chest-local offsets for the jersey prints
   const cv = (w: number, h: number) => {
@@ -253,8 +291,19 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   nb.position.set(0, 1.35 + cy, -0.47 * k);
   nb.rotation.y = Math.PI;
   ch.add(nb);
+  // team wordmark across the chest
+  const [wc, wx] = cv(256, 64);
+  wx.fillStyle = "#fff";
+  wx.font = "italic 900 44px system-ui";
+  wx.textAlign = "center";
+  wx.fillText(String((cl && cl[p.tm]) || "").toUpperCase().slice(0, 10), 128, 48);
+  const wm = new THREE.MeshBasicMaterial({ map: tex(wc), transparent: true });
+  extra.push(wm);
+  const wp = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.24), wm);
+  wp.position.set(0, 1.72 + cy, 0.465 * k);
+  ch.add(wp);
   const nf = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.45), nm);
-  nf.position.set(0, 1.5 + cy, 0.47 * k);
+  nf.position.set(0, 1.4 + cy, 0.47 * k);
   ch.add(nf);
   const [n3c, n3] = cv(256, 64);
   n3.fillStyle = "#fff";
@@ -297,6 +346,25 @@ export function applyPose(m: Rig, p: any) {
   m.bd.rotation.set(q.ln, q.ty, q.rz, "YXZ");
 }
 
+/** Cloth: each shorts-hem flap bone chases its thigh's rotation through an underdamped spring, so the hem trails the
+ *  leg swing, overshoots when the leg stops, and lifts while falling from a jump. Purely visual (client side). */
+export function clothStep(m: Rig, p: any, dt: number) {
+  const h = Math.min(dt, 1 / 30);
+  for (let s = 0; s < 2; s++) {
+    const th = s ? m.tr : m.tl,
+      c = m.cloth[s],
+      tx = th.rotation.x + (p.z > 2 ? Math.max(-0.25, Math.min(0.25, -(p.vz || 0) * 0.0012)) : 0),
+      tz = th.rotation.z;
+    for (let it = 0; it < 2; it++) {
+      c.vx += ((tx - c.x) * 220 - c.vx * 13) * (h / 2);
+      c.vz += ((tz - c.z) * 220 - c.vz * 13) * (h / 2);
+      c.x += c.vx * (h / 2);
+      c.z += c.vz * (h / 2);
+    }
+    if (Math.abs(c.x - tx) > 1.2) (c.x = tx), (c.vx = 0); // teleports (inbounds, replays)
+    m.fl[s].rotation.set(c.x, 0, c.z);
+  }
+}
 const V1 = new THREE.Vector3(),
   V2 = new THREE.Vector3(),
   INV = new THREE.Matrix4();

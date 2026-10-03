@@ -7,6 +7,8 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 
 /** Directional blur along the screen-space camera motion, scaled by how fast the action is. */
 const MotionBlurShader = {
@@ -45,6 +47,8 @@ const GradeShader = {
 
 export interface Fx {
   setGrade(on: boolean, tint?: THREE.Color): void;
+  /** Replay depth of field: focus distance (world ft) on the subject; off when focus <= 0. */
+  setDof(focus: number): void;
   render(dt: number): void;
   setLevel(ql: number, on: boolean, w: number, h: number, ao?: boolean): void;
   setMotion(vx: number, vy: number, amt: number): void;
@@ -62,12 +66,19 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
   const mb = new ShaderPass(MotionBlurShader as any);
   const gr = new ShaderPass(GradeShader as any);
   const gm = new OutputPass(); // tone mapping (ACES) + sRGB, once, at the end
+  const dof = new BokehPass(S, cam, { focus: 15, aperture: 0.0035, maxblur: 0.009 });
+  dof.enabled = false;
+  // SMAA after the output transform: cleans the edges MSAA misses when the resolution is scaled down
+  const aa = new SMAAPass();
+  aa.enabled = false;
   C.addPass(rp);
   C.addPass(ao);
+  C.addPass(dof);
   C.addPass(bloom);
   C.addPass(mb);
   C.addPass(gr);
   C.addPass(gm);
+  C.addPass(aa);
   let on = true;
   return {
     render(dt) {
@@ -83,6 +94,11 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
       C.setPixelRatio(R.getPixelRatio());
       C.setSize(w, h);
       ao.setSize(Math.round(w * R.getPixelRatio() * 0.5), Math.round(h * R.getPixelRatio() * 0.5));
+      aa.enabled = R.getPixelRatio() < 1.3; // low-res tiers: post AA on top of MSAA
+    },
+    setDof(focus) {
+      dof.enabled = on && focus > 0;
+      if (focus > 0) (dof.uniforms as any).focus.value = focus;
     },
     setGrade(onG, tint) {
       gr.enabled = onG;
