@@ -11,7 +11,7 @@ const FLAGS: Record<string, { np: number; r3d: boolean }> = {
   "1v1-2d": { np: 1, r3d: false },
 };
 let hubRaf = 0;
-function go(k: string, my: number, mp: number, online: any = false) {
+function go(k: string, my: number, mp: number, online: any = false, quick: any = null) {
   if (k === "classic") {
     const h = classicHtml.replace('<script src="game.js"></script>', () => "<script>\n" + classicJs + "</script>");
     document.open();
@@ -26,7 +26,7 @@ function go(k: string, my: number, mp: number, online: any = false) {
   document.getElementById("hub")!.remove();
   document.getElementById("game")!.hidden = false;
   document.getElementById("bk")!.onclick = () => location.reload();
-  boot({ ...FLAGS[k], my, mp, mode: k, online });
+  boot({ ...FLAGS[k], my, mp, mode: k, online, quick });
 }
 (window as any).go = go;
 const pre = (window as any).__H2K_MODE;
@@ -56,6 +56,11 @@ const K3=[['Skip replay','SPACE'],['Back to menu','← Modes button']];
 const K4=[['Move','arrow keys'],['Shoot','Enter (hold and release)'],['Pass','/'],['Spin / hesitation','. and ,'],['Sprint','Right Shift']];
 const K5=[['Move','left stick'],['Shoot','A (hold and release)'],['Pass / lob','X / B'],['Step-back','Y'],['Hesi / spin','LB / RB'],['Post / sprint','LT / RT'],['Camera','Select']];
 const $=s=>document.querySelector(s);
+let LP:any=null,RC:any={w:0,l:0,st:0};try{LP=JSON.parse(localStorage.getItem('h2k_lastplay')||'null');RC={...RC,...JSON.parse(localStorage.getItem('h2k_rec')||'{}')}}catch(e){}
+const MODE_N:any={'5v5-3d':'5v5 3D','5v5-2d':'5v5 2D','1v1-3d':'1v1 3D','1v1-2d':'1v1 2D'};
+const qp=document.createElement('div');qp.className='qp';qp.innerHTML=`${LP&&MODE_N[LP.mode]?`<button id="qpb" class="qpb">▶ QUICK PLAY <small>${MODE_N[LP.mode]} · your last matchup</small></button>`:`<button id="qpb" class="qpb">▶ QUICK PLAY <small>5v5 3D · jump straight in</small></button>`}<div class="qrec"><b>${RC.w}</b>W <b>${RC.l}</b>L${RC.st>1?` · 🔥 <b>${RC.st}</b> straight`:''}</div>`;
+document.querySelector('#play .hero')!.appendChild(qp);
+$('#qpb').onclick=()=>LP&&MODE_N[LP.mode]?go(LP.mode,0,0,false,{sel:LP.sel,opp:LP.opp}):go('5v5-3d',0,0,false,{sel:0,opp:-1});
 $('#grid').innerHTML=MODES.map((m,i)=>`<div class="m${m.big?' big':''}" style="--c:${m.c};--i:${i}"><div class="ic">${m.ic}</div><h2>${m.t}</h2><div class="tags">${m.hot?`<i class="hot">${m.hot}</i>`:''}${m.tags.map(t=>`<i>${t}</i>`).join('')}</div><p>${m.d}</p>${m.b.map(b=>`<button class="${b[4]?'b2':''}" data-g="${b[1]}" data-my="${b[2]||0}" data-mp="${b[3]||0}" data-on="${b[5]||0}">${b[0]}</button>`).join('')}${m.online?'<div class="jn"><input id="hc" maxlength="4" placeholder="CODE" aria-label="Game code" autocomplete="off"><button id="hj" data-skip="1">JOIN ▶</button><span id="hcm"></span></div>':''}</div>`).join('');
 document.querySelectorAll<HTMLElement>('[data-g]').forEach(b=>b.onclick=()=>go(b.dataset.g!,+b.dataset.my!,+b.dataset.mp!,b.dataset.on==='host'?{host:true}:b.dataset.on==='1'));
 const hc=$('#hc'),hj=$('#hj'),joinIt=()=>{const c=(hc.value||'').toUpperCase().replace(/[^A-Z]/g,'');if(c.length!==4){$('#hcm').textContent='Enter the 4-letter code';hc.focus();return}go('5v5-3d',0,0,{join:c})};

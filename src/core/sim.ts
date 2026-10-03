@@ -55,6 +55,7 @@ export const cfg = {
   hand: true, // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
   replays: true,
   MYM: 0,
+  DIFF: 1, // CPU difficulty: 0 Rookie, 1 Pro, 2 All-Star, 3 Hall of Fame (only the CPU side, never humans)
   playerBodies: true, // Rapier kinematic player capsules (ball can deflect off bodies)
   input: null as null | ((c: Ctrl) => Input),
 };
@@ -212,6 +213,8 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
   snd(500, 0.2, "square");
   return j;
 }
+/** Difficulty multiplier for CPU-controlled teams (a team with no human on it); humans' teammates play at Pro level. */
+const cpuK = (p: Player, k: number[]) => (CT.some((c) => c.tm === p.tm) ? k[1] : k[cfg.DIFF] ?? 1);
 export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: number) => boolean) {
   let b = -1,
     bd = 1e9;
@@ -402,7 +405,7 @@ export function launch(p: Player) {
     }
     if (!gr && !lay)
       txtW(TEMPO && p.tp == null ? "NO TEMPO" : (TEMPO ? p.tp > cen : p.mt > cen) ? "LATE" : "EARLY", p.x, p.y, 95, "#ff9966");
-  } else gr = Math.random() < clamp((rat / 100) * 0.75 + 0.1 - cx * 0.45 + (p.sbw > 0 ? 0.1 : 0), 0.05, 0.95);
+  } else gr = Math.random() < clamp(((rat / 100) * 0.75 + 0.1 - cx * 0.45 + (p.sbw > 0 ? 0.1 : 0)) * cpuK(p, [0.78, 0.92, 1, 1.1]), 0.05, 0.95);
   B.owner = null;
   B.mode = "air";
   B.sh = 1;
@@ -946,7 +949,7 @@ export function ai(p: Player, dt: number) {
     mv(p, x + (p.x - nd.x) * 0.35, s[1] + Math.sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
   } else if (B.owner) {
     const o = p.manT > 0 && p.man != null ? P[p.man] : P[(1 - t) * NP + p.k],
-      ou = B.owner === o ? 22 : 26,
+      ou = (B.owner === o ? 22 : 26) * cpuK(p, [1.35, 1.12, 1, 0.86]), // tighter on-ball defense on harder levels
       l = Math.hypot(dh - o.x, HY - o.y) || 1;
     const hb = B.owner,
       hh = Math.hypot(dh - hb.x, HY - hb.y);
@@ -958,7 +961,7 @@ export function ai(p: Player, dt: number) {
       if (dh > 470 ? B.x < 470 : B.x > 470) tx = dh > 470 ? Math.max(tx, 455) : Math.min(tx, 485);
       mv(p, tx, ty, 0.92);
     }
-    if (Math.hypot(o.x - p.x, o.y - p.y) < 42 && (o.mode === "c" || o.mode === "s") && p.z <= 0 && !a.j) i.sd = a.j = 1;
+    if (Math.hypot(o.x - p.x, o.y - p.y) < 42 * cpuK(p, [0.7, 0.9, 1, 1.12]) && (o.mode === "c" || o.mode === "s") && p.z <= 0 && !a.j) i.sd = a.j = 1;
     if (o.mode === "i") a.j = 0;
     if ((dh > 470 ? B.x >= 470 : B.x <= 470) && B.owner === o && Math.hypot(o.x - p.x, o.y - p.y) < 22 && Math.random() < dt * 0.7) i.e = 1;
   } else {

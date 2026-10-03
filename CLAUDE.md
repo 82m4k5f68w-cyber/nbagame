@@ -52,6 +52,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - 3D rendering: `render3d.ts glInit` (court texture, crowd InstancedMesh, jumbotron, hoops, net, rig; shared material cache); `V.GL.render` (cameras `V.CAMM` 0-3, quality `V.QL`, auto-downgrade). Canvas fallback (`canvas.ts scene3c/segs3c`) if WebGL fails.
 - HUD: 2D canvas `#h` over the WebGL canvas `#c` (must stay transparent!). `view.ts pr(x,y,z)` projects with the active camera/renderer.
 - Replays: allocation-free `REC` ring buffer in the core, `startReplay/rplStep/skipReplay`. Input (`input.ts`): keyboard, touch buttons `#tc`, gamepad `gpPoll` (wrapped: blocked in iframes by permissions policy).
+- Menus (`game.ts`): matchup screen `menu()` (your team vs chosen/random opponent `OPP`, lineups with drawn `avatar()` portraits, team ratings, difficulty `cfg.DIFF` applied via `cpuK()` to CPU-only teams, quarter length `QLEN`, settings drawer `#sd`), final screen (record `rec` in localStorage `h2k_rec`, player of the game, stat bars, rematch), hub Quick Play (`h2k_lastplay`).
 - Debug handle in the browser: `window.H2K = { G (sim module), V, NET, startLocal, menu }`.
 
 ## Online multiplayer (src/net, src/client/net, server/)

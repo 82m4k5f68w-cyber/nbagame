@@ -24,7 +24,7 @@ function fatal(m: string) {
 }
 
 /** Boot one of the four main modes. np = players per team, r3d = three.js renderer (else 2D court). */
-export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mode: string; online?: boolean | { host?: boolean; join?: string } }) {
+export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mode: string; online?: boolean | { host?: boolean; join?: string }; quick?: { sel: number; opp: number } }) {
   GS.mode = o.mode;
   cfg.NP = o.np;
   // Both renderers now run the same Rapier ball and hand-accurate release (2D used to get the legacy ball).
@@ -76,7 +76,12 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   GS.booted = 1;
   (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
-  if (o.online && typeof o.online === "object") NET.quick(o.online);
+  if (o.quick) {
+    SEL = o.quick.sel;
+    OPP = o.quick.opp;
+    menu();
+    startLocal(SEL, OPP >= 0 ? { j: OPP } : {});
+  } else if (o.online && typeof o.online === "object") NET.quick(o.online);
   else if (o.online) NET.openLobby();
   else menu();
   requestAnimationFrame(loop);
@@ -93,103 +98,237 @@ function loadSet() {
     if (o.q != null) V.QL = o.q;
     if (o.fx != null) V.FX = !!o.fx;
     if (o.my != null) MYM = o.my;
+    if (o.df != null) cfg.DIFF = o.df;
+    if (o.ql) QLEN = o.ql;
   } catch (e) {}
 }
 function saveSet() {
   try {
-    localStorage.setItem("h2k_set", JSON.stringify({ m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, my: MYM }));
+    localStorage.setItem("h2k_set", JSON.stringify({ m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, my: MYM, df: cfg.DIFF, ql: QLEN }));
   } catch (e) {}
 }
 
 // ---------------- menus ----------------
 const opt = (b: string, k: string, v: number, cur: number, l: string) => `<button data-${k}="${v}" class="${cur === v ? "on" : ""}">${l}</button>`;
+// ---------------- portraits, records ----------------
+const AV = new Map<string, string>();
+/** Little broadcast-style portrait drawn from the roster data (skin, hair, beard, jersey, number). */
+export function avatar(t: any[], col: string): string {
+  const key = t[0] + col;
+  let u = AV.get(key);
+  if (u) return u;
+  const c = document.createElement("canvas");
+  c.width = c.height = 96;
+  const x = c.getContext("2d")!,
+    sk = t[7],
+    hc = sk === "#e8b88f" ? "#4a3320" : "#141414";
+  const g = x.createRadialGradient(48, 30, 4, 48, 48, 60);
+  g.addColorStop(0, col);
+  g.addColorStop(1, "#090b16");
+  x.fillStyle = g;
+  x.fillRect(0, 0, 96, 96);
+  x.fillStyle = col; // jersey + shoulders
+  x.beginPath();
+  x.ellipse(48, 104, 44, 34, 0, 0, 6.3);
+  x.fill();
+  x.strokeStyle = "rgba(255,255,255,.75)";
+  x.lineWidth = 3;
+  x.beginPath();
+  x.arc(48, 70, 12, 0.15 * Math.PI, 0.85 * Math.PI);
+  x.stroke();
+  x.fillStyle = "#fff";
+  x.font = "900 15px system-ui";
+  x.textAlign = "center";
+  x.fillText(String(t[12]), 48, 92);
+  x.fillStyle = sk; // neck, head, ears
+  x.fillRect(40, 56, 16, 14);
+  x.beginPath();
+  x.ellipse(48, 42, 17, 21, 0, 0, 6.3);
+  x.fill();
+  x.beginPath();
+  x.ellipse(31, 43, 3.5, 6, 0, 0, 6.3);
+  x.ellipse(65, 43, 3.5, 6, 0, 0, 6.3);
+  x.fill();
+  x.fillStyle = hc;
+  if (t[8] === 1) (x.beginPath(), x.ellipse(48, 28, 17.5, 10, 0, Math.PI, 2 * Math.PI), x.fill());
+  if (t[8] === 2) (x.beginPath(), x.ellipse(48, 30, 19, 13, 0, Math.PI, 2 * Math.PI), x.fill(), x.fillRect(29, 28, 6, 26), x.fillRect(61, 28, 6, 26));
+  if (t[8] === 3) (x.beginPath(), x.arc(48, 27, 22, Math.PI * 0.92, Math.PI * 2.08), x.fill());
+  if (t[9]) (x.beginPath(), x.ellipse(48, 56, 14, 9, 0, 0, Math.PI), x.fill());
+  x.fillStyle = "#16110c"; // eyes, brows, mouth
+  x.fillRect(40, 40, 4, 3);
+  x.fillRect(52, 40, 4, 3);
+  x.fillStyle = hc;
+  x.fillRect(38, 35, 8, 2);
+  x.fillRect(50, 35, 8, 2);
+  x.strokeStyle = "rgba(60,20,10,.7)";
+  x.lineWidth = 1.6;
+  x.beginPath();
+  x.arc(48, 50, 5, 0.2 * Math.PI, 0.8 * Math.PI);
+  x.stroke();
+  u = c.toDataURL();
+  AV.set(key, u);
+  return u;
+}
+type Rec = { w: number; l: number; st: number; best: number; last?: any };
+export const rec = {
+  get(): Rec {
+    try {
+      return { w: 0, l: 0, st: 0, best: 0, ...JSON.parse(localStorage.getItem("h2k_rec") || "{}") };
+    } catch (e) {
+      return { w: 0, l: 0, st: 0, best: 0 };
+    }
+  },
+  put(r: Rec) {
+    try {
+      localStorage.setItem("h2k_rec", JSON.stringify(r));
+    } catch (e) {}
+  },
+};
+const POS = ["PG", "SG", "SF", "PF", "C"],
+  DIFFN = ["Rookie", "Pro", "All-Star", "Hall of Fame"],
+  avg = (a: any[], k: number) => Math.round(a.reduce((s2, p) => s2 + p[k], 0) / a.length);
+let OPP = -1; // -1 = random opponent
+let QLEN = 60;
+
+/** The matchup screen: your team vs. the opponent, lineups, ratings, difficulty, and a settings drawer. */
 export function menu() {
   G.setS("menu");
   ov.style.display = "flex";
+  ov.classList.add("mu-on");
   const NP = cfg.NP,
-    N = nChoices(),
-    IT = [...Array(N).keys()].map((i) => {
-      const r = RO(i);
-      return {
-        n: r[2],
-        c: r[0],
-        sub: NP > 1 ? r[1].map((p) => p[0]).join(" · ") : TM[ALL[i].t][0],
-        o: Math.round(r[1].reduce((a, p) => a + ov2(p), 0) / r[1].length),
-        pl: r[1],
-      };
-    });
+    N = nChoices();
   if (SEL >= N) SEL = 0;
-  ov.style.setProperty("--tc", IT[SEL].c);
-  ov.innerHTML = `<div class="logo">HOOPS<span>2K27</span></div><div class="sub">${NP > 1 ? "5V5 · PICK YOUR TEAM" : "1V1 SHOWDOWN · PICK YOUR STAR"} · ${V.r3d ? "3D ARENA" : "2D COURT"}</div><div id="g" role="listbox" aria-label="Choose">${IT.map(
-    (t, i) =>
-      `<button class="card${i === SEL ? " sel" : ""}" role="option" aria-selected="${i === SEL}" data-i="${i}" style="--i:${i % 12};--c:${t.c}"><i>${esc(t.n.slice(0, 3).toUpperCase())}</i><b>${esc(t.n)}</b><small>${esc(t.sub)}</small><em>OVR ${t.o}</em></button>`,
-  ).join("")}</div><div id="pv"></div>
-  <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → choose · Enter tip off · Esc pauses in game</p>
-  <div class="setw">
+  if (OPP >= N || OPP === SEL) OPP = -1;
+  const R = rec.get(),
+    side = (i: number, you: boolean) => {
+      const r = RO(i),
+        pl = r[1],
+        ovr0 = Math.round(pl.reduce((a, p) => a + ov2(p), 0) / pl.length),
+        name = r[2],
+        sub = NP > 1 ? "" : TM[ALL[i].t][0],
+        bars: [string, number][] = [
+          ["3PT", avg(pl, 1)],
+          ["INSIDE", avg(pl, 2)],
+          ["SPEED", avg(pl, 3)],
+          ["DEFENSE", avg(pl, 4)],
+        ];
+      return `<section class="side${you ? " you" : ""}" style="--c:${r[0]}">
+        <div class="sh"><button class="arw" data-cy="${you ? "y" : "o"}" data-d="-1" aria-label="Previous">◀</button>
+        <div class="badge">${esc(name.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase())}</div>
+        <div class="tn"><small>${you ? (MYM ? "YOU · MY PLAYER" : "YOU") : "OPPONENT"}${sub ? " · " + esc(sub) : ""}</small><b>${esc(name)}</b></div>
+        <div class="ovr"><small>OVR</small>${ovr0}</div>
+        <button class="arw" data-cy="${you ? "y" : "o"}" data-d="1" aria-label="Next">▶</button></div>
+        <div class="rt">${bars.map(([k, v]) => `<div><span>${k}</span><i style="--w:${v}%"></i><em>${v}</em></div>`).join("")}</div>
+        <ol class="lu">${pl
+          .map(
+            (p, k) =>
+              `<li style="--d:${k * 60}ms"><img alt="" src="${avatar(p, r[0])}"><span class="pn">${NP > 1 ? POS[k] : "#" + p[12]}</span><b>${esc(p[0])}</b><span class="po">${ov2(p)}</span></li>`,
+          )
+          .join("")}</ol></section>`;
+    };
+  const oppI = OPP < 0 ? -1 : OPP;
+  ov.innerHTML = `<div class="mu">
+  <header class="mu-top"><div class="logo">HOOPS<span>2K27</span></div><div class="mu-sub">${NP > 1 ? "5V5" : "1V1 SHOWDOWN"} · ${V.r3d ? "3D ARENA" : "2D COURT"}</div>
+   <div class="rec" title="Your record vs the CPU">${R.w}W · ${R.l}L${R.st > 1 ? ` · 🔥 ${R.st} straight` : ""}</div><button id="set" class="gear">⚙ Settings</button></header>
+  <div class="vs">${side(SEL, true)}
+   <div class="mid"><div class="vsb">VS</div>
+    <div class="chips"><b>DIFFICULTY</b>${DIFFN.map((n, i) => opt("", "df", i, cfg.DIFF, n)).join("")}</div>
+    <div class="chips"><b>QUARTERS</b>${[30, 60, 120, 180].map((q) => `<button data-ql="${q}" class="${QLEN === q ? "on" : ""}">${q < 60 ? q + "s" : q / 60 + " min"}</button>`).join("")}</div>
+    <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → your ${NP > 1 ? "team" : "star"} · ↑ ↓ opponent · Enter tip off</p></div>
+   ${oppI < 0 ? `<section class="side rnd"><div class="sh"><button class="arw" data-cy="o" data-d="-1" aria-label="Previous">◀</button><div class="badge">?</div><div class="tn"><small>OPPONENT</small><b>Random</b></div><button class="arw" data-cy="o" data-d="1" aria-label="Next">▶</button></div><p class="hint" style="margin:10px 0">A surprise ${NP > 1 ? "team" : "star"} every game. Use ▶ or ↑ ↓ to pick one.</p><ol class="lu q">${(NP > 1 ? POS : ["?"])
+        .map((ps, k) => `<li style="--d:${k * 60}ms"><span class="qa">?</span><span class="pn">${NP > 1 ? ps : ""}</span><b>Mystery ${NP > 1 ? "starter" : "star"}</b><span class="po">??</span></li>`)
+        .join("")}</ol></section>` : side(oppI, false)}</div>
+  <div id="g" class="strip" role="listbox" aria-label="Choose">${[...Array(N).keys()]
+    .map((i) => {
+      const r = RO(i);
+      return `<button class="card${i === SEL ? " sel" : ""}" role="option" aria-selected="${i === SEL}" data-i="${i}" style="--i:${i % 12};--c:${r[0]}" title="${esc(r[2])}">${NP > 1 ? esc(r[2]) : `<img alt="" src="${avatar(r[1][0], r[0])}"><span>${esc(r[2].split(" ").pop()!)}</span>`}</button>`;
+    })
+    .join("")}</div>
+  <aside id="sd" hidden><div class="sdh"><b>SETTINGS</b><button id="sdx" aria-label="Close settings">✕</button></div>
    <div class="opts"><h3>MATCH</h3><b>PLAYERS</b>${opt("", "mp", 0, IN.MP2, "1 Player")}${opt("", "mp", 1, IN.MP2, "2 Players (keyboard)")}<button id="online">🌐 Play online</button>
     <b>PLAYER MODE</b>${opt("", "my", 0, MYM, "Pick a team")}${opt("", "my", 1, MYM, "My Player")}<button id="edit">✎ Edit my player</button>
     <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
    <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
-   ${
-     V.r3d
-       ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "Bloom · AO · blur · reflections")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}</div>`
-       : ""
-   }
-  </div>
-  <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p>`;
-  const pv = () => {
-    $("#pv").innerHTML =
-      IT[SEL].pl
-        .map(
-          (p, k) =>
-            `<div class="pl" style="--d:${k * 80}ms"><b>${p[0]}</b><span>${ov2(p)}</span><u style="--w:${p[1]}%"></u><u style="--w:${p[2]}%"></u><u style="--w:${p[3]}%"></u></div>`,
-        )
-        .join("") + '<p class="lg">bars: 3PT · INSIDE · SPEED</p>';
+   ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}</div>` : ""}
+   <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p></aside></div>`;
+  const re = () => (saveSet(), menu());
+  const cyc = (who: string, d: number) => {
+    if (who === "y") {
+      SEL = (SEL + d + N) % N;
+      if (SEL === OPP) SEL = (SEL + d + N) % N;
+    } else {
+      let o = OPP + d;
+      if (o < -1) o = N - 1;
+      if (o >= N) o = -1;
+      if (o === SEL) o += d;
+      OPP = o >= N ? -1 : o < -1 ? N - 1 : o;
+    }
+    menu();
+    const f = ov.querySelector<HTMLElement>(`.arw[data-cy="${who}"][data-d="${d}"]`);
+    f && f.focus();
   };
-  pv();
-  const pickCard = (i: number, focus = false) => {
-    SEL = (i + N) % N;
-    ov.querySelectorAll<HTMLElement>(".card").forEach((c, k) => {
-      c.classList.toggle("sel", k === SEL);
-      c.setAttribute("aria-selected", String(k === SEL));
-      if (k === SEL && focus) c.focus();
-    });
-    ov.style.setProperty("--tc", IT[SEL].c);
-    pv();
+  ov.querySelectorAll<HTMLElement>(".arw").forEach((b) => (b.onclick = () => cyc(b.dataset.cy!, +b.dataset.d!)));
+  ov.querySelectorAll<HTMLElement>(".strip .card").forEach(
+    (b) =>
+      (b.onclick = () => {
+        SEL = +b.dataset.i!;
+        if (OPP === SEL) OPP = -1;
+        menu();
+      }),
+  );
+  const tip = () => {
+    saveSet();
+    try {
+      localStorage.setItem("h2k_lastplay", JSON.stringify({ mode: GS.mode, sel: SEL, opp: OPP }));
+    } catch (e) {}
+    startLocal(SEL, OPP >= 0 ? { j: OPP } : {});
   };
-  ov.querySelectorAll<HTMLElement>(".card").forEach((b) => (b.onclick = () => pickCard(+b.dataset.i!)));
-  menuKeys = (e: KeyboardEvent) => {
-    if (G.S !== "menu" || ov.style.display === "none" || !document.getElementById("tip")) return;
-    if ((e.target as HTMLElement)?.closest?.("input,select")) return;
-    const cols = Math.max(1, Math.round(($("#g").clientWidth || 600) / 208));
-    if (e.code === "ArrowRight") pickCard(SEL + 1, true);
-    else if (e.code === "ArrowLeft") pickCard(SEL - 1, true);
-    else if (e.code === "ArrowDown") pickCard(SEL + cols, true);
-    else if (e.code === "ArrowUp") pickCard(SEL - cols, true);
-    else if (e.code === "Enter") startLocal(SEL);
-    else return;
-    e.preventDefault();
-  };
-  $("#tip").onclick = () => startLocal(SEL);
-  const grp = (k: string, f: (v: number) => void) =>
+  $("#tip").onclick = tip;
+  const grp = (k: string, f: (v: number) => void, again = false) =>
     ov.querySelectorAll<HTMLElement>(`[data-${k}]`).forEach(
       (b) =>
         (b.onclick = () => {
           f(+b.dataset[k]!);
           saveSet();
-          ov.querySelectorAll(`[data-${k}]`).forEach((c) => c.classList.toggle("on", c === b));
+          if (again) menu();
+          else ov.querySelectorAll(`[data-${k}]`).forEach((c) => c.classList.toggle("on", c === b));
         }),
     );
+  grp("df", (v) => (cfg.DIFF = v));
+  grp("ql", (v) => (QLEN = v));
   grp("m", (v) => (V.METER = v));
   grp("s", (v) => (IN.TEMPO = v));
   grp("p", (v) => (cfg.PRO = v));
   grp("cm", (v) => (V.CAMM = v));
   grp("q", (v) => (V.QL = v));
   grp("fx", (v) => (V.FX = !!v));
-  grp("my", (v) => (MYM = v));
+  grp("my", (v) => (MYM = v), true);
   grp("mp", (v) => (IN.MP2 = v));
-  $("#edit").onclick = edMy;
-  $("#online").onclick = () => NET.openLobby();
+  const sd = $("#sd");
+  $("#set").onclick = () => {
+    sd.hidden = false;
+    ($("#sdx") as HTMLElement).focus();
+  };
+  $("#sdx").onclick = () => {
+    sd.hidden = true;
+    ($("#set") as HTMLElement).focus();
+  };
+  $("#edit").onclick = () => (ov.classList.remove("mu-on"), edMy());
+  $("#online").onclick = () => (ov.classList.remove("mu-on"), NET.openLobby());
+  void re;
+  menuKeys = (e: KeyboardEvent) => {
+    if (G.S !== "menu" || ov.style.display === "none" || !document.getElementById("tip")) return;
+    if ((e.target as HTMLElement)?.closest?.("input,select")) return;
+    if (e.code === "Escape" && !sd.hidden) return $("#sdx").click();
+    if (!sd.hidden) return;
+    if (e.code === "ArrowRight") cyc("y", 1);
+    else if (e.code === "ArrowLeft") cyc("y", -1);
+    else if (e.code === "ArrowDown") cyc("o", 1);
+    else if (e.code === "ArrowUp") cyc("o", -1);
+    else if (e.code === "Enter" && !(e.target as HTMLElement)?.closest?.("button")) tip();
+    else return;
+    e.preventDefault();
+  };
 }
 function edMy() {
   const d = MYP.d,
@@ -264,6 +403,7 @@ let menuKeys: ((e: KeyboardEvent) => void) | null = null;
 function pause() {
   G.setS("pause");
   ov.style.display = "flex";
+  ov.classList.remove("mu-on");
   ov.innerHTML = `<div class="logo" style="font-size:38px">PAUSED</div><div class="sub">${esc(G.cl[0])} ${G.sc[0]} — ${G.sc[1]} ${esc(G.cl[1])} · Q${G.q}</div><div id="pz">
   <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button><button id="prs">↻ Restart game</button><button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
   $("#pr").onclick = resume;
@@ -297,8 +437,10 @@ export function startLocal(i: number, o: { j?: number } = {}) {
   if (IN.MP2) cs.push(G.mkCtrl("p2", 1, false, IN.TEMPO));
   G.setCtrls(cs);
   V.focus = 0;
+  G.setQtrLen(QLEN);
   lastJ = G.start(i, o);
   ov.style.display = "none";
+  ov.classList.remove("mu-on");
   lastFx = G.FX.length ? G.FX[G.FX.length - 1].id - 1 : 0;
 }
 
@@ -322,17 +464,50 @@ function endGame() {
   const sc = G.sc,
     cl = G.cl;
   ov.style.display = "flex";
+  ov.classList.remove("mu-on");
   const me = (CT[V.focus] || CT[0]).tm,
     w = sc[me] > sc[1 - me],
-    tb = (t: number) =>
-      `<table class="bx"><tr><th>${esc(cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>BLK</th></tr>${P.filter((p) => p.tm === t)
-        .map(
-          (p) =>
-            `<tr><td>${esc(p.n)}</td><td>${p.stt.pts}</td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.stt.blk}</td></tr>`,
-        )
-        .join("")}</table>`;
-  ov.innerHTML = `<div class="logo" style="font-size:40px">${w ? "YOU WIN!" : "FINAL"}</div><p style="font-size:24px;font-weight:800">${esc(cl[0])} ${sc[0]} — ${sc[1]} ${esc(cl[1])}</p><div class="bxw">${tb(0)}${tb(1)}</div><button class="big" id="pa">${NET.role ? "Back to lobby" : "Play again"}</button>`;
+    tm = (t: number) => P.filter((p) => p.tm === t),
+    sum = (t: number, k: string) => tm(t).reduce((a, p) => a + p.stt[k], 0),
+    pct = (m: number, a: number) => (a ? Math.round((100 * m) / a) : 0);
+  // record (offline games vs the CPU only)
+  if (!NET.role && !IN.MP2) {
+    const r = rec.get();
+    if (w) (r.w++, (r.st = Math.max(1, r.st + 1)), (r.best = Math.max(r.best, r.st)));
+    else (r.l++, (r.st = 0));
+    rec.put(r);
+  }
+  // player of the game: best line on the winning side
+  const wt = sc[0] >= sc[1] ? 0 : 1,
+    pog = tm(wt).sort((a, b) => b.stt.pts + b.stt.reb * 1.2 + b.stt.ast * 1.5 + b.stt.blk * 2 - (a.stt.pts + a.stt.reb * 1.2 + a.stt.ast * 1.5 + a.stt.blk * 2))[0];
+  const rows: [string, number, number][] = [
+    ["FG%", pct(sum(0, "fgm"), sum(0, "fga")), pct(sum(1, "fgm"), sum(1, "fga"))],
+    ["3P%", pct(sum(0, "tpm"), sum(0, "tpa")), pct(sum(1, "tpm"), sum(1, "tpa"))],
+    ["REB", sum(0, "reb"), sum(1, "reb")],
+    ["AST", sum(0, "ast"), sum(1, "ast")],
+    ["BLK", sum(0, "blk"), sum(1, "blk")],
+  ];
+  const tb = (t: number) =>
+    `<table class="bx"><tr><th>${esc(cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>BLK</th></tr>${tm(t)
+      .map((p) => `<tr><td>${esc(p.n)}</td><td>${p.stt.pts}</td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.stt.blk}</td></tr>`)
+      .join("")}</table>`;
+  const r = rec.get();
+  ov.innerHTML = `<div class="fin" style="--c0:${G.PC[0]};--c1:${G.PC[1]}">
+   <div class="logo" style="font-size:44px;animation:none;color:${NET.role || IN.MP2 ? "#fff" : w ? "#ffd23f" : "#ff8a6b"}">${NET.role || IN.MP2 ? "FINAL" : w ? "VICTORY" : "DEFEAT"}</div>
+   <div class="sc"><span style="--c:${G.PC[0]}">${esc(cl[0])}</span><b>${sc[0]}</b><i>—</i><b>${sc[1]}</b><span style="--c:${G.PC[1]}">${esc(cl[1])}</span></div>
+   ${!NET.role && !IN.MP2 ? `<p class="hint">Record ${r.w}W · ${r.l}L${r.st > 1 ? " · 🔥 " + r.st + " straight" : ""}${r.best > 1 ? " · best streak " + r.best : ""}</p>` : ""}
+   ${pog ? `<div class="pog"><img alt="" src="${avatar([pog.n, pog.c, pog.i, pog.s, pog.d, pog.j, pog.st, pog.skin, pog.hr, pog.bd, pog.ht, pog.bk, pog.no], pog.col)}"><div><small>PLAYER OF THE GAME</small><b>${esc(pog.n)}</b><span>${pog.stt.pts} PTS · ${pog.stt.reb} REB · ${pog.stt.ast} AST${pog.stt.blk ? " · " + pog.stt.blk + " BLK" : ""}</span></div></div>` : ""}
+   <div class="cmp">${rows
+     .map(([k, a2, b2]) => {
+       const t = a2 + b2 || 1;
+       return `<div><em>${a2}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em>${b2}</em><small>${k}</small></div>`;
+     })
+     .join("")}</div>
+   <details class="bxw"><summary>Box score</summary>${tb(0)}${tb(1)}</details>
+   <div class="row">${NET.role ? `<button class="big" id="pa">Back to lobby</button>` : `<button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button>`}</div></div>`;
   $("#pa").onclick = () => (NET.role ? NET.backToLobby() : menu());
+  const rm = document.getElementById("rm");
+  if (rm) rm.onclick = () => startLocal(SEL, { j: lastJ });
   GS.onEnd && GS.onEnd(w);
 }
 
