@@ -279,11 +279,11 @@ export const CL: Record<string, Record<string, number[]>> = {
     "hook",
   ],
   SIG: Record<string, any> = {
-    Curry: { cl: 1, w: 0.15, off: 1 },
-    Doncic: { l: -0.28, f: 0.05 },
+    Curry: { cl: 1, w: 0.15, off: 1, ce: [1, 8, 2] }, // shimmy, point up, night night
+    Doncic: { l: -0.28, f: 0.05, ce: [7, 5, 7] },
     Jokic: { a: -0.2, k: 0.3, l: 0.06 },
     Wembanyama: { a: 0.4, g: 0.5, w: 0.2 },
-    Edwards: { k: 0.2, f: 0.05 },
+    Edwards: { k: 0.2, f: 0.05, ce: [4, 6, 6] },
     "Gilgeous-Alexander": { a: 0.1, l: -0.16 },
     Brunson: { l: -0.1, k: 0.05 },
     Towns: { a: 0.1, l: -0.12 },
@@ -310,7 +310,7 @@ export function formOf(name: string) {
     h = Math.imul(h ^ (h >>> 13), 3266489909);
     return ((h ^= h >>> 16) >>> 0) / 4294967296;
   };
-  const f: Record<string, number> = {
+  const f: Record<string, any> = {
     a: (r() - 0.5) * 0.36,
     f: (r() - 0.5) * 0.12,
     l: (r() - 0.5) * 0.16,
@@ -323,5 +323,8 @@ export function formOf(name: string) {
     tw: (r() - 0.5) * 0.3,
     gh: r() < 0.25 ? 0.3 + r() * 0.3 : 0,
   };
+  // signature celebrations [after a three, after a dunk / and-one, clutch / on fire] (see pose.ts CEL)
+  const pk = (a: number[]) => a[(r() * a.length) | 0];
+  f.ce = [pk([1, 4, 7, 8]), pk([3, 5, 6]), pk([2, 6, 7, 8])] as any;
   return { ...f, ...(SIG[name] || {}) };
 }

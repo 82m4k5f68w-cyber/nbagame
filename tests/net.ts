@@ -7,6 +7,7 @@ import * as G from "../src/core/sim";
 import { P } from "../src/core/sim";
 import { WsTransport } from "../src/net/ws";
 import { GuestSession } from "../src/net/guest";
+import { HDR, PST } from "../src/net/protocol";
 
 const arg = (k: string, d: number) => +(process.argv.find((a) => a.startsWith(k + "="))?.split("=")[1] ?? d);
 const LAG = arg("lag", 80), JIT = arg("jitter", 40), DROP = arg("drop", 0.1), SECS = arg("seconds", 12);
@@ -28,7 +29,8 @@ try {
   while (g.gid < 0 && Date.now() - t0 < 10000) await new Promise((r) => setTimeout(r, 30));
   if (g.gid < 0) fail("game did not start");
   // Play: hold right (toward the hoop we attack), tap shoot now and then.
-  let maxPres = 0, frames = 0, maxVx = 0, nan = 0, errSum = 0, errN = 0, shots = 0, lastT = performance.now();
+  // hostVx: fastest the host moved whichever player this guest controlled at the time (control auto-switches)
+  let hostVx = 0, maxPres = 0, frames = 0, maxVx = 0, nan = 0, errSum = 0, errN = 0, shots = 0, lastT = performance.now();
   const startX: number[] = [];
   const end = Date.now() + SECS * 1000;
   let fc = 0;
@@ -51,12 +53,11 @@ try {
       if (!startX.length) startX.push(p.x);
       maxVx = Math.max(maxVx, p.vx);
       const s = g.snaps[g.snaps.length - 1];
-      if (s) { const o = 34 + g.myIdx * 24; errSum += Math.hypot(p.x - s[o] / 10, p.y - s[o + 1] / 10); errN++; }
+      if (s) { const o = HDR + g.myIdx * PST; errSum += Math.hypot(p.x - s[o] / 10, p.y - s[o + 1] / 10); errN++; hostVx = Math.max(hostVx, s[o + 3]); }
     }
     for (const p of P) if (![p.x, p.y, p.z].every(isFinite)) nan++;
   }
   const st = g.stats;
-  const hostVx = Math.max(...g.snaps.map((s) => (g.myIdx >= 0 ? s[34 + g.myIdx * 24 + 3] : 0)));
   const res = { frames, snaps: st.full + st.delta, full: st.full, delta: st.delta, avgBytes: Math.round(st.bytes / Math.max(1, st.full + st.delta)), rttMs: Math.round(g.rtt), interpTicks: +g.D.toFixed(1), myIdx: g.myIdx, predVxMax: Math.round(maxVx), hostVxMax: hostVx, avgPredLeadPx: +(errSum / Math.max(1, errN)).toFixed(1), corrections: st.corr + "/" + st.recon, hostPresenceMaxBytes: maxPres, score: G.sc, nan };
   console.log(JSON.stringify(res));
   if (nan) fail("NaN state");

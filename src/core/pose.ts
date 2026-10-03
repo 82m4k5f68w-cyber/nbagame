@@ -1,7 +1,7 @@
 // Pro Play pose solver: joint angles per player (p.q), shot clips, and analytic hand forward kinematics.
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
 import { CL, CK } from "./data";
-import { P, B, pos, T, DT, cfg, W3, clamp, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -207,7 +207,7 @@ export function pose3(p: Player) {
     ty = Math.sin(p.t * 22) * 0.3;
   } else if (has) {
     {
-      const u = PRO ? clamp((B.z - 6) / 30, 0, 1) : Math.abs(Math.sin(T * 8 + p.k));
+      const u = clamp((B.z - 6) / 30, 0, 1);
       aR = PRO ? 0.5 + u * 0.45 : 0.55 + u * 0.8;
       eR = PRO ? 0.25 + u * 1.1 : 0.9;
       if (PRO) wR = 0.8 - u * 1.2;
@@ -254,7 +254,8 @@ export function pose3(p: Player) {
       // Dribble hand IK: reach the real ball position.
       const S2 = p.ht / 6.4,
         w = W3(p.x, p.y, p.z),
-        b = W3(B.x, B.y, B.z),
+        // the hand follows the push down a little, then waits at the hip for the ball to come back up
+        b = W3(B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8)),
         th = Math.PI / 2 - p.f,
         X1 = b[0] - w[0],
         Y1 = b[1] - (w[1] - cr * 0.4),
@@ -355,6 +356,88 @@ export function pose3(p: Player) {
     ln = 0.25;
     sz = 0.8;
     aL = 1.2;
+  }
+  // Signature celebration (CEL): arms and torso blend into the move while the legs keep running.
+  if (p.celT > 0 && p.cel && md === "i" && !has && !air && !p.postA && !(p.setT > 0)) {
+    const e = CEL_T - p.celT,
+      k = Math.min(1, e / 0.2, p.celT / 0.35),
+      m = (a: number, b: number) => a + (b - a) * k,
+      zl = zL == null ? sz : zL;
+    switch (p.cel) {
+      case 1: // shimmy: elbows tucked, shoulders shake
+        aL = m(aL, 0.45);
+        aR = m(aR, 0.45);
+        eL = m(eL, 1.75);
+        eR = m(eR, 1.75);
+        sz = m(sz, 0.3);
+        zL = m(zl, 0.3);
+        ty += Math.sin(e * 50) * 0.3 * k;
+        rz += Math.sin(e * 50) * 0.07 * k;
+        ln = m(ln, -0.05);
+        break;
+      case 2: // night night: hands together beside the cheek, head tilted onto them
+        aR = m(aR, 2.45);
+        eR = m(eR, 2.5);
+        aL = m(aL, 2.25);
+        eL = m(eL, 2.45);
+        sz = m(sz, -0.15);
+        zL = m(zl, -0.6);
+        rz = m(rz, 0.24);
+        ty = m(ty, 0.2);
+        break;
+      case 3: // double-bicep flex with a pump
+        aL = aR = m((aL + aR) / 2, 1.45);
+        eL = eR = m((eL + eR) / 2, 1.95 + Math.sin(e * 12) * 0.18);
+        sz = m(sz, 1.3);
+        zL = m(zl, 1.3);
+        ln = m(ln, -0.14);
+        cr = m(cr, 0.15);
+        break;
+      case 4: // both arms up, three fingers to the crowd, pumping
+        aL = m(aL, 2.7 + Math.sin(e * 10) * 0.15);
+        aR = m(aR, 2.7 + Math.sin(e * 10 + 1) * 0.15);
+        eL = m(eL, 0.35);
+        eR = m(eR, 0.35);
+        sz = m(sz, 0.35);
+        zL = m(zl, 0.35);
+        ln = m(ln, -0.16);
+        break;
+      case 5: // chest thump, chin up
+        aR = m(aR, 1.25);
+        eR = m(eR, 2.25 + Math.max(0, Math.sin(e * 15)) * 0.35);
+        sz = m(sz, -0.45);
+        aL = m(aL, 0.35);
+        zL = m(zl, 0.6);
+        ln = m(ln, -0.16);
+        break;
+      case 6: // power roar: crouched, arms flexed down and out
+        aL = m(aL, 0.45);
+        aR = m(aR, 0.45);
+        eL = m(eL, 1.0);
+        eR = m(eR, 1.0);
+        sz = m(sz, 0.95);
+        zL = m(zl, 0.95);
+        ln = m(ln, 0.28);
+        cr = m(cr, 0.35);
+        break;
+      case 7: // shh: finger to the lips, looking around the arena
+        aR = m(aR, 2.2);
+        eR = m(eR, 2.55);
+        sz = m(sz, -0.3);
+        aL = m(aL, 0.2);
+        eL = m(eL, 0.35);
+        ty += Math.sin(e * 2.2) * 0.35 * k;
+        break;
+      case 8: // point to the sky
+        aR = m(aR, 2.95);
+        eR = m(eR, 0.12);
+        aL = m(aL, e > 0.6 ? 2.7 : 0.3);
+        eL = m(eL, e > 0.6 ? 0.2 : 0.8);
+        sz = m(sz, 0.15);
+        zL = m(zl, 0.15);
+        ln = m(ln, -0.22);
+        break;
+    }
   }
   const q = p.q,
     sm = PRO && q && q.wR != null,

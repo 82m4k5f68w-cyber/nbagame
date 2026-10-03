@@ -385,6 +385,37 @@ export function glInit(C: HTMLCanvasElement) {
       NB = new THREE.Vector3(),
       ND = new THREE.Vector3(),
       NQ = new THREE.Quaternion();
+    // Ball orientation integrates a real angular velocity: the host's Rapier spin for shots/passes (backspin about
+    // the axis across the flight), rolling on the floor, a forward roll in the dribble. Guests derive it from velocity.
+    const BQ = new THREE.Quaternion(),
+      BW = new THREE.Vector3();
+    function ballSpin(dt: number) {
+      if (RPL) return;
+      const sp = Math.hypot(B.vx || 0, B.vy || 0),
+        o = B.owner;
+      let wx = 0,
+        wy = 0,
+        wz = 0;
+      if (o) {
+        const v = Math.hypot(o.vx, o.vy),
+          dv = B.dvv || 0;
+        // forward topspin from the push + roll with the carrier's run
+        if (v > 1) (wx = (-o.vy / v) * (v / 39 + Math.abs(dv) * 0.02)), (wy = (o.vx / v) * (v / 39 + Math.abs(dv) * 0.02));
+      } else if (B.wv && (B.mode === "air" || B.mode === "pass")) [wx, wy, wz] = B.wv;
+      else if (sp > 1) {
+        const air = B.z > 4.5;
+        const k = air ? -16 / sp : 1 / 3.9; // backspin in flight, pure roll on the floor
+        wx = -B.vy * k;
+        wy = B.vx * k;
+      }
+      // game (x,y,z) -> three (x,z,y) is a reflection, so the axial vector flips sign
+      BW.set(-wx, -wz, -wy);
+      const w = BW.length();
+      if (w > 1e-4) {
+        BQ.setFromAxisAngle(BW.multiplyScalar(1 / w), w * dt);
+        ball.quaternion.premultiply(BQ);
+      }
+    }
     function netUpd() {
       let i = 0;
       for (const N of NETS)
@@ -602,7 +633,7 @@ export function glInit(C: HTMLCanvasElement) {
             }
           const w = W3(B.x, B.y, B.z);
           ball.position.set(w[0], w[1], w[2]);
-          ball.rotation.set(B.a * 0.7, 0, B.a);
+          ballSpin(fdt);
           const o = B.owner;
           if (!RPL && o && o.gl && (o.mode === "c" || o.mode === "s")) {
             o.gl.G.updateMatrixWorld(true);

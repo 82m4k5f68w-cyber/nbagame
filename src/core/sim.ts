@@ -497,7 +497,9 @@ export function launch(p: Player) {
     B.fl = 1;
     B.flBy = fd;
   }
-  let th = D < 90 ? 1.15 : D < 200 ? 1.0 : D < 300 ? 0.92 : D < 400 ? 1.02 : 1.1;
+  // Release angles like real shooters (~48-55 deg; floaters and heaves higher), plus a small per-player arc from the form signature.
+  const fa = (p.sg && p.sg.a) || 0;
+  let th = (D < 90 ? 1.0 : D < 200 ? 0.9 : D < 300 ? 0.86 : D < 400 ? 0.97 : 1.1) + fa * 0.12;
   for (let k = 0; k < 8 && D * Math.tan(th) - dz < 8 && th < 1.45; k++) th += 0.08;
   let ge = g,
     v = Math.sqrt((ge * D * D) / (2 * Math.cos(th) ** 2 * Math.max(1, D * Math.tan(th) - dz)));
@@ -587,6 +589,7 @@ export function step(p: Player, dt: number) {
   p.setT = (p.setT || 0) - dt;
   p.manT = (p.manT || 0) - dt;
   p.hitT = Math.max(0, (p.hitT || 0) - dt);
+  if (p.celT > 0) p.celT = Math.max(0, p.celT - dt);
   p.landT = Math.max(0, (p.landT || 0) - dt);
   {
     // smoothed acceleration along the facing direction (body leans into it)
@@ -969,23 +972,50 @@ export function ai(p: Player, dt: number) {
   }
 }
 
-/** Live-ball height while dribbling: a real bounce between hand and floor. */
-function dz(o: Player, dt: number) {
-  if (B.dh == null) {
-    B.dh = 30;
-    B.dvv = 0;
-  }
+/** Signature celebration after a big bucket (slot 0 three, 1 dunk/and-one, 2 clutch). Arms and torso only: the
+ *  legs keep running back on defense. Drawn by pose3 (CEL in pose.ts); synced to guests in the snapshot. */
+export const CEL_T = 1.8;
+function celebrate(p: Player, slot: number) {
+  if (PREDICT) return;
+  p.cel = (p.sg && p.sg.ce && p.sg.ce[slot]) || [1, 6, 8][slot];
+  p.celT = CEL_T;
+}
+/** Dribble catch height (px): about hip high, lower when a defender is close, a touch higher at full speed. */
+export function dribTop(o: Player) {
   const sp = Math.hypot(o.vx, o.vy);
-  B.dvv -= g * dt;
-  B.dh += B.dvv * dt;
-  const top = o.z + 34 + Math.min(8, sp * 0.03);
-  if (B.dh > top) {
+  let tight = 0;
+  for (const d of P) if (d.tm !== o.tm && Math.hypot(d.x - o.x, d.y - o.y) < 34) tight = 1;
+  return o.z + o.ht * 5 - tight * 5 + Math.min(4, sp * 0.015);
+}
+/** Live-ball height while dribbling: the hand pushes the ball down, it bounces off the floor and rises back into the
+ *  hand, which absorbs it for a moment and pushes again. Faster, harder pushes when driving; lower when guarded. */
+function dz(o: Player, dt: number) {
+  const top = dribTop(o),
+    sp = Math.hypot(o.vx, o.vy);
+  if (B.dh == null || B.dho !== o) {
     B.dh = top;
-    B.dvv = -(150 + sp * 0.25);
+    B.dvv = 0;
+    B.dhd = 0.08;
+    B.dho = o;
   }
-  if (B.dh < 4) {
-    B.dh = 4;
-    B.dvv = Math.abs(B.dvv) * 0.88;
+  B.dtop = top;
+  if (B.dhd > 0) {
+    // in the hand: the catch is cushioned (the hand gives a little upward), then the push
+    B.dhd -= dt;
+    B.dvv *= Math.exp(-28 * dt);
+    B.dh = Math.min(top + 5, B.dh + B.dvv * dt);
+    if (B.dhd <= 0) B.dvv = -(165 + sp * 0.4);
+  } else {
+    B.dvv -= g * dt;
+    B.dh += B.dvv * dt;
+    if (B.dh < BR) {
+      B.dh = BR;
+      B.dvv = Math.abs(B.dvv) * 0.82; // leather on hardwood
+    }
+    if (B.dvv > 0 && B.dh >= top - 1) {
+      B.dh = top - 1;
+      B.dhd = 0.05 + 0.05 / (1 + sp * 0.01);
+    }
   }
   return B.dh;
 }
@@ -994,9 +1024,12 @@ export function bstep(dt: number) {
   const o = B.owner;
   if (o) {
     {
-      const off = o.mvT > 0 ? Math.sin((o.mvE || 0) * 14) * 7 : 0,
-        tx = o.x + Math.cos(o.f) * 8 - Math.sin(o.f) * off,
-        ty = o.y + Math.sin(o.f) * 5 + Math.cos(o.f) * off;
+      // Dribbling: the ball sits out beside the right (dribbling) hand, a little in front; moves swing it across.
+      const side = o.mode === "i" && !o.postA ? -6 : 0,
+        off = side + (o.mvT > 0 ? Math.sin((o.mvE || 0) * 14) * 7 : 0),
+        fw = o.mode === "i" ? 6 : 8,
+        tx = o.x + Math.cos(o.f) * fw - Math.sin(o.f) * off,
+        ty = o.y + Math.sin(o.f) * fw + Math.cos(o.f) * off;
       if (cfg.PRO && o.mode === "i" && B.hold === o && !PREDICT) {
         // Dribble physics: the ball has momentum; the hand pulls it with a stiff, critically damped spring,
         // so crossovers and hard cuts swing it across the body instead of teleporting.
@@ -1024,9 +1057,7 @@ export function bstep(dt: number) {
           ? cfg.PRO && o.st === 1
             ? o.z + 38 + Math.min(1, o.t / 0.3) * 52
             : o.z + 55 + Math.min(1, o.t / 0.4) * 28
-          : cfg.PRO
-            ? dz(o, dt)
-            : 6 + Math.abs(Math.sin(T * 8 + o.k)) * 30;
+          : dz(o, dt);
     B.vx = B.vy = B.vz = 0;
     return;
   }
@@ -1123,6 +1154,14 @@ export function bstep(dt: number) {
         fx({ k: "slow", v: 1.6 });
         fx({ k: "shake", v: 0.6 });
         RQ = 1;
+      }
+      if (!B.ft && B.last) {
+        // signature celebration: clutch / on fire > dunk or and-one > three
+        const L = B.last,
+          clutch = (B.clk != null && B.clk < 1.5 && clock <= 0.05) || L.heat === 3;
+        if (clutch) celebrate(L, 2);
+        else if (B.dk || B.fl) celebrate(L, 1);
+        else if (pts === 3 && (B.gn || Math.random() < 0.5)) celebrate(L, 0);
       }
       snd(900, 0.25, "sine", 0.1);
       if (ftq) ftq.next = 1.3;
@@ -1831,75 +1870,113 @@ export const NETS = HXs.map((hx) => {
     }
   for (let k = 0; k < NS; k++) L(gr[NR.length - 1][k], gr[NR.length - 1][(k + 1) % NS], 0.6); // bottom hem
   for (let r = 1; r < NR.length - 1; r++) for (let k = 0; k < NS; k++) L(gr[r][k], gr[r][(k + 1) % NS], 0.18, 0); // soft hoop ties
-  return { p, c, hx, quiet: 0 };
+  return { p, c, hx, quiet: 0, ring: 0 };
 });
 const SEGR = BR + 0.45;
+/** Cloth net: verlet knots on nylon ropes (stretch-resistant, slack in compression), real gravity, sub-stepped while
+ *  the ball is inside so a fast swish can't tunnel. Two-way: the strands the ball pushes push back (the net grabs and
+ *  slows a swish, so it drops out the bottom), and a ball ringing off the iron shakes the whole mesh. */
 export function netSim(dt: number) {
   for (const N of NETS) {
-    const near = Math.hypot(B.x - N.hx, B.y - HY) < 20 && B.z > 70 && B.z < 112 && !B.owner;
+    const dxy = Math.hypot(B.x - N.hx, B.y - HY),
+      near = dxy < 20 && B.z > 70 && B.z < 112 && !B.owner;
     if (!near && N.quiet > 90) continue; // fully settled and nothing touching it
     N.quiet = near ? 0 : N.quiet + 1;
-    for (const q of N.p) {
-      if (q.f) continue;
-      const vx = (q.x - q.px) * 0.965,
-        vy = (q.y - q.py) * 0.965,
-        vz = (q.z - q.pz) * 0.965;
-      q.px = q.x;
-      q.py = q.y;
-      q.pz = q.z;
-      q.x += vx;
-      q.y += vy;
-      q.z += vz - g * dt * dt * 0.5;
+    // rim hit: the iron vibrates and jerks the loops hanging off it
+    const rd = Math.hypot(dxy - RR, B.z - 100),
+      bs = Math.hypot(B.vx, B.vy, B.vz);
+    if (near && rd < BR + 1.2 && bs > 60 && (N.ring || 0) <= 0) {
+      N.ring = 0.12;
+      const kick = Math.min(1.6, bs * 0.004);
+      for (const q of N.p) if (!q.f && q.z > 93) (q.px -= (Math.random() - 0.5) * kick), (q.py -= (Math.random() - 0.5) * kick), (q.pz += kick * 0.6);
     }
-    for (let it = 0; it < 7; it++) {
-      for (const c of N.c) {
-        const a = c[0],
-          b = c[1],
-          dx = b.x - a.x,
-          dy = b.y - a.y,
-          dz = b.z - a.z,
-          d = Math.hypot(dx, dy, dz) || 1;
-        // strings resist stretching fully but compress freely (rope, not rods)
-        if (d < c[2] && c[3] >= 1) continue;
-        const f = ((d - c[2]) / d) * 0.5 * c[3];
-        if (!a.f) {
-          a.x += dx * f;
-          a.y += dy * f;
-          a.z += dz * f;
-        }
-        if (!b.f) {
-          b.x -= dx * f;
-          b.y -= dy * f;
-          b.z -= dz * f;
-        }
+    if (N.ring > 0) N.ring -= dt;
+    const SUB = near && bs > 150 ? 2 : 1,
+      h = dt / SUB;
+    let rx = 0,
+      ry = 0,
+      rz = 0;
+    for (let sub = 0; sub < SUB; sub++) {
+      // ball position at this sub-step (it already moved this tick)
+      const lag = (SUB - 1 - sub) * h,
+        bx = B.x - B.vx * lag,
+        by = B.y - B.vy * lag,
+        bz = B.z - B.vz * lag;
+      const damp = Math.pow(0.965, SUB === 1 ? 1 : 0.5);
+      for (const q of N.p) {
+        if (q.f) continue;
+        const vx = (q.x - q.px) * damp,
+          vy = (q.y - q.py) * damp,
+          vz = (q.z - q.pz) * damp;
+        q.px = q.x;
+        q.py = q.y;
+        q.pz = q.z;
+        q.x += vx;
+        q.y += vy;
+        q.z += vz - g * h * h;
       }
-      if (near)
+      for (let it = 0; it < 7; it++) {
         for (const c of N.c) {
-          if (!c[4]) continue;
           const a = c[0],
             b = c[1],
-            sx = b.x - a.x,
-            sy = b.y - a.y,
-            sz = b.z - a.z,
-            l2 = sx * sx + sy * sy + sz * sz || 1,
-            t = clamp(((B.x - a.x) * sx + (B.y - a.y) * sy + (B.z - a.z) * sz) / l2, 0, 1),
-            cx = a.x + sx * t - B.x,
-            cy = a.y + sy * t - B.y,
-            cz = a.z + sz * t - B.z,
-            d = Math.hypot(cx, cy, cz);
-          if (d < SEGR && d > 0) {
-            const push = (SEGR - d) / d;
-            for (const [q, w] of [
-              [a, 1 - t],
-              [b, t],
-            ] as [any, number][]) {
-              if (q.f) continue;
-              q.x += cx * push * w;
-              q.y += cy * push * w;
-              q.z += cz * push * w + (B.vz < 0 ? B.vz * dt * 0.06 * w : 0); // drag the mesh down with a falling ball
-            }
+            dx = b.x - a.x,
+            dy = b.y - a.y,
+            dz = b.z - a.z,
+            d = Math.hypot(dx, dy, dz) || 1;
+          // strings resist stretching fully but compress freely (rope, not rods)
+          if (d < c[2] && c[3] >= 1) continue;
+          const f = ((d - c[2]) / d) * 0.5 * c[3];
+          if (!a.f) {
+            a.x += dx * f;
+            a.y += dy * f;
+            a.z += dz * f;
+          }
+          if (!b.f) {
+            b.x -= dx * f;
+            b.y -= dy * f;
+            b.z -= dz * f;
           }
         }
+        if (near)
+          for (const c of N.c) {
+            if (!c[4]) continue;
+            const a = c[0],
+              b = c[1],
+              sx = b.x - a.x,
+              sy = b.y - a.y,
+              sz = b.z - a.z,
+              l2 = sx * sx + sy * sy + sz * sz || 1,
+              t = clamp(((bx - a.x) * sx + (by - a.y) * sy + (bz - a.z) * sz) / l2, 0, 1),
+              cx = a.x + sx * t - bx,
+              cy = a.y + sy * t - by,
+              cz = a.z + sz * t - bz,
+              d = Math.hypot(cx, cy, cz);
+            if (d < SEGR && d > 0) {
+              const push = (SEGR - d) / d;
+              for (const [q, w] of [
+                [a, 1 - t],
+                [b, t],
+              ] as [any, number][]) {
+                if (q.f) continue;
+                const mx = cx * push * w,
+                  my = cy * push * w,
+                  mz = cz * push * w + (B.vz < 0 ? B.vz * h * 0.06 * w : 0); // drag the mesh down with a falling ball
+                q.x += mx;
+                q.y += my;
+                q.z += mz;
+                if (it === 6 && bz < 99) (rx += mx), (ry += my), (rz += mz);
+              }
+            }
+          }
+      }
+    }
+    // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon)
+    if (near && B.z < 99 && (rx || ry || rz)) {
+      const K = 1.4 / dt,
+        cap = 60;
+      B.vx -= clamp(rx * K, -cap, cap);
+      B.vy -= clamp(ry * K, -cap, cap);
+      B.vz -= clamp(rz * K, -cap, cap);
     }
   }
 }

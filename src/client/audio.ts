@@ -70,6 +70,39 @@ export const audio = {
       }
     } catch (e) {}
   },
+  /** Ball on hardwood: a short pitched-down thump plus a slap of filtered noise; v = 0..1 loudness. */
+  bounce(v: number) {
+    try {
+      if (!AC) return;
+      const t0 = AC.currentTime,
+        o = AC.createOscillator(),
+        g1 = AC.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(150, t0);
+      o.frequency.exponentialRampToValueAtTime(55, t0 + 0.09);
+      g1.gain.setValueAtTime(0.16 * v, t0);
+      g1.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+      o.connect(g1);
+      g1.connect(AC.destination);
+      o.start(t0);
+      o.stop(t0 + 0.12);
+      const n = AC.createBufferSource(),
+        bf = AC.createBuffer(1, AC.sampleRate * 0.03, AC.sampleRate),
+        ch = bf.getChannelData(0);
+      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / ch.length);
+      n.buffer = bf;
+      const fl = AC.createBiquadFilter();
+      fl.type = "bandpass";
+      fl.frequency.value = 1800;
+      fl.Q.value = 0.9;
+      const g2 = AC.createGain();
+      g2.gain.value = 0.05 * v;
+      n.connect(fl);
+      fl.connect(g2);
+      g2.connect(AC.destination);
+      n.start(t0);
+    } catch (e) {}
+  },
   tick(dt: number) {
     audio.EXC = Math.max(0.2, audio.EXC - dt * 0.25);
     if (CRG) CRG.gain.value = 0.012 + 0.06 * audio.EXC;

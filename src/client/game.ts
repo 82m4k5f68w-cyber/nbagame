@@ -460,6 +460,17 @@ function drainFx() {
   }
 }
 export const resetFx = (id: number) => (lastFx = id);
+// Dribble thumps come from watching the ball (works the same offline and as an online guest, no network events).
+let dbZ = 99,
+  dbV = 0;
+function dribSound() {
+  const B = G.B,
+    v = B.z - dbZ;
+  if (v === 0) return; // high-refresh frames between sim ticks
+  if (B.owner && B.owner.mode === "i" && G.S === "play" && dbV < 0 && v > 0 && dbZ < 12) audio.bounce(V.focus != null && CT[V.focus] && B.owner.tm === CT[V.focus].tm ? 1 : 0.6);
+  dbV = v;
+  dbZ = B.z;
+}
 function endGame() {
   const sc = G.sc,
     cl = G.cl;
@@ -645,6 +656,7 @@ function loop(n: number) {
   } else G.setT(G.T + dt);
   audio.tick(dt);
   drainFx();
+  dribSound();
   for (const o of TX) {
     o.t -= dt;
     o.oy -= 25 * dt;

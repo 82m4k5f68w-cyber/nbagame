@@ -12,7 +12,7 @@ const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const TAU100 = 628.3185;
 
 export const HDR = 34; // header ints
-export const PST = 24; // per-player ints (without pose)
+export const PST = 25; // per-player ints (without pose)
 export const QN = QK.length;
 
 /** Full snapshot of the sim as an int array. withPose adds joint angles (used during replays). */
@@ -82,6 +82,7 @@ export function encodeSnap(k: number): number[] {
       r(Math.max(-1, p.slow || 0) * 100),
       p.cw == null ? -1 : r(p.cw * 100),
       p.heat | 0,
+      p.celT > 0 && p.cel ? p.cel * 1000 + r(Math.min(9.99, p.celT) * 100) : 0,
     );
   if (rp) for (const p of P) for (const k2 of QK) a.push(r(((p.q && p.q[k2]) || 0) * 1000));
   return a;
@@ -185,6 +186,9 @@ export function applyDiscrete(p: any, a: number[], o: number) {
   p.slow = a[o + 21] / 100;
   p.cw = a[o + 22] < 0 ? null : a[o + 22] / 100;
   p.heat = a[o + 23];
+  const ce = a[o + 24] | 0;
+  p.cel = (ce / 1000) | 0;
+  p.celT = (ce % 1000) / 100;
 }
 /** Restore one player's full predicted-relevant state from a snapshot (used for reconciliation). */
 export function applyPlayer(p: any, a: number[], k: number) {
