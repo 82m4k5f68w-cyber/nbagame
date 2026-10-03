@@ -103,6 +103,59 @@ export const audio = {
       n.start(t0);
     } catch (e) {}
   },
+  /** Referee's whistle: a bright, slightly wobbling two-tone tweet. */
+  whistle() {
+    try {
+      if (!AC) return;
+      const t0 = AC.currentTime,
+        o = AC.createOscillator(),
+        lfo = AC.createOscillator(),
+        lg = AC.createGain(),
+        g = AC.createGain();
+      o.type = "sine";
+      o.frequency.value = 2900;
+      lfo.frequency.value = 38;
+      lg.gain.value = 140;
+      lfo.connect(lg);
+      lg.connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.06, t0 + 0.02);
+      g.gain.setValueAtTime(0.06, t0 + 0.32);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+      o.connect(g);
+      g.connect(AC.destination);
+      o.start(t0);
+      lfo.start(t0);
+      o.stop(t0 + 0.5);
+      lfo.stop(t0 + 0.5);
+    } catch (e) {}
+  },
+  /** The crowd's "ooooh" on an in-and-out: filtered noise with a falling vowel formant. */
+  ooh() {
+    try {
+      if (!AC) return;
+      const t0 = AC.currentTime,
+        n = AC.createBufferSource(),
+        bf = AC.createBuffer(1, AC.sampleRate * 1.4, AC.sampleRate),
+        ch = bf.getChannelData(0);
+      for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+      n.buffer = bf;
+      const f1 = AC.createBiquadFilter();
+      f1.type = "bandpass";
+      f1.Q.value = 6;
+      f1.frequency.setValueAtTime(520, t0);
+      f1.frequency.exponentialRampToValueAtTime(330, t0 + 1.2);
+      const g = AC.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.16, t0 + 0.25);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.35);
+      n.connect(f1);
+      f1.connect(g);
+      g.connect(AC.destination);
+      n.start(t0);
+      n.stop(t0 + 1.4);
+    } catch (e) {}
+  },
   tick(dt: number) {
     audio.EXC = Math.max(0.2, audio.EXC - dt * 0.25);
     if (CRG) CRG.gain.value = 0.012 + 0.06 * audio.EXC;

@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike, stepLen } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
 import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
@@ -77,6 +77,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     R.toneMapping = THREE.ACESFilmicToneMapping;
     R.toneMappingExposure = 0.85;
     const S = new THREE.Scene();
+    /** Indoor-arena dressing (stands, crowd, signs, boards, jumbotron, ceiling): hidden for street games. */
+    const ARENA: THREE.Object3D[] = [];
     S.background = new THREE.Color(0x06070d);
     S.fog = new THREE.Fog(0x06070d, 110, 230);
     // Image-based lighting: soft studio reflections on the floor, ball, glass and skin.
@@ -162,7 +164,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       m.position.copy(from);
       m.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), to.clone().sub(from).normalize());
       m.renderOrder = 5;
-      S.add(m);
+      S.add(m); ARENA.push(m);
       shafts.push(m);
     }
     const MC = new Map<string, THREE.MeshStandardMaterial>(),
@@ -378,6 +380,128 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const fl = ad(new THREE.PlaneGeometry(94, 50), floorMat, 0, 0, 0);
     fl.rotation.x = -Math.PI / 2;
     fl.castShadow = false;
+    // ---- street court (Street 21 / King of the Court): asphalt, painted lines, a chain-link fence, streetlights ----
+    const STREET: THREE.Object3D[] = [];
+    {
+      const c = document.createElement("canvas");
+      c.width = 2048;
+      c.height = 1090;
+      const x = c.getContext("2d")!,
+        sx = 2048 / 94,
+        sy = 1090 / 50,
+        P2 = (fx: number, fz: number): [number, number] => [(fx + 47) * sx, (fz + 25) * sy];
+      x.fillStyle = "#3b3d42";
+      x.fillRect(0, 0, 2048, 1090);
+      for (let i = 0; i < 26000; i++) {
+        const g = 40 + Math.random() * 40;
+        x.fillStyle = `rgba(${g},${g},${g + 4},${0.35 + Math.random() * 0.4})`;
+        x.fillRect(Math.random() * 2048, Math.random() * 1090, 2 + Math.random() * 3, 2 + Math.random() * 3);
+      }
+      for (let i = 0; i < 14; i++) {
+        // cracks and old patches
+        x.strokeStyle = "rgba(20,20,22,.55)";
+        x.lineWidth = 2;
+        x.beginPath();
+        let px = Math.random() * 2048,
+          py = Math.random() * 1090;
+        x.moveTo(px, py);
+        for (let j = 0; j < 8; j++) x.lineTo((px += (Math.random() - 0.5) * 90), (py += (Math.random() - 0.5) * 90));
+        x.stroke();
+      }
+      x.strokeStyle = "rgba(240,240,236,.85)";
+      x.lineWidth = 6;
+      const ln = (a: number, b: number, c2: number, d: number) => {
+        x.beginPath();
+        x.moveTo(...P2(a, b));
+        x.lineTo(...P2(c2, d));
+        x.stroke();
+      };
+      x.strokeRect(...P2(-47, -25), 94 * sx, 50 * sy);
+      ln(0, -25, 0, 25);
+      x.beginPath();
+      x.ellipse(...P2(0, 0), 6 * sx, 6 * sy, 0, 0, 6.3);
+      x.stroke();
+      for (const s of [-1, 1]) {
+        const hx = s * 41.75;
+        x.strokeRect(...P2(s < 0 ? -47 : 47 - 19, -8), 19 * sx, 16 * sy);
+        x.beginPath();
+        x.ellipse(...P2(s * (47 - 19), 0), 6 * sx, 6 * sy, 0, 0, 6.3);
+        x.stroke();
+        ln(s * 47, -22, s * (47 - 14), -22);
+        ln(s * 47, 22, s * (47 - 14), 22);
+        x.beginPath();
+        x.ellipse(...P2(hx, 0), 23.75 * sx, 23.75 * sy, 0, s < 0 ? -1.19 : Math.PI - 1.19, s < 0 ? 1.19 : Math.PI + 1.19);
+        x.stroke();
+      }
+      const st = new THREE.Mesh(new THREE.PlaneGeometry(94, 50), new THREE.MeshStandardMaterial({ map: TX2(c), roughness: 0.96, metalness: 0 }));
+      st.rotation.x = -Math.PI / 2;
+      st.position.y = 0.012;
+      st.receiveShadow = true;
+      S.add(st);
+      STREET.push(st);
+      // apron beyond the lines
+      const ap = new THREE.Mesh(new THREE.PlaneGeometry(130, 80), new THREE.MeshStandardMaterial({ color: 0x2b2c30, roughness: 1 }));
+      ap.rotation.x = -Math.PI / 2;
+      ap.position.y = 0.006;
+      ap.receiveShadow = true;
+      S.add(ap);
+      STREET.push(ap);
+      // chain-link fence: a diamond-mesh alpha texture on four panels
+      const fc = document.createElement("canvas");
+      fc.width = fc.height = 64;
+      const fx2 = fc.getContext("2d")!;
+      fx2.strokeStyle = "#c7ccd2";
+      fx2.lineWidth = 3;
+      fx2.beginPath();
+      fx2.moveTo(0, 32);
+      fx2.lineTo(32, 0);
+      fx2.lineTo(64, 32);
+      fx2.lineTo(32, 64);
+      fx2.closePath();
+      fx2.stroke();
+      const ft = TX2(fc);
+      ft.wrapS = ft.wrapT = THREE.RepeatWrapping;
+      for (const [w, px, pz, ry] of [
+        [120, 0, -34, 0],
+        [120, 0, 34, 0],
+        [68, -60, 0, Math.PI / 2],
+        [68, 60, 0, Math.PI / 2],
+      ] as const) {
+        const t2 = ft.clone();
+        t2.repeat.set(w / 1.2, 12 / 1.2);
+        t2.needsUpdate = true;
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 12), new THREE.MeshStandardMaterial({ map: t2, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.4 }));
+        m.position.set(px, 6, pz);
+        m.rotation.y = ry;
+        S.add(m);
+        STREET.push(m);
+      }
+      // streetlight poles with warm lamps
+      for (const [px, pz] of [
+        [-30, -32],
+        [30, -32],
+        [-30, 32],
+        [30, 32],
+      ]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 26, 10), new THREE.MeshStandardMaterial({ color: 0x3a3d44, metalness: 0.7, roughness: 0.5 }));
+        pole.position.set(px, 13, pz);
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 1.2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd9a0).multiplyScalar(4) }));
+        lamp.position.set(px, 26, pz * 0.92);
+        S.add(pole, lamp);
+        STREET.push(pole, lamp);
+      }
+      for (const o of STREET) o.visible = false;
+    }
+    let streetOn = false;
+    function setStreet(on: boolean) {
+      streetOn = on;
+      for (const o of STREET) o.visible = on;
+      for (const o of ARENA) o.visible = !on;
+      fl.visible = !on;
+      (S.background as THREE.Color).set(on ? 0x6f8fb8 : 0x06070d);
+      (S.fog as THREE.Fog).color.set(on ? 0x8aa3c4 : 0x06070d);
+      for (const b of bench) b.gl.G.visible = !on;
+    }
     // planar reflection (WebGL renderer only; on WebGPU the glossy floor keeps its environment reflections)
     const mirror: any = GPU ? null : new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: mob ? 1024 : 2048, textureHeight: mob ? 576 : 1152, color: 0x777777, clipBias: 0.003 });
     if (mirror) {
@@ -447,7 +571,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       tierI.setMatrixAt(i, dm.matrix);
     });
     tierI.receiveShadow = true;
-    S.add(tierI);
+    S.add(tierI); ARENA.push(tierI);
     const CN = 2600,
       cpos: number[][] = [],
       cc = new THREE.Color(),
@@ -481,7 +605,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     for (const m of [bodyI, headI]) {
       m.instanceColor!.needsUpdate = true;
       m.frustumCulled = false;
-      S.add(m);
+      S.add(m); ARENA.push(m);
     }
     // Front rows get arms; some fans twirl towels; a few hold signs. Everyone sits until the moment lifts them.
     const AN = CN,
@@ -497,7 +621,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     for (const m of [armI, towI]) {
       m.instanceColor!.needsUpdate = true;
       m.frustumCulled = false;
-      S.add(m);
+      S.add(m); ARENA.push(m);
     }
     // signs (canvas text) held by front-row fans
     const SIGNS = ["DEFENSE!", "MVP", "LET'S GO!", "SPLASH", "#77", "AND ONE", "POSTERIZED", "BUCKETS", "D-FENSE", "WE BELIEVE", "CLUTCH", "2K27"];
@@ -512,7 +636,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       sx2.textAlign = "center";
       sx2.fillText(SIGNS[k % SIGNS.length], 128, 82);
       const sm = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshStandardMaterial({ map: TX2(sc2), roughness: 0.8, side: THREE.DoubleSide }));
-      S.add(sm);
+      S.add(sm); ARENA.push(sm);
       signs.push({ m: sm, i });
       k++;
     }
@@ -583,7 +707,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       towI.count = ti;
       bodyI.instanceMatrix.needsUpdate = headI.instanceMatrix.needsUpdate = armI.instanceMatrix.needsUpdate = towI.instanceMatrix.needsUpdate = true;
     }
-    // courtside row: detailed fans on chairs along the sideline (the ones the camera sees up close)
+    // courtside row: detailed fans on chairs along the sideline (the ones the camera sees up close); they react
+    const CS: any = { pos: [] as number[][], react: null as any };
     {
       const N = 44,
         chairI = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 1.1, 0.8), M(0x1c1f30, { roughness: 0.6 }), N),
@@ -614,13 +739,84 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         dm.updateMatrix();
         chI.setMatrixAt(k, dm.matrix);
         chI.setColorAt(k, cc.set(SKN[k % SKN.length]));
+        CS.pos[k] = [x, z, side];
       }
       for (const m of [chairI, cbI, chI]) {
         if (m.instanceColor) m.instanceColor.needsUpdate = true;
         m.castShadow = true;
-        S.add(m);
+        S.add(m); ARENA.push(m);
       }
+      // arms (two per fan) so they can throw their hands up, hold their heads on a near miss and duck a flying ball
+      const armI2 = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.07, 0.5, 3, 8), M(0xffffff, { roughness: 0.7 }), N * 2);
+      for (let k = 0; k < N * 2; k++) armI2.setColorAt(k, cc.set(SKN[(k >> 1) % SKN.length]));
+      armI2.instanceColor!.needsUpdate = true;
+      armI2.frustumCulled = false;
+      S.add(armI2);
+      ARENA.push(armI2);
+      Object.assign(CS, { N, cbI, chI, armI2 });
     }
+    const UPV = new THREE.Vector3(0, 1, 0),
+      AV = new THREE.Vector3(),
+      AQ = new THREE.Quaternion();
+    /** Courtside reactions: "ooh" (hands on heads) after a near miss, "duck" when a ball flies into the seats near x,
+     *  arms up when the building is loud. Called every frame (44 fans). */
+    function courtside(dt: number, loud: number) {
+      const { N, cbI, chI, armI2 } = CS,
+        r = CS.react;
+      if (r) r.t -= dt;
+      if (r && r.t <= 0) CS.react = null;
+      for (let k = 0; k < N; k++) {
+        const ps = CS.pos[k];
+        if (!ps) {
+          dm.position.set(0, -50, 0);
+          dm.scale.setScalar(0.001);
+          dm.updateMatrix();
+          armI2.setMatrixAt(k * 2, dm.matrix);
+          armI2.setMatrixAt(k * 2 + 1, dm.matrix);
+          continue;
+        }
+        const [x, z, side] = ps,
+          rr = CS.react,
+          near = rr && (rr.kind === "ooh" || (Math.abs(x - rr.x) < 9 && Math.sign(rr.z) === side)),
+          kind = near ? rr.kind : loud > 0.85 && (k * 7) % 10 < 7 ? "up" : "sit",
+          stand = kind === "up" ? 0.4 : 0,
+          duck = kind === "duck" ? 0.35 : 0;
+        dm.rotation.set(duck * side * -0.8, side > 0 ? Math.PI : 0, 0);
+        dm.scale.set(1, 1, 1);
+        dm.position.set(x, 1.45 + stand - duck, z);
+        dm.updateMatrix();
+        cbI.setMatrixAt(k, dm.matrix);
+        const hy = 2.25 + stand - duck * 1.4,
+          hz = z + side * duck * 0.4;
+        dm.position.set(x, hy, hz);
+        dm.updateMatrix();
+        chI.setMatrixAt(k, dm.matrix);
+        for (const s of [-1, 1]) {
+          // shoulder -> hand direction for this reaction
+          const sx = x + s * 0.36,
+            sy = 1.85 + stand - duck,
+            wave = Math.sin(T * 8 + k) * 0.25;
+          let dx = 0,
+            dy = -0.6,
+            dz = -side * 0.5;
+          if (kind === "up") (dx = s * 0.2 + wave * s), (dy = 1), (dz = 0);
+          else if (kind === "ooh") (dx = -s * 0.25), (dy = 0.75), (dz = -side * 0.15);
+          else if (kind === "duck") (dx = -s * 0.35), (dy = 0.55), (dz = -side * 0.45);
+          AV.set(dx, dy, dz).normalize();
+          AQ.setFromUnitVectors(UPV, AV);
+          dm.quaternion.copy(AQ);
+          dm.position.set(sx + AV.x * 0.32, sy + AV.y * 0.32, z + AV.z * 0.32);
+          dm.scale.set(1, 1, 1);
+          dm.updateMatrix();
+          dm.quaternion.identity();
+          armI2.setMatrixAt(k * 2 + (s > 0 ? 1 : 0), dm.matrix);
+        }
+      }
+      cbI.instanceMatrix.needsUpdate = chI.instanceMatrix.needsUpdate = armI2.instanceMatrix.needsUpdate = true;
+    }
+    (V as any).crowdReact = (kind: string, gx: number, gy: number) => {
+      CS.react = { kind, t: kind === "ooh" ? 1.6 : 1.1, x: (gx - 470) * 0.1, z: (gy - 250) * 0.1 };
+    };
 
     // ---------------- LED ribbons (courtside + upper ring), emissive so bloom catches them ----------------
     const [lc, l] = cv(2048, 64);
@@ -646,13 +842,13 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       const brd = new THREE.Mesh(new THREE.BoxGeometry(w, 1.3, 0.35), [darkM, darkM, darkM, darkM, ledM, darkM]);
       brd.position.set(x, 0.65, z);
       brd.rotation.y = ry;
-      S.add(brd);
+      S.add(brd); ARENA.push(brd);
     }
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(80, 80, 2.2, 64, 1, true), ledM);
     ring.position.y = 16.5;
     ring.scale.set(1, 1, 0.62);
     (ring.material as any).side = THREE.DoubleSide;
-    S.add(ring);
+    S.add(ring); ARENA.push(ring);
 
     // ---------------- hoops: padded stanchion, arm, glass, shot clock, rim, tube net ----------------
     const shotClocks: { ctx: CanvasRenderingContext2D; tex: THREE.Texture; k: string }[] = [];
@@ -920,7 +1116,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       js2 = new THREE.MeshBasicMaterial({ map: jt, toneMapped: false }),
       jum = new THREE.Mesh(new THREE.BoxGeometry(15, 7.5, 15), [js2, js2, darkM, darkM, js2, js2]);
     jum.position.set(0, 27, 0);
-    S.add(jum);
+    S.add(jum); ARENA.push(jum);
     let jk = "";
     /** Live team stats that rotate on the jumbotron's lower panel (every ~6 s). */
     function jStat(): [string, string, string] {
@@ -992,7 +1188,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       const p = new THREE.Mesh(new THREE.PlaneGeometry(7, 1.2), panelM);
       p.position.set(-42 + i * 12, 40, (i % 2 ? 1 : -1) * 14);
       p.rotation.x = Math.PI / 2;
-      S.add(p);
+      S.add(p); ARENA.push(p);
     }
 
     // ---------------- effects + quality ----------------
@@ -1030,13 +1226,31 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     let bench: BP[] = [],
       lastScore = [0, 0],
       cheerT = [0, 0];
+    // ---- referees: a lead on the baseline and a trail on the far sideline; whistle arm up on every call ----
+    type RF = { gl: any; x: number; y: number; f: number; ph: number; whT: number };
+    let refs: RF[] = [],
+      whistle = 0,
+      coachG = [0, 0], // coach gesture timers per team
+      coachK = [0, 0], // 1 play call signal, 2 timeout "T", 3 yelling at the refs
+      lastTO = [4, 4],
+      lastDS = "";
+    (V as any).refCall = (tm: number) => {
+      whistle = 1.3;
+      if (tm === 0 || tm === 1) (coachG[tm] = 1.6), (coachK[tm] = 3);
+    };
     function benchBuild() {
-      for (const b of bench) {
+      for (const b of [...bench, ...refs]) {
         S.remove(b.gl.G);
         b.gl.mesh.geometry.dispose();
         b.gl.extra.forEach((m: any) => (m.map && m.map.dispose(), m.dispose()));
       }
       bench = [];
+      refs = [];
+      for (let k = 0; k < 2; k++) {
+        const gl = makeRig({ n: "Ref " + k, col: "#b9bec6", skin: ["#c68642", "#e8b88f"][k], hr: 1, bd: k, no: "", ht: 6.2, bk: 1, tm: -1, sg: { gs: 0 } }, TX2);
+        S.add(gl.G);
+        refs.push({ gl, x: 470, y: k ? -4 : 120, f: 0, ph: 0, whT: 0 });
+      }
       const SKN2 = ["#e8b88f", "#c68642", "#8d5524", "#6b4226", "#b9825a"];
       for (const tm of [0, 1]) {
         const sg = tm ? 1 : -1,
@@ -1072,6 +1286,19 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         }
       cheerT[0] = Math.max(0, cheerT[0] - dt);
       cheerT[1] = Math.max(0, cheerT[1] - dt);
+      for (const t of [0, 1]) {
+        if (TS.to[t] < lastTO[t]) (coachG[t] = 1.6), (coachK[t] = 2); // timeout: hands make the T
+        lastTO[t] = TS.to[t];
+        if (TS.run[0] === t && TS.run[1] >= 8) cheerT[t] = Math.max(cheerT[t], 0.3); // the bench is up for the run
+        coachG[t] = Math.max(0, coachG[t] - dt);
+      }
+      const dsk = TS.ds.join() + TS.pc.join() + pos;
+      if (dsk !== lastDS) {
+        // new possession or a new call: the coach signals the play
+        lastDS = dsk;
+        const t = pos;
+        if (!coachG[t]) (coachG[t] = 1.2), (coachK[t] = 1);
+      }
       for (const b of bench) {
         const q = b.q,
           up = cheerT[b.tm] > 0 ? 1 : 0;
@@ -1085,7 +1312,17 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           const s = Math.sin(b.ph);
           Object.assign(q, { tL: s * 0.35, tR: -s * 0.35, kL: Math.max(0, -s) * 0.5, kR: Math.max(0, s) * 0.5, cr: 0, ln: 0.04, ty: 0, rz: 0, cx: 0, cy: 0 });
           b.f += (Math.atan2(0, dir) - b.f) * Math.min(1, dt * 6);
-          if (up) Object.assign(q, { aL: 0.9, aR: 0.9, eL: 0.6, eR: 0.6, sz: 0.9, zL: 0.9 });
+          const g2 = coachG[b.tm] > 0 ? coachK[b.tm] : 0;
+          if (g2) {
+            b.tx = b.x; // stop and coach
+            if (g2 === 1) Object.assign(q, { aR: 2.7, eR: 0.2, sz: 0.2, aL: 1.0, eL: 1.9, zL: -0.3 }); // play call: arm up, fingers
+            else if (g2 === 2) Object.assign(q, { aR: 1.55, eR: 0.05, sz: 0.0, aL: 2.9, eL: 0.05, zL: 0.4 }); // T for timeout
+            else {
+              const sh = Math.sin(T * 7) * 0.2;
+              Object.assign(q, { aL: 1.0 + sh, aR: 1.0 - sh, eL: 0.8, eR: 0.8, sz: 0.6, zL: 0.6, ln: -0.1 }); // what was that?!
+            }
+            b.f = Math.PI / 2;
+          } else if (up) Object.assign(q, { aL: 0.9, aR: 0.9, eL: 0.6, eR: 0.6, sz: 0.9, zL: 0.9 });
           else Object.assign(q, { aL: 1.05, aR: 1.05, eL: 2.2, eR: 2.2, sz: -0.35, zL: -0.35 });
         } else {
           // seated: thighs level, shins down; standing and waving arms when his team scores
@@ -1097,7 +1334,38 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         // place the rig directly (bench people are not sim players): game coords from world feet
         const fake: any = { x: b.x * 10 + 470, y: b.z * 10 + 250, z: 0, f: b.f, q: { hz: 0, hs: 0, fL: 0, fR: 0, gL: 0.3, gR: 0.3, nk: 0, hp: 0, hy: 0, wL: 0, wR: 0, oL: 0, oR: 0, ...q } };
         applyPose(b.gl, fake);
+        b.gl.G.visible = !streetOn;
       }
+      refsUpd(dt);
+    }
+    function refsUpd(dt: number) {
+      whistle = Math.max(0, whistle - dt);
+      const dir = hoop(pos) > 470 ? 1 : -1,
+        hx = hoop(pos);
+      refs.forEach((r, k) => {
+        r.gl.G.visible = !streetOn && !SCFG.HALF;
+        // lead: baseline on the far side of the ball; trail: far sideline, a step behind the play
+        const tx = k === 0 ? hx + dir * 46 : Math.max(60, Math.min(880, B.x - dir * 110)),
+          ty = k === 0 ? (B.y < 250 ? 380 : 120) : -4,
+          dx = tx - r.x,
+          dy = ty - r.y,
+          d = Math.hypot(dx, dy),
+          calling = whistle > 0 && k === (Math.abs(B.x - refs[0].x) < Math.abs(B.x - refs[1].x) ? 0 : 1),
+          v = calling ? 0 : Math.min(150, d * 2);
+        if (d > 3) {
+          r.x += (dx / d) * v * dt;
+          r.y += (dy / d) * v * dt;
+        }
+        r.ph += ((v * dt) / stepLen(v)) * Math.PI;
+        const tf = Math.atan2(B.y - r.y, B.x - r.x);
+        r.f += Math.atan2(Math.sin(tf - r.f), Math.cos(tf - r.f)) * Math.min(1, dt * 5);
+        const s = Math.sin(r.ph),
+          walk = Math.min(1, v / 60),
+          q: any = { tL: s * 0.4 * walk, tR: -s * 0.4 * walk, kL: Math.max(0, -s) * 0.55 * walk, kR: Math.max(0, s) * 0.55 * walk, cr: 0, ln: 0.03, ty: 0, rz: 0, cx: 0, cy: 0, aL: 0.15 + s * 0.3 * walk, aR: 0.15 - s * 0.3 * walk, eL: 0.4, eR: 0.4, sz: 0.1, zL: 0.1 };
+        if (calling) Object.assign(q, { aR: 2.95, eR: 0.05, sz: 0.15, gR: 0.9, aL: 0.9, eL: 1.2, zL: 0.4 }); // whistle: fist straight up
+        const fake: any = { x: r.x, y: r.y, z: 0, f: r.f, q: { hz: 0, hs: 0, fL: 0, fR: 0, gL: 0.3, gR: 0.3, nk: 0, hp: 0, hy: 0, wL: 0, wR: 0, oL: 0, oR: 0, ...q } };
+        applyPose(r.gl, fake);
+      });
     }
     let rpA = 0,
       rpT = 0;
@@ -1111,6 +1379,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       shake = 0;
     V.shake = (a: number) => (shake = Math.max(shake, a));
     V.GL = {
+      dbg: () => ({ refs: refs.map((r) => [Math.round(r.x), Math.round(r.y), r.gl.G.visible]), street: streetOn, cs: !!CS.react }),
       proj(x: number, y: number, z: number) {
         const v = PV.set(x, y, z).project(cam);
         return [(v.x + 1) * 480, (1 - v.y) * 270];
@@ -1209,6 +1478,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               pslot[k] = p;
             }
         if (bench.length && QL > 0) benchUpd(fdt);
+        if (!!SCFG.HALF !== streetOn) setStreet(!!SCFG.HALF);
+        if (QL > 0 && !streetOn) courtside(fdt, exc);
         if (P.length) {
           for (const p of P)
             if (p.gl) {

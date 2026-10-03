@@ -627,6 +627,7 @@ function rulesTick(dt: number) {
   }
 }
 function violation(t: number, s: string, p?: Player) {
+  fx({ k: "whistle", tm: t });
   ban(s, (p ? p.n.toUpperCase() + " · " : "") + "TURNOVER", "#ff6b4a");
   cm("viol", p ? p.n : cl[t], s);
   snd(700, 0.3, "square", 0.08);
@@ -2197,6 +2198,7 @@ export function bstep(dt: number) {
       B.vx *= -0.5;
     }
     if (B.y < 6 || B.y > CH - 6) {
+      if (!B.owner && Math.hypot(B.vx, B.vy) > 160 && !PREDICT && T - (B.duckT || 0) > 1) (B.duckT = T), fx({ k: "duck", x: B.x, y: B.y }); // into the courtside seats
       B.y = clamp(B.y, 6, CH - 6);
       B.vy *= -0.5;
     }
@@ -2220,6 +2222,7 @@ export function bstep(dt: number) {
           if (B.three) B.last.stt.tpm++;
           runAdd(t, pts);
           ban("GOALTENDING", p.n.toUpperCase() + " · BASKET COUNTS", "#ff6b4a");
+          fx({ k: "whistle", tm: p.tm });
           cm("goaltend", p.n);
           B.sh = 0;
           B.sc = 1;
@@ -2297,6 +2300,7 @@ export function bstep(dt: number) {
         if (p.tm === B.last.tm) p.stt.orb++;
         if (!B.ft) zoneRes(B.last, B.d0, false);
         if (!B.ft) cm(p.tm === B.last.tm ? "missO" : "miss", B.last.n, p.n);
+        if (!B.ft && (B.rim ?? 99) < BR + 2.5) fx({ k: "ooh" }); // in and out: the whole building groans
         if (hasB(p, "GC") && Math.random() < 0.3) cm("board", p.n);
       }
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
@@ -2585,6 +2589,7 @@ export function endGame() {
   snd(sc[0] > sc[1] ? 800 : 200, 0.5, "triangle");
 }
 export function foul(d: Player, o: Player, k: string, sh: number, th: any, flag = 0) {
+  fx({ k: "whistle", tm: d.tm });
   tf[d.tm]++;
   d.pf++;
   whistle(d, o, k === "SHOOTING" ? LASTP_FOUL : 0.6);
@@ -3122,6 +3127,7 @@ function collide() {
                   tf[h.tm]++;
                   h.pf++;
                   o.stt.chg++;
+                  fx({ k: "whistle", tm: h.tm });
                   cm("charge", o.n, h.n);
                   whistle(h, o, 0.55);
                   setup(o.tm);

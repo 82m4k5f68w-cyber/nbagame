@@ -649,6 +649,9 @@ function drainFx() {
     }
     else if (f.k === "half" && !NET.role && cfg.GM === "game" && G.S === "play" && !G.RPL) halftime();
     else if (f.k === "mode") (modeEvent(f), GS.onMode && GS.onMode(f));
+    else if (f.k === "whistle") ((V as any).refCall && (V as any).refCall(f.tm), audio.whistle());
+    else if (f.k === "ooh") ((V as any).crowdReact && (V as any).crowdReact("ooh", 470, 250), audio.ooh());
+    else if (f.k === "duck") (V as any).crowdReact && (V as any).crowdReact("duck", f.x, f.y);
     else if (f.k === "tg" && CT.some((c) => P[c.idx] && P[c.idx].n === f.n)) timingGrade(f);
   }
 }

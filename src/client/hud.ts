@@ -254,7 +254,7 @@ export function hud() {
   X.fillText(String(sc[1]), 620, 56);
   X.fillStyle = "#ffd23f";
   X.font = "800 20px system-ui";
-  X.fillText((q > 4 ? "OT" : "Q" + q) + "  " + fmt(clock), 480, 36);
+  X.fillText(cfg.TO ? "FIRST TO " + cfg.TO : (q > 4 ? "OT" : "Q" + q) + "  " + fmt(clock), 480, 36);
   X.fillStyle = shot < 5 ? "#ff6b4a" : "#fff";
   X.font = "700 16px system-ui";
   X.fillText(cfg.SCLK ? String(Math.ceil(Math.max(0, shot))) : "—", 480, 58);

@@ -374,7 +374,7 @@ export function drawIntro() {
 }
 /** Under the score bug: momentum meter, timeouts left (dots), your defense setting / play call, challenge flag. */
 export function drawBug(me: number) {
-  if (!gameLike()) return;
+  if (!gameLike() || cfg.HALF) return;
   // timeouts
   for (let t = 0; t < 2; t++)
     for (let k = 0; k < 4; k++) {

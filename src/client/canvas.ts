@@ -1,19 +1,20 @@
 // @ts-nocheck -- renderer ported verbatim from the legacy modes
 // Canvas renderers: the 2D broadcast-style court (2D modes) and the software-3D fallback used when WebGL is unavailable.
 // They draw from the shared sim state onto the HUD canvas context.
-import { P, B, T, pos, PC, HXs, HY, RR, W3, isH, NETS } from "../core/sim";
+import { P, B, T, pos, PC, HXs, HY, RR, W3, isH, NETS, cfg } from "../core/sim";
 import { skeleton } from "../core/pose";
 import { pr } from "./view";
 let X: CanvasRenderingContext2D = null as any;
 export const setCanvasCtx = (x: CanvasRenderingContext2D) => (X = x);
 // ---------------- 2D court ----------------
 export function court2d() {
+  const street = !!cfg.HALF;
   let gr = X.createLinearGradient(0, 0, 0, 110);
-  gr.addColorStop(0, "#0b0d1c");
-  gr.addColorStop(1, "#2a1d45");
+  gr.addColorStop(0, street ? "#5d7fae" : "#0b0d1c");
+  gr.addColorStop(1, street ? "#9db4cf" : "#2a1d45");
   X.fillStyle = gr;
   X.fillRect(0, 0, 960, 540);
-  for (let k = 0; k < 200; k++) {
+  for (let k = 0; k < (street ? 0 : 200); k++) {
     X.fillStyle = [
       "#6a4c93",
       "#c9184a",
@@ -29,7 +30,7 @@ export function court2d() {
       5,
     );
   }
-  X.fillStyle = "#c98f4d";
+  X.fillStyle = street ? "#44464c" : "#c98f4d";
   X.fillRect(10, 110, 940, 390);
   X.strokeStyle = "rgba(0,0,0,.07)";
   for (let x = 10; x < 950; x += 47) {

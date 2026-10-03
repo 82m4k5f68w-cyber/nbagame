@@ -307,7 +307,9 @@ export function encodeFx(max: number): any[] {
     else if (f.k === "s") out.push([f.id, "s", f.f, f.d, f.ty, f.v]);
     else if (f.k === "x") out.push([f.id, "x", f.v]);
     else if (f.k === "end") out.push([f.id, "e", f.w]);
-    else if (f.k === "shake" || f.k === "slow" || f.k === "chant") out.push([f.id, "g", f.k, f.v || 0]);
+    else if (f.k === "shake" || f.k === "slow" || f.k === "chant" || f.k === "ooh") out.push([f.id, "g", f.k, f.v || 0]);
+    else if (f.k === "whistle") out.push([f.id, "g", "whistle", f.tm]);
+    else if (f.k === "duck") out.push([f.id, "g", "duck", r(f.x) * 1000 + r(f.y)]);
     else if (f.k === "ban") out.push([f.id, "b", f.s, f.sub || "", f.c]);
     else if (f.k === "cm") out.push([f.id, "c", f.e, f.n || "", f.n2 || ""]);
     else if (f.k === "tg") out.push([f.id, "q", f.n, f.off, f.win, f.g, f.gr ? 1 : 0]);
@@ -327,7 +329,7 @@ export function decodeFx(e: any[]): any {
     case "e":
       return { id: e[0], k: "end", w: e[2] };
     case "g":
-      return { id: e[0], k: e[2], v: e[3] };
+      return e[2] === "whistle" ? { id: e[0], k: "whistle", tm: e[3] } : e[2] === "duck" ? { id: e[0], k: "duck", x: Math.floor(e[3] / 1000), y: e[3] % 1000 } : { id: e[0], k: e[2], v: e[3] };
     case "b":
       return { id: e[0], k: "ban", s: e[2], sub: e[3], c: e[4] };
     case "c":
