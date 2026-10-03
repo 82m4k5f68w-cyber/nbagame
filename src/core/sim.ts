@@ -170,7 +170,7 @@ export const ovr = (p: Player) => OV[p.n] || Math.round(68 + (Math.max(p.c, p.i)
 
 export function start(i: number, o: { j?: number; sel?: number } = {}) {
   const NP = cfg.NP;
-  SEL = o.sel ?? i;
+  SEL = o.j ?? o.sel ?? i; // My Player 1v1 faces the chosen opponent, else the selected card
   let j = o.j;
   if (j == null)
     do j = (Math.random() * nChoices()) | 0;
@@ -1159,7 +1159,8 @@ export function bstep(dt: number) {
     B.vy *= 0.9;
     if (Math.abs(B.vz) < 25) B.vz = 0;
   }
-  if (!RA) {
+  // World bounds for both engines (a fast Rapier ball could tunnel past or fly over the thin arena walls).
+  {
     if (B.x < 6 || B.x > CW - 6) {
       B.x = clamp(B.x, 6, CW - 6);
       B.vx *= -0.5;

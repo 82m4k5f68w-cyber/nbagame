@@ -205,9 +205,9 @@ export function hud2() {
       " [M] · PRO " +
       (cfg.PRO ? "ON" : "OFF") +
       " · FOULS you " +
-      tf[0] +
-      " / cpu " +
-      tf[1],
+      tf[fp() ? fp().tm : 0] +
+      " / opp " +
+      tf[fp() ? 1 - fp().tm : 1],
     948,
     530,
   );

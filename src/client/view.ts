@@ -1,5 +1,5 @@
 // Client-side view state shared by the renderers, HUD and input (not part of the simulation).
-import { P, CT, W3 } from "../core/sim";
+import { P, CT, W3, QTRLEN } from "../core/sim";
 import { pj } from "./canvas";
 
 export const V = {
@@ -28,6 +28,6 @@ export function pr(x: number, y: number, z = 0): number[] {
   return [q[0], q[1]];
 }
 export const fmt = (s: number) => {
-  s = Math.ceil(s * 12);
+  s = Math.ceil((s * 720) / QTRLEN); // game seconds -> 12-minute broadcast clock at any quarter length
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 };

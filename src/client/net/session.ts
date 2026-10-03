@@ -297,7 +297,10 @@ function startGuest(code: string, name: string) {
     TX.length = 0;
     (window as any).H2K && (window as any).H2K.resetFx && (window as any).H2K.resetFx(0);
   };
-  guest.onFx = (f) => G.FX.push(f);
+  guest.onFx = (f) => {
+    G.FX.push(f);
+    if (G.FX.length > 64) G.FX.shift(); // same cap as the sim's own emitter
+  };
   renderGuestLobby();
   setTimeout(() => {
     if (guest && !guest.L) err(new Error(`No game ${code} found yet — check the code, or wait for the host.`));
