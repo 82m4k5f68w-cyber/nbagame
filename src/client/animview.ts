@@ -23,6 +23,7 @@ const stand = (p: any) => {
   p.en = 1;
   p.brk = 0;
   p.acc = 0;
+  G.setInb(0);
   G.setScalars({ rs: 0, ftq: null, pos: p.tm });
   B.owner = null;
   B.mode = "air";
@@ -146,6 +147,58 @@ export const ANIMS: [string, Setup][] = [
       B.x = hx;
       B.y = 250;
       B.z = 112;
+    },
+  ],
+  ...([
+    [0, "Chest pass"],
+    [1, "Bounce pass"],
+    [2, "Lob pass"],
+  ] as [number, string][]).map(
+    ([ty, name]) =>
+      [
+        name,
+        (p: any, t: number) => {
+          stand(p);
+          const k = t % 0.9;
+          p.pT = Math.max(0, 0.25 - k);
+          B.ptype = ty;
+          B.owner = null;
+          B.mode = "pass";
+          B.x = p.x + Math.cos(p.f) * (14 + k * 120);
+          B.y = p.y + Math.sin(p.f) * (14 + k * 120);
+          B.z = ty === 2 ? 70 + k * 40 : ty === 1 ? Math.max(4, 40 - k * 120) : 48;
+        },
+      ] as [string, Setup],
+  ),
+  [
+    "Shot block attempt",
+    (p, t) => {
+      stand(p);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      G.setScalars({ pos: o.tm });
+      o.x = p.x + Math.cos(p.f) * 18;
+      o.y = p.y + Math.sin(p.f) * 18;
+      o.f = p.f + Math.PI;
+      o.mode = "s";
+      o.t = 0.3;
+      o.sv = 0;
+      o.z = 14;
+      pose3(o);
+      B.owner = o;
+      B.mode = "held";
+      B.x = o.x + Math.cos(o.f) * 3;
+      B.y = o.y + Math.sin(o.f) * 3;
+      B.z = o.z + 92;
+      const k = t % 1.1;
+      p.z = k < 0.8 ? Math.sin((k / 0.8) * Math.PI) * 34 : 0;
+    },
+  ],
+  [
+    "Inbound (ball overhead)",
+    (p, t, dt) => {
+      stand(p);
+      G.setInb(1); // stays set through the pose (stand() clears it next frame)
+      dribble(p, dt);
     },
   ],
   ["Size-up vs defender", (p, t, dt) => (stand(p), guard(p, 40), dribble(p, dt))],

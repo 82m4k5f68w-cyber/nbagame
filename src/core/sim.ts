@@ -696,6 +696,10 @@ export function step(p: Player, dt: number) {
       if (!PREDICT && dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250) {
         d.slow = Math.max(d.slow, 0.7);
         d.scr = Math.max(d.scr || 0, 0.35);
+        // the defender's feet get crossed up: a hard sideways stumble (pose spring + flailing arms)
+        d.hitT = 0.34;
+        d.hitX = -uy * S;
+        d.hitY = ux * S;
         if (u) txtW("ANKLE BREAKER!", d.x, d.y, 95, "#ff6b6b");
       }
     }
@@ -1149,7 +1153,9 @@ export function bstep(dt: number) {
           ? cfg.PRO && o.st === 1
             ? o.z + 38 + Math.min(1, o.t / 0.3) * 52
             : o.z + 55 + Math.min(1, o.t / 0.4) * 28
-          : dz(o, dt);
+          : inb > 0 && o.mode === "i"
+            ? o.z + o.ht * 11.6 // inbounder holds it overhead
+            : dz(o, dt);
     B.vx = B.vy = B.vz = 0;
     return;
   }
@@ -1246,6 +1252,7 @@ export function bstep(dt: number) {
         fx({ k: "slow", v: 1.6 });
         fx({ k: "shake", v: 0.6 });
         RQ = 1;
+        RPK = 1; // the replay gets the clutch camera sequence
       }
       if (!B.ft && B.last) {
         // signature celebration: clutch / on fire > dunk or and-one > three
@@ -1256,7 +1263,21 @@ export function bstep(dt: number) {
         else if (pts === 3 && (B.gn || Math.random() < 0.5)) celebrate(L, 0);
       }
       snd(900, 0.25, "sine", 0.1);
-      if (ftq) ftq.next = 1.3;
+      if (ftq) {
+        ftq.next = 1.3;
+        // a made free throw: the shooter and the closest teammate dap it up (pose CEL 9)
+        const sh = ftq.s;
+        if (sh && !PREDICT) {
+          let m: Player | null = null,
+            md = 1e9;
+          for (const o of P)
+            if (o !== sh && o.tm === sh.tm) {
+              const d = Math.hypot(o.x - sh.x, o.y - sh.y);
+              if (d < md) (md = d), (m = o);
+            }
+          for (const o of [sh, m]) if (o) (o.cel = 9), (o.celT = CEL_T);
+        }
+      }
       else if (B.fl) {
         txtW("AND ONE!", B.last.x, B.last.y, 110, "#ffd23f");
         STAT.andOnes++;
@@ -2098,13 +2119,16 @@ export const inNet = () => {
 };
 
 // ---- instant replays: allocation-free ring buffer of positions + poses ----
-export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz", "cx", "cy", "nk", "hy", "hp", "fL", "fR", "gL", "gR", "hs"];
+export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz", "cx", "cy", "nk", "hy", "hp", "fL", "fR", "gL", "gR", "hs", "oL", "oR"];
 const RCAP = 331,
   PST = 4 + QK.length,
   FST = 4 + 10 * PST + 1;
 const REC = new Float32Array(RCAP * FST);
 let recS = 0;
 export let recN = 0;
+/** Replay kind: 0 normal director, 1 clutch (buzzer beater / game winner) multi-angle sequence. */
+export let RPK = 0;
+export const setRPK = (v: number) => (RPK = v);
 export function recClear() {
   recS = recN = 0;
 }
@@ -2174,6 +2198,7 @@ function rplStep(dt: number) {
     [B.x, B.y, B.z, B.a] = LIVE.b;
     RPL = null;
     RQ = 0;
+    RPK = 0;
     recClear();
     rs = 0.001;
     return;

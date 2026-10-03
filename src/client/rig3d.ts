@@ -9,7 +9,8 @@ import { RIG, hipAb } from "../core/pose";
 const L1 = RIG.L1, // thigh (hip -> knee pivot)
   L2 = RIG.L2; // shin (knee -> ankle)
 
-type Part = { g: THREE.BufferGeometry; col: string; bone: number; blend?: { to: number; axis: "y"; from: number; len: number; end: "start" | "end"; max?: number } };
+type Blend = { to: number; axis: "y"; from: number; len: number; end: "start" | "end"; max?: number };
+type Part = { g: THREE.BufferGeometry; col: string; bone: number; blend?: Blend; blend2?: Blend; mesh?: number };
 
 export interface Rig {
   G: THREE.Group;
@@ -32,6 +33,9 @@ export interface Rig {
   ar: THREE.Bone;
   gL: THREE.Bone;
   gR: THREE.Bone;
+  tf: THREE.Bone[]; // toe bones
+  hem: THREE.Bone;
+  hs: { x: number; vx: number; z: number; vz: number; px: number; pz: number };
   fl: THREE.Bone[]; // shorts-hem flap bones (one per leg, spring-lagged copies of the thigh)
   cloth: { x: number; vx: number; z: number; vz: number }[];
   plant: { on: boolean; x: number; y: number; z: number; w: number }[];
@@ -39,9 +43,32 @@ export interface Rig {
 }
 
 const MAT = new Map<string, THREE.MeshStandardMaterial>();
+/** Jersey mesh: a tiling bump map of little ventilation holes. Parts that are not jersey fabric sample one flat texel
+ *  (uv 0,0 = between holes), so only the jersey shows the knit. */
+function meshTex() {
+  if (typeof document === "undefined") return null;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const x = c.getContext("2d")!;
+  x.fillStyle = "#fff";
+  x.fillRect(0, 0, 64, 64);
+  x.fillStyle = "#6a6a6a";
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++) {
+      x.beginPath();
+      x.ellipse(8 + i * 16 + (j % 2) * 8, 8 + j * 16, 3.2, 2.6, 0, 0, 6.3);
+      x.fill();
+    }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 function skinMat() {
   let m = MAT.get("skin");
-  if (!m) MAT.set("skin", (m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.02 })));
+  if (!m) {
+    const bt = meshTex();
+    MAT.set("skin", (m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.02, bumpMap: bt, bumpScale: bt ? 0.6 : 0 })));
+  }
   return m;
 }
 
@@ -83,24 +110,29 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     wR = B(0, -RIG.fa, 0),
     gL = B(0, -RIG.fing, 0),
     gR = B(0, -RIG.fing, 0),
+    hem = B(0, -0.05, 0), // jersey hem spring bone (child of the pelvis)
+    tfL = B(0, -0.16, 0.36), // toe joints (ball of the foot), children of the ankles
+    tfR = B(0, -0.16, 0.36),
     flL = B(-RIG.hipX, RIG.hip, 0),
     flR = B(RIG.hipX, RIG.hip, 0);
   hips.add(bd, tl, tr, flL, flR);
-  bd.add(ch);
+  bd.add(ch, hem);
   ch.add(nk, sL, sR);
   nk.add(hd);
   tl.add(kl);
   tr.add(kr);
   kl.add(al);
   kr.add(ar);
+  al.add(tfL);
+  ar.add(tfR);
   sL.add(eL);
   sR.add(eR);
   eL.add(wL);
   eR.add(wR);
   wL.add(gL);
   wR.add(gR);
-  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR", "flL", "flR"],
-    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, flL, flR];
+  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR", "flL", "flR", "tfL", "tfR", "hem"],
+    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, flL, flR, tfL, tfR, hem];
   const I = Object.fromEntries(names.map((n, i) => [n, i])) as Record<string, number>;
   hips.updateMatrixWorld(true);
   const bp = bones.map((b) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
@@ -158,13 +190,17 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     put(parts, bp, box(0.39, 0.27, 0.82), shoe, an, 0, 0, 0.14);
     put(parts, bp, box(0.41, 0.07, 0.85), sole, an, 0, -0.13, 0.14);
     put(parts, bp, box(0.4, 0.035, 0.86), shade(sole, 0.55), an, 0, -0.18, 0.14);
-    put(parts, bp, box(0.36, 0.1, 0.24), shoeKind === 3 ? p.col : shade(shoe, 0.88), an, 0, -0.04, 0.47);
+    const tfb = kn === I.kl ? I.tfL : I.tfR;
+    put(parts, bp, box(0.36, 0.1, 0.24), shoeKind === 3 ? p.col : shade(shoe, 0.88), tfb, 0, 0.12, 0.11); // toe box bends at the ball of the foot
     put(parts, bp, box(0.06, 0.13, 0.46), shoeKind === 3 ? p.col : accent, an, sd * 0.2, 0.02, 0.12);
     put(parts, bp, box(0.22, 0.16, 0.07), accent, an, 0, 0.08, -0.27);
     for (let li = 0; li < 3; li++) put(parts, bp, box(0.2, 0.025, 0.035), "#f8f8f8", an, 0, 0.14 - li * 0.012, 0.26 + li * 0.09);
   }
   // torso: pelvis below the waist, chest above, blended through the middle so twists and breathing bend smoothly
   put(parts, bp, torso, p.col, I.bd, 0, 0.3, 0, 0.62 * k, 1, 0.42 * k, { to: I.ch, axis: "y", from: 1.25, len: 0.6, end: "start", max: 1 });
+  // jersey fabric: the knit texture, and the hem (below the waistband) sways on a spring-lagged bone
+  parts[parts.length - 1].mesh = 1;
+  parts[parts.length - 1].blend2 = { to: I.hem, axis: "y", from: 0.05, len: 0.35, end: "end", max: 0.7 };
   putT(ring(0.3, 0.05), trim, I.ch, 0, 1.9, 0.03, 1, 1, 0.9); // collar trim
   // jersey side panels (pelvis -> chest, blended like the torso) and the shorts' waistband
   for (const sd of [-1, 1])
@@ -271,13 +307,25 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
           u = Math.min(1, Math.max(0, b.end === "end" ? (b.from + b.len - ly) / b.len : (ly - (b.from - b.len)) / b.len));
         w2 = (b.max ?? 0.5) * u * u * (3 - 2 * u);
       }
-      si.set([pt.bone, pt.blend ? pt.blend.to : 0, 0, 0], i * 4);
-      sw.set([1 - w2, w2, 0, 0], i * 4);
+      let w3 = 0;
+      if (pt.blend2) {
+        const ly = pos.getY(i) - bp[pt.bone].y,
+          b = pt.blend2,
+          u = Math.min(1, Math.max(0, (b.from + b.len - ly) / b.len));
+        w3 = (b.max ?? 0.5) * u * u * (3 - 2 * u) * (1 - w2);
+      }
+      si.set([pt.bone, pt.blend ? pt.blend.to : 0, pt.blend2 ? pt.blend2.to : 0, 0], i * 4);
+      sw.set([1 - w2 - w3, w2, w3, 0], i * 4);
     }
+    // uv: jersey fabric tiles the knit (around x40, along x26); everything else samples the flat texel
+    const uvA = new Float32Array(n * 2),
+      ouv = g.attributes.uv as THREE.BufferAttribute | undefined;
+    if (pt.mesh && ouv) for (let i = 0; i < n; i++) uvA.set([ouv.getX(i) * 40, ouv.getY(i) * 26], i * 2);
+    g.setAttribute("uv", new THREE.BufferAttribute(uvA, 2));
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     g.setAttribute("skinIndex", new THREE.BufferAttribute(si, 4));
     g.setAttribute("skinWeight", new THREE.BufferAttribute(sw, 4));
-    for (const k2 of Object.keys(g.attributes)) if (!["position", "normal", "color", "skinIndex", "skinWeight"].includes(k2)) g.deleteAttribute(k2);
+    for (const k2 of Object.keys(g.attributes)) if (!["position", "normal", "color", "skinIndex", "skinWeight", "uv"].includes(k2)) g.deleteAttribute(k2);
     return g;
   });
   const geo = mergeGeometries(geos)!;
@@ -294,7 +342,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   G.scale.setScalar(p.ht / 6.4);
   const pl = () => ({ on: false, x: 0, y: 0, z: 0, w: 0 });
   const cs = () => ({ x: 0, vx: 0, z: 0, vz: 0 });
-  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, fl: [flL, flR], cloth: [cs(), cs()], plant: [pl(), pl()], extra };
+  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, tf: [tfL, tfR], hem, hs: { x: 0, vx: 0, z: 0, vz: 0, px: 0, pz: 0 }, fl: [flL, flR], cloth: [cs(), cs()], plant: [pl(), pl()], extra };
   if (typeof document === "undefined") return rig; // Node (FK parity test): bones + mesh only
   const cy = -RIG.chest; // chest-local offsets for the jersey prints
   const cv = (w: number, h: number) => {
@@ -355,6 +403,9 @@ export function applyPose(m: Rig, p: any) {
   m.kr.rotation.x = q.kR;
   m.al.rotation.x = q.fL || 0;
   m.ar.rotation.x = q.fR || 0;
+  // toes stay on the floor while the heel rises (toe-off), flat otherwise
+  m.tf[0].rotation.x = -Math.max(0, (q.fL || 0) - 0.15) * 0.8;
+  m.tf[1].rotation.x = -Math.max(0, (q.fR || 0) - 0.15) * 0.8;
   m.ch.rotation.set(q.cx || 0, q.cy || 0, 0, "YXZ");
   m.nk.rotation.x = q.nk || 0;
   m.hd.rotation.set(q.hp || 0, q.hy || 0, 0, "YXZ");
@@ -364,8 +415,8 @@ export function applyPose(m: Rig, p: any) {
   m.sR.rotation.set(-q.aR, 0, q.sz);
   m.eL.rotation.x = -q.eL;
   m.eR.rotation.x = -q.eR;
-  m.wL.rotation.x = -(q.wL || 0);
-  m.wR.rotation.x = -(q.wR || 0);
+  m.wL.rotation.set(-(q.wL || 0), q.oL || 0, 0, "YXZ"); // forearm twist then wrist flex (matches pose.ts FK)
+  m.wR.rotation.set(-(q.wR || 0), q.oR || 0, 0, "YXZ");
   m.bd.rotation.set(q.ln, q.ty, q.rz, "YXZ");
 }
 
@@ -387,6 +438,17 @@ export function clothStep(m: Rig, p: any, dt: number) {
     if (Math.abs(c.x - tx) > 1.2) (c.x = tx), (c.vx = 0); // teleports (inbounds, replays)
     m.fl[s].rotation.set(c.x, 0, c.z);
   }
+  // jersey hem: lags the pelvis (spring driven by the pelvis' own rotation changes) and lifts while falling
+  const hs = m.hs,
+    bx = m.bd.rotation.x,
+    bz = m.bd.rotation.z;
+  hs.vx += (-(bx - hs.px) / h) * 0.35 + ((p.z > 2 ? Math.max(-0.3, Math.min(0.3, -(p.vz || 0) * 0.002)) : 0) - hs.x) * 180 * h - hs.vx * 11 * h;
+  hs.vz += (-(bz - hs.pz) / h) * 0.35 + -hs.z * 180 * h - hs.vz * 11 * h;
+  hs.px = bx;
+  hs.pz = bz;
+  hs.x = Math.max(-0.5, Math.min(0.5, hs.x + hs.vx * h));
+  hs.z = Math.max(-0.5, Math.min(0.5, hs.z + hs.vz * h));
+  m.hem.rotation.set(hs.x, 0, hs.z);
 }
 const V1 = new THREE.Vector3(),
   V2 = new THREE.Vector3(),

@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, HXs, HY, W3, hoop, NETS, S as GS } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
 import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
@@ -988,7 +988,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const cl2 = new THREE.Vector3(0, 0, 3),
       TV = new THREE.Vector3(),
       PV = new THREE.Vector3();
-    let rpA = 0;
+    let rpA = 0,
+      rpT = 0;
     let pset: any = null,
       lastR = 0,
       ema = 16,
@@ -1138,7 +1139,29 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         // Replay director: a tracking close-up on the player nearest the ball (low and looking up when the play is at
         // the rim: dunks, layups), slowly orbiting, with depth of field focused on him.
         let dofF = 0;
-        if (RPL && P.length) {
+        if (RPL) rpT += fdt;
+        else rpT = 0;
+        if (RPL && P.length && RPK && B.last) {
+          // Clutch replay, three shots: low behind the shooter at the release, wide high following the ball's flight,
+          // then a tight look up at the rim as it drops through the net.
+          const s0 = B.last,
+            sw = W3(s0.x, s0.y, 0),
+            hx3 = (hoop(s0.tm) - 470) * 0.1,
+            bw = W3(B.x, B.y, B.z),
+            dirx = Math.sign(hx3 - sw[0]) || 1;
+          if (rpT < 1.6) {
+            tp = [sw[0] - dirx * 7, 4.2, sw[2] + 3.5];
+            tl = [sw[0] + dirx * 4, 6.5, sw[2]];
+            dofF = 8;
+          } else if (rpT < 3.4) {
+            tp = [(sw[0] + hx3) / 2, 19, sw[2] + 26];
+            tl = [bw[0], bw[1], bw[2]];
+          } else {
+            tp = [hx3 - dirx * 6, 6.5, 5];
+            tl = [hx3, 9.8, 0];
+            dofF = Math.hypot(6, 3.3, 5);
+          }
+        } else if (RPL && P.length) {
           let sub = P[0],
             sd2 = 1e9;
           for (const q of P) {
@@ -1163,7 +1186,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           tp = [pw[0] + Math.cos(SO.a) * SO.d, ah + 1.7 + up, pw[2] + Math.sin(SO.a) * SO.d];
           tl = [pw[0], ah + up, pw[2]];
         }
-        cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : 0.1);
+        cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : RPL && RPK ? 0.35 : 0.1);
         cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : 0.14);
         cam.lookAt(cl2);
         if (shake > 0.001) {

@@ -1,7 +1,7 @@
 // Pro Play pose solver: joint angles per player (p.q), shot clips, and analytic hand forward kinematics.
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
 import { CL, CK, isLaySv } from "./data";
-import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, hoop, HY, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -14,7 +14,7 @@ function smp(a: number[] | undefined, k: number) {
     }
   return a[a.length - 1];
 }
-const CLIPK = ["aR", "eR", "aL", "eL", "tL", "tR", "kL", "kR", "ln", "sz", "cr", "rz", "ty", "wR", "wL", "zL"];
+const CLIPK = ["aR", "eR", "aL", "eL", "tL", "tR", "kL", "kR", "ln", "sz", "cr", "rz", "ty", "wR", "wL", "zL", "oR", "oL"];
 const CO: Record<string, number> = {};
 /** Sample the player's shot clip at phase k (0..1), with signature tweaks. Returns a shared object. */
 export function clip(p: Player, k: number) {
@@ -22,7 +22,7 @@ export function clip(p: Player, k: number) {
     o = CO;
   for (const n of CLIPK) {
     const v = smp(c[n], k);
-    o[n] = v == null ? (smp(CL.jump[n], k) as number) : v;
+    o[n] = v == null ? (smp(CL.jump[n], k) ?? 0) : v;
   }
   const g = p.sg || {},
     up = Math.min(1, k / 0.7);
@@ -86,6 +86,8 @@ export function pose3(p: Player) {
     gR = 0.25,
     hs = 0, // asymmetric hip abduction (defensive shuffle)
     toe = 0, // extra plantar flex (toe-off / pointed in the air), both feet
+    oL = 0, // forearm twist (+ = palm turns inward/up for the right arm)
+    oR = 0,
     st = ST.idle;
   if (sp > 30) st = ST.run;
   if (air && md !== "s" && md !== "c") {
@@ -129,7 +131,20 @@ export function pose3(p: Player) {
     kL = kR = 0.8;
     sz = 0.05;
     ty = 0;
-    if (PRO) {
+    if (PRO && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 95) {
+      // gather step into a layup / dunk: long last stride, ball ripped to the chest with both hands, lead knee rising
+      const g2 = Math.min(1, p.t / 0.15);
+      tL = 0.25 + 0.55 * g2;
+      kL = 0.5 + 0.5 * g2;
+      tR = -0.45;
+      kR = 0.55;
+      ln = 0.22;
+      cr = 0.25;
+      aL = aR = 1.15;
+      eL = eR = 1.75;
+      sz = zL = -0.05;
+      wR = wL = -0.3;
+    } else if (PRO) {
       // catch-and-dip: the ball drops toward the hip and comes back up into the shot pocket as the knees load
       const dk = Math.sin(Math.min(1, p.t / 0.2) * Math.PI);
       aR -= 0.45 * dk;
@@ -162,6 +177,8 @@ export function pose3(p: Player) {
     wR = o.wR;
     wL = o.wL;
     zL = o.zL;
+    oR = o.oR;
+    oL = o.oL;
     const kind = CK[p.sv];
     if (kind !== "hang" && p.z > 0) {
       // momentum shapes every jumper: drifting sideways tilts the body, fading falls back, attacking leans in
@@ -367,10 +384,27 @@ export function pose3(p: Player) {
       eL = 0.6;
     }
     if (p.pT > 0) {
-      aL = aR = 1.5;
-      eL = eR = 0.25;
-      ln += 0.1;
-      gL = gR = 0.15;
+      // pass follow-through by type (B.ptype: 0 chest, 1 bounce, 2 lob): arms extend from the chest, thumbs turn down
+      const u = clamp(1 - p.pT / 0.25, 0, 1),
+        ty2 = B.ptype | 0;
+      if (ty2 === 2) {
+        aL = aR = 2.0 + 0.7 * u;
+        eL = eR = 1.3 - 1.0 * u;
+        wR = wL = 0.9 * u;
+      } else if (ty2 === 1) {
+        aL = aR = 1.05 - 0.2 * u;
+        eL = eR = 1.5 - 1.35 * u;
+        ln += 0.18;
+        cr = Math.max(cr, 0.15);
+      } else {
+        aL = aR = 1.25 + 0.3 * u;
+        eL = eR = 1.6 - 1.45 * u;
+        ln += 0.1;
+      }
+      oR = -1.1 * u;
+      oL = 1.1 * u;
+      sz = zL = 0.12;
+      gL = gR = 0.1;
     }
     if (B.mode === "pass" && B.to === p && !air) {
       aL = aR = 1.35;
@@ -435,6 +469,26 @@ export function pose3(p: Player) {
         if (st === ST.run) (aL = aR = 0.55), (eL = eR = 0.7);
       }
     }
+  }
+  // ---- inbounder: ball overhead in both hands ----
+  if (PRO && has && md === "i" && inb > 0) {
+    for (const sd of [1, -1]) {
+      // each hand on its own side of the ball (the right side is (sin f, -cos f))
+      const k5 = armIK(p, cr, B.x + Math.sin(p.f) * 3 * sd, B.y - Math.cos(p.f) * 3 * sd, B.z, sd, 0.9);
+      if (sd > 0) (aR = k5.a), (eR = k5.e), (sz = k5.ab);
+      else (aL = k5.a), (eL = k5.e), (zL = k5.ab);
+    }
+    gL = gR = 0.4;
+  }
+  // ---- shot block attempt: the leaper's hand goes for the ball ----
+  if (PRO && air && !has && md !== "c" && md !== "s" && B.owner && B.owner.tm !== p.tm && (B.owner.mode === "c" || B.owner.mode === "s") && Math.hypot(B.x - p.x, B.y - p.y) < 40) {
+    const k6 = armIK(p, cr, B.x, B.y, B.z + 4, 1, 0.8);
+    aR = k6.a;
+    eR = k6.e;
+    sz = k6.ab;
+    aL = 2.6;
+    eL = 0.3;
+    gR = 0.05;
   }
   // ---- full-body reaching ----
   if (PRO && !p.postA && !(p.setT > 0) && md !== "c" && md !== "s") {
@@ -721,6 +775,13 @@ export function pose3(p: Player) {
     hp = 0;
   const nk = -(ln + cx) * 0.35;
   {
+    // idle glance: off the ball and standing at a dead ball, eyes wander (bench, crowd, a teammate) now and then
+    const gl0 = Math.sin(T * 0.37 + p.k * 2.1);
+    if (!LOOK.on && !has && sp < 20 && (rs > 0 || ftq || inb > 0) && gl0 > 0.55) {
+      const o = P[(p.k * 3 + Math.floor(T * 0.37 / 3)) % P.length];
+      if (o && o !== p) (LOOK.x = o.x), (LOOK.y = o.y), (LOOK.z = o.z + o.ht * 9), (LOOK.on = 1);
+      else (LOOK.x = p.x), (LOOK.y = p.y < 250 ? -60 : 560), (LOOK.z = 60), (LOOK.on = 1); // the crowd
+    }
     if (!LOOK.on) {
       if ((has && (md === "c" || md === "s")) || (has && md === "i" && !p.postA)) {
         const hx = hoop(p.tm);
@@ -743,7 +804,7 @@ export function pose3(p: Player) {
     HEADX = 0;
   }
   // ---- guide hand: on the side of the ball from the gather until the release, then it peels away ----
-  if (PRO && has && (md === "c" || md === "s") && !p.postA && !isLaySv(p.sv || 0)) {
+  if (PRO && has && (md === "c" || md === "s") && !p.postA && (!isLaySv(p.sv || 0) || p.sv === 11 || p.sv === 14 || p.sv === 15 || md === "c")) {
     const ball = palmAt(p, aR, eR, sz, wR, ln, ty, rz, cx, cy, cr);
     if (ball) {
       const lx = -Math.sin(p.f),
@@ -792,6 +853,8 @@ export function pose3(p: Player) {
   VALS[24] = gL;
   VALS[25] = gR;
   VALS[26] = hs;
+  VALS[27] = oL;
+  VALS[28] = oR;
   for (let j = 0; j < NQ; j++) {
     const k = QK[j],
       v = VALS[j];
@@ -832,7 +895,7 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
 }
 /** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */
 const RELK: Record<string, number> = { jump: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
-const NQ = 27,
+const NQ = 29,
   VALS = new Float64Array(NQ),
   LOOK = { x: 0, y: 0, z: 0, on: 0 };
 let HEADX = 0;
@@ -889,7 +952,7 @@ function palmAt(p: Player, aR: number, eR: number, sz: number, wR: number, ln: n
 export function handPos(p: Player, pt: V = [0, -0.62, 0.1]): number[] | null {
   const q = p.q;
   if (!q) return null;
-  let v: V = rx(pt, -(q.wR || 0));
+  let v: V = ry(rx(pt, -(q.wR || 0)), q.oR || 0); // wrist flex, then forearm twist (pronation/supination)
   v = add(v, [0, -RIG.fa, 0]);
   v = rx(v, -q.eR);
   v = add(v, [0, -RIG.ua, 0]);
@@ -970,10 +1033,11 @@ export function skeleton(p: Player, out: Float32Array) {
     const a = sd < 0 ? q.aL || 0 : q.aR || 0,
       e = sd < 0 ? q.eL || 0 : q.eR || 0,
       wq = sd < 0 ? q.wL || 0 : q.wR || 0,
+      oq = sd < 0 ? q.oL || 0 : q.oR || 0,
       zz = sd < 0 ? -(q.zL == null ? q.sz || 0 : q.zL) : q.sz || 0,
       sh = child(ch, [sd * RIG.shX * k, RIG.sh, 0], euler(-a, 0, zz, "XYZ", new Float64Array(9))),
       el = child(sh, [0, -RIG.ua, 0], rot(0, -e, new Float64Array(9))),
-      wr = child(el, [0, -RIG.fa, 0], rot(0, -wq, new Float64Array(9)));
+      wr = child(el, [0, -RIG.fa, 0], mm(rot(1, oq, new Float64Array(9)), rot(0, -wq, new Float64Array(9)), new Float64Array(9)));
     J.push(sh.t, el.t, wr.t, pt(wr, [0, -0.32, 0.05]));
   }
   J.forEach((v, i) => {
