@@ -21,7 +21,7 @@ const opp = await ev(() => document.querySelectorAll(".side")[1].querySelector("
 await ev(() => document.getElementById("tip").click());
 const g = await ev(() => ({ S: window.H2K.G.S, away: window.H2K.G.cl[1], diff: window.H2K.G.cfg.DIFF, ql: window.H2K.G.QTRLEN }));
 // finish the game with us ahead
-await ev(() => { const G = window.H2K.G; G.sc[0] = 21; G.sc[1] = 9; for (let q = 0; q < 4 && G.S === "play"; q++) { G.setClock(0); G.setRs(0); G.setInb(0); for (let i = 0; i < 30 && G.S === "play"; i++) G.upd(1 / 60); } });
+await ev(() => { const G = window.H2K.G; for (let i = 0; i < 400 && G.JB; i++) G.upd(1 / 60); G.sc[0] = 21; G.sc[1] = 9; for (let q = 0; q < 4 && G.S === "play"; q++) { G.setClock(0); G.setRs(0); G.setInb(0); for (let i = 0; i < 30 && G.S === "play"; i++) G.upd(1 / 60); } });
 await pg.waitForFunction(() => document.querySelector(".fin"), null, { timeout: 20000 });
 const fin = await ev(() => ({ head: document.querySelector(".fin .logo").textContent, pog: !!document.querySelector(".pog"), rec: localStorage.getItem("h2k_rec") }));
 await pg.screenshot({ path: "docs/menu-final.png", clip: { x: 0, y: 0, width: 1200, height: 900 } });
