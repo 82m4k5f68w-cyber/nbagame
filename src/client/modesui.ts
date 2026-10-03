@@ -87,7 +87,37 @@ export function modeHud() {
         X.fillStyle = i < M.step ? "#2ecc71" : i === M.step ? "#ffd23f" : "rgba(255,255,255,.25)";
         X.fillRect(480 - TUT.length * 9 + i * 18, 60, 12, 4);
       }
-    } else X.fillText("Esc: pause / quit", 480, 44);
+    } else {
+      X.fillText("Esc: pause / quit · shot lab below", 480, 44);
+      // shot lab: a mini half court with your % and average timing error per zone
+      const zx = [0, -1, 1, -1, 0, 1],
+        zy = [1, 0.4, 0.4, -0.2, -0.6, -0.2],
+        ZL = ["PAINT", "L ELBOW", "R ELBOW", "L WING", "TOP", "R WING"],
+        cx = 878,
+        cy = 300;
+      X.fillStyle = "rgba(8,10,24,.8)";
+      X.fillRect(cx - 74, cy - 92, 148, 168);
+      X.strokeStyle = "rgba(255,255,255,.3)";
+      X.beginPath();
+      X.arc(cx, cy + 60, 100, Math.PI * 1.15, Math.PI * 1.85);
+      X.stroke();
+      X.font = "800 9px system-ui";
+      for (let z = 0; z < 6; z++) {
+        const d = s.z[z],
+          x = cx + zx[z] * 46,
+          y = cy + zy[z] * -60 + 20,
+          pc = d && d.a ? d.m / d.a : -1;
+        X.fillStyle = pc < 0 ? "rgba(255,255,255,.12)" : pc >= 0.6 ? "rgba(46,204,113,.85)" : pc >= 0.35 ? "rgba(255,210,63,.85)" : "rgba(255,107,74,.85)";
+        X.beginPath();
+        X.arc(x, y, 19, 0, 6.3);
+        X.fill();
+        X.fillStyle = "#fff";
+        X.fillText(pc < 0 ? ZL[z] : Math.round(pc * 100) + "%", x, y - 1);
+        if (d && d.a) X.fillText(Math.round(d.off / d.a) + "ms", x, y + 10);
+      }
+      X.fillStyle = "#9fe7ff";
+      X.fillText("SHOT LAB · % and timing", cx, cy - 78);
+    }
   } else if (k === "3pt") {
     panel(290, 6, 380, 74);
     X.fillStyle = M.time < 10 ? "#ff6b4a" : "#fff";

@@ -371,6 +371,8 @@ export const TS = {
   bc: 0, // seconds the ball has been in the backcourt this possession
   call: null as any, // last whistle that can be challenged {t: team that can challenge, d, o, n, until, p}
   gt: 0,
+  mu: [null, null] as (number[] | null)[], // matchups per team (defender slot -> opponent slot)
+  adv: -1, // team whose next inbound is advanced to the frontcourt (late timeout)
   qs: [] as number[][], // cumulative score at the end of each quarter
 };
 export const DSN = ["NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING"],
@@ -389,13 +391,24 @@ function resetRules() {
   TS.call = null;
   TS.gt = 0;
   TS.qs = [];
+  TS.adv = -1;
+  TS.mu = [null, null];
+  for (let t = 0; t < 2; t++) if (!CT.some((c) => c.tm === t)) TS.mu[t] = autoMatch(t);
 }
 /** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
 export const cm = (e: string, n?: string, n2?: string) => fx({ k: "cm", e, n, n2 });
 export const ban = (s: string, sub = "", c = "#ffd23f") => fx({ k: "ban", s, sub, c });
 /** Shot-window multiplier from badges, hot zones, rhythm, streaks, momentum and clutch. Shared with the HUD meter. */
 export function winMul(p: Player, D0: number, note?: string[]) {
-  if (!cfg.BADGES || ftq || cfg.ONLINE) return 1;
+  if (!cfg.BADGES || cfg.ONLINE) return 1;
+  if (ftq) {
+    // the road team at the line in crunch time hears it from the whole building
+    if (TS.clutch && p.tm === 1 && cfg.GM === "game") {
+      if (note) note.push("ROAD NERVES");
+      return 0.85;
+    }
+    return 1;
+  }
   let m = 1;
   const add = (k: number, s: string) => {
     m *= k;
@@ -409,6 +422,7 @@ export function winMul(p: Player, D0: number, note?: string[]) {
   if (clutchTime() && hasB(p, "CL")) add(1.15, "CLUTCH");
   const mo = p.tm ? -TS.mom : TS.mom;
   if (mo > 0.5) add(1.05, "MOMENTUM");
+  if (TS.clutch && p.tm === 0 && cfg.GM === "game") add(1.05, "HOME CROWD");
   return m;
 }
 /** Make/miss bookkeeping for hot zones and cold streaks. */
@@ -449,6 +463,10 @@ export function callTO(t: number, why = "") {
   if (!dead) pend = t;
   rs = 2;
   RQ = 0;
+  if (q >= 4 && bcast() < 120 && pend === t && cfg.NP > 1) {
+    TS.adv = t;
+    txt("BALL ADVANCED TO THE FRONTCOURT", 480, 250, "#9fe7ff");
+  }
   return true;
 }
 /** Coach's challenge on the last foul against your team (one per game). Overturned if the contact was marginal. */
@@ -543,6 +561,21 @@ function rulesTick(dt: number) {
       if (TS.clutch === 1) TS.clutch = 2;
       callTO(t, TS.run[1] >= 8 ? "STOP THE RUN" : "DRAW IT UP");
     }
+  {
+    const o = B.owner,
+      dt2 = o ? 1 - o.tm : -1;
+    if (o && cfg.FOULS && !ftq && inb <= 0 && rs <= 0 && q >= 4 && bcast() < 40 && fc <= 0 && !CT.some((c) => c.tm === dt2) && sc[o.tm] - sc[dt2] >= 3 && sc[o.tm] - sc[dt2] <= 8 && o.mode === "i") {
+      // down two possessions with the clock running out: foul to stop it
+      const d = P.find((p) => p.tm === dt2 && Math.hypot(p.x - o.x, p.y - o.y) < 26);
+      if (d && Math.random() < dt * 2) {
+        fc = 2;
+        tf[dt2] = Math.max(tf[dt2], 4); // in the bonus late: shooting two
+        cm("intfoul", d.n, o.n);
+        foul(d, o, "INTENTIONAL", 0, 0);
+        return;
+      }
+    }
+  }
   if (!cfg.VIOL || ftq || inb > 0 || !B.owner || rs > 0) {
     TS.lane.fill(0); // a shot / loose ball / dead ball resets the count
     return;
@@ -584,8 +617,46 @@ function violation(t: number, s: string, p?: Player) {
   snd(700, 0.3, "square", 0.08);
   setup(1 - t);
 }
+/** Star tendencies (CPU): how often a player looks for a deep three, a mid-range pull-up, a drive or a post-up, how
+ *  willing he is to pass, and how much he loves the step-back. Stars have their own; everyone else is derived. */
+const TEND: Record<string, number[]> = {
+  //               deep  mid  drive post pass step
+  Curry: [0.5, 0.2, 0.15, 0, 0.35, 0.5],
+  Doncic: [0.3, 0.2, 0.2, 0.2, 0.55, 0.7],
+  Jokic: [0.1, 0.15, 0.05, 0.6, 0.9, 0.1],
+  "Gilgeous-Alexander": [0.08, 0.55, 0.32, 0, 0.25, 0.3],
+  Edwards: [0.22, 0.13, 0.62, 0, 0.18, 0.2],
+  Brunson: [0.12, 0.48, 0.28, 0.12, 0.3, 0.3],
+  Wembanyama: [0.25, 0.2, 0.15, 0.35, 0.25, 0.3],
+  Towns: [0.35, 0.15, 0.1, 0.35, 0.25, 0.1],
+  "LaMelo Ball": [0.42, 0.15, 0.3, 0, 0.6, 0.3],
+  Fox: [0.12, 0.25, 0.6, 0, 0.35, 0.15],
+  Murray: [0.3, 0.4, 0.2, 0, 0.35, 0.3],
+};
+export function tendOf(p: Player): number[] {
+  const t = TEND[p.n];
+  if (t) return t;
+  return [p.c >= 84 ? 0.3 : p.c >= 75 ? 0.15 : 0.03, 0.25, p.s >= 84 || p.i >= 86 ? 0.35 : 0.2, p.i >= 84 && p.ht >= 6.8 ? 0.3 : 0, 0.3, p.st === 1 || p.st === 3 ? 0.4 : 0.1];
+}
+/** Seconds left on the broadcast (12-minute) clock, whatever the real quarter length. */
+export const bcast = () => (clock * 720) / QTRLEN;
+/** Default matchups: which opponent slot each defender guards. Best defender on their best scorer, worst on their worst. */
+export function autoMatch(t: number) {
+  const NP = cfg.NP;
+  if (NP < 2) return null;
+  const mine = [...Array(NP).keys()].sort((a, b) => P[t * NP + b].d - P[t * NP + a].d),
+    theirs = [...Array(NP).keys()].sort((a, b) => ovr(P[(1 - t) * NP + b]) - ovr(P[(1 - t) * NP + a]));
+  const mu: number[] = [];
+  mine.forEach((k, j) => (mu[k] = theirs[j]));
+  return mu;
+}
+const guardOf = (p: Player) => {
+  const NP = cfg.NP,
+    mu = TS.mu[p.tm];
+  return P[(1 - p.tm) * NP + (mu && mu[p.k] != null ? mu[p.k] : p.k)];
+};
 /** Difficulty multiplier for CPU-controlled teams (a team with no human on it); humans' teammates play at Pro level. */
-const cpuK =(p: Player, k: number[]) => (CT.some((c) => c.tm === p.tm) ? k[1] : k[cfg.DIFF] ?? 1);
+const cpuK = (p: Player, k: number[]) => (CT.some((c) => c.tm === p.tm) ? k[1] : k[cfg.DIFF] ?? 1);
 export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: number) => boolean) {
   let b = -1,
     bd = 1e9;
@@ -639,6 +710,12 @@ export function setup(off: number) {
     c.lastO = null;
   }
   inb = 1.2;
+  if (TS.adv === off) {
+    // after a late timeout the inbound comes from the frontcourt sideline
+    const sh = (hoop(off) - 470) * 0.55;
+    for (const p of P) p.x += sh;
+    TS.adv = -1;
+  }
   txt("INBOUND", 480, 230);
 }
 /** Nearest teammate for a controller, skipping players other humans already hold. */
@@ -696,6 +773,12 @@ export function pass(p: Player, r: Player, ty?: number) {
   B.sh = 0;
   p.cd = 0.4;
   p.pT = 0.25;
+  {
+    // how it's thrown: behind the back to a man behind you, no-look on the move, wraparound around a defender
+    const ang = Math.abs(Math.atan2(Math.sin(Math.atan2(ddy, ddx) - p.f), Math.cos(Math.atan2(ddy, ddx) - p.f)));
+    p.pk = ang > 2.2 && p.s >= 72 && ty !== 2 ? 2 : ang > 0.9 && Math.hypot(p.vx, p.vy) > 90 && p.s >= 75 && ty === 0 ? 1 : near && ty === 1 && p.s >= 80 ? 3 : 0;
+    if (p.pk && isH(p)) txtW(["", "NO-LOOK!", "BEHIND THE BACK!", "WRAPAROUND!"][p.pk], p.x, p.y, 95, "#9fe7ff");
+  }
   PCNT[p.tm]++;
   LASTP[p.tm] = T;
   B.pp = { p, t: T };
@@ -764,7 +847,7 @@ export function launch(p: Player) {
   const cx = hum && p.cw != null ? p.cw : Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1) + (p.bmp || 0) * 0.5),
     rat = shotRat(p, D0, isFT),
     notes: string[] = [],
-    wm0 = isFT || lay ? 1 : winMul(p, D0, notes),
+    wm0 = lay && !isFT ? 1 : winMul(p, D0, notes),
     win = (0.07 + (rat / 100) * 0.05) * (1 - 0.45 * cx) * (0.85 + 0.15 * (p.en == null ? 1 : p.en)) * wm0,
     rT = lay ? 0.28 : p.st === 1 ? 0.3 : 0.4;
   let gr;
@@ -785,6 +868,15 @@ export function launch(p: Player) {
     if (gr && !lay && Math.abs((TEMPO ? (p.tp == null ? 9 : p.tp) : p.mt) - cen) < 0.012) {
       txtW("PERFECT RELEASE", p.x, p.y, 118, "#7CFC7C");
       p.perf = 1;
+    }
+    if (!lay) {
+      // timing grade: how far from the perfect release, against the size of this shot's green window
+      const tt = TEMPO ? p.tp : p.mt,
+        off = tt == null ? 9 : tt - cen,
+        rel = Math.abs(off) / Math.max(0.01, wt),
+        g = tt == null ? "F" : Math.abs(off) < 0.012 ? "A+" : gr ? (rel < 0.45 ? "A" : rel < 0.8 ? "B+" : "B") : rel < 1.6 ? "C" : rel < 2.6 ? "D" : "F";
+      p.tg = { off: Math.round(off * 1000), win: Math.round(wt * 1000), g, gr: !!gr, z: zoneOf(p, D0) };
+      if (!PREDICT) fx({ k: "tg", ...p.tg, n: p.n });
     }
     if (!gr && !lay) {
       // shot feedback: how far off the timing was, and what else hurt it
@@ -859,7 +951,7 @@ export function launch(p: Player) {
     }
     B.dk = 1;
     // hang on the rim for a beat (pose switches to the hang clip shortly after the slam)
-    p.hangT = 0.55;
+    p.hangT = P.some((o) => o !== p && Math.hypot(o.x - hx, o.y - HY) < 18 && o.z < 10) ? 0.85 : 0.55; // don't land on him
     B.x = hx;
     B.y = HY;
     B.z = 116;
@@ -1023,6 +1115,10 @@ export function step(p: Player, dt: number) {
   if (ftq && ftq.s === p && has && p.mode === "i") p.ftT = (p.ftT || 0) + dt;
   else p.ftT = 0;
   p.landT = Math.max(0, (p.landT || 0) - dt);
+  if (p.plantT > 0) p.plantT -= dt;
+  if (p.fsT > 0) p.fsT -= dt;
+  if (p.hupT > 0) p.hupT -= dt;
+  if (p.engT > 0) p.engT -= dt;
   {
     // smoothed acceleration along the facing direction (body leans into it)
     const ax = (p.vx - (p.pvx || 0)) / dt,
@@ -1114,6 +1210,14 @@ export function step(p: Player, dt: number) {
         i.sd = 1;
         i.su = 1;
         if (u) txtW("TURNAROUND", p.x, p.y, 100, "#ffd23f");
+      } else if (i.mv === 2) {
+        p.mvk = 4;
+        p.mvT = 0.48;
+        p.mvE = 0;
+        p.mvS = -S; // spin away from the defender's top shoulder, to the baseline
+        p.cd = 0.9;
+        if (!PREDICT && dist < 30 && Math.random() < 0.45 + (p.s - d.d) / 300) d.slow = Math.max(d.slow, 0.55);
+        if (u) txtW("POST SPIN", p.x, p.y, 100, "#ffd23f");
       } else {
         p.mvk = 4;
         p.mvT = 0.4;
@@ -1123,13 +1227,15 @@ export function step(p: Player, dt: number) {
         if (u) txtW("DROP STEP", p.x, p.y, 100, "#ffd23f");
       }
     } else {
+      // chaining moves right off the end of the last one builds a combo: quicker, and harder to stay in front of
+      p.combo = p.mvEnd != null && T - p.mvEnd < 0.5 && p.mvk !== i.mv ? Math.min(4, (p.combo || 1) + 1) : 1;
       p.mvk = i.mv;
-      p.mvT = 0.5;
+      p.mvT = p.combo > 1 ? 0.42 : 0.5;
       p.mvE = 0;
       p.mvS = S;
-      p.cd = 0.9;
-      if (u) txtW(["", "HESITATION", "SPIN MOVE", "BEHIND THE BACK"][i.mv], p.x, p.y, 100, "#ffd23f");
-      if (!PREDICT && dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250 + (hasB(p, "AB") ? 0.12 : 0)) {
+      p.cd = 0.55;
+      if (u) txtW(["", "HESITATION", "SPIN MOVE", "BEHIND THE BACK"][i.mv] + (p.combo > 1 ? " · COMBO x" + p.combo : ""), p.x, p.y, 100, "#ffd23f");
+      if (!PREDICT && dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250 + (hasB(p, "AB") ? 0.12 : 0) + (p.combo - 1) * 0.12) {
         d.slow = Math.max(d.slow, 0.7);
         d.scr = Math.max(d.scr || 0, 0.35);
         // the defender's feet get crossed up: a hard sideways stumble (pose spring + flailing arms)
@@ -1248,7 +1354,11 @@ export function step(p: Player, dt: number) {
         p.mode = "c";
         p.t = 0;
         if (TEMPO) i.su = 1;
-      } else if (!has && p.z <= 0) p.vz = 126 + p.j * 0.9;
+      } else if (!has && p.z <= 0) {
+        p.vz = 126 + p.j * 0.9;
+        // jumping at a shot that's already gone: he lands off balance
+        if (B.sh && B.last && B.last.tm !== p.tm && B.age > 0.12 && Math.hypot(B.last.x - p.x, B.last.y - p.y) < 40) p.lateJ = 1;
+      }
     }
     if (has && (i.pass || i.e || i.lob)) {
       const r = i.pass || pick(p, i);
@@ -1275,6 +1385,8 @@ export function step(p: Player, dt: number) {
       p.mode = "s";
       p.t = 0;
       p.rl = 0;
+      p.react = 0;
+      p.dcl = 0;
       const lay = D < 90 && !ftq,
         k = p.st === 2 ? 70 : p.st === 3 ? 110 : 0;
       p.sv = cfg.PRO
@@ -1301,7 +1413,23 @@ export function step(p: Player, dt: number) {
   if (p.mode === "s") {
     if (TEMPO && i.sd && p.tp == null && p.t > 0.03) p.tp = i.tp != null ? clamp(i.tp, p.t - 0.25, p.t + 0.05) : p.t;
     p.t += dt;
-    if (!p.rl && has && !PREDICT && p.t >= (D < 90 ? 0.28 : p.st === 1 ? 0.3 : 0.4)) launch(p);
+    if (!p.rl && has && !PREDICT && !p.react && D >= 90 && !ftq && p.t > 0.12 && p.t < 0.3) {
+      // a defender flying at the shot: double-clutch under it, or hang and wait for him to come down
+      const fl = P.find((o) => o.tm !== p.tm && o.z > 10 && o.vz > 0 && Math.hypot(o.x - p.x, o.y - p.y) < 28);
+      if (fl) {
+        p.react = 1;
+        const r = Math.random();
+        if (r < 0.35 + p.s / 400) {
+          p.dcl = 0.1; // pull it down and bring it back up
+          if (isH(p) || isH(fl)) txtW("DOUBLE CLUTCH!", p.x, p.y, 120, "#ffd23f");
+        } else if (r < 0.75) {
+          p.vz += 45; // hang time
+          p.dcl = 0.06;
+          if (isH(p) || isH(fl)) txtW("HANGS IN THE AIR", p.x, p.y, 120, "#ffd23f");
+        } else p.react = 2; // rushes it out early
+      }
+    }
+    if (!p.rl && has && !PREDICT && p.t >= (D < 90 ? 0.28 : p.st === 1 ? 0.3 : 0.4) + (p.dcl || 0) - (p.react === 2 ? 0.05 : 0)) launch(p);
     if (p.t > 0.7 && p.z <= 0) {
       p.mode = "i";
       p.vx = p.vy = 0;
@@ -1323,8 +1451,22 @@ export function step(p: Player, dt: number) {
         dl = Math.hypot(dx, dy),
         cur = Math.hypot(p.vx, p.vy),
         brk = cur > 40 && dx * p.vx + dy * p.vy < 0,
-        ac = (brk ? 1100 : 620 + p.s * 3) * (p.mvT > 0 ? 2.6 : 1) * dt,
+        first = (p.fsT || 0) > 0,
+        ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * dt,
         mm = Math.min(dl, ac);
+      // a hard cut at speed: plant the outside foot (two-three steps to stop), and sometimes slip
+      if (brk && cur > 170 && !(p.plantT > 0) && !(p.brk > 0.5)) {
+        p.plantT = 0.2;
+        if (!PREDICT && cur > 235 && Math.random() < 0.025 + (78 - p.s) / 1500) {
+          p.hitT = 0.3;
+          p.hitX = p.vx / cur;
+          p.hitY = p.vy / cur;
+          p.slow = Math.max(p.slow, 0.35);
+          if (isH(p)) txtW("SLIPPED!", p.x, p.y, 90, "#ff9966");
+        }
+      }
+      // explosive first step out of a standstill
+      if (cur < 35 && Math.hypot(i.dx, i.dy) > 0.6) p.fsT = 0.28;
       if (dl > 0) {
         p.vx += (dx / dl) * mm;
         p.vy += (dy / dl) * mm;
@@ -1369,6 +1511,14 @@ export function step(p: Player, dt: number) {
     p.z += p.vz * dt;
     if (p.z <= 0) {
       if (p.vz < -120) p.landT = Math.min(0.28, -p.vz / 900); // absorb the landing
+      if (p.lateJ && !PREDICT) {
+        p.lateJ = 0;
+        const d = Math.hypot(p.vx, p.vy) || 1;
+        p.hitT = 0.28;
+        p.hitX = p.vx / d || Math.cos(p.f);
+        p.hitY = p.vy / d || Math.sin(p.f);
+        p.slow = Math.max(p.slow, 0.45);
+      }
       p.z = 0;
       p.vz = 0;
     }
@@ -1405,7 +1555,7 @@ export function ai(p: Player, dt: number) {
     if (p.mode !== "i") return;
     const dn = P[nearest(1 - t, p.x, p.y)],
       D0 = Math.hypot(oh - p.x, HY - p.y);
-    if (p.cd <= 0 && D0 > 150 && Math.hypot(dn.x - p.x, dn.y - p.y) < 38 && (p.st === 1 || p.st === 3) && Math.random() < dt * 2) i.sb = 1;
+    if (p.cd <= 0 && D0 > 150 && Math.hypot(dn.x - p.x, dn.y - p.y) < 38 && Math.random() < dt * 4 * tendOf(p)[5]) i.sb = 1;
     if (p.sbw > 0 && D0 > 120) {
       i.sd = 1;
       a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
@@ -1445,17 +1595,22 @@ export function ai(p: Player, dt: number) {
       return;
     }
     if (!a.r && md && p.s - md.s >= 12 && Math.random() < 0.5) (a.r = 45 + Math.random() * 30), (a.w = 0), (a.pt = 0.8); // attack the slower man
-    if (!a.r)
-      ((a.r =
-        p.c < 50
-          ? 55 + Math.random() * 40
-          : p.c >= 86 && Math.random() < 0.65
-            ? 245
-            : p.i >= 90 && Math.random() < 0.5
-              ? 70 + Math.random() * 60
-              : 100 + Math.random() * 130),
-        (a.w = 0),
-        (a.pt = 0.8));
+    if (!a.r) {
+      // where does he want his shot? from his tendencies (Curry deep, SGA mid-range, Edwards downhill, Jokic post)
+      const td = tendOf(p),
+        r = Math.random() * (td[0] + td[1] + td[2] + td[3] + 0.15);
+      a.w = 0;
+      a.pt = 0.8;
+      if (r < td[0] && p.c >= 70) a.r = (p.c >= 90 ? 255 : 240) + Math.random() * (p.c >= 95 ? 70 : 25);
+      else if (r < td[0] + td[1]) a.r = 140 + Math.random() * 80;
+      else if (r < td[0] + td[1] + td[2]) a.r = 40 + Math.random() * 40;
+      else if (r < td[0] + td[1] + td[2] + td[3] && cfg.NP > 1 && p.i >= 70) {
+        a.post = 1;
+        return;
+      } else a.r = p.c < 50 ? 55 + Math.random() * 40 : 100 + Math.random() * 130;
+      // two-for-one: ~35 s left in the quarter, get a quick shot up so you get the last possession too
+      if (clock > shot + 4 && clock < shot + 14 && QTRLEN >= 60) a.w = 0.3;
+    }
     if (D > a.r) mv(p, oh, HY + Math.sin(T * 1.5 + p.k) * 90, 1);
     else {
       a.w += dt;
@@ -1472,7 +1627,29 @@ export function ai(p: Player, dt: number) {
         a.fk = 2; // he bit: rise up as he flies by (or drive past him)
         if (D < 230 || Math.random() < 0.5) a.r = 40;
       }
-      if (a.w > 0.45 && (dd0 > 30 || shot < 7 || a.w > 1.3)) {
+      // hold for the last shot: close game, game clock under the shot clock -> run it down to ~4 s
+      const diff = sc[t] - sc[1 - t],
+        hold = !CT.some((c) => c.tm === t) && clock < shot && clock > 4.5 && diff >= -3 && diff <= 2 && !PREDICT;
+      if (hold) a.w = Math.min(a.w, 0.3);
+      // shot quality: a contested look early in the clock -> make the extra pass if someone is open
+      if (!hold && a.w > 0.45 && dd0 < 26 && shot > 6 && D > 90 && PCNT[t] < 4 && !CT.some((c) => c.tm === t) && T - LASTP[t] > 0.8) {
+        let op: Player | null = null,
+          ov = 0;
+        for (const r of P)
+          if (r.tm === t && r !== p) {
+            const nd = P[nearest(1 - t, r.x, r.y)],
+              od = Math.hypot(nd.x - r.x, nd.y - r.y),
+              rd = Math.hypot(oh - r.x, HY - r.y),
+              v = od - (rd > 237 ? 100 - r.c : 100 - r.i) * 0.6;
+            if (od > 45 && v > ov) (ov = v), (op = r);
+          }
+        if (op && Math.random() < 0.6) {
+          i.pass = op;
+          a.r = 0;
+          return;
+        }
+      }
+      if (!hold && a.w > 0.45 && (dd0 > 30 || shot < 7 || a.w > 1.3)) {
         a.fk = 0;
         i.sd = 1;
         a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
@@ -1512,7 +1689,7 @@ export function ai(p: Player, dt: number) {
         };
       const own = (Math.min(Math.hypot(dn.x - p.x, dn.y - p.y), 80) / 80) * 0.6 + (ql(p, D) / 100) * 0.5;
       let bo = null,
-        bv = own + 0.12;
+        bv = own + 0.12 + (0.3 - tendOf(p)[4]) * 0.3;
       for (const r of P)
         if (r.tm === t && r !== p) {
           const v = val(r);
@@ -1541,7 +1718,7 @@ export function ai(p: Player, dt: number) {
     const nd = P[nearest(1 - t, p.x, p.y)];
     mv(p, x + (p.x - nd.x) * 0.35, s[1] + Math.sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
   } else if (B.owner) {
-    const o = p.manT > 0 && p.man != null ? P[p.man] : P[(1 - t) * NP + p.k],
+    const o = p.manT > 0 && p.man != null ? P[p.man] : guardOf(p),
       ds = TS.ds[t],
       od = Math.hypot(dh - o.x, HY - o.y),
       cpu = !CT.some((c) => c.tm === t),
@@ -1562,7 +1739,11 @@ export function ai(p: Player, dt: number) {
       if (dh > 470 ? B.x < 470 : B.x > 470) tx = dh > 470 ? Math.max(tx, 455) : Math.min(tx, 485);
       mv(p, tx, ty, 0.92);
     }
-    if (Math.hypot(o.x - p.x, o.y - p.y) < 42 * cpuK(p, [0.7, 0.9, 1, 1.12]) && (o.mode === "c" || o.mode === "s") && p.z <= 0 && !a.j) i.sd = a.j = 1;
+    if (Math.hypot(o.x - p.x, o.y - p.y) < 42 * cpuK(p, [0.7, 0.9, 1, 1.12]) && (o.mode === "c" || o.mode === "s") && p.z <= 0 && !a.j) {
+      // a shooter who loves the pump fake gets a hand up, not a jump
+      if (Math.random() < (o.act === 1 ? 0.75 : 0.35)) (p.hupT = 0.7), (a.j = 1);
+      else i.sd = a.j = 1;
+    }
     if (o.mode === "i") a.j = 0;
     if ((dh > 470 ? B.x >= 470 : B.x <= 470) && B.owner === o && Math.hypot(o.x - p.x, o.y - p.y) < 22 && Math.random() < dt * 0.7) i.e = 1;
   } else {
@@ -2017,6 +2198,31 @@ export function bstep(dt: number) {
       }
       const wasShot = B.sh && B.last && !B.sc,
         shooter = B.last;
+      if (wasShot && p.z > 8 && !PREDICT && !ftq && cfg.NP > 1 && Math.hypot(hoop(shooter.tm) - p.x, HY - p.y) > 20) {
+        const rival = P.find((q2) => q2.tm !== p.tm && q2.z > 6 && Math.hypot(q2.x - p.x, q2.y - p.y) < 18);
+        if (rival && Math.random() < 0.4) {
+          const hx2 = hoop(shooter.tm),
+            mates = P.filter((m) => m.tm === p.tm && m !== p && !m.off).sort((a2, b2) => Math.hypot(hx2 - b2.x, HY - b2.y) - Math.hypot(hx2 - a2.x, HY - a2.y)),
+            m = mates[0];
+          if (m) {
+            const fl = 0.6;
+            B.mode = "pass";
+            B.to = m;
+            B.ptype = 0;
+            B.sh = 0;
+            B.last = p;
+            B.age = 0;
+            B.vx = (m.x - B.x) / fl;
+            B.vy = (m.y - B.y) / fl;
+            B.vz = (55 - B.z + 0.5 * g * fl * fl) / fl;
+            p.stt.reb++;
+            if (p.tm === shooter.tm) p.stt.orb++;
+            txtW(p.tm === shooter.tm ? "TAPPED BACK OUT" : "TIPPED OUT", p.x, p.y, 110, "#9fe7ff");
+            cm("tipout", p.n, m.n);
+            break;
+          }
+        }
+      }
       const oop = B.mode === "pass" && B.ptype === 2 && p === B.to && p.j >= 45 && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 110 && !ftq && inb <= 0;
       if (B.sh && B.last && !B.sc) {
         p.stt.reb++;
@@ -2157,8 +2363,22 @@ export function upd(dt: number) {
     } else if (P[c.idx].mode !== "s") c.idx = nearestFree(c, B.x, B.y);
     c.lastO = B.owner;
   }
+  if ((rs > 0 || inb > 0) && !PREDICT && cfg.PRO) deadBall(dt);
   if (HOOK.pre) HOOK.pre(dt);
   for (const p of P) if (!p.off) step(p, dt);
+  // body english: the shooter leans and waves at a ball rolling around the rim
+  if (B.sh && !B.sc && !B.owner && B.last && !B.last.off) {
+    const L = B.last,
+      hx = hoop(L.tm),
+      d = Math.hypot(B.x - hx, B.y - HY);
+    if (d < 15 && B.z > 88 && B.z < 118) {
+      const ux = hx - L.x,
+        uy = HY - L.y,
+        ul = Math.hypot(ux, uy) || 1;
+      L.engT = 0.25;
+      L.eng = clamp((((B.x - hx) * -uy + (B.y - HY) * ux) / ul) / 6, -1, 1);
+    }
+  }
   collide();
   if (useRap() && cfg.playerBodies) rapSyncPlayers(P, B);
   bstep(dt / 2);
@@ -2204,6 +2424,47 @@ export function upd(dt: number) {
       setup(q % 2 ? 0 : 1);
       txt(q > 4 ? "OVERTIME" : "QUARTER " + q, 470, 200, "#ffd23f");
     }
+  }
+}
+/** Dead balls: after a make everyone jogs back up the floor instead of standing frozen, teammates slap five, players
+ *  tug their jerseys; a man on the floor gets helped up by the nearest teammate (also during inbounds). */
+function deadBall(dt: number) {
+  const NP = cfg.NP;
+  for (const p of P) {
+    if (p.off || (ftq && ftq.i >= 0)) continue;
+    // help a teammate up
+    if (!(p.actT > 0) && p.z <= 0 && p.mode === "i") {
+      const f = P.find((o) => o.tm === p.tm && o !== p && o.act === 3 && o.actT > 0.25 && Math.hypot(o.x - p.x, o.y - p.y) < 130);
+      if (f && P.filter((o) => o.tm === p.tm && o !== f).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0] === p) {
+        const d = Math.hypot(f.x - p.x, f.y - p.y);
+        if (d > 13) {
+          p.in.dx = ((f.x - p.x) / d) * 0.7;
+          p.in.dy = ((f.y - p.y) / d) * 0.7;
+        } else {
+          p.in.dx = p.in.dy = 0;
+          p.helpP = f;
+          if (!(p.celT > 0)) (p.cel = 16), (p.celT = 0.9);
+          f.actT = Math.min(f.actT, 0.45);
+        }
+        continue;
+      }
+    }
+    if (rs <= 0) continue; // inbounds: everyone else holds his spot
+    // jog back: the team inbounding toward its backcourt, the other team back on defense
+    const off = p.tm === pend,
+      tx = off ? hoop(1 - pend) + (hoop(1 - pend) > 470 ? -170 : 170) : hoop(pend) + (hoop(pend) > 470 ? -150 : 150),
+      dx = tx - p.x;
+    if (Math.abs(dx) > 30 && !(p.celT > 0 && p.cel !== 9)) {
+      p.in.dx = Math.sign(dx) * 0.42;
+      p.in.dy = (250 + (p.k - (NP - 1) / 2) * 80 - p.y) / 300;
+    }
+    if (!(p.celT > 0) && Math.random() < dt * 0.12) (p.cel = 15), (p.celT = 0.9); // tug the jersey
+  }
+  // a quick low five between the scorer's teammates right after the bucket
+  if (rs > 1.36 && rs < 1.4 && B.last && Math.random() < 0.5) {
+    const L = B.last,
+      m = P.filter((o) => o.tm === L.tm && o !== L && !o.off).sort((a, b) => Math.hypot(a.x - L.x, a.y - L.y) - Math.hypot(b.x - L.x, b.y - L.y))[0];
+    if (m && !(L.celT > 0) && Math.hypot(m.x - L.x, m.y - L.y) < 90) for (const o of [L, m]) (o.cel = 9), (o.celT = 1.1);
   }
 }
 /** After the final buzzer (S === "over"): everyone walks toward his opposite number and daps him up. */
@@ -2379,6 +2640,11 @@ export const PLAY: (Play | null)[] = [null, null];
 const manOf = (o: Player) => {
   const t = 1 - o.tm;
   for (const d of P) if (d.tm === t && d.manT > 0 && d.man === P.indexOf(o)) return d;
+  const mu = TS.mu[t];
+  if (mu) {
+    const k = mu.indexOf(o.k);
+    if (k >= 0) return P[t * cfg.NP + k];
+  }
   return P[t * cfg.NP + o.k];
 };
 /** Isolation: called by the user, or the CPU clears out for its star late in the clock. */
@@ -2525,6 +2791,16 @@ function loose(p: Player, t: number) {
     d = Math.hypot(B.x - p.x, B.y - p.y),
     sh = B.last && B.last.tm === p.tm,
     fly = B.sh && B.last && B.z > 45 && B.age < 1.3 && B.vz > -120 && Math.hypot(B.x - hx, B.y - HY) > 40;
+  if (fly && !sh && NP > 1 && rk < 3) {
+    // box out: get between your man and the rim, then hold him there
+    const man = guardOf(p),
+      md = Math.hypot(man.x - hx, man.y - HY);
+    if (md < 160) {
+      mv(p, man.x + (hx - man.x) * (12 / (md || 1)), man.y + (HY - man.y) * (12 / (md || 1)), 1.15);
+      if (Math.hypot(man.x - p.x, man.y - p.y) < 18) p.boxT = 0.3;
+      return;
+    }
+  }
   if (fly) {
     if (rk < K2) mv(p, hx + dir * (26 + rk * 22), HY + (rk ? 36 : -8) * (p.k % 2 ? 1 : -1), 1.1);
     else if (sh) mv(p, hx + dir * 190, HY + (p.k - 2) * 45, 0.7);
@@ -2659,7 +2935,7 @@ function contestRaw(p: Player): [number, Player | null] {
       oz = fr ? fr[k * 3 + 2] : o.z,
       d = Math.hypot(ox - p.x, oy - p.y);
     if (d < 60) {
-      const c2 = (1 - d / 60) * (oz > 8 ? 1.5 : 1) * (hasB(o, "LD") ? 1.15 : 1);
+      const c2 = (1 - d / 60) * (oz > 8 ? 1.5 : o.hupT > 0 ? 1.2 : 1) * (hasB(o, "LD") ? 1.15 : 1);
       if (c2 > ct) {
         ct = c2;
         o2 = o;

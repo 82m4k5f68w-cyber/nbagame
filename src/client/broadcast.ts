@@ -39,6 +39,8 @@ const LINES: Record<string, ((n: string, n2: string) => string)[]> = {
   chalLose: [(t) => `The call stands. ${t} lose the challenge.`],
   fire: [(n) => `${n} is ON FIRE!`],
   block: [(n) => `REJECTED by ${n}!`, (n) => `Get that outta here! ${n} with the block!`],
+  tipout: [(n, m) => `${n} keeps it alive, taps it out to ${m}!`],
+  intfoul: [(n) => `They're going to foul to stop the clock — ${n} grabs him.`],
   tip: [(a, b) => `Welcome in, everybody. ${a} and ${b}, and we are ready for the tip.`, (a, b) => `It's ${a} against ${b} tonight. Here's the jump ball.`],
   half: [(a) => `That's the half. Let's look back at the best of it.`],
 };
@@ -129,11 +131,52 @@ export function comment(e: string, n = "", n2 = "") {
 export function bcTick(dt: number) {
   for (const b of BN) b.t -= dt;
   while (BN.length && BN[0].t <= 0) BN.shift();
+  if (TG && (TG.t -= dt) <= 0) TG = null;
   for (const c of CAP) c.t -= dt;
   while (CAP.length && CAP[0].t <= 0) CAP.shift();
 }
 export function bcReset() {
   BN.length = CAP.length = 0;
+}
+// ---------------- shot timing grade (human jumpers) ----------------
+let TG: any = null;
+export const timingGrade = (f: any) => (TG = { ...f, t: 2.6 });
+export function drawTiming() {
+  if (!TG) return;
+  const a = Math.min(1, TG.t * 2),
+    x0 = 14,
+    y0 = 400,
+    w = 220,
+    span = Math.max(TG.win * 3, Math.abs(TG.off) + 40),
+    px = (ms: number) => x0 + w / 2 + (ms / span) * (w / 2);
+  X.save();
+  X.globalAlpha = a;
+  X.fillStyle = "rgba(8,10,24,.82)";
+  rr(x0 - 6, y0 - 30, w + 12, 54, 8);
+  X.fill();
+  X.fillStyle = "rgba(255,255,255,.15)";
+  X.fillRect(x0, y0, w, 8);
+  X.fillStyle = V.CB ? "#4ea8ff" : "#2ecc71";
+  X.fillRect(px(-TG.win), y0, px(TG.win + 30) - px(-TG.win), 8); // the green window (a little extra on the late side)
+  X.fillStyle = "#fff";
+  X.fillRect(px(0) - 1, y0 - 3, 2, 14); // perfect
+  X.fillStyle = TG.gr ? "#ffd23f" : "#ff6b4a";
+  X.beginPath();
+  const mx = Math.max(x0, Math.min(x0 + w, px(TG.off)));
+  X.moveTo(mx, y0 - 2);
+  X.lineTo(mx - 6, y0 - 11);
+  X.lineTo(mx + 6, y0 - 11);
+  X.fill();
+  X.textAlign = "left";
+  X.font = "900 15px system-ui";
+  X.fillText("GRADE " + TG.g, x0, y0 - 14);
+  X.font = "700 11px system-ui";
+  X.fillStyle = "#cfd6ee";
+  X.textAlign = "right";
+  X.fillText(TG.off === 0 ? "dead on" : Math.abs(TG.off) + " ms " + (TG.off > 0 ? "late" : "early"), x0 + w, y0 - 14);
+  X.textAlign = "center";
+  X.fillText("EARLY · PERFECT · LATE", x0 + w / 2, y0 + 20);
+  X.restore();
 }
 // ---------------- drawing ----------------
 function rr(x: number, y: number, w: number, h: number, r: number) {

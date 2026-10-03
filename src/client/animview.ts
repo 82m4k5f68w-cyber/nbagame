@@ -13,6 +13,7 @@ const stand = (p: any) => {
   p.z = 0;
   p.vx = p.vy = p.vz = 0;
   p.mode = "i";
+  p.hupT = p.plantT = p.engT = p.dcl = p.pk = 0;
   p.mvT = 0;
   p.celT = 0;
   p.setT = 0;
@@ -65,7 +66,7 @@ const moveEvery = (p: any, t: number, k: number, per: number) => {
     p.mvS = 1;
   }
 };
-const CELN = ["", "Shimmy", "Night night", "Flex", "Three up", "Chest thump", "Roar", "Shh", "Point to the sky", "Dap", "Held follow-through", "Hands on head (missed)", "Arguing the call", "Clapping (hype)", "Swat hold"];
+const CELN = ["", "Shimmy", "Night night", "Flex", "Three up", "Chest thump", "Roar", "Shh", "Point to the sky", "Dap", "Held follow-through", "Hands on head (missed)", "Arguing the call", "Clapping (hype)", "Swat hold", "Jersey tug (dead ball)"];
 
 export const ANIMS: [string, Setup][] = [
   ["Idle (breathing)", (p) => stand(p)],
@@ -174,6 +175,26 @@ export const ANIMS: [string, Setup][] = [
         },
       ] as [string, Setup],
   ),
+  ["Contest: hand up, no jump", (p) => (stand(p), (p.hupT = 0.6))],
+  ["Behind-the-back pass", (p, t) => (stand(p), (B.ptype = 0), (p.pk = 2), (p.pT = Math.max(0, 0.25 - (t % 1) * 0.45)))],
+  ["No-look pass", (p, t, dt) => (stand(p), move(p, dt, 140, 0), (B.ptype = 0), (p.pk = 1), (p.pT = Math.max(0, 0.25 - (t % 1) * 0.45)))],
+  ["Wraparound bounce pass", (p, t) => (stand(p), (B.ptype = 1), (p.pk = 3), (p.pT = Math.max(0, 0.25 - (t % 1) * 0.45)))],
+  ["Plant step (hard cut)", (p, t, dt) => (stand(p), move(p, dt, 200, 0), (p.plantT = (t % 1) < 0.3 ? 0.2 : 0))],
+  ["Body english (ball on the rim)", (p, t) => (stand(p), (p.engT = 0.25), (p.eng = Math.sin(t * 2.5)))],
+  [
+    "Double clutch",
+    (p, t) => {
+      stand(p);
+      B.owner = p;
+      B.mode = "held";
+      p.mode = "s";
+      p.sv = 22;
+      p.rl = 0;
+      p.dcl = 0.1;
+      p.t = (t % 1.1) * 0.5;
+      p.z = Math.sin(Math.min(1, p.t / 0.55) * Math.PI) * 40;
+    },
+  ],
   [
     "Shot block attempt",
     (p, t) => {
@@ -332,7 +353,7 @@ export const ANIMS: [string, Setup][] = [
       G.setScalars({ rs: 1 });
     },
   ],
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(
     (k) =>
       [
         "Celebration: " + CELN[k],

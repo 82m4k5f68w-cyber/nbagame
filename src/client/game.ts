@@ -11,7 +11,7 @@ import { setHudCtx, hud, hud2, contestFx, meter, openMark, passMark, replayHud }
 import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
 import { audio } from "./audio";
 import { music } from "./music";
-import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr, drawPlayerIntro, introLen } from "./broadcast";
+import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr, drawPlayerIntro, introLen, timingGrade, drawTiming } from "./broadcast";
 import { NET } from "./net/session";
 import { openStudio, studioPose } from "./animview";
 import { M as MODE, stopMode } from "../core/modes";
@@ -518,7 +518,7 @@ function pause() {
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
   ov.innerHTML = `<div class="logo" style="font-size:38px">PAUSED</div><div class="sub">${esc(G.cl[0])} ${G.sc[0]} — ${G.sc[1]} ${esc(G.cl[1])} · Q${G.q}</div><div id="pz">
-  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button><button id="prs">↻ Restart game</button>${V.r3d ? `<button id="pan">🎬 Animation Studio</button>` : ""}<button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
+  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button>${cfg.NP > 1 && cfg.GM === "game" ? `<button id="pmu">🛡 Matchups</button>` : ""}<button id="prs">↻ Restart game</button>${V.r3d ? `<button id="pan">🎬 Animation Studio</button>` : ""}<button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
   $("#pr").onclick = resume;
   const re = () => (saveSet(), pause());
   if (V.r3d) {
@@ -531,10 +531,45 @@ function pause() {
     for (const c of CT) c.tempo = IN.TEMPO;
     re();
   };
+  const pmu = document.getElementById("pmu");
+  if (pmu) pmu.onclick = matchups;
   $("#prs").onclick = () => (MODE.kind ? replayMode() : startLocal(SEL, { j: lastJ }));
   if (V.r3d) $("#pan").onclick = () => studio();
   $("#pq").onclick = menu;
   ($("#pr") as HTMLElement).focus();
+}
+/** Pause → Matchups: pick who each of your defenders guards (or let the coach hide your weakest defender). */
+function matchups() {
+  const t = (CT[0] || { tm: 0 }).tm,
+    NP = cfg.NP,
+    mu = G.TS.mu[t] || [...Array(NP).keys()],
+    me = (k: number) => P[t * NP + k],
+    op = (k: number) => P[(1 - t) * NP + k];
+  ov.innerHTML = `<div class="logo" style="font-size:34px">MATCHUPS</div><p class="hint">Who guards whom on defense. Your CPU teammates follow it; switches on screens still happen.</p>
+   <table class="bx" style="max-width:520px">${[...Array(NP).keys()]
+     .map(
+       (k) =>
+         `<tr><td>${esc(me(k).n)} <small>DEF ${me(k).d}</small></td><td>guards</td><td><select data-mu="${k}">${[...Array(NP).keys()]
+           .map((j) => `<option value="${j}" ${mu[k] === j ? "selected" : ""}>${esc(op(j).n)} (${ovr(op(j))})</option>`)
+           .join("")}</select></td></tr>`,
+     )
+     .join("")}</table>
+   <div id="pz"><button id="mua">⚙ Auto: best defender on their best scorer</button><button id="mub">◀ Back</button></div>`;
+  ov.querySelectorAll<HTMLSelectElement>("[data-mu]").forEach(
+    (s) =>
+      (s.onchange = () => {
+        const m = G.TS.mu[t] || [...Array(NP).keys()],
+          k = +s.dataset.mu!,
+          j = +s.value,
+          other = m.indexOf(j);
+        if (other >= 0 && other !== k) m[other] = m[k]; // swap so everyone still has a man
+        m[k] = j;
+        G.TS.mu[t] = m;
+        matchups();
+      }),
+  );
+  $("#mua").onclick = () => ((G.TS.mu[t] = G.autoMatch(t)), matchups());
+  $("#mub").onclick = pause;
 }
 function resume() {
   G.setS("play");
@@ -610,6 +645,7 @@ function drainFx() {
     }
     else if (f.k === "half" && !NET.role && cfg.GM === "game" && G.S === "play" && !G.RPL) halftime();
     else if (f.k === "mode") (modeEvent(f), GS.onMode && GS.onMode(f));
+    else if (f.k === "tg" && CT.some((c) => P[c.idx] && P[c.idx].n === f.n)) timingGrade(f);
   }
 }
 /** Auto-release assist: aim for the middle of this shot's green window, with a little human error. */
@@ -929,6 +965,7 @@ function overlay() {
   if (G.S === "intro") return drawPlayerIntro(introT, introRec);
   drawIntro();
   drawBanners();
+  drawTiming();
   X.textAlign = "center";
   X.font = "700 11px system-ui";
   X.fillStyle = "#fff";

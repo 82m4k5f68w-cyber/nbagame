@@ -174,7 +174,7 @@ export function startPractice(sel: number, tut = false) {
   const p = me();
   unpark(p, G.hoop(0) - 200, G.HY);
   give(p);
-  M.st = { att: 0, made: 0, gr: 0, streak: 0, best: 0, tpm: 0 };
+  M.st = { att: 0, made: 0, gr: 0, streak: 0, best: 0, tpm: 0, z: [] as any[] };
   M.step = 0;
   M.mvd = 0;
   M.spr = 0;
@@ -516,6 +516,14 @@ function post(dt: number) {
       if (r.made) (s.made++, s.streak++, (s.best = Math.max(s.best, s.streak)), r.three && s.tpm++);
       else s.streak = 0;
       if (r.green) s.gr++;
+      // shot lab: makes and average timing per zone
+      const tg = p.tg;
+      if (tg && !r.dunk) {
+        const z = (s.z[tg.z] = s.z[tg.z] || { a: 0, m: 0, off: 0 });
+        z.a++;
+        if (r.made) z.m++;
+        z.off += Math.abs(tg.off);
+      }
       M.fb = 0.9;
     }
     if (k === "tutorial") tutTick(p, dt, r);

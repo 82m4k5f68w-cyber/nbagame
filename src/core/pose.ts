@@ -781,6 +781,81 @@ export function pose3(p: Player) {
       LOOK.on = 1;
     }
   }
+  // ---- Pro Play v3 ----
+  if (PRO) {
+    // contest with a hand up, feet on the floor (vs a pump faker)
+    if ((p.hupT || 0) > 0 && !air && !has) {
+      const w = Math.min(1, p.hupT * 4);
+      aR += (2.95 - aR) * w;
+      eR += (0.05 - eR) * w;
+      sz += (0.12 - sz) * w;
+      aL += (1.3 - aL) * w;
+      eL += (0.6 - eL) * w;
+      gR = 0.05;
+    }
+    // pass styles: behind the back (throwing arm swings behind the hip), no-look (head away from the target)
+    if (p.pT > 0 && p.pk) {
+      const u = clamp(1 - p.pT / 0.25, 0, 1);
+      if (p.pk === 2) {
+        aR = -0.55 - 0.35 * u;
+        eR = 1.2 - 0.6 * u;
+        sz = 0.35;
+        oR = -0.9 * u;
+        aL = 0.4;
+        eL = 0.5;
+        ty -= 0.25;
+      } else if (p.pk === 1) {
+        LOOK.x = p.x + Math.cos(p.f) * 200;
+        LOOK.y = p.y + Math.sin(p.f) * 200;
+        LOOK.z = 70;
+        LOOK.on = 1;
+      } else if (p.pk === 3) {
+        // wraparound: one arm sweeps around the defender's hip
+        aR = 0.9 + 0.3 * u;
+        eR = 0.4;
+        sz = 0.9 - 0.7 * u;
+        aL = 0.5;
+        ln += 0.2;
+        cr = Math.max(cr, 0.25);
+      }
+    }
+    // one-hand catch on the run
+    if (B.mode === "pass" && B.to === p && !air && sp > 150) {
+      aL = 0.35;
+      eL = 0.5;
+      zL = 0.1;
+    }
+    // double clutch: the ball comes down under the contest, then back up to the release
+    if (md === "s" && (p.dcl || 0) >= 0.09 && !p.rl) {
+      const w = clamp(Math.sin(((p.t - 0.14) / 0.3) * Math.PI), 0, 1);
+      aR -= 0.95 * w;
+      eR += 0.55 * w;
+      aL -= 0.8 * w;
+      eL += 0.45 * w;
+      ln += 0.18 * w;
+      cr += 0.05 * w;
+    }
+    // planting the outside foot on a hard cut: sit down and lean back against the momentum
+    if ((p.plantT || 0) > 0 && !air && md === "i") {
+      const w = Math.min(1, p.plantT * 6);
+      cr += 0.28 * w;
+      ln -= 0.3 * w;
+      hs += 0.12 * w;
+    }
+    // body english: lean with the ball on the rim, arms out like you can steer it
+    if ((p.engT || 0) > 0 && !has) {
+      const w = Math.min(1, p.engT * 5),
+        s2 = p.eng || 0;
+      rz += -0.35 * s2 * w;
+      ty += 0.2 * s2 * w;
+      aL += (1.0 - aL) * w;
+      aR += (1.0 - aR) * w;
+      eL += (0.45 - eL) * w;
+      eR += (0.45 - eR) * w;
+      sz += (0.65 - sz) * w;
+      zL = (zL ?? sz) + (0.65 - (zL ?? sz)) * w;
+    }
+  }
   // ---- free throws: players along the lane lean in, ready to box out ----
   if (PRO && ftq && ftq.s !== p && md === "i" && Math.abs(hoop(ftq.s.tm) - p.x) < 150 && Math.abs(p.y - HY) < 70) {
     cr = 0.32;
@@ -969,6 +1044,33 @@ export function pose3(p: Player) {
         eR = m(eR, 0.9);
         sz = m(sz, -0.15 + 0.5 * cl);
         zL = m(zl, -0.15 + 0.5 * cl);
+        break;
+      }
+      case 15:
+        // dead-ball fidget: left hand tugs the jersey at the chest, eyes down
+        aL = m(aL, 0.55);
+        eL = m(eL, 1.95);
+        zL = m(zl, -0.45);
+        gL = m(gL, 0.8);
+        HEADX = 0.2 * k;
+        break;
+      case 16: {
+        // helping a teammate up: reach down and pull
+        const f2 = p.helpP;
+        if (f2) {
+          const pull = e > 0.45 ? (e - 0.45) * 0.6 : 0,
+            k16 = armIK(p, cr, f2.x, f2.y, 18 + pull * 40, 1, 0.95);
+          aR = m(aR, k16.a);
+          eR = m(eR, k16.e);
+          sz = m(sz, k16.ab);
+          gR = m(gR, 0.7);
+          ln = m(ln, 0.45 - pull);
+          cr = m(cr, 0.35);
+          LOOK.x = f2.x;
+          LOOK.y = f2.y;
+          LOOK.z = 10;
+          LOOK.on = 1;
+        }
         break;
       }
       case 14:
