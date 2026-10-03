@@ -2,7 +2,7 @@
 // sim's joint model exactly (so pose.ts handPos stays the true release point). Elbows/knees/shoulders are
 // smooth-weighted across bones; feet plant on the floor with two-bone leg IK.
 import * as THREE from "three";
-import { mergeBufferGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { W3 } from "../core/sim";
 import { RIG, hipAb } from "../core/pose";
 
@@ -197,6 +197,8 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
       col = new Float32Array(n * 3),
       si = new Uint16Array(n * 4),
       sw = new Float32Array(n * 4);
+    // Color.set already linearizes the hex; the extra sRGB->linear step deepens the palette (richer skin and jersey
+    // tones under the bright arena rig) - the game's look since v2, kept on purpose across the three.js upgrade.
     c.set(pt.col).convertSRGBToLinear();
     const pos = g.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < n; i++) {
@@ -218,7 +220,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     for (const k2 of Object.keys(g.attributes)) if (!["position", "normal", "color", "skinIndex", "skinWeight"].includes(k2)) g.deleteAttribute(k2);
     return g;
   });
-  const geo = mergeBufferGeometries(geos)!;
+  const geo = mergeGeometries(geos)!;
   geos.forEach((g) => g.dispose());
   const mesh = new THREE.SkinnedMesh(geo, skinMat());
   mesh.castShadow = true;

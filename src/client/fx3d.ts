@@ -1,12 +1,12 @@
-// Post-processing chain for the 3D arena: MSAA render -> SSAO (High) -> bloom -> camera motion blur -> gamma.
-// ACES tone mapping happens in the material shaders (r149 applies it in render targets too).
+// Post-processing chain for the 3D arena: MSAA render (linear HDR) -> SSAO (High) -> bloom -> camera motion blur ->
+// color grade -> OutputPass (ACES tone mapping + sRGB). three r153+ only tone-maps the final output.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
-import { GammaCorrectionShader } from "three/examples/jsm/shaders/GammaCorrectionShader.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 /** Directional blur along the screen-space camera motion, scaled by how fast the action is. */
 const MotionBlurShader = {
@@ -58,10 +58,10 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
   ao.kernelRadius = 0.45;
   ao.minDistance = 0.0006;
   ao.maxDistance = 0.04;
-  const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.22, 0.35, 0.92);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.22, 0.35, 3.2); // HDR input: only real highlights (lit floor ~2.5)
   const mb = new ShaderPass(MotionBlurShader as any);
   const gr = new ShaderPass(GradeShader as any);
-  const gm = new ShaderPass(GammaCorrectionShader);
+  const gm = new OutputPass(); // tone mapping (ACES) + sRGB, once, at the end
   C.addPass(rp);
   C.addPass(ao);
   C.addPass(bloom);
@@ -79,7 +79,7 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
       on = enabled && ql > 0;
       ao.enabled = aoOn;
       bloom.enabled = ql >= 1;
-      bloom.strength = ql >= 2 ? 0.22 : 0.16;
+      bloom.strength = ql >= 2 ? 0.2 : 0.14;
       C.setPixelRatio(R.getPixelRatio());
       C.setSize(w, h);
       ao.setSize(Math.round(w * R.getPixelRatio() * 0.5), Math.round(h * R.getPixelRatio() * 0.5));

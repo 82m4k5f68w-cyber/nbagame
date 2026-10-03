@@ -14,17 +14,17 @@ const DPR = [1, 1.5, 2]; // device pixel ratio cap per quality level
 
 export function glInit(C: HTMLCanvasElement) {
   try {
-    (THREE as any).ColorManagement && ((THREE as any).ColorManagement.legacyMode = false);
+    THREE.ColorManagement.enabled = true;
     const R = new THREE.WebGLRenderer({ canvas: C, antialias: true, powerPreference: "high-performance" });
     if (!R.getContext()) throw 0;
     const mob = matchMedia("(pointer:coarse)").matches;
     R.setPixelRatio(Math.min(devicePixelRatio || 1, DPR[V.QL]));
     R.setSize(960, 540, false);
     R.shadowMap.enabled = true;
-    R.shadowMap.type = THREE.PCFSoftShadowMap;
-    R.outputEncoding = THREE.sRGBEncoding;
+    R.shadowMap.type = THREE.PCFShadowMap; // r18x: PCF with a radius replaces PCFSoft
+    R.outputColorSpace = THREE.SRGBColorSpace;
     R.toneMapping = THREE.ACESFilmicToneMapping;
-    R.toneMappingExposure = 0.92;
+    R.toneMappingExposure = 0.85;
     const S = new THREE.Scene();
     S.background = new THREE.Color(0x06070d);
     S.fog = new THREE.Fog(0x06070d, 110, 230);
@@ -33,16 +33,19 @@ export function glInit(C: HTMLCanvasElement) {
     S.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     pm.dispose();
     const cam = new THREE.PerspectiveCamera(38, 960 / 540, 0.5, 420);
-    S.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a1d10, 0.3));
+    // three r155+ physical light units: legacy intensities x PI keep the same exposure
+    const PI = Math.PI;
+    S.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a1d10, 0.3 * PI));
     // Broadcast arena lighting: an almost-overhead key (crisp contact shadows under the players, like the real
     // catwalk rig), warm spotlights pooling on the floor, a cool rim, light shafts in the haze, then a color grade.
-    const sun = new THREE.DirectionalLight(0xfff3e2, 1.05);
+    const sun = new THREE.DirectionalLight(0xfff3e2, 1.05 * PI);
     sun.position.set(4, 80, 7);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mob ? 1024 : 2048, mob ? 1024 : 2048);
     Object.assign(sun.shadow.camera, { left: -54, right: 54, top: 32, bottom: -32, near: 5, far: 150 });
     sun.shadow.bias = -0.0003;
     sun.shadow.normalBias = 0.025;
+    sun.shadow.radius = 2.5; // soft edges
     S.add(sun);
     // Catwalk spotlights (no shadows: cheap): warm pools over each half court + cool rims from the corners.
     const SPOTS: [number, number, number, number, number, number][] = [
@@ -52,7 +55,7 @@ export function glInit(C: HTMLCanvasElement) {
       [62, -34, 34, -4, 0xa8c8ff, 0.7],
     ];
     for (const [x, z, tx, tz, c, i] of SPOTS) {
-      const l = new THREE.SpotLight(c, i, 0, 0.55, 0.75, 1);
+      const l = new THREE.SpotLight(c, i * PI * 26, 0, 0.55, 0.75, 1); // candela, 1/d falloff (~26 ft keeps the old pools)
       l.position.set(x, 40, z);
       l.target.position.set(tx, 0, tz);
       S.add(l, l.target);
@@ -109,7 +112,7 @@ export function glInit(C: HTMLCanvasElement) {
       },
       TX2 = (c: HTMLCanvasElement) => {
         const t = new THREE.CanvasTexture(c);
-        t.encoding = THREE.sRGBEncoding;
+        t.colorSpace = THREE.SRGBColorSpace;
         t.anisotropy = R.capabilities.getMaxAnisotropy();
         return t;
       };
@@ -548,7 +551,7 @@ export function glInit(C: HTMLCanvasElement) {
       jt.needsUpdate = true;
     }
     // ceiling light panels (bloom picks them up)
-    const panelM = new THREE.MeshBasicMaterial({ color: 0xfff6e8, toneMapped: false });
+    const panelM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff6e8).multiplyScalar(5) }); // HDR: blooms
     for (let i = 0; i < 8; i++) {
       const p = new THREE.Mesh(new THREE.PlaneGeometry(7, 1.2), panelM);
       p.position.set(-42 + i * 12, 40, (i % 2 ? 1 : -1) * 14);
