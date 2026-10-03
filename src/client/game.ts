@@ -8,16 +8,20 @@ import { V, CAMN, MN, pr } from "./view";
 import { glInit } from "./render3d";
 import { court2d, hoop2d, net2d, player2d, ball2d, scene3c, segs3c, paint3c, ball3c, pj, CP, setCanvasCtx } from "./canvas";
 import { setHudCtx, hud, hud2, contestFx, meter, openMark, passMark, replayHud } from "./hud";
-import { IN, TX, hum, hum2, gpPoll, bindInput } from "./input";
+import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
 import { audio } from "./audio";
+import { music } from "./music";
+import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr } from "./broadcast";
 import { NET } from "./net/session";
 import { openStudio, studioPose } from "./animview";
+import { M as MODE, stopMode } from "../core/modes";
+import { bindModes, setModeCtx, modeHud, modeEvent, modeStrip, bindStrip, replayMode, seasonResult, seasonScreen, openMode } from "./modesui";
 
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let C: HTMLCanvasElement, X: CanvasRenderingContext2D, ov: HTMLElement;
 let SEL = 0,
   MYM = 0;
-export const GS = { mode: "5v5-3d", booted: 0, onEnd: null as null | ((won: boolean) => void) };
+export const GS = { mode: "5v5-3d", booted: 0, onEnd: null as null | ((won: boolean) => void), onMode: null as null | ((f: any) => void) };
 
 function fatal(m: string) {
   ov.style.display = "flex";
@@ -41,6 +45,28 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   ov = $("#ov");
   setCanvasCtx(X);
   setHudCtx(X);
+  setBcCtx(X);
+  setModeCtx(X);
+  AUTO.rel = autoRel;
+  bindModes({
+    ov,
+    menu,
+    startLocal,
+    esc,
+    sel: () => SEL,
+    opp: () => OPP,
+    prep: () => {
+      endAt = 0;
+      audio.crowdInit();
+      music.start();
+      bcReset();
+      cfg.MYM = MYM;
+      G.setCtrls([G.mkCtrl("p1", 0, !!MYM, IN.TEMPO)]);
+      V.focus = 0;
+      G.setQtrLen(QLEN);
+      lastFx = G.FX.length ? G.FX[G.FX.length - 1].id : 0;
+    },
+  });
   let ERR = 0;
   window.onerror = (m, u, l) => {
     if (!ERR && !/gamepad|permission/i.test(String(m))) {
@@ -59,6 +85,12 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     if ((c as any).remote) return NET.remoteInput(c);
     return c.id === "p2" ? hum2() : hum();
   };
+  IN.onChat = (k) => {
+    if (NET.role && (G.S === "play" || G.S === "over")) NET.chat(k);
+  };
+  IN.onRpl = (d) => {
+    if (G.RPL && !NET.role) G.setRplSpeed(d);
+  };
   IN.onSkip = () => {
     if (G.RPL) {
       if (NET.role === "guest") NET.requestSkip();
@@ -75,7 +107,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   });
   addEventListener("blur", () => !NET.role && !G.RPL && G.S === "play" && pause());
   GS.booted = 1;
-  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, openMode, MODE, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
   if (o.quick) {
     SEL = o.quick.sel;
@@ -106,16 +138,27 @@ function loadSet() {
     if (o.my != null) MYM = o.my;
     if (o.df != null) cfg.DIFF = o.df;
     if (o.ql) QLEN = o.ql;
+    if (o.ru) Object.assign(cfg, o.ru);
+    for (const k of ["COMM", "VOICE", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO"]) if (o[k] != null) (V as any)[k] = o[k];
   } catch (e) {}
 }
 function saveSet() {
   try {
-    localStorage.setItem("h2k_set", JSON.stringify({ m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN }));
+    localStorage.setItem(
+      "h2k_set",
+      JSON.stringify({
+        m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN,
+        ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
+        COMM: V.COMM, VOICE: V.VOICE, MUSIC: V.MUSIC, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
+      }),
+    );
   } catch (e) {}
 }
 
 // ---------------- menus ----------------
 const opt = (b: string, k: string, v: number, cur: number, l: string) => `<button data-${k}="${v}" class="${cur === v ? "on" : ""}">${l}</button>`;
+const onoff = (k: string, cur: number) => opt("", k, 1, cur ? 1 : 0, "On") + opt("", k, 0, cur ? 1 : 0, "Off");
+const keyName = (c: string) => (c || "?").replace(/^Key/, "").replace(/^Digit/, "").replace("ShiftLeft", "L-Shift").replace("ShiftRight", "R-Shift").replace("Space", "Space");
 // ---------------- portraits, records ----------------
 const AV = new Map<string, string>();
 /** Little broadcast-style portrait drawn from the roster data (skin, hair, beard, jersey, number). */
@@ -198,6 +241,7 @@ let QLEN = 60;
 
 /** The matchup screen: your team vs. the opponent, lineups, ratings, difficulty, and a settings drawer. */
 export function menu() {
+  stopMode();
   G.setS("menu");
   ov.style.display = "flex";
   ov.classList.add("mu-on");
@@ -240,7 +284,7 @@ export function menu() {
    <div class="mid"><div class="vsb">VS</div>
     <div class="chips"><b>DIFFICULTY</b>${DIFFN.map((n, i) => opt("", "df", i, cfg.DIFF, n)).join("")}</div>
     <div class="chips"><b>QUARTERS</b>${[30, 60, 120, 180].map((q) => `<button data-ql="${q}" class="${QLEN === q ? "on" : ""}">${q < 60 ? q + "s" : q / 60 + " min"}</button>`).join("")}</div>
-    <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → your ${NP > 1 ? "team" : "star"} · ↑ ↓ opponent · Enter tip off</p></div>
+    <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → your ${NP > 1 ? "team" : "star"} · ↑ ↓ opponent · Enter tip off</p>${modeStrip()}</div>
    ${oppI < 0 ? `<section class="side rnd"><div class="sh"><button class="arw" data-cy="o" data-d="-1" aria-label="Previous">◀</button><div class="badge">?</div><div class="tn"><small>OPPONENT</small><b>Random</b></div><button class="arw" data-cy="o" data-d="1" aria-label="Next">▶</button></div><p class="hint" style="margin:10px 0">A surprise ${NP > 1 ? "team" : "star"} every game. Use ▶ or ↑ ↓ to pick one.</p><ol class="lu q">${(NP > 1 ? POS : ["?"])
         .map((ps, k) => `<li style="--d:${k * 60}ms"><span class="qa">?</span><span class="pn">${NP > 1 ? ps : ""}</span><b>Mystery ${NP > 1 ? "starter" : "star"}</b><span class="po">??</span></li>`)
         .join("")}</ol></section>` : side(oppI, false)}</div>
@@ -251,10 +295,14 @@ export function menu() {
     })
     .join("")}</div>
   <aside id="sd" hidden><div class="sdh"><b>SETTINGS</b><button id="sdx" aria-label="Close settings">✕</button></div>
-   <div class="opts"><h3>MATCH</h3><b>PLAYERS</b>${opt("", "mp", 0, IN.MP2, "1 Player")}${opt("", "mp", 1, IN.MP2, "2 Players (keyboard)")}<button id="online">🌐 Play online</button>
+   <div class="opts"><h3>MATCH</h3><b>PLAYERS</b>${opt("", "mp", 0, IN.MP2, "1 Player")}${opt("", "mp", 1, IN.MP2, "2 Players (keyboard)")}<button id="online">🌐 Play online</button><label class="ld">📼 Watch a saved reel<input type="file" id="rlf" accept=".json,application/json" hidden></label>
     <b>PLAYER MODE</b>${opt("", "my", 0, MYM, "Pick a team")}${opt("", "my", 1, MYM, "My Player")}<button id="edit">✎ Edit my player</button>
     <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
    <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
+   <div class="opts"><h3>RULES</h3><b>FOULS</b>${onoff("rf", cfg.FOULS)}<b>SHOT CLOCK</b>${onoff("rc", cfg.SCLK)}<b>VIOLATIONS</b>${onoff("rv", cfg.VIOL)}<i class="sm">3 seconds · 8 seconds · goaltending</i><b>FATIGUE &amp; SUBS</b>${onoff("rs", cfg.SUBS)}<i class="sm">5v5: reserves check in, 6 fouls = out</i><b>BADGES &amp; HOT ZONES</b>${onoff("rb", cfg.BADGES)}</div>
+   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
+   <div class="opts"><h3>ACCESSIBILITY</h3><b>METER COLORS</b>${opt("", "cb", 0, V.CB, "Standard")}${opt("", "cb", 1, V.CB, "Colorblind-safe")}<b>METER SIZE</b>${opt("", "bm", 0, V.BIGM, "Normal")}${opt("", "bm", 1, V.BIGM, "Large")}<b>AUTO-RELEASE ASSIST</b>${onoff("au", V.AUTO)}<i class="sm">hold &amp; release only: lets go near the top for you</i></div>
+   <div class="opts keys"><h3>CONTROLS</h3>${ACTS.map(([id, l]) => `<button data-key="${id}" title="Click, then press a key">${esc(l)} <kbd>${esc(keyName(KMAP[id]))}</kbd></button>`).join("")}<button id="krs" class="ghost">Reset keys</button></div>
    ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i></div>` : ""}
    <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p></aside></div>`;
   const re = () => (saveSet(), menu());
@@ -300,6 +348,7 @@ export function menu() {
           else ov.querySelectorAll(`[data-${k}]`).forEach((c) => c.classList.toggle("on", c === b));
         }),
     );
+  bindStrip();
   grp("df", (v) => (cfg.DIFF = v));
   grp("ql", (v) => (QLEN = v));
   grp("m", (v) => (V.METER = v));
@@ -315,6 +364,47 @@ export function menu() {
     setTimeout(() => location.reload(), 150);
   });
   grp("my", (v) => (MYM = v), true);
+  grp("rf", (v) => (cfg.FOULS = v));
+  grp("rc", (v) => (cfg.SCLK = v));
+  grp("rv", (v) => (cfg.VIOL = v));
+  grp("rs", (v) => (cfg.SUBS = v));
+  grp("rb", (v) => (cfg.BADGES = v));
+  grp("cmt", (v) => {
+    V.COMM = v ? 1 : 0;
+    V.VOICE = v === 2 ? 1 : 0;
+    if (v === 2) comment("clutch");
+  });
+  grp("mu", (v) => (V.MUSIC = v));
+  grp("ru", (v) => ((V.RUMBLE = v), rumble(0.6, 200)));
+  grp("cb", (v) => (V.CB = v));
+  grp("bm", (v) => (V.BIGM = v));
+  grp("au", (v) => (V.AUTO = v));
+  ov.querySelectorAll<HTMLElement>("[data-key]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        const id = b.dataset.key!;
+        b.querySelector("kbd")!.textContent = "press a key…";
+        const h = (e: KeyboardEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          removeEventListener("keydown", h, true);
+          if (e.code !== "Escape") {
+            for (const k in KMAP) if (KMAP[k] === e.code && k !== id) KMAP[k] = KMAP[id]; // swap a clash
+            KMAP[id] = e.code;
+            saveKeys();
+          }
+          menu();
+          $("#set").click();
+        };
+        addEventListener("keydown", h, true);
+      }),
+  );
+  $("#krs").onclick = () => {
+    for (const [id, , d] of ACTS) KMAP[id] = d;
+    saveKeys();
+    menu();
+    $("#set").click();
+  };
   grp("mp", (v) => (IN.MP2 = v));
   const sd = $("#sd");
   $("#set").onclick = () => {
@@ -327,6 +417,10 @@ export function menu() {
   };
   $("#edit").onclick = () => (ov.classList.remove("mu-on"), edMy());
   $("#online").onclick = () => (ov.classList.remove("mu-on"), NET.openLobby());
+  ($("#rlf") as HTMLInputElement).onchange = (e) => {
+    const f = (e.target as HTMLInputElement).files;
+    if (f && f[0]) loadReel(f[0]);
+  };
   void re;
   menuKeys = (e: KeyboardEvent) => {
     if (G.S !== "menu" || ov.style.display === "none" || !document.getElementById("tip")) return;
@@ -430,7 +524,7 @@ function pause() {
     for (const c of CT) c.tempo = IN.TEMPO;
     re();
   };
-  $("#prs").onclick = () => startLocal(SEL, { j: lastJ });
+  $("#prs").onclick = () => (MODE.kind ? replayMode() : startLocal(SEL, { j: lastJ }));
   if (V.r3d) $("#pan").onclick = () => studio();
   $("#pq").onclick = menu;
   ($("#pr") as HTMLElement).focus();
@@ -444,8 +538,12 @@ export const esc = (s: any) => String(s).replace(/[&<>"']/g, (c) => "&#" + c.cha
 
 /** Local game: P1 on team 0 (+ P2 on team 1 for local 2-player). */
 export function startLocal(i: number, o: { j?: number } = {}) {
+  stopMode();
+  cfg.ONLINE = 0;
   endAt = 0;
   audio.crowdInit();
+  music.start();
+  bcReset();
   cfg.MYM = MYM;
   const cs = [G.mkCtrl("p1", 0, !!MYM, IN.TEMPO)];
   if (IN.MP2) cs.push(G.mkCtrl("p2", 1, false, IN.TEMPO));
@@ -472,11 +570,62 @@ function drainFx() {
     if (f.k === "s") audio.snd(f.f, f.d, f.ty, f.v);
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
     else if (f.k === "x") audio.EXC = f.v;
-    else if (f.k === "end") endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200); // let the confetti fall first
-    else if (f.k === "shake") V.shake && V.shake(f.v);
+    else if (f.k === "end" && cfg.GM === "game") endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200); // let the confetti fall first
+    else if (f.k === "shake") (V.shake && V.shake(f.v), rumble(f.v, 120 + f.v * 200));
     else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
     else if (f.k === "chant") audio.chant();
+    else if (f.k === "ban") banner(f.s, f.sub, f.c);
+    else if (f.k === "cm") comment(f.e, f.n, f.n2);
+    else if (f.k === "half" && !NET.role && cfg.GM === "game" && G.S === "play" && !G.RPL) halftime();
+    else if (f.k === "mode") (modeEvent(f), GS.onMode && GS.onMode(f));
   }
+}
+/** Auto-release assist: aim for the middle of this shot's green window, with a little human error. */
+let arP: any = null,
+  arT = 0;
+function autoRel(p: any) {
+  if (arP !== p || p.t < 0.05) {
+    arP = p;
+    const D0 = Math.hypot(G.hoop(p.tm) - p.x, G.HY - p.y),
+      rat = G.shotRat(p, D0, !!G.ftq),
+      c = Math.min(1, G.contestOf(p)[0] + (p.bmp || 0) * 0.5),
+      wm = 0.07 + (rat / 100) * 0.05,
+      win = wm * (1 - 0.45 * c) * (0.85 + 0.15 * (p.en ?? 1)) * (D0 < 90 ? 1 : G.winMul(p, D0)),
+      cen = (p.st === 1 ? 0.45 : 0.6) + (wm - win);
+    arT = cen + (Math.random() - 0.5) * 0.09;
+  }
+  return arT;
+}
+/** Halftime: first-half leaders and team splits over the arena, then back to it. */
+function halftime() {
+  G.setS("half");
+  ov.style.display = "flex";
+  ov.classList.remove("mu-on");
+  const top = (t: number, k: string) => G.ROST[t].slice().sort((a, b) => b.stt[k] - a.stt[k])[0],
+    row = (k: string, l: string) =>
+      `<tr><td>${esc(top(0, k).n)} <b>${top(0, k).stt[k]}</b></td><th>${l}</th><td><b>${top(1, k).stt[k]}</b> ${esc(top(1, k).n)}</td></tr>`,
+    sum = (t: number, k: string) => G.ROST[t].reduce((a, p) => a + p.stt[k], 0),
+    pc = (t: number) => (sum(t, "fga") ? Math.round((100 * sum(t, "fgm")) / sum(t, "fga")) : 0);
+  ov.innerHTML = `<div class="fin ht" style="--c0:${G.PC[0]};--c1:${G.PC[1]}"><div class="logo" style="font-size:40px;animation:none">HALFTIME</div>
+   <div class="sc"><span style="--c:${G.PC[0]}">${esc(G.cl[0])}</span><b>${G.sc[0]}</b><i>—</i><b>${G.sc[1]}</b><span style="--c:${G.PC[1]}">${esc(G.cl[1])}</span></div>
+   <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}<tr><td><b>${pc(0)}%</b></td><th>FG%</th><td><b>${pc(1)}%</b></td></tr><tr><td><b>${sum(0, "orb") + sum(0, "chg") + sum(0, "dv")}</b></td><th>HUSTLE</th><td><b>${sum(1, "orb") + sum(1, "chg") + sum(1, "dv")}</b></td></tr></table>
+   <p class="hint">${esc(halfNote())}</p><div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button></div></div>`;
+  comment("timeout", G.cl[G.sc[0] >= G.sc[1] ? 1 : 0]);
+  const go = () => {
+    clearTimeout(ht);
+    if (G.S !== "half") return;
+    ov.style.display = "none";
+    G.setS("play");
+  };
+  const ht = setTimeout(go, 12000);
+  $("#h2").onclick = go;
+  ($("#h2") as HTMLElement).focus();
+}
+function halfNote() {
+  const d = G.sc[0] - G.sc[1];
+  if (!d) return "All square at the break.";
+  const w = G.cl[d > 0 ? 0 : 1];
+  return Math.abs(d) >= 10 ? `${w} in control, up ${Math.abs(d)}.` : `${w} lead by ${Math.abs(d)} — anybody's game.`;
 }
 export const resetFx = (id: number) => (lastFx = id);
 // Dribble thumps come from watching the ball (works the same offline and as an online guest, no network events).
@@ -497,9 +646,10 @@ function endGame() {
   ov.classList.remove("mu-on");
   const me = (CT[V.focus] || CT[0]).tm,
     w = sc[me] > sc[1 - me],
-    tm = (t: number) => P.filter((p) => p.tm === t),
+    tm = (t: number) => (G.ROST[t] && G.ROST[t].length ? G.ROST[t] : P.filter((p) => p.tm === t)),
     sum = (t: number, k: string) => tm(t).reduce((a, p) => a + p.stt[k], 0),
     pct = (m: number, a: number) => (a ? Math.round((100 * m) / a) : 0);
+  const inSeason = !NET.role && seasonResult(w);
   // record (offline games vs the CPU only)
   if (!NET.role && !IN.MP2) {
     const r = rec.get();
@@ -516,16 +666,21 @@ function endGame() {
     ["REB", sum(0, "reb"), sum(1, "reb")],
     ["AST", sum(0, "ast"), sum(1, "ast")],
     ["BLK", sum(0, "blk"), sum(1, "blk")],
+    ["OREB", sum(0, "orb"), sum(1, "orb")],
+    ["HUSTLE", sum(0, "chg") + sum(0, "dv") + sum(0, "sa"), sum(1, "chg") + sum(1, "dv") + sum(1, "sa")],
   ];
   const tb = (t: number) =>
-    `<table class="bx"><tr><th>${esc(cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>BLK</th></tr>${tm(t)
-      .map((p) => `<tr><td>${esc(p.n)}</td><td>${p.stt.pts}</td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.stt.blk}</td></tr>`)
+    `<table class="bx"><tr><th>${esc(cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>BLK</th><th>OREB</th><th>PF</th><th title="charges drawn + loose-ball dives + screen assists">HUS</th></tr>${tm(t)
+      .map(
+        (p) =>
+          `<tr${p.fo ? ' class="fo"' : ""}><td>${esc(p.n)}${badgeStr(p) ? ` <small title="${esc(badgeStr(p))}">★${badgeStr(p).split(" · ").length}</small>` : ""}</td><td>${p.stt.pts}</td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.stt.blk}</td><td>${p.stt.orb || 0}</td><td>${p.pf}${p.fo ? " (out)" : ""}</td><td>${(p.stt.chg || 0) + (p.stt.dv || 0) + (p.stt.sa || 0)}</td></tr>`,
+      )
       .join("")}</table>`;
   const r = rec.get();
   ov.innerHTML = `<div class="fin" style="--c0:${G.PC[0]};--c1:${G.PC[1]}">
    <div class="logo" style="font-size:44px;animation:none;color:${NET.role || IN.MP2 ? "#fff" : w ? "#ffd23f" : "#ff8a6b"}">${NET.role || IN.MP2 ? "FINAL" : w ? "VICTORY" : "DEFEAT"}</div>
    <div class="sc"><span style="--c:${G.PC[0]}">${esc(cl[0])}</span><b>${sc[0]}</b><i>—</i><b>${sc[1]}</b><span style="--c:${G.PC[1]}">${esc(cl[1])}</span></div>
-   ${!NET.role && !IN.MP2 ? `<p class="hint">Record ${r.w}W · ${r.l}L${r.st > 1 ? " · 🔥 " + r.st + " straight" : ""}${r.best > 1 ? " · best streak " + r.best : ""}</p>` : ""}
+   ${NET.role ? NET.rate() : ""}${!NET.role && !IN.MP2 ? `<p class="hint">Record ${r.w}W · ${r.l}L${r.st > 1 ? " · 🔥 " + r.st + " straight" : ""}${r.best > 1 ? " · best streak " + r.best : ""}</p>` : ""}
    ${pog ? `<div class="pog"><img alt="" src="${avatar([pog.n, pog.c, pog.i, pog.s, pog.d, pog.j, pog.st, pog.skin, pog.hr, pog.bd, pog.ht, pog.bk, pog.no], pog.col)}"><div><small>PLAYER OF THE GAME</small><b>${esc(pog.n)}</b><span>${pog.stt.pts} PTS · ${pog.stt.reb} REB · ${pog.stt.ast} AST${pog.stt.blk ? " · " + pog.stt.blk + " BLK" : ""}</span></div></div>` : ""}
    <div class="cmp">${rows
      .map(([k, a2, b2]) => {
@@ -534,13 +689,88 @@ function endGame() {
      })
      .join("")}</div>
    <details class="bxw"><summary>Box score</summary>${tb(0)}${tb(1)}</details>
-   <div class="row">${NET.role ? `<button class="big" id="pa">Back to lobby</button>` : `<button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button>`}</div></div>`;
-  $("#pa").onclick = () => (NET.role ? NET.backToLobby() : menu());
+   ${G.HL.length && !NET.role ? `<div class="row"><button class="ghost" id="hlp">▶ Highlights (${G.HL.length})</button><button class="ghost" id="hls">💾 Save reel</button></div>` : ""}
+   <div class="row">${NET.role ? NET.finalButtons() : inSeason ? `<button class="big" id="ssn">🏆 SEASON ▶</button><button id="pa" class="ghost">Menu</button>` : `<button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button>`}</div></div>`;
+  const hlp = document.getElementById("hlp");
+  if (hlp) {
+    hlp.onclick = () => playReel(G.HL.slice(), () => (ov.style.display = "flex"));
+    $("#hls").onclick = saveReel;
+  }
+  const ssn = document.getElementById("ssn");
+  if (ssn) ssn.onclick = seasonScreen;
+  const pa = document.getElementById("pa");
+  if (pa) pa.onclick = () => (NET.role ? NET.backToLobby() : menu());
+  if (NET.role) NET.bindFinal();
   const rm = document.getElementById("rm");
   if (rm) rm.onclick = () => startLocal(SEL, { j: lastJ });
   GS.onEnd && GS.onEnd(w);
 }
 
+// ---------------- highlight reel (end of game, saved reels) ----------------
+let REEL: null | { clips: any[]; i: number; back: () => void } = null;
+function playReel(clips: any[], back: () => void) {
+  if (!clips.length) return back();
+  REEL = { clips, i: -1, back };
+  ov.style.display = "none";
+  nextClip();
+}
+function nextClip() {
+  const R = REEL!;
+  R.i++;
+  if (R.i >= R.clips.length) {
+    REEL = null;
+    G.setRPL(null);
+    return R.back();
+  }
+  const c = R.clips[R.i];
+  G.playClip(c);
+  banner("HIGHLIGHT " + (R.i + 1) + " / " + R.clips.length, String(c.s).toUpperCase(), "#ffd23f");
+}
+const b64 = (f: Float32Array) => {
+  const u = new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
+  let s = "";
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000) as any);
+  return btoa(s);
+};
+const unb64 = (s: string) => {
+  const b = atob(s),
+    u = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+  return new Float32Array(u.buffer);
+};
+/** Save the game's highlights as a file (teams + clips); "Load reel" in the menu plays it back. */
+function saveReel() {
+  const o = { v: 1, np: cfg.NP, fst: G.FSTN(), i: SEL, j: lastJ, my: MYM, teams: G.cl, sc: G.sc, clips: G.HL.map((c) => ({ s: c.s, n: c.n, b: b64(c.buf) })) };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: "application/json" }));
+  a.download = "hoops2k27-" + G.cl[0].replace(/\W/g, "") + "-vs-" + G.cl[1].replace(/\W/g, "") + ".h2kreel.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function loadReel(file: File) {
+  file.text().then((t) => {
+    let o: any;
+    try {
+      o = JSON.parse(t);
+    } catch (e) {
+      return alert("That file isn't a Hoops 2K27 reel.");
+    }
+    if (!o || o.v !== 1 || !Array.isArray(o.clips)) return alert("That file isn't a Hoops 2K27 reel.");
+    if (o.np !== cfg.NP || o.fst !== G.FSTN()) return alert(`This reel is from ${o.np > 1 ? "5v5" : "1v1"} — open that mode from the hub to watch it.`);
+    stopMode();
+    cfg.MYM = o.my ? 1 : 0;
+    G.setCtrls([G.mkCtrl("p1", 0, !!o.my, 0)]);
+    const jb = cfg.JB;
+    cfg.JB = 0;
+    G.start(o.i, o.j != null ? { j: o.j } : {});
+    cfg.JB = jb;
+    G.setS("over");
+    playReel(
+      o.clips.map((c: any) => ({ s: c.s, n: c.n, buf: unb64(c.b) })),
+      () => menu(),
+    );
+  });
+}
 // ---------------- drawing ----------------
 let cx = 0;
 export function draw() {
@@ -561,6 +791,7 @@ export function draw() {
   if (!P.length) return;
   if (!V.GL)
     for (const p of P) {
+      if (p.off) continue;
       const w = G.W3(p.x, p.y, 0),
         q = pj(w[0], 0, w[2]),
         r = Math.max(0.35, 1 - p.z * 0.012);
@@ -571,7 +802,7 @@ export function draw() {
     }
   CT.forEach((c, k) => {
     const p = P[c.idx];
-    if (!p) return;
+    if (!p || p.off) return;
     const c0 = pr(p.x, p.y, 0),
       c1 = pr(p.x + 19, p.y, 0),
       rx = Math.abs(c1[0] - c0[0]) || 20;
@@ -583,7 +814,7 @@ export function draw() {
   });
   if (!V.GL) {
     const L: any[] = [];
-    P.forEach((p) => p.q && segs3c(p, L));
+    P.forEach((p) => p.q && !p.off && segs3c(p, L));
     const bw = G.W3(B.x, B.y, B.z),
       bq = pj(bw[0], bw[1], bw[2]),
       bf = pj(bw[0], 0, bw[2]);
@@ -604,7 +835,7 @@ function draw2d() {
   hoop2d(1);
   if (!P.length) return;
   DL.length = 0;
-  for (const p of P) DL.push(p);
+  for (const p of P) if (!p.off) DL.push(p);
   DL.push(B);
   DL.sort((a, b) => (a === B ? B.y + (B.owner ? 1 : 0) : a.y) - (b === B ? B.y + (B.owner ? 1 : 0) : b.y));
   for (const o of DL) o === B ? ball2d() : player2d(o);
@@ -615,12 +846,16 @@ function draw2d() {
 function overlay() {
   hud();
   hud2();
+  drawBug(NET.role ? (CT[V.focus] || CT[0]).tm : CT.length ? CT[0].tm : -1);
+  modeHud();
+  drawIntro();
+  drawBanners();
   X.textAlign = "center";
   X.font = "700 11px system-ui";
   X.fillStyle = "#fff";
   const seen = new Set();
   for (const p of [...CT.map((c) => P[c.idx]), B.owner])
-    if (p && !seen.has(p)) {
+    if (p && !seen.has(p) && !p.off) {
       seen.add(p);
       const [sx, sy] = pr(p.x, p.y, p.z + 78);
       X.fillText(p.n.toUpperCase() + " " + ovr(p), sx, sy);
@@ -685,7 +920,13 @@ function loop(n: number) {
     G.setT(G.T + dt);
     if (ATICK) ATICK(dt);
   }
+  if (REEL && !G.RPL) nextClip();
   audio.tick(dt);
+  bcTick(dt);
+  music.on = V.MUSIC;
+  music.clutch = G.TS.clutch && G.S === "play" ? 1 : 0;
+  music.level = Math.min(1, audio.EXC * 0.8 + Math.abs(G.TS.mom) * 0.5);
+  music.tick(G.S === "play" && !G.RPL ? 1 : G.S === "half" || G.S === "over" ? 0.6 : 0);
   drainFx();
   dribSound();
   for (const o of TX) {

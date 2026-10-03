@@ -36,14 +36,18 @@ export class GuestSession {
   side = -2; // -2 undecided (the host waits), -1 watching, 0/1 playing
   rdy = 0;
   tempo = 0;
-  stats = { full: 0, delta: 0, bytes: 0, corr: 0, recon: 0 };
+  stats: any = { full: 0, delta: 0, bytes: 0, corr: 0, recon: 0, resync: 0 };
   onLobby: ((L: Lobby) => void) | null = null;
   onStart: (() => void) | null = null;
   onFx: ((f: any) => void) | null = null;
+  onChat: ((who: string, k: number) => void) | null = null;
+  qn = 0; // my quick-chat sequence
+  lastQ = -1; // newest relayed chat I've shown
+  rm = -1; // game id I asked a rematch of
   private unsub: () => void;
   constructor(
     public t: Transport,
-    public me: { n: string; tok: string; code: string },
+    public me: { n: string; tok: string; code: string; elo?: number },
     public now: () => number = () => performance.now(),
   ) {
     this.unsub = t.onPeers((ps) => this.peers(ps));
@@ -64,11 +68,21 @@ export class GuestSession {
       t: Math.round(this.now()),
       rt: Math.round(this.rtt),
       D: Math.round(this.D),
+      elo: this.me.elo || 1000,
+      rm: this.rm,
       ...extra,
     });
   }
   setSide(tm: number) {
     this.side = tm;
+    this.pub();
+  }
+  chat(k: number) {
+    this.qn = Math.max(this.qn + 1, Date.now() % 1e9); // monotonic across reconnects
+    this.pub({ q: [this.qn, k] });
+  }
+  wantRematch() {
+    this.rm = this.gid;
     this.pub();
   }
   setReady(r: number) {
@@ -94,6 +108,14 @@ export class GuestSession {
       else if (L.st === "lobby" && prevSt !== "lobby") G.setS("menu");
       this.onLobby && this.onLobby(L);
     }
+    if (Array.isArray(s.Q))
+      for (const q of s.Q) {
+        if (this.lastQ < 0) this.lastQ = q[0] - 1; // joined late: only new messages
+        if (q[0] > this.lastQ) {
+          this.lastQ = q[0];
+          this.onChat && this.onChat(q[1], q[2]);
+        }
+      }
     if (s.Pg && s.Pg[this.t.me] && s.Pg[this.t.me] !== this.lastPg) {
       this.lastPg = s.Pg[this.t.me];
       const r = this.now() - this.lastPg;
@@ -115,6 +137,8 @@ export class GuestSession {
   /** Rebuild the local roster exactly like the host did, then follow snapshots. */
   beginGame(L: Lobby) {
     this.gid = L.gid;
+    cfg.ONLINE = 1;
+    cfg.GM = "game";
     cfg.NP = L.np;
     cfg.PRO = L.pro;
     cfg.MYM = 0;
@@ -149,6 +173,12 @@ export class GuestSession {
       this.stats.delta++;
     }
     this.nf = 0;
+    if (this.lastSnapAt && this.now() - this.lastSnapAt > 1000) {
+      // back from a stall: resync the clock and start the interpolation buffer fresh (no slow-motion catch-up)
+      this.off = null;
+      this.snaps = this.snaps.filter((s) => s === a);
+      this.stats.resync = (this.stats.resync || 0) + 1;
+    }
     this.stats.bytes += JSON.stringify(Z).length;
     this.snaps.push(a!);
     while (this.snaps.length > 90) this.snaps.shift();
@@ -277,6 +307,9 @@ export class GuestSession {
     if (i.lob) bump("lob");
     if (i.sw) bump("sw");
     if (i.pf) bump("pf");
+    if (i.to) bump("to");
+    if (i.ch) bump("ch");
+    if (i.ds) bump("ds");
     if ((i as any).skip) bump("skip");
     if (p && !G.RPL && G.S === "play") {
       this.inbuf.push({ n: this.n, i: { ...i } });
@@ -289,7 +322,7 @@ export class GuestSession {
   }
   /** Same dead-ball rules as the host: no control during inbounds, others' free throws and after scores. */
   private frozen(p: any) {
-    return G.inb > 0 || G.rs > 0 || (G.ftq && G.ftq.s !== p);
+    return G.inb > 0 || G.rs > 0 || !!G.JB || (G.ftq && G.ftq.s !== p);
   }
   close() {
     this.unsub();

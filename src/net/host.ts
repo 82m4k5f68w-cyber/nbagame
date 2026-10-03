@@ -12,6 +12,7 @@ export interface Slot {
   tm: number;
   rdy: number;
   on: number; // currently connected
+  elo?: number; // ranked rating (each client keeps its own; shown in the lobby)
 }
 export interface Lobby {
   st: "lobby" | "game" | "over";
@@ -34,7 +35,10 @@ interface GuestRec {
   acks: number[]; // snapshot ticks this guest has confirmed
   ping: number;
   D: number;
+  q: number; // last quick-chat sequence consumed
 }
+/** Quick chat / emotes (keys 1-6). */
+export const CHAT = ["Nice shot!", "Pass it!", "My bad", "Good game", "🔥 On fire!", "😂"];
 export class HostSession {
   L: Lobby;
   guests = new Map<string, GuestRec>();
@@ -42,11 +46,14 @@ export class HostSession {
   k = 0;
   sent = 0;
   lastBox = 0;
+  /** Quick-chat ring relayed to everyone: [seq, who (slot id), message index]. */
+  Q: [number, string, number][] = [];
+  qn = 0;
   onChange: (() => void) | null = null;
   private unsub: () => void;
   constructor(
     public t: Transport,
-    public me: { n: string; tok: string; tm: number; play: boolean },
+    public me: { n: string; tok: string; tm: number; play: boolean; elo?: number },
     o: { np: number; pro: number; ql: number; code: string; ded?: boolean },
   ) {
     this.L = {
@@ -56,7 +63,7 @@ export class HostSession {
       pro: o.pro,
       ql: o.ql,
       teams: [0, 1],
-      slots: me.play ? [{ id: "host", tok: me.tok, n: me.n, tm: me.tm, rdy: 1, on: 1 }] : [],
+      slots: me.play ? [{ id: "host", tok: me.tok, n: me.n, tm: me.tm, rdy: 1, on: 1, elo: me.elo || 1000 }] : [],
       code: o.code,
       ded: o.ded ? 1 : 0,
     };
@@ -79,7 +86,7 @@ export class HostSession {
       seen.add(p.id);
       let g = this.guests.get(p.id);
       if (!g) {
-        g = { id: p.id, st: p.state, w: null, last: null, pend: [], ack: -1, acks: [], ping: 0, D: 6 };
+        g = { id: p.id, st: p.state, w: null, last: null, pend: [], ack: -1, acks: [], ping: 0, D: 6, q: p.state.q ? p.state.q[0] : 0 };
         this.guests.set(p.id, g);
         changed = true;
       }
@@ -101,6 +108,15 @@ export class HostSession {
         changed = true;
         if (this.L.st === "game") this.rebuildCtrls();
       }
+      if (s && (+p.state.elo || 1000) !== s.elo) {
+        s.elo = +p.state.elo || 1000;
+        changed = true;
+      }
+      // quick chat: one new message per presence update is plenty
+      if (Array.isArray(p.state.q) && p.state.q[0] > g.q) {
+        g.q = p.state.q[0];
+        if (s || this.L.st !== "game") this.chat(s ? s.id : p.id, p.state.q[1] | 0);
+      }
       // Side request (lobby only): tm 0/1 to sit, -1 to spectate.
       const want = p.state.tm;
       if (this.L.st === "lobby") {
@@ -110,7 +126,7 @@ export class HostSession {
           changed = true;
         } else if (want === 0 || want === 1) {
           if (!s && this.sideCount(want) < this.cap()) {
-            this.L.slots.push((s = { id: p.id, tok: p.state.tok || "", n: clean(p.state.n), tm: want, rdy: 0, on: 1 }));
+            this.L.slots.push((s = { id: p.id, tok: p.state.tok || "", n: clean(p.state.n), tm: want, rdy: 0, on: 1, elo: +p.state.elo || 1000 }));
             changed = true;
           } else if (s && s.tm !== want && this.sideCount(want, s.id) < this.cap()) {
             s.tm = want;
@@ -202,6 +218,8 @@ export class HostSession {
     G.setCtrls(cs);
   }
   start(tempo = 0) {
+    cfg.ONLINE = 1;
+    cfg.GM = "game";
     cfg.NP = this.L.np;
     cfg.PRO = this.L.pro;
     cfg.MYM = 0;
@@ -221,6 +239,25 @@ export class HostSession {
     G.start(this.L.teams[0], { j: this.L.teams[1] });
     this.k = 0;
     this.pub(true);
+  }
+  /** Quick chat from a seat ("host" for the local player): relayed in the host presence. */
+  chat(who: string, k: number) {
+    if (k < 0 || k >= CHAT.length) return;
+    this.Q.push([++this.qn, who, k]);
+    if (this.Q.length > 6) this.Q.shift();
+    this.pub(false);
+    this.onChat && this.onChat(who, k);
+  }
+  onChat: ((who: string, k: number) => void) | null = null;
+  /** Guests who asked for a rematch of the game that just ended. */
+  rematchVotes() {
+    let n = 0;
+    for (const g of this.guests.values()) if (g.st && g.st.rm === this.L.gid && this.L.slots.some((s) => s.id === g.id)) n++;
+    return [n, this.L.slots.filter((s) => s.id !== "host" && s.on).length];
+  }
+  /** Same seats, same teams, straight into a new game. */
+  rematch(tempo = 0) {
+    this.start(tempo);
   }
   backToLobby() {
     this.L.st = "lobby";
@@ -287,6 +324,7 @@ export class HostSession {
   pub(lobbyChanged: boolean) {
     const o: any = { v: PROTO, H: 1, n: this.me.n, tok: this.me.tok, code: this.L.code };
     if (lobbyChanged || this.k % 60 === 0) o.L = this.L;
+    if (this.Q.length) o.Q = this.Q;
     if (this.L.st === "game" || this.L.st === "over") {
       if (G.S === "over" && this.L.st === "game") this.L.st = "over";
       const full = encodeSnap(this.k);

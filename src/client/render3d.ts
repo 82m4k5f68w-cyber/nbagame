@@ -419,7 +419,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         BM.updateMatrix();
         blobs.setMatrixAt(n++, BM.matrix);
       };
-      for (const p of P) if (n < 10) put2(p.x, p.y, p.z, 2.6 * p.bk);
+      for (const p of P) if (n < 10 && !p.off) put2(p.x, p.y, p.z, 2.6 * p.bk);
       put2(B.x, B.y, B.z, 1.1);
       blobs.count = n;
       blobs.instanceMatrix.needsUpdate = true;
@@ -1065,6 +1065,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     let rpA = 0,
       rpT = 0;
     let pset: any = null,
+      pslot: any[] | null = null,
       lastR = 0,
       ema = 16,
       nf = 0,
@@ -1142,24 +1143,40 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           bodyI.instanceColor!.needsUpdate = true;
         }
         if (P !== pset && QL > 0) benchBuild();
+        const drop = (p: any) => {
+          if (!p.gl) return;
+          S.remove(p.gl.G);
+          p.gl.mesh.geometry.dispose();
+          p.gl.extra.forEach((m: any) => (m.map && m.map.dispose(), m.dispose()));
+          p.gl = null;
+        };
         if (P !== pset) {
-          if (pset)
-            pset.forEach((p: any) => {
-              if (!p.gl) return;
-              S.remove(p.gl.G);
-              p.gl.mesh.geometry.dispose();
-              p.gl.extra.forEach((m: any) => (m.map && m.map.dispose(), m.dispose()));
-            });
+          if (pset) pset.forEach(drop);
+          if (pslot) pslot.forEach(drop);
           P.forEach((p) => {
             p.gl = makeRig(p, TX2);
             S.add(p.gl.G);
           });
           pset = P;
-        }
+          pslot = P.slice();
+        } else if (pslot)
+          for (let k = 0; k < P.length; k++)
+            if (P[k] !== pslot[k]) {
+              // substitution: the man checking out leaves the floor, the sub gets his own rig
+              drop(pslot[k]);
+              const p: any = P[k];
+              if (!p.gl) {
+                p.gl = makeRig(p, TX2);
+                S.add(p.gl.G);
+              }
+              pslot[k] = p;
+            }
         if (bench.length && QL > 0) benchUpd(fdt);
         if (P.length) {
           for (const p of P)
             if (p.gl) {
+              p.gl.G.visible = !p.off; // parked by a game mode
+              if (p.off) continue;
               applyPose(p.gl, p);
               footIK(p.gl, p, fdt, QL > 0 && !RPL);
               clothStep(p.gl, p, fdt);

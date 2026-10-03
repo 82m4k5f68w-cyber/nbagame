@@ -16,3 +16,9 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - browser_room.mjs — the published-page path: two pages with a stand-in claude.ai `room` capability; host clicks
   "Host 5v5" on the home screen, the guest types the code into the home-screen box, sides + ready-up, play.
 - browser_menu.mjs — matchup screen (opponent arrows, difficulty, settings drawer), tip off vs the chosen opponent, final screen (record, player of the game), rematch, Quick Play.
+- rules.ts — full CPU games with every rule on (violations, subs, timeouts, foul-outs, clutch time, badges) and off:
+  games finish, no NaN, subs happen in 5v5 only, nothing fires when its rule is switched off.
+- browser_modes.mjs — the mode strip on the matchup screen: 3-Point Contest (25 balls), Practice (ball comes back),
+  Tutorial (first step), Dunk Contest (3 judged dunks), HORSE (to five letters), Clutch Challenges (list + a scenario to
+  its result screen), Season (a game is recorded), halftime show; settings drawer has the Rules / Presentation /
+  Accessibility / Controls sections. Modes drive the sim through `H2K.openMode(kind)` + `H2K.MODE`.

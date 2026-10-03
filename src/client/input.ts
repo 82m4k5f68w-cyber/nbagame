@@ -7,7 +7,48 @@ export const K: Record<string, any> = {},
   ev: Record<string, any> = {},
   ev2: Record<string, any> = {};
 export const GP = { on: 0, dx: 0, dy: 0, sp: 0, post: 0, pb: [] as boolean[] };
-export const IN = { MP2: 0, TEMPO: 0, onSkip: null as null | (() => void), onCam: null as null | (() => void) };
+export const IN = { MP2: 0, TEMPO: 0, onSkip: null as null | (() => void), onCam: null as null | (() => void), onChat: null as null | ((k: number) => void), onRpl: null as null | ((d: number) => void) };
+/** Remappable player-1 actions: [id, label, default key]. Movement stays on WASD / arrows. */
+export const ACTS: [string, string, string][] = [
+  ["sd", "Shoot / jump (hold)", "Space"],
+  ["e", "Pass", "KeyE"],
+  ["r", "Lob / alley-oop", "KeyR"],
+  ["f", "Step-back", "KeyF"],
+  ["cc", "Hesitation", "KeyC"],
+  ["x", "Spin move", "KeyX"],
+  ["vv", "Behind the back", "KeyV"],
+  ["g", "Pump fake / jab", "KeyG"],
+  ["post", "Post up (hold)", "KeyB"],
+  ["sp", "Sprint (hold)", "ShiftLeft"],
+  ["q", "Switch player", "KeyQ"],
+  ["to", "Timeout", "KeyY"],
+  ["ch", "Coach's challenge", "KeyH"],
+  ["ds", "Defense / play call", "KeyZ"],
+  ["cam", "Camera", "KeyK"],
+  ["mtr", "Meter style", "KeyM"],
+  ["tmp", "Tempo on/off", "KeyT"],
+];
+export const KMAP: Record<string, string> = {};
+export function loadKeys() {
+  let o: any = {};
+  try {
+    o = JSON.parse(localStorage.getItem("h2k_keys") || "{}");
+  } catch (e) {}
+  for (const [id, , d] of ACTS) KMAP[id] = o[id] || d;
+}
+export function saveKeys() {
+  try {
+    localStorage.setItem("h2k_keys", JSON.stringify(KMAP));
+  } catch (e) {}
+}
+loadKeys();
+const actOf = (code: string) => {
+  for (const id in KMAP) if (KMAP[id] === code) return id;
+  return "";
+};
+const held = (id: string) => !!K[KMAP[id]] || (id === "sp" && !!K.ShiftRight && !IN.MP2);
+/** Auto-release assist: lets go of the shot near the top of the meter (with a little human error). */
+export const AUTO = { rel: null as null | ((p: Player) => number | null) };
 /** Floating texts in the HUD (from sim FX). */
 export const TX: any[] = [];
 export const tempoOf = (p: Player) => {
@@ -25,12 +66,27 @@ export function hum(): Input {
     e: ev.e,
     sb: ev.f,
     mv: ev.cc ? 1 : ev.x ? 2 : ev.vv ? 3 : 0,
-    post: K.KeyB || GP.post || K.TouchPost,
+    post: held("post") || GP.post || K.TouchPost,
     lob: ev.r,
-    sp: K.ShiftLeft || K.ShiftRight || GP.sp,
+    sp: held("sp") || GP.sp,
     sw: ev.q,
     pf: ev.g,
+    to: ev.to,
+    ch: ev.ch,
+    ds: ev.ds,
   };
+  if (V.AUTO && !IN.TEMPO && AUTO.rel) {
+    // hold & release style: the assist lets go for you at (about) the top of the meter
+    const me = V.focusP();
+    if (me && me.mode === "c" && !i.su) {
+      const at = AUTO.rel(me);
+      if (at != null && me.t >= at) {
+        i.su = 1;
+        i.mt = me.t;
+        ev.sd = 0;
+      }
+    }
+  }
   if (GP.on) {
     i.dx += GP.dx;
     i.dy += GP.dy;
@@ -44,7 +100,7 @@ export function hum(): Input {
     i.dx /= m;
     i.dy /= m;
   }
-  ev.sd = ev.su = ev.e = ev.f = ev.x = ev.cc = ev.vv = ev.r = ev.q = ev.g = 0;
+  ev.sd = ev.su = ev.e = ev.f = ev.x = ev.cc = ev.vv = ev.r = ev.q = ev.g = ev.to = ev.ch = ev.ds = 0;
   return i;
 }
 export function hum2(): Input {
@@ -109,45 +165,40 @@ function gpPoll0() {
   e(4, () => (ev.cc = 1));
   e(5, () => (ev.x = 1));
   e(10, () => (ev.g = 1)); // L3: pump fake / jab / shoulder fake
+  e(11, () => (ev.ds = 1)); // R3: defense setting / play call
+  e(12, () => (ev.to = 1)); // d-pad up: timeout
+  e(13, () => (ev.ch = 1)); // d-pad down: challenge
   e(8, () => {
     V.CAMM = (V.CAMM + 1) % 4;
   });
 }
 export const txtS = (s: string, x: number, y: number, c = "#fff") => TX.push({ s, sx: x, sy: y, t: 1.2, c, oy: 0 });
 export function kd(c: string) {
-  if (c === "Space" && IN.onSkip) IN.onSkip();
+  const a = actOf(c);
+  if ((a === "sd" || c === "Space") && IN.onSkip) IN.onSkip();
   if (!K[c]) {
     K[c] = 1;
-    if (c === "KeyK") {
-      V.CAMM = (V.CAMM + 1) % 4;
-      txtS("CAMERA: " + CAMN[V.CAMM], 480, 200, "#ffd23f");
-    }
-    if (c === "Space") ev.sd = 1;
+    if (IN.onRpl && (c === "BracketLeft" || c === "BracketRight")) IN.onRpl(c === "BracketLeft" ? -1 : 1);
+    if (IN.onChat && /^Digit[1-6]$/.test(c)) IN.onChat(+c.slice(5));
     if (c === "Enter") ev2.sd = 1;
     if (c === "Slash") ev2.e = 1;
     if (c === "Period") ev2.x = 1;
     if (c === "Comma") ev2.cc = 1;
-    if (c === "KeyE") ev.e = 1;
-    if (c === "KeyQ") ev.q = 1;
-    if (c === "KeyF") ev.f = 1;
-    if (c === "KeyX") ev.x = 1;
-    if (c === "KeyR") ev.r = 1;
-    if (c === "KeyC") ev.cc = 1;
-    if (c === "KeyV") ev.vv = 1;
-    if (c === "KeyG") ev.g = 1;
-    if (c === "KeyT") {
+    if (a === "cam") {
+      V.CAMM = (V.CAMM + 1) % 4;
+      txtS("CAMERA: " + CAMN[V.CAMM], 480, 200, "#ffd23f");
+    } else if (a === "tmp") {
       IN.TEMPO = 1 - IN.TEMPO;
       for (const k of CT) if (!(k as any).remote) k.tempo = IN.TEMPO;
-    }
-    if (c === "KeyM") {
+    } else if (a === "mtr") {
       V.METER = (V.METER + 1) % 4;
       txtS("METER: " + MN[V.METER], 480, 200, "#ffd23f");
-    }
+    } else if (a && a !== "post" && a !== "sp") ev[a] = 1;
   }
 }
 export function ku(c: string) {
   K[c] = 0;
-  if (c === "Space") ev.su = 1;
+  if (actOf(c) === "sd") ev.su = 1;
   if (c === "Enter") ev2.su = 1;
 }
 let bound = 0;
@@ -161,13 +212,14 @@ export function bindInput() {
   });
   addEventListener("keyup", (e) => ku(e.code));
   document.querySelectorAll<HTMLElement>("#tc button").forEach((b) => {
+    const code = () => (b.dataset.a ? KMAP[b.dataset.a] : b.dataset.k!);
     b.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      kd(b.dataset.k!);
+      kd(code());
     });
     ["pointerup", "pointerleave", "pointercancel"].forEach((t) =>
       b.addEventListener(t, () => {
-        if (K[b.dataset.k!]) ku(b.dataset.k!);
+        if (K[code()]) ku(code());
       }),
     );
   });

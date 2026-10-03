@@ -40,7 +40,7 @@ for (const [np, mym, mp2] of [
     const h = [G.B.x | 0, G.B.y | 0, G.B.z | 0, G.B.owner ? G.P.indexOf(G.B.owner) : -1, G.sc.join()].join();
     still = h === lastHash ? still + 1 : 0;
     lastHash = h;
-    if (still === 60 * 30) fails.push(`${tag}: ball frozen 30 s (S=${G.S} inb=${G.inb.toFixed(2)} rs=${G.rs.toFixed(2)} ftq=${!!G.ftq} owner=${G.B.owner && G.B.owner.n} mode=${G.B.owner && G.B.owner.mode})`);
+    if (still === 60 * 30) fails.push(`${tag}: ball frozen 30 s (S=${G.S} inb=${G.inb.toFixed(2)} rs=${G.rs.toFixed(2)} ftq=${!!G.ftq} owner=${G.B.owner && G.B.owner.n} mode=${G.B.owner && G.B.owner.mode} ball=${JSON.stringify({ m: G.B.mode, sh: G.B.sh, sc: G.B.sc, z: G.B.z | 0, x: G.B.x | 0, y: G.B.y | 0, gt: G.B.gt, rpl: !!G.RPL, jb: !!G.JB, to: G.B.to && G.B.to.n })})`);
     if (G.shot < -2) fails.push(`${tag}: shot clock ran away ${G.shot.toFixed(1)}`);
     if (G.B.x < -20 || G.B.x > 960 || G.B.y < -20 || G.B.y > 520 || G.B.z < -10 || G.B.z > 600) { fails.push(`${tag}: ball out of world ${[G.B.x, G.B.y, G.B.z].map((v) => v.toFixed(0))}`); break; }
     if (fails.length > 12) break;
@@ -48,10 +48,11 @@ for (const [np, mym, mp2] of [
   // a game still tied in overtime at the tick cap is legal basketball (random-input humans can trade empty OTs)
   if (G.S !== "over" && !(G.q > 4 && G.sc[0] === G.sc[1])) fails.push(`${tag}: game never ended`);
   for (const tm of [0, 1]) {
-    const pts = G.P.filter((p) => p.tm === tm).reduce((a, p) => a + p.stt.pts, 0);
+    // everyone who played, including players subbed out to the bench
+    const pts = G.ROST[tm].reduce((a, p) => a + p.stt.pts, 0);
     if (pts !== G.sc[tm]) fails.push(`${tag}: team ${tm} score ${G.sc[tm]} != players' points ${pts}`);
   }
-  for (const p of G.P) if (p.stt.fgm > p.stt.fga || p.stt.tpm > p.stt.tpa || p.stt.tpm > p.stt.fgm) fails.push(`${tag}: impossible line ${p.n} ${JSON.stringify(p.stt)}`);
+  for (const p of [...G.ROST[0], ...G.ROST[1]]) if (p.stt.fgm > p.stt.fga || p.stt.tpm > p.stt.tpa || p.stt.tpm > p.stt.fgm) fails.push(`${tag}: impossible line ${p.n} ${JSON.stringify(p.stt)}`);
   console.log(tag, "final", G.sc.join("-"), "q", G.q, "ticks", t);
 }
 console.log(fails.length ? "FAIL\n" + [...new Set(fails)].join("\n") : "invariants ok");

@@ -37,7 +37,19 @@ try {
   const lobby = await H.evaluate(() => document.getElementById("ov").innerText.replace(/\s+/g, " ").slice(0, 200));
   console.log("host lobby:", lobby);
   await H.evaluate(() => document.getElementById("go").click());
-  await H.waitForTimeout(3000);
+  // the opening tip is a dead ball on the guest too (synced jump ball)
+  let jb = false;
+  for (let i = 0; i < 20 && !jb; i++) {
+    jb = await Gp.evaluate(() => !!window.H2K.G.JB);
+    await Gp.waitForTimeout(100);
+  }
+  await H.waitForTimeout(2500);
+  // quick chat: the guest presses 1, the host shows it
+  await Gp.keyboard.press("Digit1");
+  await H.waitForFunction(() => window.H2K.NET.chats > 0, null, { timeout: 10000 }).catch(() => {});
+  const chat = await H.evaluate(() => window.H2K.NET.chats);
+  console.log("guest saw jump ball:", jb, "host chats:", chat);
+  if (!jb || !chat) ok = false;
   // guest holds left (its team attacks the left hoop) for a while
   await Gp.keyboard.down("KeyA");
   await Gp.waitForTimeout(6000);
@@ -54,6 +66,28 @@ try {
   await Gp.screenshot({ path: "docs/online-guest.png", clip: { x: 20, y: 0, width: 960, height: 540 }, timeout: 120000 });
   if (hs.S !== "play" || gs.S !== "play" || gs.role !== "guest" || !hs.ct.some((c) => c[3])) ok = false;
   void sz;
+  // finish the game on the host: both see the final screen; the guest votes for a rematch, the host starts it
+  await H.evaluate(() => {
+    const G = window.H2K.G;
+    G.sc[0] = 20;
+    G.sc[1] = 18;
+    for (let q = 0; q < 6 && G.S === "play"; q++) {
+      G.setClock(0);
+      G.setRs(0);
+      G.setInb(0);
+      for (let i = 0; i < 20 && G.S === "play"; i++) G.upd(1 / 60);
+    }
+  });
+  await Gp.waitForFunction(() => document.getElementById("nrm"), null, { timeout: 30000 });
+  const rated = await Gp.evaluate(() => document.querySelector(".fin").innerText.includes("Ranked"));
+  await Gp.evaluate(() => document.getElementById("nrm").click());
+  await H.waitForFunction(() => document.getElementById("nrmc") && /1\/1/.test(document.getElementById("nrmc").textContent), null, { timeout: 20000 });
+  const gid0 = await Gp.evaluate(() => window.H2K.G.T);
+  await H.evaluate(() => document.getElementById("nrm").click());
+  await Gp.waitForFunction(() => window.H2K.G.S === "play" && document.getElementById("ov").style.display === "none", null, { timeout: 30000 });
+  const re = await Gp.evaluate(() => ({ S: window.H2K.G.S, sc: window.H2K.G.sc.slice() }));
+  console.log("rated:", rated, "rematch:", JSON.stringify(re), gid0 >= 0);
+  if (!rated || re.S !== "play" || re.sc[0] + re.sc[1] > 6) ok = false;
 } catch (e) {
   console.log("ERR", e);
   ok = false;

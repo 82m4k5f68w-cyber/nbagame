@@ -1,5 +1,5 @@
 // Heads-up display: score bug, player strip, shot meters, contest ring, pass/open markers, floating texts.
-import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, type Player } from "../core/sim";
+import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, type Player } from "../core/sim";
 import { V, pr, fmt, MN } from "./view";
 import { isLaySv } from "../core/data";
 import { K, tempoOf, TX } from "./input";
@@ -35,7 +35,7 @@ export function replayHud() {
   X.fillStyle = "#ff4d4d";
   X.font = "900 18px system-ui";
   X.textAlign = "left";
-  X.fillText("● REPLAY · slow motion · SPACE to skip", 22, 100);
+  X.fillText("● REPLAY · " + Math.round(RSPD * 100) + "% speed [ ] · SPACE to skip", 22, 100);
 }
 export function contestFx(p: Player) {
   if (B.owner !== p || ftq) return;
@@ -74,7 +74,8 @@ export function meter(p: Player) {
       (0.07 + (rat / 100) * 0.05) *
       (1 - 0.45 * c) *
       (TEMPO ? 1.2 : 1) *
-      (0.85 + 0.15 * (p.en == null ? 1 : p.en)),
+      (0.85 + 0.15 * (p.en == null ? 1 : p.en)) *
+      (D0 < 90 || p.hk ? 1 : winMul(p, D0)),
     ideal = TEMPO
       ? isLaySv(p.sv)
         ? 0.28
@@ -93,7 +94,10 @@ export function meter(p: Player) {
     q = pr(p.x, p.y, 0),
     sx = q[0],
     sy = q[1],
-    ph = Math.max(40, Math.abs(sy - pr(p.x, p.y, 70)[1]));
+    ph = Math.max(40, Math.abs(sy - pr(p.x, p.y, 70)[1])) * (V.BIGM ? 1.6 : 1),
+    GC = V.CB ? "#4ea8ff" : "#2ecc71",
+    WC = V.CB ? "#4ea8ff" : "#1fd6c0",
+    FC = V.CB ? "#ff9f1c" : "#f5c542";
   if (V.METER === 0) {
     const ax = sx - ph * 0.5,
       aw = ph * 0.3,
@@ -115,9 +119,9 @@ export function meter(p: Player) {
     X.fillStyle = "rgba(10,12,24,.6)";
     X.fill();
     X.clip();
-    X.fillStyle = inG ? "#2ecc71" : "#fff";
+    X.fillStyle = inG ? GC : "#fff";
     X.fillRect(ax - aw, sy - ah * pg, aw * 2, ah * pg);
-    X.fillStyle = "rgba(46,204,113,.75)";
+    X.fillStyle = V.CB ? "rgba(78,168,255,.75)" : "rgba(46,204,113,.75)";
     X.fillRect(ax - aw, sy - ah * g1, aw * 2, ah * (g1 - g0));
     X.restore();
     X.strokeStyle = "#fff";
@@ -130,19 +134,19 @@ export function meter(p: Player) {
       y0 = sy + ph * 0.18;
     X.fillStyle = "rgba(0,0,0,.65)";
     X.fillRect(x0 - 2, y0 - 2, w + 4, 10);
-    X.fillStyle = "#f5c542";
+    X.fillStyle = FC;
     X.fillRect(x0, y0, w * pg, 6);
-    X.fillStyle = "#1fd6c0";
+    X.fillStyle = WC;
     X.fillRect(x0 + g0 * w, y0, (g1 - g0) * w, 6);
     X.fillStyle = "#fff";
     X.fillRect(x0 + w * pg - 1, y0 - 3, 3, 12);
   } else if (V.METER === 2) {
     const h = pr(p.x, p.y, p.z + 92),
-      w = 60,
+      w = V.BIGM ? 96 : 60,
       x0 = h[0] - w / 2;
     X.fillStyle = "rgba(0,0,0,.65)";
     X.fillRect(x0 - 2, h[1] - 2, w + 4, 9);
-    X.fillStyle = "#2ecc71";
+    X.fillStyle = GC;
     X.fillRect(x0 + g0 * w, h[1], (g1 - g0) * w, 5);
     X.fillStyle = "#ffd23f";
     X.fillRect(x0 + pg * w - 1, h[1] - 3, 3, 11);
@@ -154,12 +158,12 @@ export function meter(p: Player) {
     X.beginPath();
     X.ellipse(sx, sy, rx, ry, 0, 0, 6.3);
     X.stroke();
-    X.strokeStyle = "#1fd6c0";
+    X.strokeStyle = WC;
     X.lineWidth = 7;
     X.beginPath();
     X.ellipse(sx, sy, rx, ry, 0, -1.57 + g0 * 6.283, -1.57 + g1 * 6.283);
     X.stroke();
-    X.strokeStyle = inG ? "#2ecc71" : "#ffd23f";
+    X.strokeStyle = inG ? GC : V.CB ? FC : "#ffd23f";
     X.lineWidth = 4;
     X.beginPath();
     X.ellipse(sx, sy, rx, ry, 0, -1.57, -1.57 + pg * 6.283);
@@ -191,7 +195,9 @@ export function hud2() {
       p.stt.reb +
       "r " +
       p.stt.ast +
-      "a · EN " +
+      "a · PF " +
+      p.pf +
+      " · EN " +
       Math.round((p.en == null ? 1 : p.en) * 100) +
       "%",
     12,
@@ -201,13 +207,11 @@ export function hud2() {
   X.fillText(
     "TEMPO " +
       (tempoOf(fp()) ? "ON" : "OFF") +
-      " [T] · METER " +
+      " · " +
       MN[V.METER] +
-      " [M] · PRO " +
-      (cfg.PRO ? "ON" : "OFF") +
-      " · FOULS you " +
+      " · FOULS " +
       tf[fp() ? fp().tm : 0] +
-      " / opp " +
+      "/" +
       tf[fp() ? 1 - fp().tm : 1],
     948,
     530,
@@ -230,6 +234,7 @@ export function hud2() {
   }
 }
 export function hud() {
+  if (cfg.GM !== "game" && cfg.GM !== "clutch") return hudTexts();
   X.fillStyle = "rgba(8,10,24,.88)";
   X.beginPath();
   X.rect(230, 6, 500, 62);
@@ -252,7 +257,11 @@ export function hud() {
   X.fillText((q > 4 ? "OT" : "Q" + q) + "  " + fmt(clock), 480, 36);
   X.fillStyle = shot < 5 ? "#ff6b4a" : "#fff";
   X.font = "700 16px system-ui";
-  X.fillText(String(Math.ceil(Math.max(0, shot))), 480, 58);
+  X.fillText(cfg.SCLK ? String(Math.ceil(Math.max(0, shot))) : "—", 480, 58);
+  hudTexts();
+}
+function hudTexts() {
+  X.textAlign = "center";
   TX.forEach((o) => {
     X.globalAlpha = Math.min(1, o.t * 2);
     X.fillStyle = o.c;

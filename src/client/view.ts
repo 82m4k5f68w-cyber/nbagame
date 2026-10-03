@@ -16,6 +16,13 @@ export const V = {
   onResize: null as null | (() => void),
   shake: null as null | ((a: number) => void),
   focus: 0, // which controller this screen follows (CT index)
+  COMM: 1, // commentary captions
+  VOICE: 0, // speak the commentary (speechSynthesis)
+  MUSIC: 1, // dynamic arena music
+  RUMBLE: 1, // gamepad rumble
+  CB: 0, // colorblind-safe meter colors
+  BIGM: 0, // bigger shot meter
+  AUTO: 0, // auto-release assist (hold & release style)
   focusP: () => P[(CT[V.focus] || CT[0] || { idx: 0 }).idx],
 };
 export const CAMN = ["Broadcast", "2K Style", "Baseline", "Player Lock"];

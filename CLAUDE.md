@@ -7,8 +7,11 @@ Unofficial fan project; rosters/ratings are approximations (7 teams, 35 players,
 ## Layout
 - `src/core/` — the shared, DOM-free simulation (runs in the browser, in Node tests and on a server):
   `sim.ts` (state, rules, AI, shooting, ball, controllers, replays), `pose.ts` (Pro Play joint angles + hand FK),
-  `physics.ts` (Rapier world), `data.ts` (rosters, OVR, signature tweaks, shot clips).
-- `src/client/` — browser shell: `main.ts` (hub), `game.ts` (menus, loop, FX, draw), `input.ts`, `hud.ts`,
+  `physics.ts` (Rapier world), `data.ts` (rosters, OVR, signature tweaks, shot clips), `mocap.ts` (generated CMU
+  mocap cycles, see `scripts/mocap/retarget.ts`), `modes.ts` (Practice/Tutorial/3PT/Dunk/HORSE/Clutch on HOOK).
+- `src/client/` — browser shell: `main.ts` (hub), `game.ts` (menus, loop, FX, draw, halftime, highlight reel), `input.ts`
+  (remappable keys `ACTS/KMAP`, h2k_keys), `hud.ts`, `broadcast.ts` (banners, commentary + voice, intro card, momentum bug,
+  rumble), `music.ts` (procedural arena music), `modesui.ts` (mode strip, mode HUDs/results, Season),
   `render3d.ts` (three.js), `canvas.ts` (2D court + software-3D fallback), `view.ts` (camera/quality/projection), `audio.ts`, `net/` (online).
 - `src/modes/classic/` — the older side-view engine, kept as legacy (inlined at build time).
 - `index.html` + `vite.config.ts` — Vite builds ONE self-contained file (`vite-plugin-singlefile`; three.js + Rapier wasm inlined, no CDN).
@@ -115,6 +118,22 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - A hidden host tab keeps simulating via a timer (rAF stops when hidden). `npm run server` serves dist + relay;
   "Create on dedicated server" spawns `server/headless-host.ts` for that room code.
 
+## Gameplay pack (v3.9)
+- Rules in `cfg`: FOULS, SCLK, VIOL (3 s lane `TS.lane`, 8 s `TS.bc`, goaltending in bstep's cylinder check, never on FTs),
+  SUBS (fatigue `p.en` drain by speed, `subs()` at every `setup()`: tired/fouled-out (`p.fo`, 6 PF) swap with generated
+  reserves `BENCH[t]`; `ROST[t]` = everyone who played (box score / invariants); renderer rebuilds rigs per changed slot),
+  BADGES (`BADGE` DR/PZ/AB/LD/CL/GC from ratings, hot zones `p.hzm` per `zoneOf`, cold `p.cold`, rhythm `p.mvEnd`).
+  `winMul(p, D0)` scales the green window (launch AND hud meter must agree; returns 1 online: `cfg.ONLINE`).
+- Team state `TS`: timeouts `to` (`callTO`, CPU stops 8-0 runs), defense `ds` (sag/deny/switch-all), play call `pc`
+  (pnr/pin/flare/iso; CPU isos its star late), challenge (`TS.call`, `challenge()`), runs/momentum `run/mom`, clutch time.
+  Inputs `to/ch/ds` (Y/H/Z). Flagrant 1 = 2 FTs + possession (`ftq.keep`). Sim FX: `ban` (banner), `cm` (commentary key),
+  `half` (halftime, offline only), `mode` (mode events). Hustle stats in `stt`: orb, chg, dv (dives), sa (screen assists).
+- Modes (`modes.ts`): `begin()` = normal start without jump ball + `HOOK.pre/post/end`; unused players parked with `p.off`
+  (skipped by step/collide/renderers); shots watched via the launch counter `p.lc`; dunk contest needs a green release.
+- Replays: `RSPD` speed ([ ]), every replay is copied to `HL` (end-of-game reel, `playClip`), reels save/load as JSON files.
+- Online (PROTO 4): header ints 34-39 = jump ball t, timeouts, momentum, ds/pc, clutch; FX "b"/"c" relay banners and
+  commentary; EDGES +to/ch/ds; quick chat ring `Q` (keys 1-6, `CHAT`), `rm` rematch votes, `elo` in slots (local rating).
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.
@@ -124,6 +143,10 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - In 1v1, "switch player" has no other teammate: `nearest()` must never return -1.
 - Aim must account for drag/Magnus or perfect shots fall short (measured: 3% -> 95% after fix).
 - Keep steals off (user request). Keep green at top of meter. Keep Curry's off-ball tendency and low-load one-motion form.
+- A tip-in from under the rim could get a launch too soft to reach the rim -> sqrt(negative) -> NaN ball. launch() now lifts it.
+- AI state needs all its fields set together (`a.r` without `a.w`/`a.pt` -> NaN timers -> a handler frozen under the rim).
+- Never `open(p,'w').write(open(p).read()...)` in one python line (truncates the file first): use the scratchpad rp.py helper.
 
 ## Known gaps / ideas
-replays/cameras in 2D, more teams, season/playoffs, mobile joystick, heaves >45 ft only ~73% on green, Classic has no new features.
+replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and
+badge windows online (rosters are fixed there), commentary is text templates + browser speech, mobile joystick, heaves >45 ft only ~73% on green, Classic has no new features.

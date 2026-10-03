@@ -36,6 +36,9 @@ export interface Input {
   mt?: number; // client-measured meter time at release (online: judged on the shooter's timeline)
   tp?: number; // client-measured tempo tap time
   pf?: any; // pump fake (no stick) / jab step (stick held) / shoulder fake (posting up)
+  to?: any; // call timeout
+  ch?: any; // coach's challenge
+  ds?: any; // cycle defense setting (on defense) / play call (on offense)
 }
 /** A human controlling one player. `fixed` = My Player (never auto-switches). */
 export interface Ctrl {
@@ -60,6 +63,14 @@ export const cfg = {
   DIFF: 1, // CPU difficulty: 0 Rookie, 1 Pro, 2 All-Star, 3 Hall of Fame (only the CPU side, never humans)
   playerBodies: true, // Rapier kinematic player capsules (ball can deflect off bodies)
   JB: 1, // opening jump ball (0 = start with an inbound, used by some tests)
+  // ---- custom rules (settings drawer) ----
+  FOULS: 1, // fouls called at all
+  SCLK: 1, // 24-second shot clock
+  VIOL: 1, // 3-second / 8-second violations, goaltending
+  SUBS: 1, // fatigue substitutions + foul-outs (5v5, offline; online rosters stay fixed)
+  BADGES: 1, // rating badges + hot zones + rhythm/cold streaks
+  ONLINE: 0, // online game: fixed rosters (no subs) and rating-only shot windows (the guest's meter must match the host)
+  GM: "game" as string, // game mode: game | practice | tutorial | 3pt | dunk | horse | clutch (modes.ts)
   input: null as null | ((c: Ctrl) => Input),
 };
 
@@ -109,6 +120,9 @@ export const txt = (s: string, x: number, y: number, c = "#fff") => fx({ k: "t",
 export const txtW = (s: string, x: number, y: number, z: number, c = "#fff") => fx({ k: "t", s, x, y, z, c });
 export const snd = (f: number, d: number, ty = "sine", v = 0.07) => fx({ k: "s", f, d, ty, v });
 const exc = (v: number) => fx({ k: "x", v });
+export const fxp = (o: any) => fx(o);
+/** Game-mode hooks (modes.ts): pre runs after inputs/AI and before stepping; post after posing (true = skip the rest). */
+export const HOOK: { pre: null | ((dt: number) => void); post: null | ((dt: number) => boolean | void); end: null | (() => void) } = { pre: null, post: null, end: null };
 
 // ---- setters for the shell (ES module bindings are read-only outside) ----
 export const setInb = (v: number) => (inb = v);
@@ -117,6 +131,8 @@ export const setClock = (v: number) => (clock = v);
 export const setShot = (v: number) => (shot = v);
 export const setT = (v: number) => (T = v);
 export const setS = (v: string) => (S = v);
+export const setPos = (v: number) => (pos = v);
+export const setJB = (v: any) => (JB = v);
 export const setRQ = (v: number) => (RQ = v);
 export const setQtrLen = (v: number) => (QTRLEN = v);
 export const setCtrls = (c: Ctrl[]) => (CT = c);
@@ -179,19 +195,15 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
     do j = (Math.random() * nChoices()) | 0;
     while (j === i);
   P = [];
-  [i, j].forEach((ti, t) =>
-    RS(ti, t)[1].forEach((a, k) =>
-      P.push({
-        n: a[0], c: a[1], i: a[2], s: a[3], d: a[4], j: a[5], st: a[6], tm: t, k,
-        col: t && RS(ti, t)[0] === RS(i, 0)[0] ? "#b03a2e" : RS(ti, t)[0],
-        skin: a[7], x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, f: 0, ph: 0, mode: "i", t: 0, cd: 0, rl: 0, mt: 0,
-        ai: {}, in: { dx: 0, dy: 0 },
-        stt: { pts: 0, reb: 0, ast: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, blk: 0 },
-        my: a === MYP.t, sg: formOf(a[0]), slow: 0, sbw: 0, sv: 0, tp: null, pf: 0, bn: 1, bx: 0, by: 0,
-        hr: a[8], bd: a[9], ht: a[10], bk: a[11], no: a[12],
-      }),
-    ),
-  );
+  [i, j].forEach((ti, t) => {
+    const col = t && RS(ti, t)[0] === RS(i, 0)[0] ? "#b03a2e" : RS(ti, t)[0];
+    RS(ti, t)[1].forEach((a, k) => P.push(mkP(a, t, k, col)));
+    // generated reserves (fictional), a few points below the starters, for fatigue subs and foul-outs
+    BENCH[t] = NP > 1 ? reserves(RS(ti, t)[1], RS(ti, t)[2]).map((a, k) => mkP(a, t, k, col)) : [];
+  });
+  ROST[0] = P.filter((p) => p.tm === 0);
+  ROST[1] = P.filter((p) => p.tm === 1);
+  resetRules();
   PC = [RS(i, 0)[0], RS(j, 1)[0]];
   cl = [RS(i, 0)[2], RS(j, 1)[2]];
   sc = [0, 0];
@@ -205,6 +217,7 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
   RPL = null;
   RQ = 0;
   recClear();
+  HL.length = 0;
   B = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, owner: null, mode: "held", sh: 0, sc: 0, last: null, age: 0, to: null, three: 0, a: 0 };
   CT.forEach((c, k) => {
     c.fixed = !!cfg.MYM && k === 0 && c.tm === 0;
@@ -298,8 +311,279 @@ function jbStep(dt: number) {
     JB = null;
   }
 }
+// ================= gameplay pack: badges, hot zones, rotations, timeouts, momentum, violations, challenges =================
+function mkP(a: Tuple, t: number, k: number, col: string): Player {
+  return {
+    n: a[0], c: a[1], i: a[2], s: a[3], d: a[4], j: a[5], st: a[6], tm: t, k, col,
+    skin: a[7], x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, f: 0, ph: 0, mode: "i", t: 0, cd: 0, rl: 0, mt: 0,
+    ai: {}, in: { dx: 0, dy: 0 },
+    stt: { pts: 0, reb: 0, ast: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, blk: 0, orb: 0, chg: 0, dv: 0, sa: 0, min: 0 },
+    my: a === MYP.t, sg: formOf(a[0]), slow: 0, sbw: 0, sv: 0, tp: null, pf: 0, bn: 1, bx: 0, by: 0,
+    hr: a[8], bd: a[9], ht: a[10], bk: a[11], no: a[12], en: 1, hzm: [0, 0, 0, 0, 0, 0], cold: 0,
+  };
+}
+const RNAME = ["Okafor", "Lindqvist", "Brannon", "Delacroix", "Mwangi", "Petrakis", "Holloway", "Sato", "Ferreira", "Quist", "Abernathy", "Vukovic", "Castellanos", "Nkemelu", "Harlan", "Iwu", "Renner", "Toussaint", "Beaumont", "Kowal", "Adeyemi"];
+/** Three fictional reserves per team: a guard, a wing and a big, ~6 points below the starters they back up. */
+function reserves(st: Tuple[], tn: string): Tuple[] {
+  let h = 7;
+  for (const ch of tn) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const r = () => ((h = (h * 1103515245 + 12345) >>> 0) / 4294967296);
+  return [0, 2, 4].map((k, n) => {
+    const a = st[k],
+      m = (v: number) => Math.round(clamp(v - 4 - r() * 6, 30, 90));
+    return [RNAME[(h + n * 7) % RNAME.length], m(a[1]), m(a[2]), m(a[3]), m(a[4]), m(a[5]), [0, 1, 4][n], ["#8d5524", "#c68642", "#6b4226", "#f1c27d"][(h >> 3) % 4], 1 + ((h >> 5) % 3), (h >> 7) % 2, a[10] + (r() - 0.5) * 0.2, a[11], [2, 9, 31][n] + ((h >> 9) % 5)] as Tuple;
+  });
+}
+/** Bench players (not on the floor) and everyone who played (box score), per team. */
+export const BENCH: Player[][] = [[], []],
+  ROST: Player[][] = [[], []];
+/** Badges from ratings: DR deep range, PZ posterizer, AB ankle breaker, LD lockdown, CL clutch, GC glass cleaner. */
+export const BADGE: Record<string, [string, (p: Player) => boolean]> = {
+  DR: ["Deep Range", (p) => p.c >= 88],
+  PZ: ["Posterizer", (p) => p.j >= 72 && p.i >= 82],
+  AB: ["Ankle Breaker", (p) => p.s >= 84],
+  LD: ["Lockdown", (p) => p.d >= 86],
+  CL: ["Clutch", (p) => (OV[p.n] || 0) >= 88 || (p.c + p.i) / 2 >= 85],
+  GC: ["Glass Cleaner", (p) => p.ht >= 6.9 && (p.i >= 80 || p.d >= 85)],
+};
+export const hasB = (p: Player, b: string) => !!cfg.BADGES && !!p && BADGE[b][1](p);
+export const badgesOf = (p: Player) => Object.keys(BADGE).filter((b) => BADGE[b][1](p));
+/** Shot zone: 0 paint, 1 mid left, 2 mid right, 3 three left wing/corner, 4 three top, 5 three right. */
+export function zoneOf(p: Player, D0: number) {
+  const s = (p.y - HY) * (p.tm ? 1 : -1); // shooter's left is negative
+  if (D0 < 90) return 0;
+  if (D0 < 237) return s < 0 ? 1 : 2;
+  return Math.abs(p.y - HY) < 90 ? 4 : s < 0 ? 3 : 5;
+}
+export const ZN = ["PAINT", "LEFT ELBOW", "RIGHT ELBOW", "LEFT WING", "TOP OF THE KEY", "RIGHT WING"];
+export const clutchTime = () => q >= 4 && clock <= Math.max(12, QTRLEN * 0.4) && Math.abs(sc[0] - sc[1]) <= 5;
+/** Team state: timeouts left, defense setting, play call, challenge used, current scoring run, momentum (-1..1, + = team 0). */
+export const TS = {
+  to: [4, 4],
+  ds: [0, 0], // 0 normal, 1 sag / protect paint, 2 tight / deny, 3 switch everything
+  pc: [0, 0], // 0 auto, 1 pick-and-roll, 2 pindown, 3 flare, 4 isolation
+  chal: [1, 1],
+  run: [0, 0] as number[], // [team, points] of the current unanswered run
+  mom: 0,
+  clutch: 0,
+  half: 0,
+  lane: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as number[], // seconds in the paint per slot
+  bc: 0, // seconds the ball has been in the backcourt this possession
+  call: null as any, // last whistle that can be challenged {t: team that can challenge, d, o, n, until, p}
+  gt: 0,
+};
+export const DSN = ["NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING"],
+  PCN = ["AUTO", "PICK & ROLL", "PINDOWN", "FLARE", "ISOLATION"];
+function resetRules() {
+  TS.to = [4, 4];
+  TS.ds = [0, 0];
+  TS.pc = [0, 0];
+  TS.chal = [1, 1];
+  TS.run = [0, 0];
+  TS.mom = 0;
+  TS.clutch = 0;
+  TS.half = 0;
+  TS.lane.fill(0);
+  TS.bc = 0;
+  TS.call = null;
+  TS.gt = 0;
+}
+/** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
+export const cm = (e: string, n?: string, n2?: string) => fx({ k: "cm", e, n, n2 });
+export const ban = (s: string, sub = "", c = "#ffd23f") => fx({ k: "ban", s, sub, c });
+/** Shot-window multiplier from badges, hot zones, rhythm, streaks, momentum and clutch. Shared with the HUD meter. */
+export function winMul(p: Player, D0: number, note?: string[]) {
+  if (!cfg.BADGES || ftq || cfg.ONLINE) return 1;
+  let m = 1;
+  const add = (k: number, s: string) => {
+    m *= k;
+    if (note) note.push(s);
+  };
+  if (D0 > 265 && !hasB(p, "DR") && (p.heat || 0) < 3) add(0.88, "DEEP");
+  if (D0 > 265 && hasB(p, "DR")) add(1.08, "DEEP RANGE");
+  if (p.hzm && (p.hzm[zoneOf(p, D0)] || 0) >= 2) add(1.12, "HOT ZONE");
+  if ((p.mvEnd != null && T - p.mvEnd < 0.45) || p.sbw > 0.4) add(1.1, "RHYTHM");
+  if ((p.cold || 0) >= 3) add(0.9, "COLD");
+  if (clutchTime() && hasB(p, "CL")) add(1.15, "CLUTCH");
+  const mo = p.tm ? -TS.mom : TS.mom;
+  if (mo > 0.5) add(1.05, "MOMENTUM");
+  return m;
+}
+/** Make/miss bookkeeping for hot zones and cold streaks. */
+function zoneRes(p: Player, D0: number, made: boolean) {
+  if (!p || !p.hzm || D0 == null) return;
+  const z = zoneOf(p, D0);
+  if (made) {
+    p.hzm[z] = Math.min(4, (p.hzm[z] || 0) + 1);
+    if (p.hzm[z] === 2 && isH(p) && cfg.BADGES) txtW("HOT ZONE: " + ZN[z], p.x, p.y, 135, "#ff9a2e");
+    p.cold = 0;
+  } else {
+    p.hzm[z] = Math.max(0, (p.hzm[z] || 0) - 1);
+    p.cold = (p.cold || 0) + 1;
+    if (p.cold === 3 && cfg.BADGES) (txtW("ICE COLD", p.x, p.y, 120, "#7fd4ff"), cm("cold", p.n));
+  }
+}
+/** Scoring runs drive momentum (crowd, small shot bonus) and AI timeouts. */
+function runAdd(t: number, pts: number) {
+  if (TS.run[0] === t) TS.run[1] += pts;
+  else TS.run = [t, pts];
+  TS.mom = clamp(TS.mom + (t ? -1 : 1) * pts * 0.06, -1, 1);
+  const r = TS.run[1];
+  if (r >= 8 && r - pts < 8) (ban(r + "-0 RUN", cl[t].toUpperCase(), PC[t]), cm("run", cl[t]), exc(1));
+  else if (r >= 12 && r - pts < 12) (ban(r + "-0 RUN", cl[t].toUpperCase() + " CAN'T MISS", PC[t]), exc(1));
+}
+/** Timeout: stops play, everybody gets a breather, the hot shooter on the other side cools off, momentum resets. */
+export function callTO(t: number, why = "") {
+  if (TS.to[t] <= 0 || ftq || JB || S !== "play" || RPL) return false;
+  const dead = rs > 0;
+  if (!dead && !(B.owner && B.owner.tm === t)) return false; // only with the ball or at a dead ball
+  TS.to[t]--;
+  ban("TIMEOUT", cl[t].toUpperCase() + (why ? " · " + why : "") + " · " + TS.to[t] + " LEFT", PC[t]);
+  cm("timeout", cl[t]);
+  for (const p of P) p.en = Math.min(1, (p.en ?? 1) + 0.35);
+  for (const p of P) if (p.tm !== t && (p.heat || 0) > 1) p.heat = 1;
+  TS.mom *= 0.3;
+  TS.run = [t, 0];
+  if (!dead) pend = t;
+  rs = 2;
+  RQ = 0;
+  return true;
+}
+/** Coach's challenge on the last foul against your team (one per game). Overturned if the contact was marginal. */
+export function challenge(t: number) {
+  const c = TS.call;
+  if (!c || c.t !== t || T > c.until || TS.chal[t] <= 0) return false;
+  TS.chal[t]--;
+  TS.call = null;
+  const ok = Math.random() > c.p;
+  ban("COACH'S CHALLENGE", ok ? "CALL OVERTURNED" : "CALL STANDS — TIMEOUT LOST", ok ? "#2ecc71" : "#ff6b4a");
+  cm(ok ? "chalWin" : "chalLose", cl[t]);
+  if (ok) {
+    if (c.d) (c.d.pf = Math.max(0, c.d.pf - 1)), (tf[c.d.tm] = Math.max(0, tf[c.d.tm] - 1));
+    ftq = null;
+    B.sh = 0;
+    setup(t);
+  } else TS.to[t] = Math.max(0, TS.to[t] - 1);
+  return true;
+}
+/** Whistle bookkeeping: personal-foul limit, challengeable call. p = chance the call was correct. */
+function whistle(d: Player, o: Player | null, p: number) {
+  if (CT.some((c) => c.tm === d.tm)) TS.call = { t: d.tm, d, o, until: T + 4, p };
+  if (cfg.SUBS && cfg.NP > 1 && d.pf >= 6 && !d.fo) {
+    d.fo = 1;
+    ban("FOULED OUT", d.n.toUpperCase() + " · 6 FOULS", "#ff6b4a");
+    cm("foulout", d.n);
+  }
+}
+/** Substitutions at dead balls (5v5): tired or fouled-out players go to the bench, rested ones come back. */
+function subs() {
+  if (!cfg.SUBS || cfg.NP < 2 || PREDICT || !BENCH[0] || cfg.ONLINE) return;
+  for (let t = 0; t < 2; t++) {
+    const bn = BENCH[t];
+    if (!bn.length) continue;
+    for (let k = 0; k < cfg.NP; k++) {
+      const idx = t * cfg.NP + k,
+        p = P[idx];
+      if (p.my || CT.some((c) => c.fixed && c.idx === idx)) continue;
+      const fresh = T - (p.inAt || 0) < 25; // nobody gets yanked right after checking in
+      const tired = ((p.en ?? 1) < 0.5 && !fresh) || p.fo;
+      if (!tired) {
+        // a rested starter checks back in for his sub
+        if (p.sub && !p.fo) {
+          const s0 = bn.find((b) => b === p.sub && (b.en ?? 1) > 0.85 && !b.fo);
+          if (s0 && (p.en ?? 1) < 0.8 && !fresh) swap(t, k, s0);
+        }
+        continue;
+      }
+      let best: Player | null = null;
+      for (const b of bn) if (!b.fo && (b.en ?? 1) > 0.7 && (!best || Math.abs(b.ht - p.ht) < Math.abs(best.ht - p.ht))) best = b;
+      if (best) swap(t, k, best);
+    }
+  }
+}
+function swap(t: number, k: number, inP: Player) {
+  const idx = t * cfg.NP + k,
+    out = P[idx],
+    bn = BENCH[t];
+  bn.splice(bn.indexOf(inP), 1);
+  bn.push(out);
+  inP.k = k;
+  inP.sub = out;
+  inP.inAt = T;
+  inP.x = out.x;
+  inP.y = out.y;
+  inP.f = out.f;
+  inP.mode = "i";
+  inP.ai = {};
+  P[idx] = inP;
+  if (!ROST[t].includes(inP)) ROST[t].push(inP);
+  PLAY[t] = PLAY[1 - t] = null;
+  OFFS[0] = OFFS[1] = null;
+  if (CT.some((c) => c.tm === t)) txt("SUB: " + inP.n + " in for " + out.n, 480, 260, "#9fe7ff");
+  SUBV++;
+}
+/** Bumped on every substitution (the 3D renderer rebuilds rigs for changed slots). */
+export let SUBV = 0;
+/** Rule ticks during live play: fatigue on the bench, paint/backcourt counts, momentum decay, clutch time, AI timeouts. */
+function rulesTick(dt: number) {
+  for (let t = 0; t < 2; t++) for (const b of BENCH[t]) b.en = Math.min(1, (b.en ?? 1) + dt * 0.03);
+  for (const p of P) p.stt.min += dt;
+  TS.mom *= 1 - dt * 0.01;
+  if (!TS.clutch && clutchTime()) {
+    TS.clutch = 1;
+    ban("CLUTCH TIME", "UNDER " + Math.ceil(clock) + " SECONDS · " + Math.abs(sc[0] - sc[1]) + "-POINT GAME", "#ff5a5a");
+    cm("clutch");
+    exc(1);
+  }
+  // CPU timeout to stop an 8-0 run (or in clutch time to draw up a play)
+  for (let t = 0; t < 2; t++)
+    if (!CT.some((c) => c.tm === t) && TS.to[t] > 0 && B.owner && B.owner.tm === t && inb > 0 && ((TS.run[0] !== t && TS.run[1] >= 8) || (TS.clutch === 1 && sc[t] < sc[1 - t] && clock < 15))) {
+      if (TS.clutch === 1) TS.clutch = 2;
+      callTO(t, TS.run[1] >= 8 ? "STOP THE RUN" : "DRAW IT UP");
+    }
+  if (!cfg.VIOL || ftq || inb > 0 || !B.owner || rs > 0) {
+    TS.lane.fill(0); // a shot / loose ball / dead ball resets the count
+    return;
+  }
+  const t = pos,
+    hx = hoop(t),
+    dir = hx > 470 ? -1 : 1,
+    o = B.owner;
+  // 8 seconds to get it across half court
+  const back = dir < 0 ? o.x < 470 : o.x > 470;
+  if (back) TS.bc += dt;
+  else TS.bc = 99;
+  if (TS.bc > 8 && TS.bc < 90) {
+    TS.bc = 99;
+    violation(t, "8-SECOND VIOLATION");
+    return;
+  }
+  // 3 seconds in the lane (offense, while the ball is in the frontcourt; not in 1v1)
+  if (cfg.NP > 1)
+  for (const p of P) {
+    const k = P.indexOf(p);
+    if (p.tm !== t || back) {
+      TS.lane[k] = 0;
+      continue;
+    }
+    const inLane = Math.abs(p.x - hx) < 190 && Math.abs(p.y - HY) < 80 && p.z <= 0;
+    const exempt = (p === o && (p.mode !== "i" || Math.hypot(p.vx, p.vy) > 90)) || p.mode === "s" || p.mode === "c";
+    TS.lane[k] = inLane && !exempt ? TS.lane[k] + dt : inLane ? TS.lane[k] : 0;
+    if (TS.lane[k] > 3.05) {
+      TS.lane.fill(0);
+      violation(t, "3 SECONDS", p);
+      return;
+    }
+  }
+}
+function violation(t: number, s: string, p?: Player) {
+  ban(s, (p ? p.n.toUpperCase() + " · " : "") + "TURNOVER", "#ff6b4a");
+  cm("viol", p ? p.n : cl[t], s);
+  snd(700, 0.3, "square", 0.08);
+  setup(1 - t);
+}
 /** Difficulty multiplier for CPU-controlled teams (a team with no human on it); humans' teammates play at Pro level. */
-const cpuK = (p: Player, k: number[]) => (CT.some((c) => c.tm === p.tm) ? k[1] : k[cfg.DIFF] ?? 1);
+const cpuK =(p: Player, k: number[]) => (CT.some((c) => c.tm === p.tm) ? k[1] : k[cfg.DIFF] ?? 1);
 export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: number) => boolean) {
   let b = -1,
     bd = 1e9;
@@ -316,6 +600,9 @@ export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: num
   return b >= 0 ? b : skip ? nearest(t, x, y, ex) : ex >= 0 ? nearest(t, x, y) : t * NP;
 }
 export function setup(off: number) {
+  if (S === "play" && P.length) subs();
+  TS.bc = 0;
+  TS.lane.fill(0);
   const NP = cfg.NP,
     ah = hoop(off),
     own = hoop(1 - off),
@@ -443,6 +730,7 @@ export const shotRat = (p: Player, D0: number, isFT: boolean) =>
   (isFT ? p.c * 0.8 + 15 : D0 < 90 ? p.i : D0 < 237 ? (p.c + p.i) / 2 : p.c) + (p.heat || 0) * 2;
 export function launch(p: Player) {
   p.rl = 1;
+  p.lc = (p.lc || 0) + 1; // launch counter (game modes watch it)
   p.perf = 0;
   const H = cfg.hand ? handPos(p) : null,
     HK = H && H[2] > 40 && H[2] < 170,
@@ -459,7 +747,7 @@ export function launch(p: Player) {
   if (isFT) {
     B.ft = 1;
     ftq.fired = 1;
-    if (ftq.i + 1 >= ftq.n && !ftq.tech) ftq = null;
+    if (ftq.i + 1 >= ftq.n && !ftq.tech && !ftq.keep) ftq = null;
   } else B.ft = 0;
   let b = D0 < 90 || p.hk ? (p.i / 100) * (p.hk ? 0.72 : 0.8) : D0 < 237 ? ((p.c * 0.5 + p.i * 0.5) / 100) * 0.58 : (p.c / 100) * 0.5;
   let ct = 0,
@@ -473,10 +761,14 @@ export function launch(p: Player) {
   if (p.sbw > 0) b += 0.06;
   const cx = hum && p.cw != null ? p.cw : Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1) + (p.bmp || 0) * 0.5),
     rat = shotRat(p, D0, isFT),
-    win = (0.07 + (rat / 100) * 0.05) * (1 - 0.45 * cx) * (0.85 + 0.15 * (p.en == null ? 1 : p.en)),
+    notes: string[] = [],
+    wm0 = isFT || lay ? 1 : winMul(p, D0, notes),
+    win = (0.07 + (rat / 100) * 0.05) * (1 - 0.45 * cx) * (0.85 + 0.15 * (p.en == null ? 1 : p.en)) * wm0,
     rT = lay ? 0.28 : p.st === 1 ? 0.3 : 0.4;
   let gr;
-  if (hum && cx > 0.45 && !lay) txtW("CONTESTED", p.x, p.y, 108, "#ff6b6b");
+  B.d0 = isFT ? null : D0;
+  if (hum && cx > 0.45 && !lay) txtW(cx > 0.75 ? "SMOTHERED" : "CONTESTED", p.x, p.y, 108, "#ff6b6b");
+  if (hum && notes.length && !lay) txtW(notes.join(" · "), p.x, p.y, 150, notes.some((n) => n === "DEEP" || n === "COLD") ? "#7fd4ff" : "#ffb347");
   if (hum) {
     const wt = win * (TEMPO ? 1.2 : 1),
       wmt = (0.07 + (rat / 100) * 0.05) * (TEMPO ? 1.2 : 1),
@@ -489,9 +781,16 @@ export function launch(p: Player) {
       txtW("PERFECT RELEASE", p.x, p.y, 118, "#7CFC7C");
       p.perf = 1;
     }
-    if (!gr && !lay)
-      txtW(TEMPO && p.tp == null ? "NO TEMPO" : (TEMPO ? p.tp > cen : p.mt > cen) ? "LATE" : "EARLY", p.x, p.y, 95, "#ff9966");
-  } else gr = Math.random() < clamp(((rat / 100) * 0.75 + 0.1 - cx * 0.45 + (p.sbw > 0 ? 0.1 : 0)) * cpuK(p, [0.78, 0.92, 1, 1.1]), 0.05, 0.95);
+    if (!gr && !lay) {
+      // shot feedback: how far off the timing was, and what else hurt it
+      const tt = TEMPO ? p.tp : p.mt,
+        off = tt == null ? 9 : tt - cen,
+        far = Math.abs(off) > wt * 2.2,
+        why = cx > 0.6 ? " · HEAVY CONTEST" : (p.en ?? 1) < 0.45 ? " · TIRED LEGS" : "";
+      txtW(TEMPO && p.tp == null ? "NO TEMPO" : (far ? "VERY " : "SLIGHTLY ") + (off > 0 ? "LATE" : "EARLY") + why, p.x, p.y, 95, "#ff9966");
+    }
+  } else gr = Math.random() < clamp(((rat / 100) * 0.75 + 0.1 - cx * 0.45 + (p.sbw > 0 ? 0.1 : 0)) * cpuK(p, [0.78, 0.92, 1, 1.1]) * Math.sqrt(wm0), 0.05, 0.95);
+  if ((p.heat || 0) >= 3 && D0 > 265 && !isFT) txtW("HEAT CHECK!", p.x, p.y, 160, "#ff9a2e");
   B.owner = null;
   B.mode = "air";
   B.sh = 1;
@@ -516,6 +815,7 @@ export function launch(p: Player) {
   B.gn = 0;
   B.abv = -1;
   B.wv = [0, 0, 0];
+  B.gt = B.gtc = 0;
   const fd = isFT ? null : shootingFoul(p, lay);
   if (fd) {
     p.hitT = 0.4; // the shooter wears the contact
@@ -523,7 +823,8 @@ export function launch(p: Player) {
     p.hitX = (p.x - fd.x) / dl;
     p.hitY = (p.y - fd.y) / dl;
   }
-  if (isDunkSv(p.sv) && (p.oop || Math.random() < 0.9)) {
+  const dunkMiss = cfg.GM === "dunk" && isDunkSv(p.sv) && !gr;
+  if (isDunkSv(p.sv) && !dunkMiss && (p.oop || cfg.GM === "dunk" || Math.random() < 0.9)) {
     p.oop = 0;
     const vic = P.find((o) => o.tm !== p.tm && o.z > 8 && Math.hypot(o.x - p.x, o.y - p.y) < 22);
     if (vic) {
@@ -534,6 +835,18 @@ export function launch(p: Player) {
       fx({ k: "shake", v: 0.8 });
       fx({ k: "slow", v: 0.9 });
     } else fx({ k: "shake", v: 0.45 });
+    if (fd && FLAG) {
+      B.owner = p;
+      B.mode = "held";
+      B.sh = 0;
+      p.act = 3;
+      p.actT = 1.1;
+      p.stt.fga--;
+      ban("FLAGRANT 1", fd.n.toUpperCase() + " · 2 SHOTS + THE BALL", "#ff3b3b");
+      cm("flagrant", fd.n, p.n);
+      foul(fd, p, "FLAGRANT", 1, 0, 1);
+      return;
+    }
     if (fd) {
       B.fl = 1;
       B.flBy = fd;
@@ -560,6 +873,7 @@ export function launch(p: Player) {
     blk.stt.blk++;
     exc(0.9);
     txtW("BLOCKED!", blk.x, blk.y, 80, "#ff6b4a");
+    cm("block", blk.n);
     p.act = 6; // the shooting arm gets knocked back
     p.actT = 0.45;
     if (!PREDICT) (blk.cel = 14), (blk.celT = CEL_T); // the blocker holds the swat / stares him down
@@ -568,7 +882,8 @@ export function launch(p: Player) {
     return;
   }
   const rap = useRap(),
-    mk = lay ? Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) : gr && (p.perf || Math.random() < 0.98 - cx * 0.25),
+    _dm = dunkMiss && hum ? txtW("MISSED DUNK!", p.x, p.y, 120, "#ff6b4a") : 0,
+    mk = dunkMiss ? false : lay ? Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) : gr && (p.perf || Math.random() < 0.98 - cx * 0.25),
     a = Math.random() * 6.28,
     off = mk ? (rap ? 0.3 : 1.2) : 9 + Math.random() * 7,
     tx = hx + Math.cos(a) * off,
@@ -577,11 +892,19 @@ export function launch(p: Player) {
     dy = ty - y0,
     D = Math.hypot(dx, dy) || 1,
     dz = 100 - z0;
-  if (fd && !mk) {
+  if (fd && (!mk || FLAG)) {
     B.owner = p;
     B.mode = "held";
     B.sh = 0;
-    foul(fd, p, "SHOOTING", 1, three);
+    if (FLAG) {
+      p.act = 3; // knocked to the floor
+      p.actT = 1.1;
+      p.stt.fga--;
+      if (three) p.stt.tpa--;
+      ban("FLAGRANT 1", fd.n.toUpperCase() + " · 2 SHOTS + THE BALL", "#ff3b3b");
+      cm("flagrant", fd.n, p.n);
+      foul(fd, p, "FLAGRANT", 1, 0, 1);
+    } else foul(fd, p, "SHOOTING", 1, three);
     return;
   }
   if (fd) {
@@ -600,7 +923,9 @@ export function launch(p: Player) {
     v = Math.sqrt((ge * D * D) / (2 * Math.cos(th) ** 2 * Math.max(1, D * Math.tan(th) - dz)));
   }
   B.vz = v * Math.sin(th);
-  const TF = (B.vz + Math.sqrt(B.vz * B.vz + 2 * ge * (z0 - 100))) / ge,
+  // a tip from right under the rim can come out too soft to even reach it: give it enough lift to clear the iron
+  if (B.vz * B.vz + 2 * ge * (z0 - 100) < 0) B.vz = Math.sqrt(2 * ge * (106 - z0));
+  const TF = (B.vz + Math.sqrt(Math.max(0, B.vz * B.vz + 2 * ge * (z0 - 100)))) / ge,
     hv = (D * 0.1) / (1 - Math.exp(-0.1 * TF));
   B.vx = (hv * dx) / D;
   B.vy = (hv * dy) / D;
@@ -703,7 +1028,10 @@ export function step(p: Player, dt: number) {
   }
   {
     const sv2 = Math.hypot(p.vx, p.vy);
-    p.en = Math.max(0, Math.min(1, (p.en == null ? 1 : p.en) - (i.sp && sv2 > 150 ? dt * 0.1 : -dt * 0.04)));
+    // sprinting burns the tank fast; running up and down slowly wears everyone down (subs in 5v5); standing recovers
+    const rot = cfg.SUBS && cfg.NP > 1 && !PREDICT && cfg.GM === "game" && !cfg.ONLINE,
+      use = i.sp && sv2 > 150 ? 0.1 : rot ? (sv2 > 60 ? sv2 * 0.00013 : -0.01) : -0.04;
+    p.en = Math.max(0, Math.min(1, (p.en == null ? 1 : p.en) - dt * use));
   }
   if (has && p.mode === "i" && p.cd <= 0 && !(p.mvT > 0) && (i.dx || i.dy) && p.li && i.dx * p.li[0] + i.dy * p.li[1] < -0.3 && Math.hypot(p.vx, p.vy) > 110)
     i.mv = i.mv || 3;
@@ -796,7 +1124,7 @@ export function step(p: Player, dt: number) {
       p.mvS = S;
       p.cd = 0.9;
       if (u) txtW(["", "HESITATION", "SPIN MOVE", "BEHIND THE BACK"][i.mv], p.x, p.y, 100, "#ffd23f");
-      if (!PREDICT && dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250) {
+      if (!PREDICT && dist < 60 && Math.random() < 0.5 + (p.s - d.d) / 250 + (hasB(p, "AB") ? 0.12 : 0)) {
         d.slow = Math.max(d.slow, 0.7);
         d.scr = Math.max(d.scr || 0, 0.35);
         // the defender's feet get crossed up: a hard sideways stumble (pose spring + flailing arms)
@@ -886,7 +1214,7 @@ export function step(p: Player, dt: number) {
     if (!PREDICT) {
       const d = P[nearest(1 - p.tm, p.x, p.y)];
       d.slow = 0.5 + 0.25 * p.bn;
-      if (Math.hypot(d.x - p.x, d.y - p.y) < 30 && Math.random() < 0.12 + (p.s - d.d) / 400) {
+      if (Math.hypot(d.x - p.x, d.y - p.y) < 30 && Math.random() < 0.12 + (p.s - d.d) / 400 + (hasB(p, "AB") ? 0.12 : 0)) {
         d.act = 3; // lost his footing on the step-back
         d.actT = 1.0;
         if (hum) txtW("SHOOK HIM!", d.x, d.y, 95, "#ff6b6b");
@@ -1079,7 +1407,39 @@ export function ai(p: Player, dt: number) {
       a.r = 0;
       return;
     }
-    const D = Math.hypot(oh - p.x, HY - p.y);
+    const D = Math.hypot(oh - p.x, HY - p.y),
+      md = manOf(p),
+      dirO = oh > 470 ? -1 : 1;
+    // in the lane too long: get a shot up
+    if (cfg.VIOL && TS.lane[P.indexOf(p)] > 2.3 && p.cd <= 0) {
+      i.sd = 1;
+      a.rel = 0.5;
+      a.r = 0;
+      return;
+    }
+    // mismatch hunting: post up a smaller defender, or blow by a slower one
+    if (!a.r && cfg.NP > 1 && md && p.i >= 76 && p.ht - md.ht >= 0.3 && Math.random() < 0.6) a.post = 1;
+    if (a.post) {
+      a.pw = (a.pw || 0) + dt;
+      if (D > 175) mv(p, oh + dirO * 70, HY + (p.y < HY ? -45 : 45), 1);
+      else if (D < 70) {
+        // backed him all the way down: go up strong
+        i.sd = 1;
+        a.rel = 0.45;
+        a.post = a.pw = 0;
+      } else {
+        i.post = 1;
+        if (a.pw > 1.1 && p.cd <= 0) {
+          const r = Math.random();
+          if (r < 0.25 && !(p.upu > 0)) i.pf = 1; // shoulder fake first
+          else i.mv = r < 0.6 ? 1 : r < 0.85 ? 3 : 2;
+          if (r >= 0.25) (a.post = 0), (a.pw = 0);
+        }
+      }
+      if (a.pw > 2) (a.post = 0), (a.pw = 0), (i.mv = 1); // don't sit in the lane: go to the hook
+      return;
+    }
+    if (!a.r && md && p.s - md.s >= 12 && Math.random() < 0.5) (a.r = 45 + Math.random() * 30), (a.w = 0), (a.pt = 0.8); // attack the slower man
     if (!a.r)
       ((a.r =
         p.c < 50
@@ -1095,7 +1455,20 @@ export function ai(p: Player, dt: number) {
     else {
       a.w += dt;
       i.sp = 0;
-      if (a.w > 0.45 && (Math.hypot(dn.x - p.x, dn.y - p.y) > 30 || shot < 7 || a.w > 1.3)) {
+      const dd0 = Math.hypot(dn.x - p.x, dn.y - p.y),
+        closing = (dn.vx * (p.x - dn.x) + dn.vy * (p.y - dn.y)) / (dd0 || 1);
+      if (!a.fk && D > 120 && dd0 < 34 && closing > 90 && p.cd <= 0 && Math.random() < 0.4) {
+        i.pf = 1;
+        a.fk = 1;
+        a.w = 0.25;
+        return;
+      }
+      if (a.fk === 1 && dn.z > 6) {
+        a.fk = 2; // he bit: rise up as he flies by (or drive past him)
+        if (D < 230 || Math.random() < 0.5) a.r = 40;
+      }
+      if (a.w > 0.45 && (dd0 > 30 || shot < 7 || a.w > 1.3)) {
+        a.fk = 0;
         i.sd = 1;
         a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
         a.r = 0;
@@ -1128,7 +1501,9 @@ export function ai(p: Player, dt: number) {
               const u = clamp(((e.x - p.x) * dx + (e.y - p.y) * dy) / l2, 0, 1);
               if (Math.hypot(p.x + dx * u - e.x, p.y + dy * u - e.y) < 14) return -1;
             }
-          return (Math.min(od, 80) / 80) * 0.6 + (ql(r, dd) / 100) * 0.5 + (dd < D ? 0.12 : 0) + (OFFS[t] === r ? 0.45 : 0) + (r.my || isH(r) ? 0.2 : 0);
+          const star = !CT.some((c) => c.tm === t) && shot < 9 && r === starOf(t) && p !== r ? 0.5 : 0,
+            kick = D < 130 && dd >= 237 && od > 45 ? 0.25 : 0;
+          return (Math.min(od, 80) / 80) * 0.6 + (ql(r, dd) / 100) * 0.5 + (dd < D ? 0.12 : 0) + (OFFS[t] === r ? 0.45 : 0) + (r.my || isH(r) ? 0.2 : 0) + star + kick;
         };
       const own = (Math.min(Math.hypot(dn.x - p.x, dn.y - p.y), 80) / 80) * 0.6 + (ql(p, D) / 100) * 0.5;
       let bo = null,
@@ -1147,7 +1522,7 @@ export function ai(p: Player, dt: number) {
         PCNT[t] < 3 &&
         T - LASTP[t] > 1.1 &&
         Math.hypot(bo.x - p.x, bo.y - p.y) < 280 &&
-        (Math.abs(hoop(t) - bo.x) < Math.abs(hoop(t) - p.x) + 40 || prs) &&
+        (Math.abs(hoop(t) - bo.x) < Math.abs(hoop(t) - p.x) + 40 || prs || D < 130 || (shot < 9 && bo === starOf(t))) &&
         Math.random() < (prs ? 0.8 : 0.5)
       )
         i.pass = bo;
@@ -1162,8 +1537,16 @@ export function ai(p: Player, dt: number) {
     mv(p, x + (p.x - nd.x) * 0.35, s[1] + Math.sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
   } else if (B.owner) {
     const o = p.manT > 0 && p.man != null ? P[p.man] : P[(1 - t) * NP + p.k],
-      ou = (B.owner === o ? 22 : 26) * cpuK(p, [1.35, 1.12, 1, 0.86]), // tighter on-ball defense on harder levels
-      l = Math.hypot(dh - o.x, HY - o.y) || 1;
+      ds = TS.ds[t],
+      od = Math.hypot(dh - o.x, HY - o.y),
+      cpu = !CT.some((c) => c.tm === t),
+      hotO = (o.heat || 0) >= 2 || (o.hzm && o.hzm[zoneOf(o, od)] >= 2);
+    let ou = (B.owner === o ? 22 : 26) * cpuK(p, [1.35, 1.12, 1, 0.86]); // tighter on-ball defense on harder levels
+    if (ds === 1) ou = B.owner === o ? ou + 8 : ou * 1.6; // sag: go under screens, wall off the paint
+    else if (ds === 2) ou = B.owner === o ? ou * 0.82 : ou * 0.6; // tight: pressure and deny
+    if (cpu && cfg.BADGES && od > 220 && o.c < 72 && B.owner !== o) ou += 34; // sag off a non-shooter
+    if (cpu && hotO) ou *= 0.78; // stay attached to the hot hand
+    const l = od || 1;
     const hb = B.owner,
       hh = Math.hypot(dh - hb.x, HY - hb.y);
     if (hh < 140 && p.k !== hb.k && nearest(t, hb.x, hb.y, t * NP + hb.k) === t * NP + p.k)
@@ -1451,6 +1834,12 @@ export function bstep(dt: number) {
         pts = B.ft ? 1 : B.three && B.last.tm === t ? 3 : 2;
       sc[t] += pts;
       exc(1);
+      runAdd(t, pts);
+      if (!B.ft && B.last) {
+        zoneRes(B.last, B.d0, true);
+        const L = B.last;
+        cm(B.dk ? (B.flBy ? "dunkAnd1" : "dunk") : pts === 3 ? (B.gn && (B.rim ?? 99) > BR + 1.1 ? "splash" : "three") : B.fl ? "and1" : "two", L.n, B.pp && B.pp.p !== L && B.pp.p.tm === L.tm && T - B.pp.t < 3.5 ? B.pp.p.n : undefined);
+      }
       {
         const L = B.last;
         if (L && L.stt) {
@@ -1464,7 +1853,7 @@ export function bstep(dt: number) {
       }
       if (B.last) {
         B.last.heat = Math.min(3, (B.last.heat || 0) + 1);
-        if (B.last.heat === 3) txtW("ON FIRE!", B.last.x, B.last.y, 105, "#ff9a2e");
+        if (B.last.heat === 3) (txtW("ON FIRE!", B.last.x, B.last.y, 105, "#ff9a2e"), cm("fire", B.last.n));
       }
       txtW("+" + pts, hx > 470 ? hx - 50 : hx + 20, HY, 125, pts === 3 ? "#ffd23f" : "#fff");
       if (!B.ft && !B.dk && (B.rim ?? 99) > BR + 1.1) txtW(pts === 3 ? "SPLASH!" : "SWISH!", hx, HY, 140, "#9fe7ff");
@@ -1475,6 +1864,7 @@ export function bstep(dt: number) {
         fx({ k: "shake", v: 0.6 });
         RQ = 1;
         RPK = 1; // the replay gets the clutch camera sequence
+        HLN = (B.q >= 4 && lead ? "Game winner — " : "Buzzer beater — ") + (B.last ? B.last.n : "");
       }
       if (!B.ft && B.last) {
         // signature celebration: clutch / on fire > dunk or and-one > three
@@ -1523,7 +1913,10 @@ export function bstep(dt: number) {
       else {
         rs = 1.4;
         pend = 1 - t;
-        if (cfg.replays && (B.dk || (B.gn && B.three && isH(B.last)))) RQ = 1;
+        if (cfg.replays && (B.dk || (B.gn && B.three && isH(B.last)))) {
+          RQ = 1;
+          HLN = (B.dk ? (B.oop ? "Alley-oop — " : "Slam — ") : "From deep — ") + (B.last ? B.last.n : "");
+        }
       }
       B.sh = 0;
       fin = 0;
@@ -1558,12 +1951,38 @@ export function bstep(dt: number) {
   if (ftq) return;
   // Cylinder rule: nobody may touch a live shot in the imaginary cylinder above either rim (no goaltending / basket
   // interference), so a green that rattles or drops in can't be snatched out of the net by a jumping rebounder.
-  if (B.sh && B.mode === "air" && B.z > 55 && (Math.hypot(B.x - HXs[0], B.y - HY) < 22 || Math.hypot(B.x - HXs[1], B.y - HY) < 22)) return;
+  if (B.sh && B.mode === "air" && B.z > 55 && (Math.hypot(B.x - HXs[0], B.y - HY) < 22 || Math.hypot(B.x - HXs[1], B.y - HY) < 22)) {
+    // goaltending: a defender who swats it on the way down above the rim gives up the basket
+    if (cfg.VIOL && !PREDICT && B.last && !B.ft && B.vz < 0 && B.z > 101 && !B.gt) {
+      const hx = hoop(B.last.tm);
+      for (const p of P)
+        if (p.tm !== B.last.tm && p.z > 10 && Math.hypot(p.x - B.x, p.y - B.y) < 13 && B.z < p.z + 68 + p.j * 0.2 && Math.hypot(B.x - hx, B.y - HY) < 22 && (isH(p) || (!B.gtc && ((B.gtc = 1), Math.random() < 0.05)))) {
+          B.gt = 1;
+          const t = B.last.tm,
+            pts = B.three ? 3 : 2;
+          sc[t] += pts;
+          B.last.stt.pts += pts;
+          B.last.stt.fgm++;
+          if (B.three) B.last.stt.tpm++;
+          runAdd(t, pts);
+          ban("GOALTENDING", p.n.toUpperCase() + " · BASKET COUNTS", "#ff6b4a");
+          cm("goaltend", p.n);
+          B.sh = 0;
+          B.sc = 1;
+          B.vx *= -0.3;
+          B.vy *= -0.3;
+          rs = 1.4;
+          pend = 1 - t;
+          return;
+        }
+    }
+    return;
+  }
   // Contest for the loose ball: jumpers and defenders first, with some randomness.
   SORTP.length = 0;
   for (const p of P) {
     SORTP.push(p);
-    p._ks = p.j + p.d * 0.3 + (p.z > 5 ? 25 : 0) + Math.random() * 40;
+    p._ks = p.j + p.d * 0.3 + (p.z > 5 ? 25 : 0) + Math.random() * 40 + (hasB(p, "GC") ? 18 : 0);
   }
   SORTP.sort((a, b) => b._ks - a._ks);
   for (const p of SORTP) {
@@ -1594,7 +2013,12 @@ export function bstep(dt: number) {
       const wasShot = B.sh && B.last && !B.sc,
         shooter = B.last;
       const oop = B.mode === "pass" && B.ptype === 2 && p === B.to && p.j >= 45 && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 110 && !ftq && inb <= 0;
-      if (B.sh && B.last && !B.sc) p.stt.reb++;
+      if (B.sh && B.last && !B.sc) {
+        p.stt.reb++;
+        if (p.tm === B.last.tm) p.stt.orb++;
+        if (!B.ft) zoneRes(B.last, B.d0, false);
+        if (hasB(p, "GC") && Math.random() < 0.3) cm("board", p.n);
+      }
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
       B.owner = p;
       B.mode = "held";
@@ -1654,7 +2078,7 @@ export function upd(dt: number) {
     return;
   }
   P.forEach((p, k) => {
-    if (inb > 0 || (ftq && p !== ftq.s)) {
+    if (inb > 0 || (ftq && p !== ftq.s) || p.off) {
       p.in = zin(k);
       return;
     }
@@ -1680,6 +2104,18 @@ export function upd(dt: number) {
         sv.dy = sv.dy * 0.4 + a.dy * 0.9;
         if (a.sd || (q.z <= 0 && B.z > 45 && Math.hypot(B.x - q.x, B.y - q.y) < 34)) sv.sd = 1;
       }
+    }
+  }
+  for (const c of CT) {
+    const h = c.inp;
+    if (h.to && !callTO(c.tm)) txt(TS.to[c.tm] > 0 ? "TIMEOUT: only with the ball or at a dead ball" : "NO TIMEOUTS LEFT", 480, 240, "#ff9966");
+    if (h.ch && !challenge(c.tm)) txt(TS.chal[c.tm] <= 0 ? "CHALLENGE ALREADY USED" : "NOTHING TO CHALLENGE", 480, 240, "#ff9966");
+    if (h.ds) {
+      const off = pos === c.tm && !!B.owner;
+      if (off) TS.pc[c.tm] = (TS.pc[c.tm] + 1) % PCN.length;
+      else TS.ds[c.tm] = (TS.ds[c.tm] + 1) % DSN.length;
+      if (off) PLAY[c.tm] = null;
+      txt(off ? "PLAY CALL: " + PCN[TS.pc[c.tm]] : "DEFENSE: " + DSN[TS.ds[c.tm]], 480, 150, "#9fe7ff");
     }
   }
   ftIn(dt);
@@ -1715,7 +2151,8 @@ export function upd(dt: number) {
     } else if (P[c.idx].mode !== "s") c.idx = nearestFree(c, B.x, B.y);
     c.lastO = B.owner;
   }
-  P.forEach((p) => step(p, dt));
+  if (HOOK.pre) HOOK.pre(dt);
+  for (const p of P) if (!p.off) step(p, dt);
   collide();
   if (useRap() && cfg.playerBodies) rapSyncPlayers(P, B);
   bstep(dt / 2);
@@ -1725,6 +2162,7 @@ export function upd(dt: number) {
   recFrame();
   lagRec();
   for (const p of P) pose3(p);
+  if (HOOK.post && HOOK.post(dt)) return;
   if (rs > 0) {
     rs -= dt;
     if (rs <= 0) {
@@ -1738,7 +2176,9 @@ export function upd(dt: number) {
   }
   if (clock > 0 && !ftq && inb <= 0) clock = Math.max(0, clock - dt);
   if (q >= 4 && Math.abs(sc[0] - sc[1]) <= 6 && B.owner && Math.floor(T / 2.6) !== Math.floor((T - dt) / 2.6)) fx({ k: "chant", tm: 1 - pos });
-  if (B.owner && !ftq && inb <= 0) shot -= dt;
+  if (cfg.GM === "game" || cfg.GM === "clutch") rulesTick(dt);
+  if (S !== "play" || rs > 0) return; // a violation / timeout just stopped play
+  if (B.owner && !ftq && inb <= 0 && cfg.SCLK) shot -= dt;
   if (shot <= 0 && !ftq) {
     txt("SHOT CLOCK!", 470, 200, "#ff6b4a");
     setup(1 - pos);
@@ -1748,6 +2188,11 @@ export function upd(dt: number) {
     else {
       q++;
       tf = [0, 0];
+      for (const p of P) p.en = Math.min(1, (p.en ?? 1) + 0.25); // quarter break
+      if (q === 3 && !TS.half) {
+        TS.half = 1;
+        fx({ k: "half" });
+      }
       clock = q > 4 ? QTRLEN / 2 : QTRLEN;
       setup(q % 2 ? 0 : 1);
       txt(q > 4 ? "OVERTIME" : "QUARTER " + q, 470, 200, "#ffd23f");
@@ -1794,18 +2239,24 @@ export function postGame(dt: number) {
 export function endGame() {
   S = "over";
   fx({ k: "end", w: sc[0] > sc[1] ? 0 : 1 });
+  if (HOOK.end) HOOK.end();
   snd(sc[0] > sc[1] ? 800 : 200, 0.5, "triangle");
 }
-export function foul(d: Player, o: Player, k: string, sh: number, th: any) {
+export function foul(d: Player, o: Player, k: string, sh: number, th: any, flag = 0) {
   tf[d.tm]++;
   d.pf++;
+  whistle(d, o, k === "SHOOTING" ? LASTP_FOUL : 0.6);
   if (!PREDICT && Math.random() < 0.55) (d.cel = 12), (d.celT = CEL_T); // palms up: "I got ball!"
   txtW(k + " FOUL", d.x, d.y, 95, "#ff6b4a");
   snd(120, 0.3, "sawtooth", 0.1);
   B.sh = 0;
   B.ft = 0;
   const n = sh ? (th ? 3 : 2) : tf[d.tm] >= 5 ? 2 : 0;
-  if (n) startFT(o, n, 0, 0);
+  if (n) {
+    startFT(o, n, flag ? o.tm : 0, 0);
+    if (flag) ftq.keep = 1;
+    if (!flag && tf[d.tm] === 5 && !sh) txt("BONUS", 480, 230, "#ffd23f");
+  }
   else {
     B.owner = o;
     B.mode = "held";
@@ -1813,6 +2264,8 @@ export function foul(d: Player, o: Player, k: string, sh: number, th: any) {
   }
 }
 function tech(d: Player, ret: number) {
+  if (!cfg.FOULS) return;
+  cm("tech", d.n);
   txtW("TECHNICAL FOUL", d.x, d.y, 95, "#ff3b3b");
   let b = null;
   for (const p of P) if (p.tm !== d.tm && (!b || p.c > b.c)) b = p;
@@ -1864,7 +2317,7 @@ function ftTick(dt: number) {
         ftLay();
       } else {
         ftq = null;
-        if (f.tech) setup(f.ret);
+        if (f.tech || f.keep) setup(f.ret);
       }
     }
     return;
@@ -1921,15 +2374,19 @@ const manOf = (o: Player) => {
   for (const d of P) if (d.tm === t && d.manT > 0 && d.man === P.indexOf(o)) return d;
   return P[t * cfg.NP + o.k];
 };
+/** Isolation: called by the user, or the CPU clears out for its star late in the clock. */
+const starOf = (t: number) => P.filter((q) => q.tm === t).sort((a, b) => ovr(b) - ovr(a))[0];
+const isoNow = (t: number) => TS.pc[t] === 4 || (!CT.some((c) => c.tm === t) && shot < 8 && B.owner === starOf(t));
 function newPlay(t: number): Play | null {
   const h = B.owner,
     ms = P.filter((q) => q.tm === t && q !== h);
   if (!h || ms.length < 2) return null;
+  const pc = TS.pc[t];
   const big = [...ms].sort((a, b) => b.ht * b.bk + b.i / 60 - (a.ht * a.bk + a.i / 60))[0],
     sh = [...ms].sort((a, b) => b.c + 30 * ((b.sg && b.sg.off) || 0) - (a.c + 30 * ((a.sg && a.sg.off) || 0)))[0],
     r = Math.random();
   // Curry-style shooters get pindowns/flares; otherwise pick-and-roll is the bread and butter
-  const kind: Play["kind"] = sh.c >= 82 && sh !== big && r < 0.5 ? (r < 0.3 ? "pin" : "flare") : "pnr";
+  const kind: Play["kind"] = pc === 1 ? "pnr" : pc === 2 ? "pin" : pc === 3 ? "flare" : sh.c >= 82 && sh !== big && r < 0.5 ? (r < 0.3 ? "pin" : "flare") : "pnr";
   const scr = kind === "pnr" ? big : ms.filter((q) => q !== sh).sort((a, b) => b.ht * b.bk - a.ht * a.bk)[0],
     use = kind === "pnr" ? h : sh;
   return { kind, t0: T, scr, use, def: manOf(use), ph: "go", sx: 0, sy: 0, setAt: 0 };
@@ -1939,13 +2396,25 @@ function offBall(p: Player, t: number) {
   const hx = hoop(t),
     dir = hx > 470 ? -1 : 1, // from the hoop toward half court
     h = B.owner;
-  let pl = PLAY[t];
-  if (!pl || T - pl.t0 > 5.5 || pl.use.tm !== t || (pl.kind === "pnr" && pl.use !== h) || pl.scr === h) pl = PLAY[t] = newPlay(t);
+  {
+    // never camp in the lane (3 seconds): step out to the short corner / wing
+    const k = P.indexOf(p);
+    if (cfg.VIOL && TS.lane[k] > 2.1) {
+      mv(p, hx + dir * 205, p.y < HY ? HY - 130 : HY + 130, 1.15);
+      return true;
+    }
+  }
+  const iso = isoNow(t);
+  let pl = iso ? null : PLAY[t];
+  if (!iso && (!pl || T - pl.t0 > 5.5 || pl.use.tm !== t || (pl.kind === "pnr" && pl.use !== h) || pl.scr === h)) pl = PLAY[t] = newPlay(t);
+  if (iso) PLAY[t] = null;
   OFFS[t] = null;
-  if (!pl) return false;
-  const { scr, use } = pl,
-    def = (pl.def = manOf(use)),
-    side = use.y < HY ? -1 : 1;
+  if (!pl && !iso) return false;
+  const scr = pl ? pl.scr : null,
+    use = pl ? pl.use : null,
+    def = pl ? (pl.def = manOf(use)) : null,
+    side = (use || p).y < HY ? -1 : 1;
+  if (pl) {
   // screen spot: on the defender's hip, on the side the user will run past
   if (pl.ph !== "set") {
     if (pl.kind === "pnr") {
@@ -1962,6 +2431,7 @@ function offBall(p: Player, t: number) {
   }
   if (p === scr) {
     if (pl.ph === "go") {
+      if (T - pl.t0 < 0.05 && isH(h) && TS.pc[t]) txtW(PCN[TS.pc[t]], p.x, p.y, 95, "#9fe7ff");
       mv(p, pl.sx, pl.sy, 1.2);
       if (Math.hypot(p.x - pl.sx, p.y - pl.sy) < 7 || T - pl.t0 > 2.6) {
         pl.ph = "set";
@@ -1994,6 +2464,7 @@ function offBall(p: Player, t: number) {
     }
     return true;
   }
+  }
   // spacing + backdoor cuts for everyone else
   const ms = P.filter((q) => q.tm === t && q !== h && q !== scr && q !== use),
     spots = [
@@ -2024,7 +2495,7 @@ function offBall(p: Player, t: number) {
   }
   const md = manOf(p),
     deny = Math.hypot(md.x - p.x, md.y - p.y) < 20 && Math.hypot(md.x - hx, md.y - HY) > Math.hypot(p.x - hx, p.y - HY) - 5;
-  if (deny && Math.random() < 0.02) p.ai.cutT = T;
+  if (deny && !iso && Math.random() < 0.02) p.ai.cutT = T;
   if (p.ai.cutT && T - p.ai.cutT < 1.1) {
     mv(p, hx + dir * 25, HY + (p.y < HY ? -18 : 18), 1.25); // backdoor
     if (Math.hypot(md.x - p.x, md.y - p.y) > 26) OFFS[t] = p;
@@ -2066,6 +2537,7 @@ function loose(p: Player, t: number) {
         if (rival < 45) {
           p.act = 4;
           p.actT = 0.75;
+          p.stt.dv++;
           p.vx = ((B.x - p.x) / d) * 300;
           p.vy = ((B.y - p.y) / d) * 300;
           if (isH(p) || isH(B.last)) txtW("DIVE!", p.x, p.y, 70, "#ffd23f");
@@ -2137,9 +2609,14 @@ export function pickClip(p: Player, D: number, lay: boolean) {
  * sideways through him (jumping straight up = verticality, rarely a foul), or bodies already touching. Good defenders
  * foul less; drives to the rim and strong finishers draw more. Returns the fouling defender or null.
  */
+let FLAG = 0,
+  LASTP_FOUL = 0.8; // how clear the last shooting foul was (challenge odds)
 function shootingFoul(p: Player, lay: boolean): Player | null {
+  FLAG = 0;
+  if (!cfg.FOULS) return null;
   let best = null,
-    bp = 0;
+    bp = 0,
+    fl = 0;
   for (const o of P) {
     if (o.tm === p.tm) continue;
     const dx = p.x - o.x,
@@ -2152,12 +2629,14 @@ function shootingFoul(p: Player, lay: boolean): Player | null {
     c += clamp((close - 50) / 220, 0, 1) * 0.32; // late, hard closeout
     if (o.z > 4) c += hs > 50 ? 0.3 : 0.03; // flying in vs. straight up
     if (d < 15) c += 0.14; // already chest to chest
-    if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2;
+    if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2 + (hasB(p, "PZ") ? 0.08 : 0);
     c *= 1.2 - o.d / 220;
-    if (c > bp) (bp = c), (best = o);
+    if (c > bp) (bp = c), (best = o), (fl = lay && o.z > 4 && hs > 170 && close > 140 ? 1 : 0);
   }
   if (!best || Math.random() >= clamp(bp, 0, 0.6)) return null;
   STAT.shootFouls++;
+  FLAG = fl && Math.random() < 0.08 ? 1 : 0;
+  LASTP_FOUL = clamp(bp * 1.6, 0.35, 0.95);
   return best;
 }
 /** Raw contest (0..1.5) from the closest defender within 6 ft; airborne defenders count 1.5x. */
@@ -2173,7 +2652,7 @@ function contestRaw(p: Player): [number, Player | null] {
       oz = fr ? fr[k * 3 + 2] : o.z,
       d = Math.hypot(ox - p.x, oy - p.y);
     if (d < 60) {
-      const c2 = (1 - d / 60) * (oz > 8 ? 1.5 : 1);
+      const c2 = (1 - d / 60) * (oz > 8 ? 1.5 : 1) * (hasB(o, "LD") ? 1.15 : 1);
       if (c2 > ct) {
         ct = c2;
         o2 = o;
@@ -2190,8 +2669,9 @@ function collide() {
   for (let a = 0; a < P.length; a++)
     for (let b = a + 1; b < P.length; b++) {
       const A = P[a],
-        C = P[b],
-        dx = A.x - C.x,
+        C = P[b];
+      if (A.off || C.off) continue;
+      const dx = A.x - C.x,
         dy = A.y - C.y,
         d = Math.hypot(dx, dy);
       if (d < 16 && d > 0 && A.z < 8 && C.z < 8) {
@@ -2216,6 +2696,7 @@ function collide() {
           if (sc0.setT > 0 && df.tm !== sc0.tm && df !== B.owner) {
             if (!(df.scr > 0)) {
               STAT.screens++;
+              sc0.stt.sa++;
               df.scr = 0.55; // hits the screen: stopped dead for half a second
               df.hitT = 0.35;
               df.hitX = -nx * (df === A ? -1 : 1);
@@ -2223,7 +2704,7 @@ function collide() {
               if (isH(B.owner) || isH(df)) txtW("SCREEN", sc0.x, sc0.y, 88, "#9ad");
               const pl = PLAY[sc0.tm];
               // the screener's defender switches onto the ball handler some of the time
-              if (pl && pl.kind === "pnr" && Math.random() < 0.35) {
+              if (pl && pl.kind === "pnr" && Math.random() < (TS.ds[df.tm] === 3 ? 1 : 0.35)) {
                 const sd = manOf(sc0),
                   NP = cfg.NP;
                 sd.man = sc0.tm * NP + pl.use.k;
@@ -2244,7 +2725,7 @@ function collide() {
           A.vy += (j * ny) / mA;
           C.vx -= (j * nx) / mC;
           C.vy -= (j * ny) / mC;
-          if (hit > 150 && fc <= 0 && rs <= 0 && !ftq && inb <= 0) {
+          if (hit > 150 && fc <= 0 && rs <= 0 && !ftq && inb <= 0 && cfg.FOULS) {
             const sx = A.setT > 0 ? A : C.setT > 0 ? C : null;
             if (sx) {
               const o = sx === A ? C : A;
@@ -2253,6 +2734,7 @@ function collide() {
                 txtW("ILLEGAL SCREEN", sx.x, sx.y, 95, "#ff6b4a");
                 tf[sx.tm]++;
                 sx.pf++;
+                whistle(sx, o, 0.6);
                 setup(o.tm);
               }
             }
@@ -2269,7 +2751,7 @@ function collide() {
               if (q.mode === "c" || q.mode === "s") q.bmp = Math.min(1, (q.bmp || 0) + hit / 260);
             }
             const h = B.owner;
-            if (hit > 170 && fc <= 0 && rs <= 0 && !ftq && inb <= 0 && h && (A === h || C === h)) {
+            if (hit > 170 && fc <= 0 && rs <= 0 && !ftq && inb <= 0 && h && (A === h || C === h) && cfg.FOULS) {
               const o = A === h ? C : A;
               fc = 2;
               if (o.tm !== h.tm) {
@@ -2282,6 +2764,9 @@ function collide() {
                   h.celT = CEL_T;
                   tf[h.tm]++;
                   h.pf++;
+                  o.stt.chg++;
+                  cm("charge", o.n, h.n);
+                  whistle(h, o, 0.55);
                   setup(o.tm);
                 } else if (Math.random() < 0.3) foul(o, h, sh ? "SHOOTING" : "BLOCKING", sh ? 1 : 0, 0);
               }
@@ -2457,6 +2942,7 @@ export const setRPK = (v: number) => (RPK = v);
 export function recClear() {
   recS = recN = 0;
 }
+export const hlClear = () => (HL.length = 0);
 export function recFrame() {
   if (!cfg.replays || RPL) return;
   if (recN >= RCAP) {
@@ -2500,16 +2986,45 @@ function recApply(n: number) {
   }
 }
 let LIVE: any = null;
+/** Replay speed (slow motion by default; [ and ] change it). */
+const RSP = [0.15, 0.25, 0.4, 0.7, 1];
+export let RSPD = 0.4;
+export const setRplSpeed = (d: number) => (RSPD = RSP[clamp(RSP.indexOf(RSPD) + d, 0, RSP.length - 1)]);
+/** Game highlights (copies of the replay buffer) for the end-of-game reel and saved reels. */
+export const HL: { s: string; n: number; buf: Float32Array }[] = [];
+export let HLN = ""; // label for the next highlight
+export const setHLN = (s: string) => (HLN = s);
+export const FSTN = () => FST;
+function saveHL() {
+  const n = Math.min(250, recN),
+    buf = new Float32Array(n * FST);
+  for (let k = 0; k < n; k++) {
+    const o = ((recS + recN - n + k) % RCAP) * FST;
+    buf.set(REC.subarray(o, o + FST), k * FST);
+  }
+  HL.push({ s: HLN || "Highlight", n, buf });
+  HLN = "";
+  if (HL.length > 8) HL.shift();
+}
+/** Load a saved clip into the replay buffer and play it (end-of-game reel / saved reel). */
+export function playClip(c: { n: number; buf: Float32Array }) {
+  recS = 0;
+  recN = Math.min(c.n, RCAP);
+  REC.set(c.buf.subarray(0, recN * FST), 0);
+  LIVE = { p: P.map((p) => [p.x, p.y, p.z, p.f, p.q ? { ...p.q } : null]), b: [B.x, B.y, B.z, B.a] };
+  RPL = { i: 0, reel: 1 };
+}
 export function startReplay() {
   LIVE = { p: P.map((p) => [p.x, p.y, p.z, p.f, p.q ? { ...p.q } : null]), b: [B.x, B.y, B.z, B.a] };
   RPL = { i: Math.max(0, recN - 250) };
+  if (cfg.replays && !PREDICT) saveHL();
 }
 export const skipReplay = () => {
   if (RPL) RPL.i = 1e9;
 };
 function rplStep(dt: number) {
   const r = RPL;
-  r.i += dt * 60 * 0.4;
+  r.i += dt * 60 * RSPD;
   const n = Math.floor(r.i);
   if (n >= recN - 1) {
     P.forEach((p, k) => {

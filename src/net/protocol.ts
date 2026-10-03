@@ -11,7 +11,7 @@ const r = Math.round;
 const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const TAU100 = 628.3185;
 
-export const HDR = 34; // header ints
+export const HDR = 40; // header ints
 export const PST = 27; // per-player ints (without pose)
 export const QN = QK.length;
 
@@ -55,6 +55,13 @@ export function encodeSnap(k: number): number[] {
       B.sc ? 1 : 0,
       B.ptype | 0,
       r((B.dh || 0) * 10),
+      // jump ball clock (-1 none), timeouts left, momentum, defense settings / play calls, clutch time
+      G.JB ? r(G.JB.t * 100) : -1,
+      G.TS.to[0],
+      G.TS.to[1],
+      r(G.TS.mom * 100),
+      G.TS.ds[0] + G.TS.ds[1] * 4 + G.TS.pc[0] * 16 + G.TS.pc[1] * 128,
+      G.TS.clutch,
     ];
   for (const p of P)
     a.push(
@@ -135,6 +142,15 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
     T: L(16) / 100,
   });
   G.setRPL(a[17] ? { i: 0, net: 1 } : null);
+  G.setJB(a[34] >= 0 ? { t: a[34] / 100, c: [], jt: [-1, -1], ai: [0, 0], guest: 1 } : null);
+  G.TS.to[0] = a[35];
+  G.TS.to[1] = a[36];
+  G.TS.mom = L(37) / 100;
+  G.TS.ds[0] = a[38] & 3;
+  G.TS.ds[1] = (a[38] >> 2) & 3;
+  G.TS.pc[0] = (a[38] >> 4) & 7;
+  G.TS.pc[1] = (a[38] >> 7) & 7;
+  G.TS.clutch = a[39];
   G.OFFS[0] = at(a[18]);
   G.OFFS[1] = at(a[19]);
   B.owner = at(a[20]);
@@ -250,7 +266,7 @@ export function deltaDec(d: number[], base: number[], k: number): number[] {
 }
 
 // ---- inputs: absolute stick + held buttons + monotonically increasing edge counters ----
-export const EDGES = ["sd", "su", "e", "sb", "mv1", "mv2", "mv3", "lob", "sw", "skip", "pf"] as const;
+export const EDGES = ["sd", "su", "e", "sb", "mv1", "mv2", "mv3", "lob", "sw", "skip", "pf", "to", "ch", "ds"] as const;
 export interface WireInput {
   n: number; // guest input tick
   dx: number;
@@ -292,6 +308,8 @@ export function encodeFx(max: number): any[] {
     else if (f.k === "x") out.push([f.id, "x", f.v]);
     else if (f.k === "end") out.push([f.id, "e", f.w]);
     else if (f.k === "shake" || f.k === "slow" || f.k === "chant") out.push([f.id, "g", f.k, f.v || 0]);
+    else if (f.k === "ban") out.push([f.id, "b", f.s, f.sub || "", f.c]);
+    else if (f.k === "cm") out.push([f.id, "c", f.e, f.n || "", f.n2 || ""]);
   }
   return out.reverse();
 }
@@ -309,6 +327,10 @@ export function decodeFx(e: any[]): any {
       return { id: e[0], k: "end", w: e[2] };
     case "g":
       return { id: e[0], k: e[2], v: e[3] };
+    case "b":
+      return { id: e[0], k: "ban", s: e[2], sub: e[3], c: e[4] };
+    case "c":
+      return { id: e[0], k: "cm", e: e[2], n: e[3], n2: e[4] };
   }
   return null;
 }
