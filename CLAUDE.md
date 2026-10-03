@@ -59,7 +59,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   Finishes (`data.ts CK`/`CL`, `isDunkSv/isLaySv`): dunks 6 one-hand, 11 two-hand, 12 tomahawk, 13 windmill, 14 reverse,
   15 360 -> `p.hangT` rim hang (sv 19); layups 5, 7 euro, 16 finger roll, 17 reverse, 18 contact (through a foul);
   jumpers add 20 leaner, 21 runner (picked by movement in `pickClip`); every airborne jumper leans with momentum;
-  greens set CEL 10 (held follow-through); landings split the feet with the drift.
+  greens set CEL 10 (held follow-through); landings split the feet with the drift. Clip time is scaled per clip so its
+  wrist-snap keyframe (`RELK`) lands on the sim's release (`rT`); guide hand = left-arm IK onto the side of the ball
+  (`palmAt` FK of the candidate pose) until release; catch-and-dip in mode 'c'.
   `footIK` plants stance feet (two-bone IK) and keeps planted feet flat. Animation Studio (`client/animview.ts`): pause menu
   or `?anim`; `H2K.studio()`, `H2K.studioPose(i, t, camAngle)` freezes a pose for screenshots (orbit camera `V.studio`).
 - Post-processing (`client/fx3d.ts`, three r186): MSAA HDR render -> SSAO (High) -> Bokeh DOF (replays only, `setDof`) ->
@@ -73,7 +75,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   signs, courtside row on chairs. Replay director camera (nearest player to the ball, low angle at the rim) + DOF.
   Polish: hoop parts shake on dunks (`hoopParts`), glint sprites, confetti when `S==='over'` (final screen waits 4 s).
 - Rig extras: sneakers (sole/toe cap/laces/heel tab, `shoeKind`), jersey side panels + waistband + chest wordmark (`cl[p.tm]`),
-  face detail, hair sub-styles; shorts hems skinned to spring-lagged flap bones (`clothStep`, client only).
+  per-player face shape from the name hash (`F`: skull/jaw/nose/brows/eyes/ears/lips; SIG `face` + `hs` hair overrides,
+  locks only with `hs:1`; no real photos/likenesses), hair caps above the eyes, jawline beards; shorts hems skinned to spring-lagged flap bones (`clothStep`, client only).
 - Rules: `foul/startFT/ftLay/ftTick/ftIn/tech`, shot clock, quarters (4 x `QTRLEN` s), inbounds (`inb`), bonus after 5 team fouls, `endGame` (FX) + box score (`p.stt`).
 - AI: `ai(p)`, `offBall` = half-court play system (`PLAY[t]`: pick-and-roll / pindown / flare, screener plants with `setT`, rolls or pops; spacing spots + backdoor cuts), `loose` (rebounding), defense inside `ai` (no full-court press, no steals). Planted screens stop defenders in `collide()` and can force switches.
 - Fouls: `shootingFoul()` contact model (hard closeouts, sideways leaps vs verticality, body contact, drives draw more) -> FTs or and-ones (`B.fl`). Cylinder rule: nobody touches a live shot above either rim. Counters in `STAT`.

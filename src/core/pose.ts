@@ -1,6 +1,6 @@
 // Pro Play pose solver: joint angles per player (p.q), shot clips, and analytic hand forward kinematics.
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
-import { CL, CK } from "./data";
+import { CL, CK, isLaySv } from "./data";
 import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, hoop, HY, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
@@ -129,8 +129,22 @@ export function pose3(p: Player) {
     kL = kR = 0.8;
     sz = 0.05;
     ty = 0;
+    if (PRO) {
+      // catch-and-dip: the ball drops toward the hip and comes back up into the shot pocket as the knees load
+      const dk = Math.sin(Math.min(1, p.t / 0.2) * Math.PI);
+      aR -= 0.45 * dk;
+      aL -= 0.4 * dk;
+      eR += 0.2 * dk;
+      cr += 0.15 * dk;
+      kL += 0.2 * dk;
+      kR += 0.2 * dk;
+    }
   } else if (md === "s" && PRO) {
-    const k = Math.min(1, p.t / 0.4),
+    // Clip time is scaled so each clip's wrist-snap keyframe lands exactly on the sim's release (launch) moment:
+    // the ball leaves the fingertips as the wrist flicks, not after the follow-through.
+    const kind0 = CK[p.sv],
+      rT = isLaySv(p.sv) || kind0 === "hook" ? 0.28 : p.st === 1 ? 0.3 : 0.4,
+      k = Math.min(1, (p.t / rT) * (RELK[kind0] ?? 0.7)),
       o = clip(p, k);
     aR = o.aR;
     eR = o.eR;
@@ -728,6 +742,23 @@ export function pose3(p: Player) {
     LOOK.on = 0;
     HEADX = 0;
   }
+  // ---- guide hand: on the side of the ball from the gather until the release, then it peels away ----
+  if (PRO && has && (md === "c" || md === "s") && !p.postA && !isLaySv(p.sv || 0)) {
+    const ball = palmAt(p, aR, eR, sz, wR, ln, ty, rz, cx, cy, cr);
+    if (ball) {
+      const lx = -Math.sin(p.f),
+        ly = Math.cos(p.f),
+        r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9);
+      if (r2.over < 0.6) {
+        const w = md === "c" ? Math.min(1, p.t / 0.12) : 1;
+        aL += (r2.a - aL) * w;
+        eL += (r2.e - eL) * w;
+        zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w;
+        wL = -0.35 * w; // palm facing the ball
+        gL = 0.15;
+      }
+    }
+  }
   // ---- blend: each animation state has its own transition time (snappy into a shot, slow into a rest) ----
   if (st !== p.anS) p.anS = st;
   const q = p.q,
@@ -799,6 +830,8 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
   IK.over = raw - (L1 + L2);
   return IK;
 }
+/** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */
+const RELK: Record<string, number> = { jump: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
 const NQ = 27,
   VALS = new Float64Array(NQ),
   LOOK = { x: 0, y: 0, z: 0, on: 0 };
@@ -833,6 +866,25 @@ const rz = (v: V, a: number): V => {
   return [v[0] * c - v[1] * s, v[0] * s + v[1] * c, v[2]];
 };
 const add = (a: V, b: V): V => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+/** Right palm (ball center while holding) for candidate joint values this tick (handPos chain, before p.q is written). */
+const QT: any = {};
+function palmAt(p: Player, aR: number, eR: number, sz: number, wR: number, ln: number, ty: number, rz: number, cx: number, cy: number, cr: number) {
+  QT.aR = aR;
+  QT.eR = eR;
+  QT.sz = sz;
+  QT.wR = wR;
+  QT.ln = ln;
+  QT.ty = ty;
+  QT.rz = rz;
+  QT.cx = cx;
+  QT.cy = cy;
+  QT.cr = cr;
+  const q0 = p.q;
+  p.q = QT;
+  const h = handPos(p);
+  p.q = q0;
+  return h;
+}
 /** World position (game coords) of a point in the right wrist frame; default = palm. */
 export function handPos(p: Player, pt: V = [0, -0.62, 0.1]): number[] | null {
   const q = p.q;

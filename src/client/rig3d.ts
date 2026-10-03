@@ -174,45 +174,68 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   putT(limb([[0.0, 0.0], [0.16, -0.02], [0.15, 0.35], [0.0, 0.38]]), sk, I.nk, 0, 2.02, 0); // neck
   // head: skull, jaw, ears, face (on the head bone: it looks around)
   const H = I.hd;
-  putT(sph, sk, H, 0, 2.74, 0.0, 0.36, 0.43, 0.39);
-  putT(sph, sk, H, 0, 2.55, 0.08, 0.27, 0.22, 0.3); // jaw
+  // Every player gets his own face from his name (deterministic, same online): skull width, jaw, nose, brows, eyes,
+  // ears and lips vary, so nobody is a clone. Stylised - no real photos or likenesses are used.
+  let fh = h ^ 0x9e3779b9;
+  const fr = () => ((fh = Math.imul(fh ^ (fh >>> 15), 2246822507) >>> 0) % 1000) / 1000,
+    F = {
+      w: 0.92 + fr() * 0.16, // skull width
+      jw: 0.9 + fr() * 0.25, // jaw width
+      jl: 0.9 + fr() * 0.25, // jaw length
+      nw: 0.85 + fr() * 0.45, // nose width
+      nl: 0.85 + fr() * 0.35, // nose length
+      eg: 0.12 + fr() * 0.03, // eye spacing
+      br: 0.03 + fr() * 0.03, // brow thickness
+      ba: (fr() - 0.5) * 0.25, // brow angle
+      ea: 0.85 + fr() * 0.35, // ear size
+      lp: 0.8 + fr() * 0.5, // lip fullness
+      ...((p.sg && p.sg.face) || {}),
+    };
+  putT(sph, sk, H, 0, 2.74, 0.0, 0.36 * F.w, 0.43, 0.39);
+  putT(sph, sk, H, 0, 2.55 - (F.jl - 1) * 0.05, 0.08, 0.27 * F.jw, 0.22 * F.jl, 0.3); // jaw
   for (const sd of [-1, 1]) {
-    putT(sph, sk, H, sd * 0.36, 2.72, 0, 0.07, 0.11, 0.07); // ear
-    putT(sph, "#f8f8f8", H, sd * 0.13, 2.8, 0.33, 0.065, 0.05, 0.03); // eye white
-    putT(sph, "#1a1410", H, sd * 0.13, 2.8, 0.355, 0.035, 0.035, 0.02); // iris
-    putT(box(0.15, 0.035, 0.05), hc, H, sd * 0.13, 2.9, 0.34); // brow
+    putT(sph, sk, H, sd * 0.36 * F.w, 2.72, 0, 0.07 * F.ea, 0.11 * F.ea, 0.07); // ear
+    putT(sph, "#f8f8f8", H, sd * F.eg, 2.8, 0.33, 0.065, 0.05, 0.03); // eye white
+    putT(sph, "#1a1410", H, sd * F.eg, 2.8, 0.355, 0.035, 0.035, 0.02); // iris
+    const bw = box(0.15, F.br, 0.05).rotateZ(-sd * F.ba);
+    putT(bw, hc, H, sd * F.eg, 2.9, 0.34); // brow
   }
-  putT(sph, shade(sk, 0.9), H, 0, 2.7, 0.38, 0.06, 0.09, 0.07); // nose
+  putT(sph, shade(sk, 0.9), H, 0, 2.7, 0.38, 0.06 * F.nw, 0.09 * F.nl, 0.07); // nose
   putT(box(0.15, 0.03, 0.03), shade(sk, 0.55), H, 0, 2.565, 0.365); // mouth
-  putT(box(0.13, 0.025, 0.03), shade(sk, 0.75), H, 0, 2.54, 0.36); // lower lip
+  putT(box(0.13, 0.025 * F.lp, 0.03), shade(sk, 0.75), H, 0, 2.54, 0.36); // lower lip
   for (const sd of [-1, 1]) {
-    putT(box(0.13, 0.025, 0.03), shade(sk, 0.78), H, sd * 0.13, 2.835, 0.335); // upper eyelid
-    putT(sph, shade(sk, 1.05), H, sd * 0.2, 2.68, 0.27, 0.09, 0.07, 0.07); // cheekbone
+    putT(box(0.13, 0.025, 0.03), shade(sk, 0.78), H, sd * F.eg, 2.835, 0.335); // upper eyelid
+    putT(sph, shade(sk, 1.05), H, sd * 0.2 * F.w, 2.68, 0.27, 0.09, 0.07, 0.07); // cheekbone
   }
-  putT(sph, shade(sk, 0.96), H, 0, 2.43, 0.2, 0.13, 0.09, 0.12); // chin
-  // hair: short styles get a hairline and a sub-style (fade, waves, part); long hair hangs in locks; afros are fuller
-  const sub = (h >> 3) % 3;
+  putT(sph, shade(sk, 0.96), H, 0, 2.43 - (F.jl - 1) * 0.06, 0.2, 0.13 * F.jw, 0.09, 0.12); // chin
+  // hair: the cap sits high and back so the hairline frames the forehead (never over the eyes)
+  const sub = (p.sg && p.sg.hs) ?? (h >> 3) % 3;
   if (p.hr === 1) {
-    putT(sph, hc, H, 0, 2.86, -0.03, 0.385, 0.3, 0.415);
-    if (sub === 0) putT(sph, shade(hc, 1.35), H, 0, 2.74, -0.04, 0.37, 0.18, 0.4); // faded sides
-    if (sub === 1) for (let w = 0; w < 3; w++) putT(ring(0.2 + w * 0.06, 0.012), shade(hc, 1.6), H, 0, 3.12 - w * 0.03, -0.04 + w * 0.01); // waves
-    if (sub === 2) putT(box(0.02, 0.03, 0.3), shade(sk, 0.85), H, 0.14, 3.13, 0.05); // part line
-    putT(box(0.42, 0.06, 0.04), hc, H, 0, 3.0, 0.33); // hairline over the forehead
+    putT(sph, hc, H, 0, 2.95, -0.08, 0.385 * F.w, 0.3, 0.415);
+    if (sub === 0) putT(sph, shade(hc, 1.35), H, 0, 2.78, -0.1, 0.37 * F.w, 0.17, 0.37); // faded sides
+    if (sub === 1) for (let w = 0; w < 3; w++) putT(ring(0.2 + w * 0.06, 0.012), shade(hc, 1.6), H, 0, 3.2 - w * 0.03, -0.06 + w * 0.01); // waves
+    if (sub === 2) putT(box(0.02, 0.03, 0.3), shade(sk, 0.85), H, 0.14, 3.22, 0.0); // part line
   }
   if (p.hr === 2) {
-    putT(sph, hc, H, 0, 2.86, -0.03, 0.41, 0.36, 0.44);
-    for (let d = 0; d < 9; d++) {
-      const a = Math.PI * (0.25 + (d / 8) * 1.5); // locks around the back and sides
-      putT(new THREE.CylinderGeometry(0.05, 0.035, 0.85, 6), hc, H, Math.cos(a) * 0.36, 2.5, -Math.abs(Math.sin(a)) * 0.34 - 0.04);
-    }
+    // medium hair swept back (volume on top and behind); sub-style 1 = locks
+    putT(sph, hc, H, 0, 2.98, -0.08, 0.41 * F.w, 0.34, 0.44);
+    putT(sph, hc, H, 0, 2.82, -0.2, 0.4 * F.w, 0.32, 0.3); // back volume
+    putT(box(0.5, 0.08, 0.1), hc, H, 0, 3.08, 0.22); // swept fringe line
+    if (p.sg && p.sg.hs === 1)
+      for (let d = 0; d < 9; d++) {
+        const a = Math.PI * (0.25 + (d / 8) * 1.5);
+        putT(new THREE.CylinderGeometry(0.05, 0.035, 0.85, 6), hc, H, Math.cos(a) * 0.36, 2.5, -Math.abs(Math.sin(a)) * 0.34 - 0.04);
+      }
   }
   if (p.hr === 3) {
-    putT(sph, hc, H, 0, 2.98, -0.04, 0.52, 0.5, 0.52);
-    putT(sph, shade(hc, 1.15), H, 0, 3.14, -0.02, 0.42, 0.3, 0.42); // texture on the crown
+    putT(sph, hc, H, 0, 3.02, -0.06, 0.52 * F.w, 0.48, 0.52);
+    putT(sph, shade(hc, 1.15), H, 0, 3.16, -0.04, 0.42, 0.3, 0.42); // texture on the crown
   }
   if (p.bd) {
-    putT(sph, hc, H, 0, 2.47, 0.24, 0.3, 0.18, 0.2);
-    putT(box(0.2, 0.05, 0.05), hc, H, 0, 2.62, 0.36); // mustache
+    // jawline beard: follows the jaw and chin, mouth stays visible
+    putT(sph, hc, H, 0, 2.46 - (F.jl - 1) * 0.05, 0.16, 0.29 * F.jw, 0.15 * F.jl, 0.2);
+    for (const sd of [-1, 1]) putT(sph, hc, H, sd * 0.25 * F.jw, 2.6, 0.14, 0.07, 0.14, 0.14); // sideburn to jaw
+    putT(box(0.22, 0.045, 0.05), hc, H, 0, 2.61, 0.37); // mustache
   }
   if (headband) putT(ring(0.375, 0.05), accent, H, 0, 2.94, 0, 1, 1, 1.05);
   for (const [s2, e, w, sd, fg] of [

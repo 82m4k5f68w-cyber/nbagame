@@ -446,7 +446,7 @@ export const CL: Record<string, Record<string, number[]>> = {
   ],
   SIG: Record<string, any> = {
     Curry: { cl: 1, w: 0.15, off: 1, ce: [1, 8, 2] }, // shimmy, point up, night night
-    Doncic: { l: -0.28, f: 0.05, ce: [7, 5, 7] },
+    Doncic: { l: -0.28, f: 0.05, ce: [7, 5, 7], hs: 0, face: { w: 1.04, jw: 1.1, jl: 1.05, nw: 1.1 } }, // swept hair, full beard
     Jokic: { a: -0.2, k: 0.3, l: 0.06 },
     Wembanyama: { a: 0.4, g: 0.5, w: 0.2 },
     Edwards: { k: 0.2, f: 0.05, ce: [4, 6, 6] },
