@@ -1,6 +1,63 @@
 // Pro Play pose solver: joint angles per player (p.q), shot clips, and analytic hand forward kinematics.
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
 import { CL, CK, isLaySv } from "./data";
+import { MC_RAW, MC_CH } from "./mocap";
+
+// ---- motion capture base layer (CMU mocap retargeted by scripts/mocap/retarget.ts) ----
+const MCC: Record<string, { n: number; v: Float32Array; mean: Float32Array; speed: number; stride: number; dir: number }> = {};
+for (const [k, c] of Object.entries(MC_RAW)) {
+  const raw = typeof atob === "function" ? Uint8Array.from(atob(c.d), (ch) => ch.charCodeAt(0)) : new Uint8Array(Buffer.from(c.d, "base64")),
+    C = MC_CH.length,
+    v = new Float32Array(raw.length),
+    mean = new Float32Array(C);
+  for (let i = 0; i < raw.length; i++) v[i] = ((raw[i] << 24) >> 24) / 40; // int8 -> rad
+  for (let j = 0; j < C; j++) {
+    let s = 0;
+    for (let i = 0; i < c.n; i++) s += v[i * C + j];
+    mean[j] = s / c.n;
+  }
+  MCC[k] = { n: c.n, v, mean, speed: c.speed, stride: c.stride, dir: c.dir };
+}
+const MI: Record<string, number> = Object.fromEntries(MC_CH.map((k, i) => [k, i]));
+const MO = new Float32Array(MC_CH.length),
+  MT = new Float32Array(MC_CH.length);
+/** Sample clip `name` at gait phase ph (rad) into out; amp scales the swing of thighs/knees/arms around the mean;
+ *  mirror swaps left/right (sideways clips used in the other direction). */
+function mcSample(name: string, ph: number, amp: number, mirror: boolean, out: Float32Array) {
+  const c = MCC[name],
+    C = MC_CH.length,
+    u = ((((ph / (Math.PI * 2)) % 1) + 1) % 1) * c.n,
+    i0 = Math.floor(u) % c.n,
+    i1 = (i0 + 1) % c.n,
+    f = u - Math.floor(u);
+  for (let j = 0; j < C; j++) {
+    const a = c.v[i0 * C + j] + (c.v[i1 * C + j] - c.v[i0 * C + j]) * f;
+    const swing = j <= 3 || (j >= 13 && j <= 16);
+    out[j] = swing ? c.mean[j] + (a - c.mean[j]) * amp : a;
+  }
+  if (mirror) {
+    const sw = (a: string, b: string) => {
+      const t = out[MI[a]];
+      out[MI[a]] = out[MI[b]];
+      out[MI[b]] = t;
+    };
+    sw("tL", "tR");
+    sw("kL", "kR");
+    sw("fL", "fR");
+    sw("aL", "aR");
+    sw("eL", "eR");
+    sw("sz", "zL");
+    for (const k of ["hs", "ty", "rz", "cy"]) out[MI[k]] = -out[MI[k]];
+  }
+}
+/** Blend two clips (b weighted u) for the current gait phase into MO. */
+function mcBlend(a: string, b: string | null, u: number, ph: number, amp: number, mirror: boolean) {
+  mcSample(a, ph, amp, mirror, MO);
+  if (b && u > 0) {
+    mcSample(b, ph, amp, mirror, MT);
+    for (let j = 0; j < MO.length; j++) MO[j] += (MT[j] - MO[j]) * u;
+  }
+}
 import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
@@ -339,6 +396,55 @@ export function pose3(p: Player) {
       hs = s * Math.abs(sd2) * (def ? 0.24 : 0.14) * spd * Math.sign(sd2 || 1);
       cr += Math.abs(sd2) * 0.15 * spd;
       if (def) (tL *= 0.35), (tR *= 0.35); // slides stay low and wide instead of running
+      if (PRO && !(p.mvT > 0) && !p.postA && !(p.setT > 0)) {
+        // Motion-captured locomotion (legs, pelvis, and the arm swing when the hands are free), chosen by what the
+        // player is doing and blended by speed. The thigh swing is scaled so a step covers the sim's step length.
+        let a = "walk",
+          b: string | null = null,
+          u = 0,
+          mir = false,
+          dribbling = has && md === "i";
+        let near = 1e9;
+        if (dribbling) for (const q of P) if (q.tm !== p.tm) near = Math.min(near, Math.hypot(q.x - p.x, q.y - p.y));
+        if ((def || dribbling) && Math.abs(sd2) > 0.6 && Math.abs(fw) < 0.6) {
+          a = "side";
+          mir = Math.sign(sd2) > 0; // capture slides toward our R side; sd2 > 0 moves toward our L
+        } else if (fw < -0.4) a = "back";
+        else if (dribbling) {
+          a = near < 40 && sv < 130 ? "low" : "drib";
+          if (sv > 170) (b = "run"), (u = Math.min(1, (sv - 170) / 70));
+        } else if (sv > 60) (b = "run"), (u = Math.min(1, (sv - 60) / 90));
+        const c0 = MCC[a],
+          strideC = (c0.stride + (b ? (MCC[b].stride - c0.stride) * u : 0)) * (p.ht / 6.4),
+          amp = clamp(stepLen(sv) / (strideC * 1.5), 0.75, 1.45),
+          w = Math.min(1, (sv - 25) / 35);
+        mcBlend(a, b, u, p.ph, amp, mir);
+        const m = (cur: number, k: string) => cur + (MO[MI[k]] - cur) * w;
+        tL = m(tL, "tL");
+        tR = m(tR, "tR");
+        kL = m(kL, "kL");
+        kR = m(kR, "kR");
+        hz = m(hz, "hz");
+        hs = m(hs, "hs");
+        ln = m(ln, "ln");
+        ty = m(ty, "ty");
+        rz = m(rz, "rz");
+        MCF = w;
+        MFL = MO[MI.fL];
+        MFR = MO[MI.fR];
+        if (!has && !def && st === ST.run) {
+          aL = m(aL, "aL");
+          aR = m(aR, "aR");
+          eL = m(eL, "eL");
+          eR = m(eR, "eR");
+          sz = m(sz, "sz");
+          zL = m(zL ?? sz, "zL");
+        }
+        // pelvis height from the legs: the stance leg (the longer one) stands on the floor
+        const ext = (t: number, k: number) => RIG.L1 * Math.cos(t) + RIG.L2 * Math.cos(t - k),
+          crG = (RIG.L1 + RIG.L2 - Math.max(ext(tL, kL), ext(tR, kR))) / 0.4;
+        cr += (crG - cr) * w;
+      }
     } else if (def && !air) hz = 0.14;
     if (PRO && has && md === "i" && !p.postA) {
       // Dribble hand IK with EITHER hand: whichever side of the body the ball is on (works on guests too: it only
@@ -770,6 +876,8 @@ export function pose3(p: Player) {
   // ---- feet: flat on the floor through stance, toe-off behind the body, pointed in the air ----
   let fL = tL - kL + toe + (st === ST.run || st === ST.drib ? Math.max(0, -tL - 0.12) * 0.9 * spd : 0),
     fR = tR - kR + toe + (st === ST.run || st === ST.drib ? Math.max(0, -tR - 0.12) * 0.9 * spd : 0);
+  if (MCF > 0 && !air) (fL += (MFL - fL) * MCF), (fR += (MFR - fR) * MCF); // captured ankles (heel-strike, toe-off)
+  MCF = 0;
   // ---- head tracking: everyone follows the ball; the handler and shooters read the rim ----
   let hy = 0,
     hp = 0;
@@ -894,11 +1002,14 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
   return IK;
 }
 /** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */
-const RELK: Record<string, number> = { jump: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
+const RELK: Record<string, number> = { jump: 0.7, mshot: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
 const NQ = 29,
   VALS = new Float64Array(NQ),
   LOOK = { x: 0, y: 0, z: 0, on: 0 };
-let HEADX = 0;
+let HEADX = 0,
+  MCF = 0, // weight of the mocap layer this tick (feet use it after the upper-body layers)
+  MFL = 0,
+  MFR = 0;
 /** Animation states (blend times in seconds when entering / tracking each one). */
 const ST = { idle: 0, run: 1, def: 2, drib: 3, shot: 4, air: 5, move: 6, post: 7, scr: 8, cel: 9, rest: 10, cat: 11 },
   BLEND = [0.16, 0.12, 0.15, 0.1, 0.05, 0.08, 0.07, 0.2, 0.22, 0.18, 0.4, 0.09];

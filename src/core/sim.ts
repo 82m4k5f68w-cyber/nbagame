@@ -1,7 +1,8 @@
 // Hoops 2K27 shared simulation core. DOM-free: runs in the browser (every mode) and in Node (tests, servers).
 // Ported from the four near-identical mode copies; NP (players per team) and the physics backend are flags.
 // Game coordinates: x 0..940, y 0..500 (10 px = 1 ft), z up (rim z=100). Team 0 attacks the RIGHT hoop.
-import { TM, SP, OV, ov2, formOf, isDunkSv, type Tuple } from "./data";
+import { TM, SP, OV, ov2, formOf, isDunkSv, SIG, type Tuple } from "./data";
+const SIGK = (p: Player) => !!SIG[p.n];
 import { pose3, handPos } from "./pose";
 import { RAP, rapStep, rapSyncPlayers } from "./physics";
 
@@ -1809,7 +1810,8 @@ export function pickClip(p: Player, D: number, lay: boolean) {
   if (p.st === 4) return 4;
   if (p.st === 2 || (c > 0.5 && p.st !== 1)) return 2;
   if (p.st === 3) return 3;
-  return p.st === 1 ? 1 : 0;
+  // standard jumpers use the motion-captured shot (players with a hand-tuned SIG form keep their classic clip)
+  return p.st === 1 ? 1 : SIGK(p) ? 0 : 22;
 }
 /**
  * Shooting-foul contact model. A foul needs real contact: a hard closeout into the shooter's space, a defender flying

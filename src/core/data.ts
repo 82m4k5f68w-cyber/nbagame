@@ -1,4 +1,5 @@
 // Rosters, ratings, signature tweaks and Pro Play animation clips (shared by every mode).
+import { MC_SHOT } from "./mocap";
 // Tuple: [name, 3pt, inside, speed, defense, jump, style, skin, hair, beard, height, build, number]
 // style: 0 normal / 1 quick / 2 fadeaway / 3 step-back / 4 touch
 export type Tuple = [string, number, number, number, number, number, number, string, number, number, number, number, number];
@@ -446,6 +447,7 @@ export const CL: Record<string, Record<string, number[]>> = {
     "hang", // 19 hanging on the rim after a dunk
     "leaner", // 20 drifting jumper, body tilted into the shot
     "runner", // 21 one-foot runner on the move
+    "mshot", // 22 motion-captured jump shot (CMU), with the classic high release
   ],
   SIG: Record<string, any> = {
     Curry: { cl: 1, w: 0.15, off: 1, ce: [1, 8, 2] }, // shimmy, point up, night night
@@ -471,6 +473,9 @@ export const CL: Record<string, Record<string, number[]>> = {
  *   dp dip of the ball at the gather      ft follow-through hold     lk leg kick on release
  *   tw upper-body twist                   gh guide-hand thumb push
  */
+/** Motion-captured jumper: legs, hips, torso and the guide arm from the capture; the shooting arm's rise into a high
+ *  set point and the wrist flick keep the classic keys (the captured subject releases low). */
+CL.mshot = { ...MC_SHOT, aR: CL.jump.aR, eR: CL.jump.eR, wR: CL.jump.wR, sz: CL.jump.sz };
 export function formOf(name: string) {
   let h = 2166136261;
   for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619);
