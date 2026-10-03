@@ -4,11 +4,12 @@
 import * as THREE from "three";
 import { mergeBufferGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { W3 } from "../core/sim";
+import { RIG, hipAb } from "../core/pose";
 
-const L1 = 1.58, // thigh (hip -> knee pivot)
-  L2 = 1.6; // shin (knee -> ankle)
+const L1 = RIG.L1, // thigh (hip -> knee pivot)
+  L2 = RIG.L2; // shin (knee -> ankle)
 
-type Part = { g: THREE.BufferGeometry; col: string; bone: number; blend?: { to: number; axis: "y"; from: number; len: number; end: "start" | "end" } };
+type Part = { g: THREE.BufferGeometry; col: string; bone: number; blend?: { to: number; axis: "y"; from: number; len: number; end: "start" | "end"; max?: number } };
 
 export interface Rig {
   G: THREE.Group;
@@ -24,6 +25,13 @@ export interface Rig {
   eR: THREE.Bone;
   wL: THREE.Bone;
   wR: THREE.Bone;
+  ch: THREE.Bone;
+  nk: THREE.Bone;
+  hd: THREE.Bone;
+  al: THREE.Bone;
+  ar: THREE.Bone;
+  gL: THREE.Bone;
+  gR: THREE.Bone;
   plant: { on: boolean; x: number; y: number; z: number; w: number }[];
   extra: THREE.Material[];
 }
@@ -55,29 +63,47 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     return b;
   };
   const hips = B(0, 0, 0),
-    bd = B(0, 3.2, 0),
-    tl = B(-0.32, 3.2, 0),
-    tr = B(0.32, 3.2, 0),
+    bd = B(0, RIG.hip, 0),
+    ch = B(0, RIG.chest, 0),
+    nk = B(0, RIG.neck, 0),
+    hd = B(0, RIG.head, 0),
+    tl = B(-RIG.hipX, RIG.hip, 0),
+    tr = B(RIG.hipX, RIG.hip, 0),
     kl = B(0, -L1, 0),
     kr = B(0, -L1, 0),
-    sL = B(-0.88 * k * 0.95, 1.9, 0),
-    sR = B(0.88 * k * 0.95, 1.9, 0),
-    eL = B(0, -1.02, 0),
-    eR = B(0, -1.02, 0),
-    wL = B(0, -1, 0),
-    wR = B(0, -1, 0);
+    al = B(0, -L2, 0),
+    ar = B(0, -L2, 0),
+    sL = B(-RIG.shX * k, RIG.sh, 0),
+    sR = B(RIG.shX * k, RIG.sh, 0),
+    eL = B(0, -RIG.ua, 0),
+    eR = B(0, -RIG.ua, 0),
+    wL = B(0, -RIG.fa, 0),
+    wR = B(0, -RIG.fa, 0),
+    gL = B(0, -RIG.fing, 0),
+    gR = B(0, -RIG.fing, 0);
   hips.add(bd, tl, tr);
+  bd.add(ch);
+  ch.add(nk, sL, sR);
+  nk.add(hd);
   tl.add(kl);
   tr.add(kr);
-  bd.add(sL, sR);
+  kl.add(al);
+  kr.add(ar);
   sL.add(eL);
   sR.add(eR);
   eL.add(wL);
   eR.add(wR);
-  const bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR];
-  const I = Object.fromEntries(["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR"].map((n, i) => [n, i])) as Record<string, number>;
+  wL.add(gL);
+  wR.add(gR);
+  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR"],
+    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR];
+  const I = Object.fromEntries(names.map((n, i) => [n, i])) as Record<string, number>;
   hips.updateMatrixWorld(true);
   const bp = bones.map((b) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
+  // place a part by its position relative to the PELVIS bone (the old single-torso frame), skinned to `bone`
+  const by = (bone: number) => bp[bone].y - bp[I.bd].y;
+  const putT = (g: THREE.BufferGeometry, col: string, bone: number, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, blend?: Part["blend"]) =>
+    put(parts, bp, g, col, bone, x - bp[bone].x, y - by(bone), z - bp[bone].z, sx, sy, sz, blend);
   // ---- smooth geometry ----
   const sph = new THREE.SphereGeometry(1, 24, 16),
     box = (w: number, h: number, d: number) => roundBox(w, h, d),
@@ -119,45 +145,48 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     // calf: knee, calf muscle high and behind, slim ankle
     put(parts, bp, limb([[0.0, 0.08], [0.16, 0.05], [0.17, -0.25], [0.19, -0.5], [0.15, -0.95], [0.11, -1.35], [0.0, -1.42]]), sk, kn, 0, 0, -0.02, 1, 1, 1, { to: t, axis: "y", from: 0, len: 0.4, end: "start" });
     put(parts, bp, limb([[0.13, -1.12], [0.135, -1.48], [0.0, -1.5]], 12), sock, kn, 0, 0, 0);
-    put(parts, bp, box(0.39, 0.27, 0.82), shoe, kn, 0, -1.6, 0.14); // shoe upper
-    put(parts, bp, box(0.41, 0.08, 0.84), accent, kn, 0, -1.74, 0.14); // midsole in the accent color
-    put(parts, bp, box(0.06, 0.12, 0.42), accent, kn, sd * 0.2, -1.58, 0.12); // swoosh-ish side panel
+    const an = kn === I.kl ? I.al : I.ar;
+    put(parts, bp, box(0.39, 0.27, 0.82), shoe, an, 0, 0, 0.14); // shoe upper (on the ankle bone: rolls through the step)
+    put(parts, bp, box(0.41, 0.08, 0.84), accent, an, 0, -0.14, 0.14); // midsole in the accent color
+    put(parts, bp, box(0.06, 0.12, 0.42), accent, an, sd * 0.2, 0.02, 0.12); // swoosh-ish side panel
   }
-  put(parts, bp, torso, p.col, I.bd, 0, 0.3, 0, 0.62 * k, 1, 0.42 * k);
-  put(parts, bp, ring(0.3, 0.05), trim, I.bd, 0, 1.9, 0.03, 1, 1, 0.9); // collar trim
-  for (const sd of [-1, 1]) put(parts, bp, new THREE.TorusGeometry(0.29 * k, 0.045, 6, 20).rotateY(Math.PI / 2), trim, I.bd, sd * 0.86 * k * 0.95, 1.78, 0); // armholes
-  put(parts, bp, limb([[0.0, 0.0], [0.16, -0.02], [0.15, 0.35], [0.0, 0.38]]), sk, I.bd, 0, 2.02, 0); // neck
-  // head: skull, jaw, ears, face
-  put(parts, bp, sph, sk, I.bd, 0, 2.74, 0.0, 0.36, 0.43, 0.39);
-  put(parts, bp, sph, sk, I.bd, 0, 2.55, 0.08, 0.27, 0.22, 0.3); // jaw
+  // torso: pelvis below the waist, chest above, blended through the middle so twists and breathing bend smoothly
+  put(parts, bp, torso, p.col, I.bd, 0, 0.3, 0, 0.62 * k, 1, 0.42 * k, { to: I.ch, axis: "y", from: 1.25, len: 0.6, end: "start", max: 1 });
+  putT(ring(0.3, 0.05), trim, I.ch, 0, 1.9, 0.03, 1, 1, 0.9); // collar trim
+  for (const sd of [-1, 1]) putT(new THREE.TorusGeometry(0.29 * k, 0.045, 6, 20).rotateY(Math.PI / 2), trim, I.ch, sd * 0.86 * k * 0.95, 1.78, 0); // armholes
+  putT(limb([[0.0, 0.0], [0.16, -0.02], [0.15, 0.35], [0.0, 0.38]]), sk, I.nk, 0, 2.02, 0); // neck
+  // head: skull, jaw, ears, face (on the head bone: it looks around)
+  const H = I.hd;
+  putT(sph, sk, H, 0, 2.74, 0.0, 0.36, 0.43, 0.39);
+  putT(sph, sk, H, 0, 2.55, 0.08, 0.27, 0.22, 0.3); // jaw
   for (const sd of [-1, 1]) {
-    put(parts, bp, sph, sk, I.bd, sd * 0.36, 2.72, 0, 0.07, 0.11, 0.07); // ear
-    put(parts, bp, sph, "#f8f8f8", I.bd, sd * 0.13, 2.8, 0.33, 0.065, 0.05, 0.03); // eye white
-    put(parts, bp, sph, "#1a1410", I.bd, sd * 0.13, 2.8, 0.355, 0.035, 0.035, 0.02); // iris
-    put(parts, bp, box(0.15, 0.035, 0.05), hc, I.bd, sd * 0.13, 2.9, 0.34); // brow
+    putT(sph, sk, H, sd * 0.36, 2.72, 0, 0.07, 0.11, 0.07); // ear
+    putT(sph, "#f8f8f8", H, sd * 0.13, 2.8, 0.33, 0.065, 0.05, 0.03); // eye white
+    putT(sph, "#1a1410", H, sd * 0.13, 2.8, 0.355, 0.035, 0.035, 0.02); // iris
+    putT(box(0.15, 0.035, 0.05), hc, H, sd * 0.13, 2.9, 0.34); // brow
   }
-  put(parts, bp, sph, shade(sk, 0.9), I.bd, 0, 2.7, 0.38, 0.06, 0.09, 0.07); // nose
-  put(parts, bp, box(0.14, 0.03, 0.03), shade(sk, 0.6), I.bd, 0, 2.56, 0.36); // mouth
-  if (p.hr === 1) put(parts, bp, sph, hc, I.bd, 0, 2.86, -0.03, 0.385, 0.3, 0.415);
+  putT(sph, shade(sk, 0.9), H, 0, 2.7, 0.38, 0.06, 0.09, 0.07); // nose
+  putT(box(0.14, 0.03, 0.03), shade(sk, 0.6), H, 0, 2.56, 0.36); // mouth
+  if (p.hr === 1) putT(sph, hc, H, 0, 2.86, -0.03, 0.385, 0.3, 0.415);
   if (p.hr === 2) {
-    put(parts, bp, sph, hc, I.bd, 0, 2.86, -0.03, 0.41, 0.36, 0.44);
-    put(parts, bp, box(0.5, 0.9, 0.22), hc, I.bd, 0, 2.5, -0.36);
+    putT(sph, hc, H, 0, 2.86, -0.03, 0.41, 0.36, 0.44);
+    putT(box(0.5, 0.9, 0.22), hc, H, 0, 2.5, -0.36);
   }
-  if (p.hr === 3) put(parts, bp, sph, hc, I.bd, 0, 2.98, -0.04, 0.52, 0.5, 0.52);
+  if (p.hr === 3) putT(sph, hc, H, 0, 2.98, -0.04, 0.52, 0.5, 0.52);
   if (p.bd) {
-    put(parts, bp, sph, hc, I.bd, 0, 2.47, 0.24, 0.3, 0.18, 0.2);
-    put(parts, bp, box(0.2, 0.05, 0.05), hc, I.bd, 0, 2.62, 0.36); // mustache
+    putT(sph, hc, H, 0, 2.47, 0.24, 0.3, 0.18, 0.2);
+    putT(box(0.2, 0.05, 0.05), hc, H, 0, 2.62, 0.36); // mustache
   }
-  if (headband) put(parts, bp, ring(0.375, 0.05), accent, I.bd, 0, 2.94, 0, 1, 1, 1.05);
-  for (const [s2, e, w, sd] of [
-    [I.sL, I.eL, I.wL, -1],
-    [I.sR, I.eR, I.wR, 1],
+  if (headband) putT(ring(0.375, 0.05), accent, H, 0, 2.94, 0, 1, 1, 1.05);
+  for (const [s2, e, w, sd, fg] of [
+    [I.sL, I.eL, I.wL, -1, I.gL],
+    [I.sR, I.eR, I.wR, 1, I.gR],
   ]) {
     put(parts, bp, sph, sk, s2, 0, -0.02, 0, 0.25 * k, 0.27, 0.25 * k); // deltoid
     put(parts, bp, limb([[0.0, 0.0], [0.16 * k, -0.05], [0.17 * k, -0.4], [0.13 * k, -0.85], [0.12 * k, -1.04], [0.0, -1.08]]), sleeve && sd < 0 ? sleeve : sk, s2, 0, 0, 0, 1, 1, 1, { to: e, axis: "y", from: -1.02, len: 0.35, end: "end" });
     put(parts, bp, limb([[0.0, 0.04], [0.13 * k, 0.0], [0.14 * k, -0.3], [0.1 * k, -0.9], [0.0, -0.98]]), sleeve && sd < 0 ? sleeve : sk, e, 0, 0, 0, 1, 1, 1, { to: s2, axis: "y", from: 0, len: 0.3, end: "start" });
     put(parts, bp, box(0.18, 0.2, 0.1), sk, w, 0, -0.12, 0.02); // palm
-    put(parts, bp, box(0.17, 0.16, 0.07), shade(sk, 0.94), w, 0, -0.3, 0.035); // fingers
+    put(parts, bp, box(0.17, 0.16, 0.07), shade(sk, 0.94), fg, 0, -0.08, 0.035); // fingers (curl: open hand .. ball grip .. fist)
     put(parts, bp, box(0.06, 0.14, 0.06), sk, w, -sd * 0.1, -0.12, 0.07); // thumb
   }
   // ---- skin attributes + merge (vertex colors, smooth joint weights) ----
@@ -178,7 +207,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
         const ly = pos.getY(i) - bp[pt.bone].y,
           b = pt.blend,
           u = Math.min(1, Math.max(0, b.end === "end" ? (b.from + b.len - ly) / b.len : (ly - (b.from - b.len)) / b.len));
-        w2 = 0.5 * u * u * (3 - 2 * u);
+        w2 = (b.max ?? 0.5) * u * u * (3 - 2 * u);
       }
       si.set([pt.bone, pt.blend ? pt.blend.to : 0, 0, 0], i * 4);
       sw.set([1 - w2, w2, 0, 0], i * 4);
@@ -200,6 +229,11 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   G.add(mesh);
   // jersey number front/back + name (small textured planes riding the spine bone)
   const extra: THREE.Material[] = [];
+  G.scale.setScalar(p.ht / 6.4);
+  const pl = () => ({ on: false, x: 0, y: 0, z: 0, w: 0 });
+  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, plant: [pl(), pl()], extra };
+  if (typeof document === "undefined") return rig; // Node (FK parity test): bones + mesh only
+  const cy = -RIG.chest; // chest-local offsets for the jersey prints
   const cv = (w: number, h: number) => {
     const e = document.createElement("canvas");
     e.width = w;
@@ -214,12 +248,12 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   const nm = new THREE.MeshBasicMaterial({ map: tex(nc), transparent: true });
   extra.push(nm);
   const nb = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), nm);
-  nb.position.set(0, 1.35, -0.47 * k);
+  nb.position.set(0, 1.35 + cy, -0.47 * k);
   nb.rotation.y = Math.PI;
-  bd.add(nb);
+  ch.add(nb);
   const nf = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.45), nm);
-  nf.position.set(0, 1.5, 0.47 * k);
-  bd.add(nf);
+  nf.position.set(0, 1.5 + cy, 0.47 * k);
+  ch.add(nf);
   const [n3c, n3] = cv(256, 64);
   n3.fillStyle = "#fff";
   n3.font = "800 40px system-ui";
@@ -228,12 +262,10 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   const n3m = new THREE.MeshBasicMaterial({ map: tex(n3c), transparent: true });
   extra.push(n3m);
   const np3 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35), n3m);
-  np3.position.set(0, 1.88, -0.46 * k);
+  np3.position.set(0, 1.88 + cy, -0.46 * k);
   np3.rotation.y = Math.PI;
-  bd.add(np3);
-  G.scale.setScalar(p.ht / 6.4);
-  const pl = () => ({ on: false, x: 0, y: 0, z: 0, w: 0 });
-  return { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, plant: [pl(), pl()], extra };
+  ch.add(np3);
+  return rig;
 }
 
 /** Joint angles (sim p.q) -> bone rotations. Same mapping as the original rig, so hand FK stays exact. */
@@ -243,10 +275,17 @@ export function applyPose(m: Rig, p: any) {
   const w = W3(p.x, p.y, p.z);
   m.G.position.set(w[0], w[1] - q.cr * 0.4, w[2]);
   m.G.rotation.y = Math.PI / 2 - p.f;
-  m.tl.rotation.set(-q.tL, 0, -(q.hz || 0));
-  m.tr.rotation.set(-q.tR, 0, q.hz || 0);
+  m.tl.rotation.set(-q.tL, 0, hipAb(q, -1));
+  m.tr.rotation.set(-q.tR, 0, hipAb(q, 1));
   m.kl.rotation.x = q.kL;
   m.kr.rotation.x = q.kR;
+  m.al.rotation.x = q.fL || 0;
+  m.ar.rotation.x = q.fR || 0;
+  m.ch.rotation.set(q.cx || 0, q.cy || 0, 0, "YXZ");
+  m.nk.rotation.x = q.nk || 0;
+  m.hd.rotation.set(q.hp || 0, q.hy || 0, 0, "YXZ");
+  m.gL.rotation.x = -(q.gL ?? 0.25) * 1.4;
+  m.gR.rotation.x = -(q.gR ?? 0.25) * 1.4;
   m.sL.rotation.set(-q.aL, 0, -(q.zL == null ? q.sz : q.zL));
   m.sR.rotation.set(-q.aR, 0, q.sz);
   m.eL.rotation.x = -q.eL;
@@ -299,6 +338,10 @@ export function footIK(m: Rig, p: any, dt: number, on: boolean) {
       kFK = kn.rotation.x;
     th.rotation.x = -(tFK + (tIK - tFK) * w);
     kn.rotation.x = kFK + (kIK - kFK) * w;
+    // planted foot stays flat on the floor whatever the IK did to hip and knee
+    const an = s ? m.ar : m.al,
+      flat = -(th.rotation.x + kn.rotation.x);
+    an.rotation.x += (flat - an.rotation.x) * w;
     th.updateMatrixWorld(true);
   }
 }

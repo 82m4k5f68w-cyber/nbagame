@@ -677,8 +677,15 @@ export function glInit(C: HTMLCanvasElement) {
           tp = [pw[0] - dr * 13, 8.5, pw[2] + (pw[2] > 0 ? -4 : 4) + 10];
           tl = [pw[0] + dr * 9, 3, pw[2] * 0.6];
         }
-        cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), 0.1);
-        cl2.lerp(TV.set(tl[0], tl[1], tl[2]), 0.14);
+        const SO = (V as any).studio as { a: number; d: number } | null;
+        if (SO && p0) {
+          // Animation Studio: close orbit around the player
+          const pw = W3(p0.x, p0.y, 0);
+          tp = [pw[0] + Math.cos(SO.a) * SO.d, 5, pw[2] + Math.sin(SO.a) * SO.d];
+          tl = [pw[0], 3.3, pw[2]];
+        }
+        cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : 0.1);
+        cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : 0.14);
         cam.lookAt(cl2);
         if (shake > 0.001) {
           cam.position.x += (Math.random() - 0.5) * shake;

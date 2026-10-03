@@ -33,7 +33,7 @@ export class GuestSession {
   nf = 0;
   lastSnapAt = 0;
   hostGoneAt = 0;
-  side = -1;
+  side = -2; // -2 undecided (the host waits), -1 watching, 0/1 playing
   rdy = 0;
   tempo = 0;
   stats = { full: 0, delta: 0, bytes: 0, corr: 0, recon: 0 };

@@ -321,7 +321,7 @@ function renderGuestLobby() {
     (L.slots.find((s) => s.id === "host") || { n: L.ded ? "SERVER" : "HOST" }).n,
   )}</div>
   ${slotList(L, t!.me)}
-  <div class="opts"><b>PICK A SIDE</b><button data-sd="0" class="${mine && mine.tm === 0 ? "on" : ""}">Home</button><button data-sd="1" class="${mine && mine.tm === 1 ? "on" : ""}">Away</button><button data-sd="-1" class="${mine ? "" : "on"}">Watch</button></div>
+  <div class="opts"><b>PICK A SIDE</b><button data-sd="0" class="${mine && mine.tm === 0 ? "on" : ""}">Home</button><button data-sd="1" class="${mine && mine.tm === 1 ? "on" : ""}">Away</button><button data-sd="-1" class="${guest!.side === -1 ? "on" : ""}">Watch</button></div>
   <p class="hint">Ping ${guest.rtt ? Math.round(guest.rtt) + " ms" : "measuring…"}</p>
   <button class="big" id="rd" ${mine ? "" : 'style="opacity:.5"'}>${guest.rdy ? "READY ✓ (tap to cancel)" : "READY UP"}</button><button id="lv" style="margin-top:8px">Leave</button>
   <p class="note">${L.ded ? "Dedicated server: the game starts when every seated player is ready." : "The host starts the game when everyone is ready."}</p>`;

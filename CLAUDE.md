@@ -41,8 +41,17 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Net: `NETS/netSim` 16-strand diamond weave, rope constraints, real gravity, 2 sub-steps for fast balls, two-way ball-vs-strand contact (reaction only below the rim, so makes are decided by the iron), rim hits shake the mesh; `tests/net_swish.ts`. 3D draws instanced tube strands, 2D projected strands.
 - Ball flight: release angles ~0.86-1.0 rad (deep 0.97, heaves 1.1) + small per-player arc; 3D ball orientation integrates the real angular velocity (`render3d ballSpin`, game->three axial vector flips sign).
 - Celebrations: `celebrate(p, slot)` in the make handler (0 three, 1 dunk/and-one, 2 clutch/on fire) -> `p.cel/p.celT`; poses in `pose3` (CEL 1-8: shimmy, night-night, flex, three-up, chest thump, roar, shh, point up), arms/torso only; per-player `formOf().ce` (SIG overrides, Curry = shimmy/point/night-night); synced in the snapshot (PST 25).
-- Animation: `pose3(p)` writes joint angles to `p.q` every sim tick (smoothed = blended when Pro Play is on); clips `CL/clip/pickClip`.
-  `client/rig3d.ts`: one SkinnedMesh per player (vertex colors, smooth-weighted elbows/knees) on bones that mirror the sim's joints exactly; `applyPose` maps `p.q` to bones; `footIK` plants stance feet and solves two-bone leg IK.
+- Animation engine v2: `pose3(p)` writes 27 joint values to `p.q` (`QK`: legs tL/tR kL/kR, hips hz + shuffle hs, ankles fL/fR,
+  pelvis ln/ty/rz, chest cx/cy, neck nk, head hp/hy, arms aL/aR sz/zL eL/eR wL/wR, finger curl gL/gR, crouch cr).
+  Layers: base (stride-matched gait from `stepLen`, slides, backpedal, air) -> upper body (shot clips `CL/clip`, dribble hand IK,
+  defense, catch, screens, post, hands-on-knees rest, celebrations CEL 1-9 incl. dap) -> additive (contact, landing, accel lean,
+  breathing) -> feet (flat through stance, toe-off, pointed in the air) -> head look (ball / rim / pass target; `LOOK`).
+  Per-state blend times (`ST`/`BLEND`: 0.05 s into a shot .. 0.4 s into a rest); head turns 1.6x faster; wR never smoothed.
+  Skeleton spec `RIG` (pose.ts) is the single source: `handPos` (release point), `skeleton()` (2D, 20 joints) and `rig3d.ts`
+  (19 bones: hips, pelvis bd, chest ch, neck nk, head hd, thighs, knees, ankles al/ar, shoulders, elbows, wrists, fingers gL/gR)
+  all use it; `tests/fk.ts` poses the REAL `makeRig` in Node (it skips DOM textures) and checks hand, head, knees, ankles, toes.
+  `footIK` plants stance feet (two-bone IK) and keeps planted feet flat. Animation Studio (`client/animview.ts`): pause menu
+  or `?anim`; `H2K.studio()`, `H2K.studioPose(i, t, camAngle)` freezes a pose for screenshots (orbit camera `V.studio`).
 - Post-processing (`client/fx3d.ts`): MSAA -> SSAO (High) -> bloom -> camera motion blur (fixed 1/60 s shutter) -> gamma; floor = glossy plane over a `Reflector` (High). Toggle: `V.FX`.
 - Rules: `foul/startFT/ftLay/ftTick/ftIn/tech`, shot clock, quarters (4 x `QTRLEN` s), inbounds (`inb`), bonus after 5 team fouls, `endGame` (FX) + box score (`p.stt`).
 - AI: `ai(p)`, `offBall` = half-court play system (`PLAY[t]`: pick-and-roll / pindown / flare, screener plants with `setT`, rolls or pops; spacing spots + backdoor cuts), `loose` (rebounding), defense inside `ai` (no full-court press, no steals). Planted screens stop defenders in `collide()` and can force switches.
@@ -72,6 +81,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   unacked inputs; small errors are blended, not snapped. Dead balls (inbound, FTs, after scores) freeze prediction like the host.
 - Host (`net/host.ts`): edge counters -> one-shot inputs (press+release in one frame are split across ticks); remote shooters'
   contests use positions rewound by their latency (`ctrl.lag`, `LAGBUF`); release time clamped to the host's view.
+- Lobby: a guest starts undecided (`side=-2`); `HostSession.canStart()` waits until every connected guest is seated+ready or chose Watch.
 - Reconnect: seats keep their `tok`; a returning token re-attaches (AI plays the seat meanwhile). Host leaving ends the game.
 - A hidden host tab keeps simulating via a timer (rAF stops when hidden). `npm run server` serves dist + relay;
   "Create on dedicated server" spawns `server/headless-host.ts` for that room code.

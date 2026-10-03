@@ -808,7 +808,7 @@ export function step(p: Player, dt: number) {
   p.x = clamp(p.x + p.vx * dt, 8, CW - 8);
   p.y = clamp(p.y + p.vy * dt, 8, CH - 8);
   const sv = Math.hypot(p.vx, p.vy);
-  p.ph += sv * dt * 0.09;
+  p.ph += ((sv * dt) / stepLen(sv)) * Math.PI; // one step = half a gait cycle, so the feet travel with the body
   if (p.mode !== "i") p.f = Math.atan2(uy, ux);
   else {
     let tf: number | null = null;
@@ -972,6 +972,8 @@ export function ai(p: Player, dt: number) {
   }
 }
 
+/** Step length (px) at a ground speed (px/s): short walking steps up to long sprinting strides (~5.5 ft). */
+export const stepLen = (sv: number) => 24 + Math.min(300, sv) * 0.11;
 /** Signature celebration after a big bucket (slot 0 three, 1 dunk/and-one, 2 clutch). Arms and torso only: the
  *  legs keep running back on defense. Drawn by pose3 (CEL in pose.ts); synced to guests in the snapshot. */
 export const CEL_T = 1.8;
@@ -1987,7 +1989,7 @@ export const inNet = () => {
 };
 
 // ---- instant replays: allocation-free ring buffer of positions + poses ----
-export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz"];
+export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz", "cx", "cy", "nk", "hy", "hp", "fL", "fR", "gL", "gR", "hs"];
 const RCAP = 331,
   PST = 4 + QK.length,
   FST = 4 + 10 * PST + 1;

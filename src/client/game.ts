@@ -11,6 +11,7 @@ import { setHudCtx, hud, hud2, contestFx, meter, openMark, passMark, replayHud }
 import { IN, TX, hum, hum2, gpPoll, bindInput } from "./input";
 import { audio } from "./audio";
 import { NET } from "./net/session";
+import { openStudio, studioPose } from "./animview";
 
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let C: HTMLCanvasElement, X: CanvasRenderingContext2D, ov: HTMLElement;
@@ -74,7 +75,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   });
   addEventListener("blur", () => !NET.role && !G.RPL && G.S === "play" && pause());
   GS.booted = 1;
-  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
   if (o.quick) {
     SEL = o.quick.sel;
@@ -83,7 +84,11 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     startLocal(SEL, OPP >= 0 ? { j: OPP } : {});
   } else if (o.online && typeof o.online === "object") NET.quick(o.online);
   else if (o.online) NET.openLobby();
-  else menu();
+  else if (V.r3d && /[?&]anim\b/.test(location.search)) {
+    menu();
+    startLocal(SEL, {});
+    studio();
+  } else menu();
   requestAnimationFrame(loop);
 }
 
@@ -405,7 +410,7 @@ function pause() {
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
   ov.innerHTML = `<div class="logo" style="font-size:38px">PAUSED</div><div class="sub">${esc(G.cl[0])} ${G.sc[0]} — ${G.sc[1]} ${esc(G.cl[1])} · Q${G.q}</div><div id="pz">
-  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button><button id="prs">↻ Restart game</button><button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
+  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button><button id="prs">↻ Restart game</button>${V.r3d ? `<button id="pan">🎬 Animation Studio</button>` : ""}<button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
   $("#pr").onclick = resume;
   const re = () => (saveSet(), pause());
   if (V.r3d) {
@@ -419,6 +424,7 @@ function pause() {
     re();
   };
   $("#prs").onclick = () => startLocal(SEL, { j: lastJ });
+  if (V.r3d) $("#pan").onclick = () => studio();
   $("#pq").onclick = menu;
   ($("#pr") as HTMLElement).focus();
 }
@@ -629,6 +635,12 @@ let last = performance.now(),
   slowT = 0,
   coverN = 0;
 export const STEP = 1 / 60;
+let ATICK: ((dt: number) => void) | null = null;
+const studio = (at = 0) => {
+  ov.style.display = "none";
+  ov.classList.remove("mu-on");
+  openStudio((f) => (ATICK = f), at);
+};
 function loop(n: number) {
   requestAnimationFrame(loop);
   if (document.hidden) {
@@ -653,7 +665,10 @@ function loop(n: number) {
       ACC -= STEP;
       k++;
     }
-  } else G.setT(G.T + dt);
+  } else {
+    G.setT(G.T + dt);
+    if (ATICK) ATICK(dt);
+  }
   audio.tick(dt);
   drainFx();
   dribSound();

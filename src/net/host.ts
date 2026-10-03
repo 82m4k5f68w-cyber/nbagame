@@ -178,7 +178,13 @@ export class HostSession {
     this.L[k] = v;
     this.pub(true);
   }
+  /** Every seat is ready AND every connected guest has decided (seated, or chose to watch): a friend who just
+   *  joined can't be left spectating because the host pressed start before their side pick arrived. */
   canStart() {
+    for (const g of this.guests.values()) {
+      const tm = g.st && g.st.tm;
+      if (tm !== -1 && !this.L.slots.some((s) => s.id === g.id)) return false;
+    }
     return this.L.slots.every((s) => s.rdy || s.id === "host");
   }
   /** Seat every connected human as a controller; disconnected seats are played by the AI. */

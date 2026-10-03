@@ -84,7 +84,8 @@ export function encodeSnap(k: number): number[] {
       p.heat | 0,
       p.celT > 0 && p.cel ? p.cel * 1000 + r(Math.min(9.99, p.celT) * 100) : 0,
     );
-  if (rp) for (const p of P) for (const k2 of QK) a.push(r(((p.q && p.q[k2]) || 0) * 1000));
+  // replay poses: 27 joints x 10 players at 0.01 rad (keeps the presence well under the 4 KiB room limit)
+  if (rp) for (const p of P) for (const k2 of QK) a.push(r(((p.q && p.q[k2]) || 0) * 100));
   return a;
 }
 export const snapTick = (a: number[]) => a[0];
@@ -168,7 +169,7 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
     for (let k = 0; k < P.length; k++) {
       const p = P[k];
       p.q = p.q || {};
-      QK.forEach((n, j) => (p.q[n] = L(qo + k * QN + j) / 1000));
+      QK.forEach((n, j) => (p.q[n] = L(qo + k * QN + j) / 100));
     }
   }
 }
