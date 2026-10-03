@@ -9,6 +9,8 @@ export const V = {
   QL: typeof matchMedia !== "undefined" && matchMedia("(pointer:coarse)").matches ? 1 : 2,
   METER: 0,
   FX: !(typeof matchMedia !== "undefined" && matchMedia("(pointer:coarse)").matches), // post-processing
+  GPU: 0, // renderer: 0 WebGL, 1 WebGPU (beta; takes effect on the next start)
+  backend: "", // what is actually drawing (shown in settings)
   stick: null as null | number[], // virtual joystick (mobile)
   perf: null as null | { fps: number; lvl: number; scale: number },
   onResize: null as null | (() => void),

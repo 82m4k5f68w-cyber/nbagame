@@ -4,6 +4,7 @@ Run from the package root. Logic tests import the shared core directly (`src/cor
 - fuzz.ts — random inputs over every flag combo (NP 5/1 x Rapier/legacy x My Player x local 2P x player bodies): no errors/NaN, My Player never drifts.
 - greens.ts — 400 perfectly timed shots (expect ~95%+ made). curry_greens.ts — Curry's greens by range through the full upd() pipeline.
 - passes.ts — pass accuracy by type. dribble_moves.ts — dribble move displacement and ball security.
+- browser_webgpu.mjs — WebGPU renderer smoke test (SwiftShader WebGPU adapter, ?webgpu): backend must be WebGPU, game plays, no errors.
 - net_swish.ts — drops balls through the net at 3 speeds: must score and leave the net slower.
 - invariants.ts — plays full games in 5 configurations (5v5/1v1, My Player, 2P) and checks score = sum of points, the game ends, no long freezes, the ball stays in the world, stat sanity, and that the chosen My Player 1v1 opponent is used.
 - browser.mjs [modes...] — `npm run build` first; opens the hub in Chromium, starts each mode, reports renderer (webgl/2d) + Rapier + errors, writes docs/shot-<mode>.png.

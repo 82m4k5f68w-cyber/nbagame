@@ -102,6 +102,7 @@ function loadSet() {
     if (o.cm != null) V.CAMM = o.cm;
     if (o.q != null) V.QL = o.q;
     if (o.fx != null) V.FX = !!o.fx;
+    if (o.gp != null) V.GPU = o.gp ? 1 : 0;
     if (o.my != null) MYM = o.my;
     if (o.df != null) cfg.DIFF = o.df;
     if (o.ql) QLEN = o.ql;
@@ -109,7 +110,7 @@ function loadSet() {
 }
 function saveSet() {
   try {
-    localStorage.setItem("h2k_set", JSON.stringify({ m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, my: MYM, df: cfg.DIFF, ql: QLEN }));
+    localStorage.setItem("h2k_set", JSON.stringify({ m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN }));
   } catch (e) {}
 }
 
@@ -254,7 +255,7 @@ export function menu() {
     <b>PLAYER MODE</b>${opt("", "my", 0, MYM, "Pick a team")}${opt("", "my", 1, MYM, "My Player")}<button id="edit">✎ Edit my player</button>
     <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
    <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
-   ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}</div>` : ""}
+   ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i></div>` : ""}
    <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p></aside></div>`;
   const re = () => (saveSet(), menu());
   const cyc = (who: string, d: number) => {
@@ -307,6 +308,12 @@ export function menu() {
   grp("cm", (v) => (V.CAMM = v));
   grp("q", (v) => (V.QL = v));
   grp("fx", (v) => (V.FX = !!v));
+  grp("gp", (v) => {
+    // the renderer is created once at start: save, then reload into the menu with the new one
+    V.GPU = v;
+    saveSet();
+    setTimeout(() => location.reload(), 150);
+  });
   grp("my", (v) => (MYM = v), true);
   grp("mp", (v) => (IN.MP2 = v));
   const sd = $("#sd");

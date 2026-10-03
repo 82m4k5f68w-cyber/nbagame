@@ -8,15 +8,66 @@ import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, HXs, HY, W3, hoo
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
 import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
-import { makeFx } from "./fx3d";
+import { makeFx, type Fx } from "./fx3d";
 
 const DPR = [1, 1.5, 2]; // device pixel ratio cap per quality level
 
+/** Start the 3D view. WebGL by default; the WebGPU renderer (Display -> Renderer, or ?webgpu) drives the same scene
+ *  and falls back to its WebGL2 backend where the browser has no WebGPU. If WebGPU fails to load, WebGL is used. */
 export function glInit(C: HTMLCanvasElement) {
+  let failed = false;
+  try {
+    failed = sessionStorage.getItem("h2k_nogpu") === "1";
+  } catch (e) {}
+  const wantGPU = (V.GPU || /[?&]webgpu\b/.test(location.search)) && !failed;
+  if (failed && V.GPU) V.backend = "WebGL (WebGPU failed on this browser)";
+  if (!wantGPU) return build(C, null, null);
+  Promise.all([import("three/webgpu"), import("./fxgpu")])
+    .then(([GPU, F]) => build(C, GPU, F.makeFxGPU))
+    .catch((e) => {
+      console.warn("WebGPU unavailable, using WebGL", e);
+      V.GPU = 0;
+      build(C, null, null);
+    });
+}
+/** WebGPU could not start or crashed while drawing: reload once on WebGL for the rest of this browser session. */
+function gpuFail(e: any) {
+  console.warn("WebGPU failed, falling back to WebGL", e);
+  try {
+    sessionStorage.setItem("h2k_nogpu", "1");
+  } catch (e2) {}
+  location.reload();
+}
+function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
+  if (GPU && typeof (window as any).GPUTexture !== "undefined") {
+    // Chromium < ~142 types GPUTextureViewDescriptor.swizzle differently and rejects three's default "rgba";
+    // the default is a no-op, so drop it before it reaches the browser.
+    const proto = (window as any).GPUTexture.prototype,
+      cv0 = proto.createView;
+    if (!proto.__h2k) {
+      proto.__h2k = 1;
+      proto.createView = function (d?: any) {
+        if (d && d.swizzle === "rgba") {
+          const { swizzle, ...rest } = d;
+          void swizzle;
+          return cv0.call(this, rest);
+        }
+        return cv0.call(this, d);
+      };
+    }
+  }
   try {
     THREE.ColorManagement.enabled = true;
-    const R = new THREE.WebGLRenderer({ canvas: C, antialias: true, powerPreference: "high-performance" });
-    if (!R.getContext()) throw 0;
+    const R: any = GPU ? new GPU.WebGPURenderer({ canvas: C, antialias: true, powerPreference: "high-performance" }) : new THREE.WebGLRenderer({ canvas: C, antialias: true, powerPreference: "high-performance" });
+    if (!GPU && !R.getContext()) throw 0;
+    let ready = !GPU;
+    const maxAniso = () => {
+      try {
+        return GPU ? R.getMaxAnisotropy?.() || 8 : maxAniso();
+      } catch (e) {
+        return 4;
+      }
+    };
     const mob = matchMedia("(pointer:coarse)").matches;
     R.setPixelRatio(Math.min(devicePixelRatio || 1, DPR[V.QL]));
     R.setSize(960, 540, false);
@@ -29,9 +80,23 @@ export function glInit(C: HTMLCanvasElement) {
     S.background = new THREE.Color(0x06070d);
     S.fog = new THREE.Fog(0x06070d, 110, 230);
     // Image-based lighting: soft studio reflections on the floor, ball, glass and skin.
-    const pm = new THREE.PMREMGenerator(R);
-    S.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    pm.dispose();
+    const envInit = () => {
+      const pm = GPU ? new GPU.PMREMGenerator(R) : new THREE.PMREMGenerator(R);
+      S.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      pm.dispose();
+    };
+    if (GPU)
+      R.init()
+        .then(() => {
+          envInit();
+          ready = true;
+          V.backend = R.backend && R.backend.isWebGPUBackend ? "WebGPU" : "WebGPU (WebGL2 fallback)";
+        })
+        .catch(gpuFail);
+    else {
+      envInit();
+      V.backend = "WebGL";
+    }
     const cam = new THREE.PerspectiveCamera(38, 960 / 540, 0.5, 420);
     // three r155+ physical light units: legacy intensities x PI keep the same exposure
     const PI = Math.PI;
@@ -61,16 +126,27 @@ export function glInit(C: HTMLCanvasElement) {
       S.add(l, l.target);
     }
     // Light shafts: faint additive cones from the catwalks, brighter where you look through more haze.
-    const shaftM = new THREE.ShaderMaterial({
+    // (an alpha gradient texture instead of a custom shader, so the same material runs on WebGL and WebGPU)
+    const shc0 = document.createElement("canvas");
+    shc0.width = 4;
+    shc0.height = 128;
+    const shx0 = shc0.getContext("2d")!;
+    {
+      const gg = shx0.createLinearGradient(0, 0, 0, 128);
+      gg.addColorStop(0, "rgba(255,255,255,1)"); // top (catwalk)
+      gg.addColorStop(0.75, "rgba(255,255,255,.35)");
+      gg.addColorStop(1, "rgba(255,255,255,0)"); // fades out before the floor
+      shx0.fillStyle = gg;
+      shx0.fillRect(0, 0, 4, 128);
+    }
+    const shaftM = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(1, 0.95, 0.86).multiplyScalar(0.018), // faint: a haze, not a beam
+      alphaMap: new THREE.CanvasTexture(shc0),
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
-      uniforms: { k: { value: 0.05 } },
-      vertexShader:
-        "varying float vY; varying vec3 vN; varying vec3 vV; void main(){ vY = uv.y; vec4 mv = modelViewMatrix * vec4(position,1.); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }",
-      fragmentShader:
-        "uniform float k; varying float vY; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 1.5); float a = k * (0.25 + 0.75 * f) * smoothstep(0.0, 0.35, vY) * (0.35 + 0.65 * vY); gl_FragColor = vec4(vec3(1.0, 0.95, 0.86) * a, 1.0); }",
+      fog: false,
     });
     const shafts: THREE.Mesh[] = [];
     for (const [x, z, tx, tz] of SPOTS.slice(0, 2).concat([
@@ -113,7 +189,7 @@ export function glInit(C: HTMLCanvasElement) {
       TX2 = (c: HTMLCanvasElement) => {
         const t = new THREE.CanvasTexture(c);
         t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = R.capabilities.getMaxAnisotropy();
+        t.anisotropy = maxAniso();
         return t;
       };
 
@@ -288,7 +364,7 @@ export function glInit(C: HTMLCanvasElement) {
     }
     const rTex = new THREE.CanvasTexture(rc),
       bTex = new THREE.CanvasTexture(bc2);
-    rTex.anisotropy = bTex.anisotropy = R.capabilities.getMaxAnisotropy();
+    rTex.anisotropy = bTex.anisotropy = maxAniso();
     const floorMat = new THREE.MeshPhysicalMaterial({
       map: tex,
       roughness: 1,
@@ -302,13 +378,16 @@ export function glInit(C: HTMLCanvasElement) {
     const fl = ad(new THREE.PlaneGeometry(94, 50), floorMat, 0, 0, 0);
     fl.rotation.x = -Math.PI / 2;
     fl.castShadow = false;
-    const mirror = new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: mob ? 1024 : 2048, textureHeight: mob ? 576 : 1152, color: 0x777777, clipBias: 0.003 });
-    mirror.rotation.x = -Math.PI / 2;
-    mirror.position.y = -0.02;
-    mirror.visible = false;
-    S.add(mirror);
+    // planar reflection (WebGL renderer only; on WebGPU the glossy floor keeps its environment reflections)
+    const mirror: any = GPU ? null : new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: mob ? 1024 : 2048, textureHeight: mob ? 576 : 1152, color: 0x777777, clipBias: 0.003 });
+    if (mirror) {
+      mirror.rotation.x = -Math.PI / 2;
+      mirror.position.y = -0.02;
+      mirror.visible = false;
+      S.add(mirror);
+    }
     const setMirror = (on: boolean) => {
-      if (mirror.visible === on) return;
+      if (!mirror || mirror.visible === on) return;
       mirror.visible = on;
       floorMat.transparent = on;
       floorMat.opacity = on ? 0.88 : 1;
@@ -880,7 +959,7 @@ export function glInit(C: HTMLCanvasElement) {
     }
 
     // ---------------- effects + quality ----------------
-    const fx = makeFx(R, S, cam, 960, 540);
+    const fx: Fx = GPU ? makeFxGPU(R, S, cam) : makeFx(R, S, cam, 960, 540);
     let lvl = 6,
       lastQ = -1,
       lastFX: any = null;
@@ -924,6 +1003,18 @@ export function glInit(C: HTMLCanvasElement) {
         return [(v.x + 1) * 480, (1 - v.y) * 270];
       },
       render() {
+        if (!ready) return; // WebGPU device still initializing
+        if (GPU)
+          try {
+            return this.draw();
+          } catch (e) {
+            ready = false;
+            gpuFail(e);
+            return;
+          }
+        return this.draw();
+      },
+      draw() {
         const QL = V.QL,
           now = performance.now(),
           fdt = Math.min(0.1, (now - lastF) / 1000);

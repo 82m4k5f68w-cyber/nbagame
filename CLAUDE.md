@@ -68,6 +68,11 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   bloom (threshold 3.2: HDR input) -> motion blur -> color grade (`setGrade`: contrast/saturation/vignette + home-team tint)
   -> OutputPass (ACES + sRGB; r153+ tone-maps only the final output) -> SMAA (low-res tiers). Floor = glossy physical
   plane (per-board roughnessMap + seam bumpMap + scuffs) over a `Reflector` (High, 2048 on desktop). Toggle: `V.FX`.
+- Renderers: WebGL (default) or WebGPU (Display -> Renderer `V.GPU`, saved in h2k_set; or `?webgpu`). three r186's
+  `three/webgpu` shares `three.core.js`, so the same scene/materials draw with either. WebGPU: `fxgpu.ts` RenderPipeline
+  (scene pass MSAA -> bloom -> TSL grade -> replay DOF -> renderOutput -> FXAA), no planar Reflector/motion blur/SSAO.
+  Shim drops three's default `swizzle:"rgba"` (old Chromium rejects it); init/draw failure -> sessionStorage `h2k_nogpu`
+  + reload on WebGL. `V.backend` tells what is drawing. Light shafts use a portable alphaMap material (no ShaderMaterial).
 - Lighting (render3d): physical units (legacy intensities x PI; spots in candela), near-overhead shadow key (PCF + radius),
   4 catwalk SpotLights, additive light-shaft cones (Medium+), HDR ceiling panels (bloom). Vertex colors keep the extra
   sRGB->linear step on purpose (deep palette). Contact-shadow blobs (InstancedMesh) under players + ball.
