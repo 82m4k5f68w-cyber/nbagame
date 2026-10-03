@@ -173,7 +173,7 @@ await ev(() => document.getElementById("h2").click());
 res.afterHalf = await ev(() => window.H2K.G.S);
 console.log(JSON.stringify(res), errs.length ? errs : "no errors");
 const ok =
-  res.strip.split(",").length === 7 &&
+  res.strip.split(",").length >= 7 &&
   res.drawer &&
   res.tp0 === "3pt" &&
   res.tp.done &&

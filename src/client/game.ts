@@ -114,7 +114,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   });
   addEventListener("blur", () => !NET.role && !G.RPL && G.S === "play" && pause());
   GS.booted = 1;
-  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, openMode, MODE, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, openMode, MODE, shareLink, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
   if (o.quick) {
     SEL = o.quick.sel;
@@ -123,7 +123,10 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     startLocal(SEL, OPP >= 0 ? { j: OPP } : {});
   } else if (o.online && typeof o.online === "object") NET.quick(o.online);
   else if (o.online) NET.openLobby();
-  else if (V.r3d && /[?&]anim\b/.test(location.search)) {
+  else if (/[#&]reel=/.test(location.hash)) {
+    menu();
+    playLinkReel().catch(() => menu());
+  } else if (V.r3d && /[?&]anim\b/.test(location.search)) {
     menu();
     startLocal(SEL, {});
     studio();
@@ -798,12 +801,13 @@ function endGame() {
      })
      .join("")}</div>
    <details class="bxw"><summary>Box score</summary>${tb(0)}${tb(1)}</details>
-   ${G.HL.length && !NET.role ? `<div class="row"><button class="ghost" id="hlp">▶ Highlights (${G.HL.length})</button><button class="ghost" id="hls">💾 Save reel</button></div>` : ""}
+   ${G.HL.length && !NET.role ? `<div class="row"><button class="ghost" id="hlp">▶ Highlights (${G.HL.length})</button><button class="ghost" id="hls">💾 Save reel</button><button class="ghost" id="hll" title="Works when the game page is opened directly (downloaded or self-hosted); on claude.ai use Save reel">🔗 Copy replay link</button></div>` : ""}
    <div class="row">${NET.role ? NET.finalButtons() : inSeason ? `<button class="big" id="ssn">🏆 SEASON ▶</button><button id="pa" class="ghost">Menu</button>` : `<button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button>`}</div></div>`;
   const hlp = document.getElementById("hlp");
   if (hlp) {
     hlp.onclick = () => playReel(G.HL.slice(), () => (ov.style.display = "flex"));
     $("#hls").onclick = saveReel;
+    $("#hll").onclick = () => void shareLink();
   }
   const ssn = document.getElementById("ssn");
   if (ssn) ssn.onclick = seasonScreen;
@@ -867,6 +871,86 @@ function saveReel() {
       .then((d: any) => (d ? d.save({ filename: name, data: blob }) : plain()))
       .catch((e: any) => e && e.code !== "declined" && banner("COULDN'T SAVE THE REEL", String((e && e.code) || ""), "#ff6b4a"));
   else plain();
+}
+// ---- replay share links: one highlight, every 2nd frame, 16-bit, deflated, base64url in the page URL's hash ----
+async function packClip(c: { n: number; buf: Float32Array }) {
+  const F = G.FSTN(),
+    n2 = Math.ceil(c.n / 2),
+    PSTN = 4 + G.QK.length,
+    a = new Int16Array(n2 * F);
+  for (let k = 0; k < n2; k++)
+    for (let j = 0; j < F; j++) {
+      const v = c.buf[k * 2 * F + j],
+        rel = j - 4,
+        jj = rel >= 0 ? rel % PSTN : -1,
+        sc = j < 3 || (jj >= 0 && jj < 3) || j === F - 1 ? 10 : 1000; // positions in 0.1 px, angles in mrad
+      a[k * F + j] = isNaN(v) ? -32768 : Math.max(-32767, Math.min(32767, Math.round((j === 3 || jj === 3 ? Math.atan2(Math.sin(v), Math.cos(v)) : v) * sc)));
+    }
+  let bytes = new Uint8Array(a.buffer);
+  const CSt = (window as any).CompressionStream;
+  if (CSt) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CSt("deflate-raw"))).arrayBuffer());
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000) as any);
+  return { d: btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""), z: CSt ? 1 : 0, n: n2 };
+}
+async function unpackClip(d: string, z: number, n2: number) {
+  const b = atob(d.replace(/-/g, "+").replace(/_/g, "/"));
+  let bytes = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
+  const DSt = (window as any).DecompressionStream;
+  if (z && DSt) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DSt("deflate-raw"))).arrayBuffer());
+  const F = G.FSTN(),
+    PSTN = 4 + G.QK.length,
+    a = new Int16Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 2)),
+    buf = new Float32Array(n2 * F);
+  for (let k = 0; k < n2 * F && k < a.length; k++) {
+    const j = k % F,
+      rel = j - 4,
+      jj = rel >= 0 ? rel % PSTN : -1,
+      sc = j < 3 || (jj >= 0 && jj < 3) || j === F - 1 ? 10 : 1000;
+    buf[k] = a[k] === -32768 ? NaN : a[k] / sc;
+  }
+  return buf;
+}
+async function shareLink() {
+  const c = G.HL[G.HL.length - 1];
+  if (!c) return;
+  const p = await packClip(c),
+    q = new URLSearchParams({ m: GS.mode, np: String(cfg.NP), i: String(SEL), j: String(lastJ ?? -1), my: String(MYM), z: String(p.z), n: String(p.n), s: c.s });
+  const url = location.href.split("#")[0] + "#" + q.toString() + "&reel=" + p.d;
+  (window as any).H2K.lastLink = url;
+  const done = (ok: boolean) => banner(ok ? "REPLAY LINK COPIED" : "COPY THE LINK BELOW", Math.round(url.length / 1024) + " KB link · opens this highlight in the game", "#9fe7ff");
+  try {
+    await navigator.clipboard.writeText(url);
+    done(true);
+  } catch (e) {
+    done(false);
+    const ta = document.createElement("textarea");
+    ta.value = url;
+    ta.style.cssText = "width:min(560px,90vw);height:70px;margin-top:8px";
+    (document.querySelector(".fin") || ov).appendChild(ta);
+    ta.select();
+  }
+}
+/** Opened from a share link: start the same matchup silently and play the clip, then go to the menu. */
+async function playLinkReel() {
+  const h = new URLSearchParams(location.hash.slice(1)),
+    d = h.get("reel");
+  if (!d) return false;
+  if (+h.get("np")! !== cfg.NP) return false;
+  const buf = await unpackClip(d, +h.get("z")!, +h.get("n")!);
+  stopMode();
+  cfg.MYM = +h.get("my")! ? 1 : 0;
+  G.setCtrls([G.mkCtrl("p1", 0, !!cfg.MYM, 0)]);
+  const jb = cfg.JB;
+  cfg.JB = 0;
+  const j = +h.get("j")!;
+  G.start(+h.get("i")!, j >= 0 ? { j } : {});
+  cfg.JB = jb;
+  G.setS("over");
+  history.replaceState(null, "", location.href.split("#")[0]);
+  playReel([{ s: h.get("s") || "Shared highlight", n: +h.get("n")!, buf, k: 0.5 }], () => menu());
+  return true;
 }
 function loadReel(file: File) {
   file.text().then((t) => {

@@ -2191,6 +2191,20 @@ export function bstep(dt: number) {
     B.vy *= 0.9;
     if (Math.abs(B.vz) < 25) B.vz = 0;
   }
+  // A ball balanced on the iron (it happens): after a beat it rolls off, away from the middle of the rim.
+  if (!B.sc && B.z > 97 && B.z < 112 && !inNet() && Math.hypot(B.vx, B.vy, B.vz) < 15) {
+    B.stk = (B.stk || 0) + dt;
+    if (B.stk > 1.2 && !PREDICT) {
+      B.stk = 0;
+      const hx = Math.abs(B.x - HXs[0]) < Math.abs(B.x - HXs[1]) ? HXs[0] : HXs[1],
+        dx = B.x - hx || 0.1,
+        dy = B.y - HY,
+        d = Math.hypot(dx, dy) || 1;
+      B.vx = (dx / d) * 55;
+      B.vy = (dy / d) * 55;
+      B.vz = 35;
+    }
+  } else B.stk = 0;
   // World bounds for both engines (a fast Rapier ball could tunnel past or fly over the thin arena walls).
   {
     if (B.x < 6 || B.x > CW - 6) {
@@ -2498,7 +2512,7 @@ export function upd(dt: number) {
         TS.half = 1;
         fx({ k: "half" });
       }
-      clock = q > 4 ? QTRLEN / 2 : QTRLEN;
+      clock = q > 4 ? (cfg.GM === "clutch" || cfg.GM === "daily" ? 30 : QTRLEN / 2) : QTRLEN; // scenario overtime: 30 real seconds
       setup(q % 2 ? 0 : 1);
       txt(q > 4 ? "OVERTIME" : "QUARTER " + q, 470, 200, "#ffd23f");
     }
@@ -3370,12 +3384,12 @@ function saveHL() {
   if (HL.length > 8) HL.shift();
 }
 /** Load a saved clip into the replay buffer and play it (end-of-game reel / saved reel). */
-export function playClip(c: { n: number; buf: Float32Array }) {
+export function playClip(c: { n: number; buf: Float32Array; k?: number }) {
   recS = 0;
   recN = Math.min(c.n, RCAP);
   REC.set(c.buf.subarray(0, recN * FST), 0);
   LIVE = { p: P.map((p) => [p.x, p.y, p.z, p.f, p.q ? { ...p.q } : null]), b: [B.x, B.y, B.z, B.a] };
-  RPL = { i: 0, reel: 1, rs };
+  RPL = { i: 0, reel: 1, rs, k: c.k || 1 };
 }
 export function startReplay() {
   LIVE = { p: P.map((p) => [p.x, p.y, p.z, p.f, p.q ? { ...p.q } : null]), b: [B.x, B.y, B.z, B.a] };
@@ -3387,7 +3401,7 @@ export const skipReplay = () => {
 };
 function rplStep(dt: number) {
   const r = RPL;
-  r.i += dt * 60 * RSPD;
+  r.i += dt * 60 * RSPD * (r.k || 1);
   const n = Math.floor(r.i);
   if (n >= recN - 1) {
     P.forEach((p, k) => {

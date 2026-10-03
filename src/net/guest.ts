@@ -143,7 +143,7 @@ export class GuestSession {
     cfg.PRO = L.pro;
     cfg.MYM = 0;
     G.setQtrLen(L.ql);
-    const cs = L.slots.filter((s) => s.on).map((s) => G.mkCtrl(s.id === "host" ? "p1" : s.id, s.tm));
+    const cs = L.slots.filter((s) => s.on && s.tm >= 0).map((s) => G.mkCtrl(s.id === "host" ? "p1" : s.id, s.tm));
     G.setCtrls(cs);
     G.start(L.teams[0], { j: L.teams[1] });
     G.FX.length = 0;

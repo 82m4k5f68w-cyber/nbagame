@@ -1,0 +1,33 @@
+// Replay share link: a highlight from a game becomes a #reel= link; opening it plays the clip in the same mode.
+import { chromium } from "playwright";
+import path from "node:path";
+const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+const errs = [];
+const pg = await b.newPage({ viewport: { width: 1000, height: 700 } });
+pg.on("pageerror", (e) => errs.push(String(e)));
+const url = "file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro";
+await pg.goto(url);
+await pg.waitForTimeout(300);
+await pg.evaluate(() => document.querySelector('button[data-g="1v1-2d"][data-my="0"][data-mp="0"]').click());
+await pg.waitForFunction(() => document.getElementById("tip"));
+await pg.evaluate(() => document.getElementById("tip").click());
+const link = await pg.evaluate(async () => {
+  const G = window.H2K.G;
+  for (let i = 0; i < 400 && G.JB; i++) G.upd(1 / 60);
+  for (let i = 0; i < 200; i++) G.upd(1 / 60);
+  G.setHLN("Test clip");
+  G.startReplay();
+  while (G.RPL) G.upd(1 / 60);
+  await window.H2K.shareLink();
+  return window.H2K.lastLink;
+});
+const pg2 = await b.newPage({ viewport: { width: 1000, height: 700 } });
+pg2.on("pageerror", (e) => errs.push("link page: " + e));
+await pg2.goto(link);
+await pg2.waitForFunction(() => window.H2K && window.H2K.G.RPL, null, { timeout: 20000 }).catch(() => {});
+const st = await pg2.evaluate(() => ({ rpl: !!window.H2K.G.RPL, np: window.H2K.G.P.length, cleared: !location.hash.includes("reel") }));
+console.log("link KB", (link.length / 1024).toFixed(0), JSON.stringify(st), errs.length ? errs : "no errors");
+const ok = link && link.includes("#") && st.rpl && st.np === 2 && st.cleared && !errs.length;
+console.log(ok ? "LINK OK" : "LINK FAIL");
+await b.close();
+process.exit(ok ? 0 : 1);

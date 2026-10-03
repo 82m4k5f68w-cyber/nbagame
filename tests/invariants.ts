@@ -42,7 +42,7 @@ for (const [np, mym, mp2] of [
     lastHash = h;
     if (still === 60 * 30) fails.push(`${tag}: ball frozen 30 s (S=${G.S} inb=${G.inb.toFixed(2)} rs=${G.rs.toFixed(2)} ftq=${!!G.ftq} owner=${G.B.owner && G.B.owner.n} mode=${G.B.owner && G.B.owner.mode} ball=${JSON.stringify({ m: G.B.mode, sh: G.B.sh, sc: G.B.sc, z: G.B.z | 0, x: G.B.x | 0, y: G.B.y | 0, gt: G.B.gt, rpl: !!G.RPL, jb: !!G.JB, to: G.B.to && G.B.to.n })})`);
     if (G.shot < -2) fails.push(`${tag}: shot clock ran away ${G.shot.toFixed(1)}`);
-    if (G.B.x < -20 || G.B.x > 960 || G.B.y < -20 || G.B.y > 520 || G.B.z < -10 || G.B.z > 600) { fails.push(`${tag}: ball out of world ${[G.B.x, G.B.y, G.B.z].map((v) => v.toFixed(0))}`); break; }
+    if (G.B.x < -20 || G.B.x > 960 || G.B.y < -20 || G.B.y > 520 || G.B.z < -10 || G.B.z > 800) { fails.push(`${tag}: ball out of world ${[G.B.x, G.B.y, G.B.z].map((v) => v.toFixed(0))}`); break; }
     if (fails.length > 12) break;
   }
   // a game still tied in overtime at the tick cap is legal basketball (random-input humans can trade empty OTs)

@@ -24,6 +24,8 @@ export interface Lobby {
   slots: Slot[];
   code: string;
   ded: number; // dedicated (headless) host
+  /** Tournament (friends' bracket): players (slot ids), matches [a, b] played so far + current, winners, current index. */
+  tour?: { ids: string[]; names: Record<string, string>; m: [string, string][]; w: string[]; i: number; bye?: string; champ?: string } | null;
 }
 interface GuestRec {
   id: string;
@@ -70,8 +72,9 @@ export class HostSession {
     this.unsub = t.onPeers((ps) => this.peers(ps));
     this.pub(true);
   }
+  /** Humans per side: 1 in 1v1, everyone in 2v2/3v3, two in 5v5 (the AI fills the rest). */
   cap() {
-    return this.L.np === 1 ? 1 : 2;
+    return this.L.np === 1 ? 1 : this.L.np <= 3 ? this.L.np : 2;
   }
   sideCount(tm: number, ex?: string) {
     return this.L.slots.filter((s) => s.tm === tm && s.id !== ex).length;
@@ -190,9 +193,42 @@ export class HostSession {
     this.L.teams = [i, j];
     this.pub(true);
   }
-  setOpt(k: "pro" | "ql", v: number) {
+  setOpt(k: "pro" | "ql" | "np", v: number) {
     this.L[k] = v;
     this.pub(true);
+  }
+  // ---------------- tournament: a 1v1 bracket for 2-4 friends (everyone connected plays; one bye with three) ----------------
+  tourStart(tempo = 0) {
+    for (const g of this.guests.values())
+      if (!this.L.slots.some((s) => s.id === g.id)) this.L.slots.push({ id: g.id, tok: g.st.tok || "", n: clean(g.st.n), tm: -1, rdy: 1, on: 1, elo: +g.st.elo || 1000 });
+    const ids = this.L.slots.filter((s) => s.on).map((s) => s.id).sort(() => Math.random() - 0.5).slice(0, 4);
+    if (ids.length < 2) return false;
+    const names: Record<string, string> = {};
+    for (const s of this.L.slots) names[s.id] = s.n;
+    const m: [string, string][] = ids.length === 4 ? [[ids[0], ids[1]], [ids[2], ids[3]]] : [[ids[0], ids[1]]];
+    this.L.tour = { ids, names, m, w: [], i: 0, bye: ids.length === 3 ? ids[2] : undefined };
+    this.tourPlay(tempo);
+    return true;
+  }
+  /** Seat the current match (others watch) and start it. */
+  tourPlay(tempo = 0) {
+    const t = this.L.tour!,
+      [a, b] = t.m[t.i];
+    for (const s of this.L.slots) s.tm = s.id === a ? 0 : s.id === b ? 1 : -1;
+    this.start(tempo);
+  }
+  /** After a tournament game: record the winner, schedule the final, report whether another match follows. */
+  tourResult(): boolean {
+    const t = this.L.tour;
+    if (!t || t.champ) return false;
+    const [a, b] = t.m[t.i];
+    t.w.push(G.sc[0] >= G.sc[1] ? a : b);
+    t.i++;
+    if (t.ids.length === 4 && t.i === 2) t.m.push([t.w[0], t.w[1]]);
+    if (t.ids.length === 3 && t.i === 1) t.m.push([t.w[0], t.bye!]);
+    if (t.i >= t.m.length) t.champ = t.w[t.w.length - 1];
+    this.pub(true);
+    return !t.champ;
   }
   /** Every seat is ready AND every connected guest has decided (seated, or chose to watch): a friend who just
    *  joined can't be left spectating because the host pressed start before their side pick arrived. */
@@ -207,7 +243,7 @@ export class HostSession {
   rebuildCtrls() {
     const cs: Ctrl[] = [];
     for (const s of this.L.slots) {
-      if (!s.on) continue;
+      if (!s.on || s.tm < 0) continue; // tournament spectators
       if (s.id === "host") cs.push(G.CT.find((c) => c.id === "p1") || G.mkCtrl("p1", s.tm, false, 0));
       else {
         const c: any = G.CT.find((c) => c.id === s.id) || G.mkCtrl(s.id, s.tm, false, 0);
@@ -261,6 +297,11 @@ export class HostSession {
   }
   backToLobby() {
     this.L.st = "lobby";
+    if (this.L.tour) {
+      this.L.tour = null;
+      this.L.slots = this.L.slots.filter((s) => s.tm >= 0 || s.id === "host");
+      for (const s of this.L.slots) if (s.tm < 0) s.tm = 0;
+    }
     for (const s of this.L.slots) if (s.id !== "host") s.rdy = 0;
     G.setS("menu");
     this.pub(true);

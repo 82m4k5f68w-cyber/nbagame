@@ -22,3 +22,7 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   Tutorial (first step), Dunk Contest (3 judged dunks), HORSE (to five letters), Clutch Challenges (list + a scenario to
   its result screen), Season (a game is recorded), halftime show; settings drawer has the Rules / Presentation /
   Accessibility / Controls sections. Modes drive the sim through `H2K.openMode(kind)` + `H2K.MODE`.
+- modes_sim.ts — headless: 3v3 / 2v2 games, Street 21 (1v1 + 3v3, half court), King of the Court, All-Star, Daily
+  Challenge all reach a result, no NaN, street play stays in the right half, stopMode restores the team size.
+- browser_link.mjs — a highlight becomes a #reel= share link; opening it plays the clip in the same mode.
+- browser_tour.mjs — relay: a three-player 1v1 tournament (bye + final, champion) and a 3v3 online game.

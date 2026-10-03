@@ -142,6 +142,23 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   Jumbotron lower panel `jStat()` rotates team stats every 6 s / shows runs. Music modes (`music.mode`): pregame / organ / hype /
   clutch / calm, chosen in `game.ts loop`; `music.riff(name)` queues organ riffs on the next bar.
 
+## Stars, street & arena life (v4.1)
+- AI: `TEND`/`tendOf(p)` (deep/mid/drive/post/pass/step) picks shot range; hold-for-last-shot, two-for-one, extra pass on
+  contested looks, intentional fouls late (rulesTick), `TS.adv` frontcourt inbound after a late timeout, `TS.mu` matchups
+  (`autoMatch`, `guardOf`, `manOf`; pause → Matchups). `p.tg` timing grade (+ FX "tg", relayed online as "q").
+- Pro Play v3: `p.plantT` plant/slip, `p.fsT` first step, `p.react/p.dcl` double clutch / hang (delays launch), `p.hupT`
+  hand-up contest, `p.lateJ` off-balance landing, `p.pk` pass style (1 no-look, 2 behind-back, 3 wraparound), `p.engT/eng`
+  body english, `deadBall()` (jog back, low fives, CEL 15 jersey tug, CEL 16 help up via `p.helpP`), tip-outs, box-outs, combos
+  `p.combo`, post spin. These pose flags are host-side only (guests see the base animation).
+- Modes: `cfg.HALF` (hoop() is the right basket for both teams, `setupHalf` check ball, 1s/2s, make-it-take-it, change of
+  possession -> take it back), `cfg.TO` points to win, `cfg.ASTAR` (allStar() rosters, open floor). modes.ts: startStreet,
+  startKing (ladder), startAllStar, startDaily (`dailySpec` seeded by date). `GAMELIKE` modes run the normal sim; `gameLike()`.
+  Team sizes 3v3/2v2 (`RO` takes the best NP players; no reserves below 5v5).
+- Renderer: `ARENA` objects hidden / `STREET` set shown when `cfg.HALF`; referees (`refs`, `V.refCall` on FX "whistle");
+  coach gestures (`coachG/coachK`); courtside reactions `CS`/`courtside()` (`V.crowdReact` on FX "ooh"/"duck").
+- Online: lobby team size (`setOpt("np")`, `cap()`), tournament (`L.tour`, `tourStart/tourPlay/tourResult`, spectators tm -1),
+  replay links `#...&reel=` (packClip: every 2nd frame, int16, deflate-raw, base64url; main.ts opens the mode, `playLinkReel`).
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.
@@ -154,6 +171,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - A tip-in from under the rim could get a launch too soft to reach the rim -> sqrt(negative) -> NaN ball. launch() now lifts it.
 - AI state needs all its fields set together (`a.r` without `a.w`/`a.pt` -> NaN timers -> a handler frozen under the rim).
 - Never `open(p,'w').write(open(p).read()...)` in one python line (truncates the file first): use the scratchpad rp.py helper.
+- canvas.ts / main.ts are `@ts-nocheck`: a missing import there type-checks fine and throws at runtime (check imports by hand).
+- Mode starts must call `stopMode()` before reading `cfg.NP` (otherwise they inherit the previous mode's team size).
 
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and

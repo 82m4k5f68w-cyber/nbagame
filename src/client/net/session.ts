@@ -90,7 +90,7 @@ export const NET = {
       kind
         ? `<div class="opts"><b>HOST A GAME</b><button id="cr">Create game (${cfg.NP > 1 ? "5v5" : "1v1"})</button>${kind === "ws" ? '<button id="crd">Create on dedicated server</button>' : ""}
     ${store.get("h2k_last") ? `<b>LAST GAME</b><button id="rj">↻ Rejoin ${esc(store.get("h2k_last"))}</button>` : ""}<b>JOIN A FRIEND</b><input id="cd" maxlength="4" placeholder="CODE" value="${esc(store.get("h2k_last", ""))}" style="width:90px;text-transform:uppercase;letter-spacing:3px;font-weight:800"><button id="jn">Join</button></div>
-    <p class="note" style="max-width:520px">Host plays on this device and runs the game; friends join with the 4-letter code. Up to ${cfg.NP > 1 ? "2 humans per side (AI fills the rest)" : "1 human per side"}. Local 2-player stays in the main menu.</p>`
+    <p class="note" style="max-width:520px">Host plays on this device and runs the game; friends join with the 4-letter code. Up to ${cfg.NP > 1 ? "2 humans per side in 5v5 (AI fills the rest), everyone in 3v3 / 2v2" : "1 human per side; 3-4 friends can play a tournament bracket"}. Local 2-player stays in the main menu.</p>`
         : `<p style="max-width:520px;color:#ff9966">Online play works on the shared Hoops 2K27 link on claude.ai: open it while signed in to claude.ai, then host or enter a friend's code. This copy of the page can't reach the live rooms. Local 2-player still works from the main menu.</p>`
     }
     <div id="nerr" style="color:#ff9966;min-height:18px"></div><button class="big" id="bkm">◀ Back</button>`;
@@ -161,11 +161,40 @@ export const NET = {
   },
   /** Final-screen buttons for online games: rematch (host starts / guests vote) and back to the lobby. */
   finalButtons() {
+    const L = host ? host.L : guest ? guest.L : null;
+    if (L && L.tour) {
+      // tournament: record this game, then the next match or the champion
+      let more = false;
+      if (host) more = host.tourResult();
+      const t = L.tour,
+        nm = (id: string) => esc(t.names[id] || "?"),
+        nx = t.m[t.i];
+      return `${bracket(t)}${
+        host
+          ? more && nx
+            ? `<button class="big" id="ntm">NEXT MATCH ▶ ${nm(nx[0])} vs ${nm(nx[1])}</button><button class="ghost" id="pa">End tournament</button>`
+            : `<p class="big-n">🏆 ${t.champ ? nm(t.champ) : "?"} wins the tournament!</p><button class="big" id="pa">Back to lobby</button>`
+          : `<p class="hint">${t.champ ? "🏆 " + nm(t.champ) + " wins the tournament!" : "Next match coming up…"}</p><button class="ghost" id="pa">Leave game</button>`
+      }`;
+    }
     return host
       ? `<button class="big" id="nrm">↻ REMATCH</button><button class="ghost" id="pa">Back to lobby</button><p class="hint" id="nrmc"></p>`
       : `<button class="big" id="nrm">↻ I want a rematch</button><button class="ghost" id="pa">Leave game</button><p class="hint" id="nrmc">The host decides: rematch or back to the lobby.</p>`;
   },
   bindFinal() {
+    const ntm = document.getElementById("ntm");
+    if (ntm && host)
+      ntm.onclick = () => {
+        audio.crowdInit();
+        host!.tourPlay(IN.TEMPO);
+        V.focus = Math.max(0, CT.findIndex((c) => c.id === "p1"));
+        ov().style.display = "none";
+        TX.length = 0;
+      };
+    if (!host && guest && guest.L && guest.L.tour) {
+      const pa = document.getElementById("pa");
+      if (pa) pa.onclick = () => leave();
+    }
     const b = document.getElementById("nrm");
     if (!b) return;
     if (host) {
@@ -304,6 +333,13 @@ export const NET = {
     }
   },
 };
+/** Tournament bracket: every match so far with its winner. */
+function bracket(t: NonNullable<Lobby["tour"]>) {
+  const nm = (id: string) => esc(t.names[id] || "?");
+  return `<table class="bx" style="max-width:420px"><tr><th>TOURNAMENT</th><th>WINNER</th></tr>${t.m
+    .map((m, i) => `<tr${i === t.i && !t.champ ? ' style="color:#ffd23f"' : ""}><td>${i === t.m.length - 1 && t.m.length > 1 && (t.ids.length > 2 || i > 0) ? "Final: " : "Match " + (i + 1) + ": "}${nm(m[0])} vs ${nm(m[1])}</td><td>${t.w[i] ? nm(t.w[i]) : i === t.i ? "playing…" : "—"}</td></tr>`)
+    .join("")}${t.bye && t.i < 1 ? `<tr><td>${nm(t.bye)} waits for the final (bye)</td><td></td></tr>` : ""}</table>`;
+}
 function err(e: any) {
   const n = document.getElementById("nerr");
   if (n) n.textContent = String((e && e.message) || e);
@@ -340,15 +376,29 @@ function renderHostLobby() {
   })()}<p class="hint">Quick chat in game: keys 1–6 (${CHAT.map(esc).join(" · ")})</p>
   <div class="opts"><b>YOUR SIDE</b><button data-sd="0" class="${me && me.tm === 0 ? "on" : ""}">Home</button><button data-sd="1" class="${me && me.tm === 1 ? "on" : ""}">Away</button>
   <b>${L.np > 1 ? "TEAMS" : "PLAYERS"}</b>${teamSelect("t0", L.np, L.teams[0])} vs ${teamSelect("t1", L.np, L.teams[1])}
+  ${L.np > 1 ? `<b>TEAM SIZE</b>${[5, 3, 2].map((n) => `<button data-np="${n}" class="${L.np === n ? "on" : ""}">${n}v${n}</button>`).join("")}` : ""}
   <b>QUARTER LENGTH</b>${[30, 60, 120].map((q) => `<button data-ql="${q}" class="${L.ql === q ? "on" : ""}">${q}s</button>`).join("")}
   <b>PRO PLAY</b><button data-pro="1" class="${L.pro ? "on" : ""}">On</button><button data-pro="0" class="${L.pro ? "" : "on"}">Off</button></div>
-  <button class="big" id="go" ${host.canStart() ? "" : 'style="opacity:.5"'}>${host.canStart() ? "START GAME ▶" : "WAITING FOR READY…"}</button><button id="lv" style="margin-top:8px">Leave</button>`;
+  <button class="big" id="go" ${host.canStart() ? "" : 'style="opacity:.5"'}>${host.canStart() ? "START GAME ▶" : "WAITING FOR READY…"}</button>${L.np === 1 && host.guests.size >= 1 ? `<button id="trn" style="margin-top:8px">🏆 Start a tournament (everyone here, 1v1 bracket)</button>` : ""}<div id="nerr" style="color:#ff9966;min-height:18px"></div><button id="lv" style="margin-top:8px">Leave</button>`;
   ov()
     .querySelectorAll<HTMLElement>("[data-sd]")
     .forEach((b) => (b.onclick = () => (host!.setSide(+b.dataset.sd!), renderHostLobby())));
   ov()
     .querySelectorAll<HTMLElement>("[data-ql]")
     .forEach((b) => (b.onclick = () => (host!.setOpt("ql", +b.dataset.ql!), renderHostLobby())));
+  ov()
+    .querySelectorAll<HTMLElement>("[data-np]")
+    .forEach((b) => (b.onclick = () => (host!.setOpt("np", +b.dataset.np!), renderHostLobby())));
+  const trn = document.getElementById("trn");
+  if (trn)
+    trn.onclick = () => {
+      audio.crowdInit();
+      if (!host!.tourStart(IN.TEMPO)) return err(new Error("A tournament needs at least 2 players"));
+      V.focus = Math.max(0, CT.findIndex((c) => c.id === "p1"));
+      ov().style.display = "none";
+      TX.length = 0;
+      watchHidden();
+    };
   ov()
     .querySelectorAll<HTMLElement>("[data-pro]")
     .forEach((b) => (b.onclick = () => (host!.setOpt("pro", +b.dataset.pro!), renderHostLobby())));

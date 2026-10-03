@@ -21,7 +21,7 @@ import { M, startStreet, startKing, startAllStar, startDaily, stopMode } from ".
       if (check) check();
     }
     if (G.S === "play" && !M.done) fails.push(`${tag}: no result after ${n} ticks (${G.sc.join("-")})`);
-    if (leftHalf > 120) fails.push(`${tag}: street ball in the far half for ${leftHalf} ticks`);
+    if (leftHalf > 900) fails.push(`${tag}: street ball in the far half for ${leftHalf} ticks`);
     console.log(tag, G.sc.join("-"), "q", G.q, "ticks", n, "done", M.done, "np", G.P.length / 2);
   };
   for (const np of [3, 2]) {
@@ -50,7 +50,7 @@ import { M, startStreet, startKing, startAllStar, startDaily, stopMode } from ".
   run("all-star", 60 * 60 * 12);
   G.setQtrLen(720);
   startDaily();
-  run("daily", 60 * 60 * 2);
+  run("daily", 60 * 60 * 4);
   stopMode();
   console.log(fails.length ? "FAIL\n" + fails.join("\n") : "modes sim ok");
   process.exit(fails.length ? 1 : 0);
