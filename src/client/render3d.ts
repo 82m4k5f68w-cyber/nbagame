@@ -33,25 +33,58 @@ export function glInit(C: HTMLCanvasElement) {
     S.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     pm.dispose();
     const cam = new THREE.PerspectiveCamera(38, 960 / 540, 0.5, 420);
-    S.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a1d10, 0.35));
-    const sun = new THREE.DirectionalLight(0xfff3e2, 1.25);
-    sun.position.set(10, 60, 18);
+    S.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a1d10, 0.3));
+    // Broadcast arena lighting: an almost-overhead key (crisp contact shadows under the players, like the real
+    // catwalk rig), warm spotlights pooling on the floor, a cool rim, light shafts in the haze, then a color grade.
+    const sun = new THREE.DirectionalLight(0xfff3e2, 1.05);
+    sun.position.set(4, 80, 7);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mob ? 1024 : 2048, mob ? 1024 : 2048);
     Object.assign(sun.shadow.camera, { left: -54, right: 54, top: 32, bottom: -32, near: 5, far: 150 });
     sun.shadow.bias = -0.0003;
     sun.shadow.normalBias = 0.025;
     S.add(sun);
-    // Arena rig: warm key lights over each half + cool rim lights from the corners (no shadows, cheap).
-    for (const [x, z, c, i] of [
-      [-26, 0, 0xfff1dc, 0.38],
-      [26, 0, 0xfff1dc, 0.38],
-      [-60, -40, 0x9ec4ff, 0.35],
-      [60, 40, 0x9ec4ff, 0.35],
-    ] as const) {
-      const l = new THREE.PointLight(c, i, 140, 1.4);
-      l.position.set(x, 34, z);
-      S.add(l);
+    // Catwalk spotlights (no shadows: cheap): warm pools over each half court + cool rims from the corners.
+    const SPOTS: [number, number, number, number, number, number][] = [
+      [-30, -16, -22, 0, 0xfff0d8, 1.1],
+      [30, 16, 22, 0, 0xfff0d8, 1.1],
+      [-62, 34, -34, 4, 0xa8c8ff, 0.7],
+      [62, -34, 34, -4, 0xa8c8ff, 0.7],
+    ];
+    for (const [x, z, tx, tz, c, i] of SPOTS) {
+      const l = new THREE.SpotLight(c, i, 0, 0.55, 0.75, 1);
+      l.position.set(x, 40, z);
+      l.target.position.set(tx, 0, tz);
+      S.add(l, l.target);
+    }
+    // Light shafts: faint additive cones from the catwalks, brighter where you look through more haze.
+    const shaftM = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      uniforms: { k: { value: 0.05 } },
+      vertexShader:
+        "varying float vY; varying vec3 vN; varying vec3 vV; void main(){ vY = uv.y; vec4 mv = modelViewMatrix * vec4(position,1.); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }",
+      fragmentShader:
+        "uniform float k; varying float vY; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 1.5); float a = k * (0.25 + 0.75 * f) * smoothstep(0.0, 0.35, vY) * (0.35 + 0.65 * vY); gl_FragColor = vec4(vec3(1.0, 0.95, 0.86) * a, 1.0); }",
+    });
+    const shafts: THREE.Mesh[] = [];
+    for (const [x, z, tx, tz] of SPOTS.slice(0, 2).concat([
+      [-8, -20, -14, 6, 0, 0],
+      [8, 20, 14, -6, 0, 0],
+    ])) {
+      const from = new THREE.Vector3(x, 40, z),
+        to = new THREE.Vector3(tx, 0, tz),
+        len = from.distanceTo(to),
+        g = new THREE.CylinderGeometry(0.8, 9, len, 24, 1, true);
+      g.translate(0, -len / 2, 0);
+      const m = new THREE.Mesh(g, shaftM);
+      m.position.copy(from);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), to.clone().sub(from).normalize());
+      m.renderOrder = 5;
+      S.add(m);
+      shafts.push(m);
     }
     const MC = new Map<string, THREE.MeshStandardMaterial>(),
       M = (c: any, o: any = {}) => {
@@ -541,7 +574,9 @@ export function glInit(C: HTMLCanvasElement) {
         R.shadowMap.enabled = wantShadow;
         S.traverse((o: any) => o.material && [].concat(o.material).forEach((mm: any) => (mm.needsUpdate = true)));
       }
-      sun.shadow.mapSize.setScalar(ql > 1 && !mob ? 2048 : 1024);
+      sun.shadow.mapSize.setScalar(ql > 1 && !mob ? 4096 : ql > 0 ? 2048 : 1024);
+      for (const m of shafts) m.visible = ql >= 1 && lvl >= 3;
+      fx.setGrade(on && ql >= 1 && lvl >= 4);
       if (sun.shadow.map) {
         sun.shadow.map.dispose();
         (sun.shadow as any).map = null;
@@ -599,6 +634,10 @@ export function glInit(C: HTMLCanvasElement) {
         lastR = now;
         if (PC.join() + cl.join() !== pcK) {
           pcK = PC.join() + cl.join();
+          // per-arena grade: a whisper of the home team's color in the light
+          const hc = new THREE.Color(PC[0] || "#ffffff"),
+            mx = Math.max(hc.r, hc.g, hc.b, 0.01);
+          fx.setGrade(V.FX && V.QL >= 1, new THREE.Color(1, 1, 1).lerp(hc.multiplyScalar(1 / mx), 0.07));
           court();
           ledDraw();
           led.needsUpdate = true;
@@ -681,8 +720,9 @@ export function glInit(C: HTMLCanvasElement) {
         if (SO && p0) {
           // Animation Studio: close orbit around the player
           const pw = W3(p0.x, p0.y, 0);
-          tp = [pw[0] + Math.cos(SO.a) * SO.d, 5, pw[2] + Math.sin(SO.a) * SO.d];
-          tl = [pw[0], 3.3, pw[2]];
+          const up = p0.z * 0.1; // follow jumps
+          tp = [pw[0] + Math.cos(SO.a) * SO.d, 5 + up, pw[2] + Math.sin(SO.a) * SO.d];
+          tl = [pw[0], 3.3 + up, pw[2]];
         }
         cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : 0.1);
         cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : 0.14);

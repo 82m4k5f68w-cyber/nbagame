@@ -50,6 +50,16 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   Skeleton spec `RIG` (pose.ts) is the single source: `handPos` (release point), `skeleton()` (2D, 20 joints) and `rig3d.ts`
   (19 bones: hips, pelvis bd, chest ch, neck nk, head hd, thighs, knees, ankles al/ar, shoulders, elbows, wrists, fingers gL/gR)
   all use it; `tests/fk.ts` poses the REAL `makeRig` in Node (it skips DOM textures) and checks hand, head, knees, ankles, toes.
+  Pro Play v2 layers in pose3: two-hand dribble IK (either arm, chosen by the ball's side; free arm relaxes or arm-bars a
+  close defender) fed by sim `dribHand` (B.dhn hand, crossovers/BTB/spins switch hands along their own paths, protect-
+  the-ball crosses, size-ups); `armIK()` (reusable two-bone arm IK: dribble, defenders' active hands, rebound/catch
+  reach, layup reach to the rim); running: cut bank from heading-change rate `p.trn`, drive steps, stride stops;
+  box-outs / post battles; secondary motion = damped torso spring `p.sf/p.ss` driven by inertia and contact impulses
+  (hitT increments; hitT+direction are in the snapshot, PST 26), arms flail + recovery step on big hits, head/arm lag.
+  Finishes (`data.ts CK`/`CL`, `isDunkSv/isLaySv`): dunks 6 one-hand, 11 two-hand, 12 tomahawk, 13 windmill, 14 reverse,
+  15 360 -> `p.hangT` rim hang (sv 19); layups 5, 7 euro, 16 finger roll, 17 reverse, 18 contact (through a foul);
+  jumpers add 20 leaner, 21 runner (picked by movement in `pickClip`); every airborne jumper leans with momentum;
+  greens set CEL 10 (held follow-through); landings split the feet with the drift.
   `footIK` plants stance feet (two-bone IK) and keeps planted feet flat. Animation Studio (`client/animview.ts`): pause menu
   or `?anim`; `H2K.studio()`, `H2K.studioPose(i, t, camAngle)` freezes a pose for screenshots (orbit camera `V.studio`).
 - Post-processing (`client/fx3d.ts`): MSAA -> SSAO (High) -> bloom -> camera motion blur (fixed 1/60 s shutter) -> gamma; floor = glossy plane over a `Reflector` (High). Toggle: `V.FX`.

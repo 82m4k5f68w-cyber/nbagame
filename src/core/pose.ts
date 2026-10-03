@@ -148,6 +148,31 @@ export function pose3(p: Player) {
     wR = o.wR;
     wL = o.wL;
     zL = o.zL;
+    const kind = CK[p.sv];
+    if (kind !== "hang" && p.z > 0) {
+      // momentum shapes every jumper: drifting sideways tilts the body, fading falls back, attacking leans in
+      const cf2 = Math.cos(p.f),
+        sf2 = Math.sin(p.f),
+        fwv = p.vx * cf2 + p.vy * sf2,
+        sdv = -p.vx * sf2 + p.vy * cf2;
+      ln += clamp(fwv / 650, -0.3, 0.25);
+      rz += clamp(sdv / 700, -0.3, 0.3);
+    }
+    if (kind === "hang") {
+      // swinging under the rim, gripping the iron
+      const sw = Math.sin(T * 5.5 + p.k);
+      tL += sw * 0.18;
+      tR += sw * 0.18;
+      ln += sw * 0.06;
+      gL = gR = 0.85;
+    } else if ((kind === "lay" || kind === "roll" || kind === "contact") && k > 0.4 && k < 0.92) {
+      // layup hand extends toward the rim around the release
+      const w = Math.sin(((k - 0.4) / 0.52) * Math.PI) * 0.75,
+        r1 = armIK(p, cr, hoop(p.tm), HY, 104, 1, 0.5);
+      aR += (r1.a - aR) * w;
+      eR += (r1.e - eR) * w;
+      sz += (r1.ab - sz) * w;
+    }
   } else if (md === "s") {
     const k = Math.min(1, p.t / 0.4),
       v = p.sv,
@@ -284,29 +309,42 @@ export function pose3(p: Player) {
       cr += Math.abs(sd2) * 0.15 * spd;
       if (def) (tL *= 0.35), (tR *= 0.35); // slides stay low and wide instead of running
     } else if (def && !air) hz = 0.14;
-    if (PRO && has && md === "i" && !(p.mvT > 0) && !p.postA) {
-      // Dribble hand IK: reach the real ball position.
-      const S2 = p.ht / 6.4,
-        w = W3(p.x, p.y, p.z),
-        // the hand follows the push down a little, then waits at the hip for the ball to come back up
-        b = W3(B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8)),
-        th = Math.PI / 2 - p.f,
-        X1 = b[0] - w[0],
-        Y1 = b[1] - (w[1] - cr * 0.4),
-        Z1 = b[2] - w[2],
-        lx = (X1 * Math.cos(th) - Z1 * Math.sin(th)) / S2,
-        lz = (X1 * Math.sin(th) + Z1 * Math.cos(th)) / S2,
-        tx = lx - 0.82 * p.bk,
-        ty2 = Y1 / S2 - 5.1,
-        tz = lz,
-        L1 = 1.02,
-        L2 = 1.15,
-        d = Math.min(L1 + L2 - 0.02, Math.max(0.3, Math.hypot(tx, ty2, tz))),
-        ph2 = Math.atan2(tz, -ty2),
-        al = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
-      aR = ph2 - al;
-      eR = Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
-      sz = clamp(Math.atan2(tx, Math.max(0.2, -ty2)), -0.4, 0.6);
+    if (PRO && has && md === "i" && !p.postA) {
+      // Dribble hand IK with EITHER hand: whichever side of the body the ball is on (works on guests too: it only
+      // needs the ball position). The free arm relaxes, or becomes an arm-bar toward a close defender.
+      const k2 = armIK(p, cr, B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8), 0, 0.6), // hand waits at the hip
+        right = k2.right,
+        a2 = k2.a,
+        e2 = k2.e,
+        ab = k2.ab;
+      // closest defender: arm-bar with the free arm
+      let dd = 1e9;
+      for (const q of P) if (q.tm !== p.tm) dd = Math.min(dd, Math.hypot(q.x - p.x, q.y - p.y));
+      const bar = dd < 45 && !(p.mvT > 0),
+        fa = bar ? 0.62 : 0.4 + spd * 0.3, // arm-bar: upper arm out front, forearm across the chest at belly height
+        fe = bar ? 1.35 : 1,
+        fz = bar ? 0.22 : 0.12;
+      if (right) {
+        aR = a2;
+        eR = e2;
+        sz = ab;
+        aL = fa;
+        eL = fe;
+        zL = fz;
+        gR = 0.1;
+        gL = bar ? 0.15 : 0.3;
+      } else {
+        aL = a2;
+        eL = e2;
+        zL = ab;
+        aR = fa;
+        eR = fe;
+        sz = fz;
+        gL = 0.1;
+        gR = bar ? 0.15 : 0.3;
+        wL = wR;
+        wR = 0;
+      }
     }
     if (def && !air && (B.owner.mode === "c" || B.owner.mode === "s") && Math.hypot(B.owner.x - p.x, B.owner.y - p.y) < 70) {
       aR = 2.9;
@@ -342,11 +380,67 @@ export function pose3(p: Player) {
     } else if (p.mvk === 3) {
       ty += Math.sin(e * 10) * 0.9 * sd;
       ln = 0.2;
-      aR = 0.3;
-      eR = 0.4;
+      cr = Math.max(cr, 0.25); // sit into the between-the-legs; the hand IK carries the ball
     } else {
       ln = 0.3;
       cr = 0.2;
+    }
+  }
+  // ---- smarter running: plant-and-cut lean, drive steps out of a standstill, braking stops ----
+  {
+    const hd = Math.atan2(p.vy, p.vx);
+    if (sp > 60 && p.hd0 != null) {
+      const dh = Math.atan2(Math.sin(hd - p.hd0), Math.cos(hd - p.hd0));
+      p.trn = (p.trn || 0) * 0.75 + (dh / DT) * 0.25;
+    } else p.trn = (p.trn || 0) * 0.8;
+    p.hd0 = hd;
+    if (md === "i" && !air && !p.postA && !(p.setT > 0) && (st === ST.run || st === ST.drib)) {
+      const tr = clamp(p.trn, -9, 9),
+        g = Math.abs(tr) * sp;
+      rz += clamp((tr * sp) / 1400, -0.38, 0.38); // bank into the cut
+      cr += Math.min(0.22, g / 5000);
+      hs += Math.sign(tr) * Math.min(0.18, g / 6000); // the outside foot plants wide and pushes
+      const acc = p.acc || 0;
+      if (acc > 900 && sp < 150) {
+        // first steps: low, long, arms pumping
+        const k = Math.min(1, (acc - 900) / 1500);
+        ln += 0.14 * k;
+        cx += 0.06 * k;
+        aL *= 1 + 0.6 * k;
+        aR *= 1 + 0.6 * k;
+      }
+      if ((p.brk || 0) > 0.3 && sp > 40) {
+        // stride stop: lead leg out in front, weight back, arms forward for balance
+        const lead = s >= 0;
+        tL = lead ? 0.55 : -0.12;
+        kL = lead ? 0.15 : 0.75;
+        tR = lead ? -0.12 : 0.55;
+        kR = lead ? 0.75 : 0.15;
+        cr += 0.18;
+        cx -= 0.08;
+        if (st === ST.run) (aL = aR = 0.55), (eL = eR = 0.7);
+      }
+    }
+  }
+  // ---- full-body reaching ----
+  if (PRO && !p.postA && !(p.setT > 0) && md !== "c" && md !== "s") {
+    const bd = Math.hypot(B.x - p.x, B.y - p.y);
+    if (st === ST.def && B.owner && B.owner.mode === "i" && bd < 70 && !air) {
+      // active hands: the ball-side hand mirrors the dribble (never touches it - steals are off)
+      const w = clamp((70 - bd) / 30, 0, 1),
+        tx = p.x + (B.x - p.x) * 0.7,
+        ty = p.y + (B.y - p.y) * 0.7,
+        k3 = armIK(p, cr, tx, ty, Math.max(18, B.z + 6), 0, 0.9);
+      if (k3.right) (aR += (k3.a - aR) * w), (eR += (k3.e - eR) * w), (sz += (k3.ab - sz) * w);
+      else (aL += (k3.a - aL) * w), (eL += (k3.e - eL) * w), (zL = (zL ?? sz) + (k3.ab - (zL ?? sz)) * w);
+    } else if (!has && !B.owner && (B.mode === "air" || B.mode === "pass") && bd < 45 && B.z > p.z + 30 && B.z < p.z + 150 && (air || B.to === p)) {
+      // rebounds, tips and catches: both hands go to where the ball actually is
+      const w = clamp((45 - bd) / 20, 0, 1);
+      const r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0);
+      (aR += (r1.a - aR) * w), (eR += (r1.e - eR) * w), (sz += (r1.ab - sz) * w);
+      const r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0);
+      (aL += (r2.a - aL) * w), (eL += (r2.e - eL) * w), (zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w);
+      gL = gR = 0.2;
     }
   }
   // Planted screener: wide base, knees bent, arms folded across the chest.
@@ -367,22 +461,12 @@ export function pose3(p: Player) {
   // Pro Play contact + weight: bumps rock the torso away from the hit, landings sink into the knees,
   // and players lean into acceleration.
   if (PRO) {
-    if (p.hitT > 0) {
-      const k = Math.min(1, p.hitT / 0.3),
-        cf = Math.cos(p.f),
-        sf = Math.sin(p.f),
-        fw = (p.hitX || 0) * cf + (p.hitY || 0) * sf,
-        sd = -(p.hitX || 0) * sf + (p.hitY || 0) * cf;
-      ln += fw * 0.38 * k;
-      rz -= sd * 0.32 * k;
-      ty += sd * 0.25 * k;
-      if (md === "i" && !has) {
-        aL += 0.5 * k;
-        aR += 0.35 * k;
-      }
-    }
     if (p.landT > 0 && md !== "s") {
       const k = p.landT / 0.28;
+      // landing: feet split (one lands first) and the drift carries the stance sideways
+      tL += 0.22 * k;
+      tR -= 0.12 * k;
+      hs += clamp((-p.vx * Math.sin(p.f) + p.vy * Math.cos(p.f)) / 600, -0.25, 0.25) * k;
       cr += 0.4 * k;
       kL += 0.55 * k;
       kR += 0.55 * k;
@@ -390,7 +474,7 @@ export function pose3(p: Player) {
       tR += 0.3 * k;
       ln += 0.12 * k;
     }
-    if (md === "i" && !air) ln += clamp((p.acc || 0) / 2600, -0.14, 0.2);
+    if (md === "i" && !air) ln += clamp((p.acc || 0) / 2600, -0.14, sp < 150 ? 0.28 : 0.2);
   }
   if (p.postA) {
     st = ST.post;
@@ -494,6 +578,15 @@ export function pose3(p: Player) {
         eL = m(eL, 0.35);
         ty += Math.sin(e * 2.2) * 0.35 * k;
         break;
+      case 10: {
+        // held follow-through (gooseneck) after a green, released after ~1 s
+        const h = e < 1.3 ? 1 : Math.max(0, 1 - (e - 1.3) / 0.3);
+        aR = m(aR, aR + (2.75 - aR) * h);
+        eR = m(eR, eR + (0.15 - eR) * h);
+        wR = 1.15 * h;
+        gR = m(gR, 0.2);
+        break;
+      }
       case 9: {
         // dap / low five with the nearest teammate (after a made free throw)
         let mate: Player | null = null,
@@ -522,6 +615,83 @@ export function pose3(p: Player) {
         gL = gR = m(gR, 0.8);
         HEADX = -0.5 * k; // eyes to the sky
         break;
+    }
+  }
+  // ---- box-outs and post battles: bodies lean into each other ----
+  if (md === "i" && !air && !has && !(p.setT > 0) && !(p.celT > 0)) {
+    let o: Player | null = null,
+      od = 1e9;
+    for (const q of P)
+      if (q.tm !== p.tm) {
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < od) (od = d), (o = q);
+      }
+    const shotUp = !B.owner && (B.mode === "air" || B.sh) && B.z > 20;
+    if (o && od < 22 && shotUp && Math.hypot(hoop(1 - p.tm) - p.x, HY - p.y) < 130) {
+      // box-out (defense of that basket): sit low and wide, arms out to feel the man behind
+      st = ST.post;
+      cr = Math.max(cr, 0.38);
+      hz = Math.max(hz, 0.3);
+      aL = aR = 0.85;
+      eL = eR = 1.05;
+      sz = 0.9;
+      zL = 0.9;
+      ln = 0.12;
+      gL = gR = 0.1;
+    } else if (o && od < 22 && o.postA && B.owner === o) {
+      // fronting the post: forearm in his back, leaning into him
+      st = ST.post;
+      ln += 0.22;
+      cr = Math.max(cr, 0.3);
+      aL = 1.0;
+      eL = 1.45;
+      zL = 0.1;
+    }
+  }
+  // ---- secondary motion (light ragdoll): a damped spring on the torso. Contact impulses (sized by the hit, so the
+  // momentum of the collision carries into the reaction) and the body's own inertia when speeding up, stopping or
+  // cutting drive it; it overshoots and settles. Big hits make the arms flail for balance and force a recovery step.
+  if (PRO) {
+    const cf = Math.cos(p.f),
+      sf = Math.sin(p.f),
+      ax = (p.vx - (p.svx ?? p.vx)) / DT,
+      ay = (p.vy - (p.svy ?? p.vy)) / DT;
+    p.svx = p.vx;
+    p.svy = p.vy;
+    const afw = clamp(ax * cf + ay * sf, -6000, 6000),
+      asd = clamp(-ax * sf + ay * cf, -6000, 6000);
+    if ((p.hitT || 0) > (p.hit0 || 0) + 0.01) {
+      const hfw = (p.hitX || 0) * cf + (p.hitY || 0) * sf,
+        hsd = -(p.hitX || 0) * sf + (p.hitY || 0) * cf;
+      p.sfv = (p.sfv || 0) + hfw * p.hitT * 13;
+      p.ssv = (p.ssv || 0) + hsd * p.hitT * 13;
+    }
+    p.hit0 = p.hitT || 0;
+    const air2 = p.z > 2 ? 0.4 : 1; // no footing in the air: softer
+    p.sfv = (p.sfv || 0) + (-110 * (p.sf || 0) - 12 * (p.sfv || 0) - (md === "i" ? afw * 0.007 * air2 : 0)) * DT;
+    p.ssv = (p.ssv || 0) + (-110 * (p.ss || 0) - 12 * (p.ssv || 0) - (md === "i" ? asd * 0.007 * air2 : 0)) * DT;
+    p.sf = clamp((p.sf || 0) + p.sfv * DT, -0.55, 0.55);
+    p.ss = clamp((p.ss || 0) + p.ssv * DT, -0.55, 0.55);
+    ln += p.sf;
+    rz += p.ss * 0.9;
+    cx += p.sf * 0.4;
+    // the head and loose arms trail the torso (they lag its spring velocity)
+    HEADX -= p.sf * 0.55;
+    if (md === "i" && !has) {
+      aL -= clamp(p.sfv * 0.06, -0.3, 0.3);
+      aR -= clamp(p.sfv * 0.06, -0.3, 0.3);
+    }
+    const wob = Math.hypot(p.sf, p.ss);
+    if (wob > 0.12 && md === "i" && !has) {
+      // balance: arms out, a quick step to catch the fall
+      const k = Math.min(1, (wob - 0.12) / 0.25);
+      sz += 0.7 * k;
+      zL = (zL ?? sz) + 0.7 * k;
+      aL += 0.4 * k;
+      aR += 0.4 * k;
+      hs += clamp(-p.ss * 0.9, -0.3, 0.3);
+      tL += p.sf * 0.5;
+      tR += p.sf * 0.5;
     }
   }
   // ---- additive layer: breathing (deeper when tired) ----
@@ -597,6 +767,37 @@ export function pose3(p: Player) {
     // wR is never smoothed (the wrist flick at release must be crisp); the head turns a bit quicker than the body
     o[k] = sm && j !== 13 && o[k] != null ? o[k] + (v - o[k]) * (j === 20 || j === 21 ? Math.min(1, f * 1.6) : f) : v;
   }
+}
+/** Two-bone arm IK toward a game-space point (px). side: +1 right arm, -1 left, 0 = the arm on the target's side.
+ *  Returns shoulder raise a, elbow e, abduction ab (for zL/sz), and how far the target is beyond reach (dist).
+ *  Approximates the chest as square to the pelvis (used for the dribble hand, defenders' hands, rebounds). */
+const IK = { right: true, a: 0, e: 0, ab: 0, over: 0 };
+export function armIK(p: Player, cr: number, x: number, y: number, z: number, side: number, abMax: number) {
+  const S2 = p.ht / 6.4,
+    w = W3(p.x, p.y, p.z),
+    b = W3(x, y, z),
+    th = Math.PI / 2 - p.f,
+    X1 = b[0] - w[0],
+    Y1 = b[1] - (w[1] - cr * 0.4),
+    Z1 = b[2] - w[2],
+    lx = (X1 * Math.cos(th) - Z1 * Math.sin(th)) / S2,
+    lz = (X1 * Math.sin(th) + Z1 * Math.cos(th)) / S2,
+    right = side ? side > 0 : lx >= 0,
+    tx = right ? lx - RIG.shX * p.bk : lx + RIG.shX * p.bk,
+    ty2 = Y1 / S2 - (RIG.hip + RIG.chest + RIG.sh),
+    tz = lz,
+    L1 = 1.02,
+    L2 = 1.15,
+    raw = Math.hypot(tx, ty2, tz),
+    d = Math.min(L1 + L2 - 0.02, Math.max(0.3, raw)),
+    ph2 = Math.atan2(tz, -ty2),
+    al = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+  IK.right = right;
+  IK.a = ph2 - al;
+  IK.e = Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
+  IK.ab = clamp(Math.atan2(right ? tx : -tx, Math.max(0.2, Math.abs(ty2))), -0.4, abMax);
+  IK.over = raw - (L1 + L2);
+  return IK;
 }
 const NQ = 27,
   VALS = new Float64Array(NQ),

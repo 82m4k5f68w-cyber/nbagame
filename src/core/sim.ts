@@ -1,7 +1,7 @@
 // Hoops 2K27 shared simulation core. DOM-free: runs in the browser (every mode) and in Node (tests, servers).
 // Ported from the four near-identical mode copies; NP (players per team) and the physics backend are flags.
 // Game coordinates: x 0..940, y 0..500 (10 px = 1 ft), z up (rim z=100). Team 0 attacks the RIGHT hoop.
-import { TM, SP, OV, ov2, formOf, type Tuple } from "./data";
+import { TM, SP, OV, ov2, formOf, isDunkSv, type Tuple } from "./data";
 import { pose3, handPos } from "./pose";
 import { RAP, rapStep, rapSyncPlayers } from "./physics";
 
@@ -437,7 +437,7 @@ export function launch(p: Player) {
     p.hitX = (p.x - fd.x) / dl;
     p.hitY = (p.y - fd.y) / dl;
   }
-  if (p.sv === 6 && (p.oop || Math.random() < 0.9)) {
+  if (isDunkSv(p.sv) && (p.oop || Math.random() < 0.9)) {
     p.oop = 0;
     const vic = P.find((o) => o.tm !== p.tm && o.z > 8 && Math.hypot(o.x - p.x, o.y - p.y) < 22);
     if (vic) {
@@ -454,6 +454,8 @@ export function launch(p: Player) {
       fx({ k: "shake", v: 0.5 });
     }
     B.dk = 1;
+    // hang on the rim for a beat (pose switches to the hang clip shortly after the slam)
+    p.hangT = 0.55;
     B.x = hx;
     B.y = HY;
     B.z = 116;
@@ -496,6 +498,7 @@ export function launch(p: Player) {
   if (fd) {
     B.fl = 1;
     B.flBy = fd;
+    if (lay) p.sv = 18; // finishes through the contact
   }
   // Release angles like real shooters (~48-55 deg; floaters and heaves higher), plus a small per-player arc from the form signature.
   const fa = (p.sg && p.sg.a) || 0;
@@ -546,6 +549,11 @@ export function launch(p: Player) {
   }
   B.gn = gr;
   if (gr && hum) txtW("GREEN!", p.x, p.y, 95, "#2ecc71");
+  if (gr && !PREDICT && !(p.celT > 0)) {
+    // knows it's good: holds the follow-through through the landing (pose CEL 10)
+    p.cel = 10;
+    p.celT = CEL_T;
+  }
   snd(380, 0.07, "triangle");
 }
 /** Positions of everyone as the shooter saw them (lag compensation for online guests): a past frame or null = now. */
@@ -821,7 +829,20 @@ export function step(p: Player, dt: number) {
     }
   }
   if (p.postA) p.f = Math.atan2(-uy, -ux);
-  if (p.z > 0 || p.vz > 0) {
+  if (p.hangT > 0) {
+    // hanging on the rim after a dunk: hands on the iron, body under the front of the rim
+    p.hangT -= dt;
+    if (p.hangT < 0.42 && isDunkSv(p.sv)) p.sv = 19;
+    const hx = hoop(p.tm),
+      dir = hx > 470 ? 1 : -1;
+    p.x += (hx - dir * 9 - p.x) * Math.min(1, dt * 12);
+    p.y += (HY - p.y) * Math.min(1, dt * 12);
+    p.z = Math.max(p.z, 100 - (75 * p.ht) / 6.4);
+    p.vx = p.vy = 0;
+    p.vz = 0;
+    p.f = dir > 0 ? 0 : Math.PI;
+    if (p.hangT <= 0) p.vz = -10; // let go
+  } else if (p.z > 0 || p.vz > 0) {
     p.vz -= g * dt;
     p.z += p.vz * dt;
     if (p.z <= 0) {
@@ -1021,15 +1042,84 @@ function dz(o: Player, dt: number) {
   }
   return B.dh;
 }
+/** Two-hand dribble: which hand has it (B.dhn +1 right / -1 left) and the ball's lateral/forward offset (px; lateral
+ *  negative = the handler's right). Moves switch hands (crossover low across the front, behind-the-back between the
+ *  legs, spin around the hip); a close defender on the ball side makes the handler cross away from him; standing
+ *  still in front of a defender, the handler sizes up with alternating crosses. Ball position only - no gameplay. */
+function dribHand(o: Player, dt: number): [number, number] {
+  if (B.dho2 !== o) {
+    B.dho2 = o;
+    B.dhn = 1;
+    B.dsw = 0;
+    B.dcd = 0.4;
+    B.dmv = 0;
+    B.dsz = 0;
+  }
+  const base = () => -6 * B.dhn;
+  const sw = (kind: number, dur: number) => {
+    B.dswf = B.dsw > 0 ? B.dlat : base(); // start from wherever the ball is right now
+    B.dhn = -B.dhn;
+    B.dsw = dur;
+    B.dswd = dur;
+    B.dswk = kind;
+    B.dcd = 0.75;
+  };
+  if (!PREDICT) {
+    B.dcd = Math.max(0, (B.dcd || 0) - dt);
+    // a new dribble move started this tick
+    if (o.mvT > 0 && (B.dmv || 0) <= 0) {
+      if (o.mvk === 3) sw(3, 0.26);
+      else if (o.mvk === 2) sw(2, 0.34);
+      else if (o.mvk !== 1 && o.mvk !== 4) sw(1, 0.2);
+    }
+    B.dmv = o.mvT;
+    if (!(o.mvT > 0) && !(B.dsw > 0) && B.dcd <= 0) {
+      let d: Player | null = null,
+        dd = 1e9;
+      for (const q of P)
+        if (q.tm !== o.tm) {
+          const e = Math.hypot(q.x - o.x, q.y - o.y);
+          if (e < dd) (dd = e), (d = q);
+        }
+      if (d && dd < 46) {
+        // defender's side in the handler's frame (+ = right)
+        const rs2 = (d.x - o.x) * Math.sin(o.f) - (d.y - o.y) * Math.cos(o.f),
+          sp = Math.hypot(o.vx, o.vy);
+        if (Math.sign(rs2) === B.dhn && Math.abs(rs2) > 7) sw(1, 0.22); // protect: cross away from the defender
+        else if (sp < 25 && dd < 60) {
+          // size-up: between the legs, then a cross back
+          B.dsz = (B.dsz || 0) + 1;
+          sw(B.dsz % 2 ? 3 : 1, B.dsz % 2 ? 0.26 : 0.2);
+          B.dcd = 0.55;
+        }
+      }
+    }
+  }
+  let lat = base(),
+    fwd = 6;
+  if (B.dsw > 0) {
+    B.dsw = Math.max(0, B.dsw - dt);
+    const u0 = 1 - B.dsw / (B.dswd || 0.2),
+      u = u0 * u0 * (3 - 2 * u0),
+      arc = Math.sin(Math.PI * u0);
+    lat = (B.dswf ?? -lat) + (base() - (B.dswf ?? -lat)) * u;
+    if (B.dswk === 3) fwd = 6 - 10 * arc; // through the legs / behind the back
+    else if (B.dswk === 2) (fwd = 6 * Math.cos(Math.PI * u0)), (lat += 5 * arc * B.dhn); // swung around the hip
+    else fwd = 6 - 1.5 * arc; // crossover: low and tight across the front
+  }
+  B.dlat = lat;
+  return [lat, fwd];
+}
 const SORTP: Player[] = [];
 export function bstep(dt: number) {
   const o = B.owner;
   if (o) {
     {
-      // Dribbling: the ball sits out beside the right (dribbling) hand, a little in front; moves swing it across.
-      const side = o.mode === "i" && !o.postA ? -6 : 0,
-        off = side + (o.mvT > 0 ? Math.sin((o.mvE || 0) * 14) * 7 : 0),
-        fw = o.mode === "i" ? 6 : 8,
+      // Dribbling: the ball sits out beside the dribbling hand, a little in front; crossovers, behind-the-backs and
+      // spins carry it to the other hand along their own paths (see dribHand).
+      const [lat, fwd] = o.mode === "i" && !o.postA ? dribHand(o, dt) : [0, 8],
+        off = lat,
+        fw = fwd,
         tx = o.x + Math.cos(o.f) * fw - Math.sin(o.f) * off,
         ty = o.y + Math.sin(o.f) * fw + Math.cos(o.f) * off;
       if (cfg.PRO && o.mode === "i" && B.hold === o && !PREDICT) {
@@ -1247,7 +1337,7 @@ export function bstep(dt: number) {
         // ALLEY-OOP: catch it in the air and throw it down
         p.mode = "s";
         p.t = 0.27;
-        p.sv = 6;
+        p.sv = Math.random() < 0.5 ? 6 : 11;
         p.rl = 0;
         p.vz = Math.max(p.vz, 175);
         p.oop = 1;
@@ -1670,11 +1760,30 @@ export function pickClip(p: Player, D: number, lay: boolean) {
     fw = p.vx * dir,
     sp = Math.hypot(p.vx, p.vy);
   if (lay) {
-    if (D < 50 && p.j >= 55) return 6;
-    return c > 0.35 && sp > 60 ? 7 : 5;
+    // finish package: picked by leaping ability, speed, approach angle and traffic
+    const hx = hoop(p.tm),
+      base = Math.abs(p.y - HY) > 40 && Math.abs(p.x - hx) < 45, // driving along the baseline
+      r = Math.random();
+    if (D < 50 && p.j >= 55) {
+      if (c > 0.4) return 11; // two-hand power through traffic
+      if (base && r < 0.5) return 14; // reverse slam along the baseline
+      if (sp > 190 && p.j >= 75) return r < 0.3 ? 15 : r < 0.65 ? 13 : 12; // 360 / windmill / tomahawk
+      if (p.j >= 70 && r < 0.45) return 12;
+      return r < 0.55 ? 6 : 11;
+    }
+    if (c > 0.35 && sp > 60) return 7; // euro step around the help
+    if (base && r < 0.6) return 17; // reverse layup under the rim
+    if (c < 0.2 && sp > 140) return 16; // finger roll in space
+    return 5;
   }
   if (p.sg && p.sg.cl) return 9;
   if (p.sbw > 0) return 3;
+  {
+    // runners and leaners: shaped by how the shooter is moving
+    const lat = Math.abs(-p.vx * Math.sin(p.f) + p.vy * Math.cos(p.f));
+    if (fw > 150 && D > 90 && D < 230) return 21;
+    if (lat > 130 && D > 150) return 20;
+  }
   if (fw > 110 && D > 110) return 8;
   if (p.st === 4) return 4;
   if (p.st === 2 || (c > 0.5 && p.st !== 1)) return 2;

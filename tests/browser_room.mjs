@@ -54,7 +54,8 @@ try {
   await Gp.evaluate(() => document.querySelector('[data-sd="1"]').click());
   await Gp.waitForTimeout(500);
   await Gp.evaluate(() => document.getElementById("rd").click());
-  await H.waitForFunction(() => document.getElementById("go") && !document.getElementById("go").style.opacity, null, { timeout: 30000 });
+  // like a real host: start once the friend shows up in the lobby as seated and READY
+  await H.waitForFunction(() => { const go = document.getElementById("go"); return go && !go.style.opacity && [...document.querySelectorAll(".pl span")].filter((e) => e.textContent === "READY").length >= 2; }, null, { timeout: 30000 });
   await H.evaluate(() => document.getElementById("go").click());
   await Gp.waitForFunction(() => window.H2K.G.S === "play", null, { timeout: 30000 });
   await Gp.keyboard.down("KeyA");

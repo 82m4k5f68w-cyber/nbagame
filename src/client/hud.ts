@@ -1,6 +1,7 @@
 // Heads-up display: score bug, player strip, shot meters, contest ring, pass/open markers, floating texts.
 import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, type Player } from "../core/sim";
 import { V, pr, fmt, MN } from "./view";
+import { isLaySv } from "../core/data";
 import { K, tempoOf, TX } from "./input";
 let X: CanvasRenderingContext2D = null as any;
 export const setHudCtx = (x: CanvasRenderingContext2D) => (X = x);
@@ -75,7 +76,7 @@ export function meter(p: Player) {
       (TEMPO ? 1.2 : 1) *
       (0.85 + 0.15 * (p.en == null ? 1 : p.en)),
     ideal = TEMPO
-      ? p.sv >= 5 && p.sv < 8
+      ? isLaySv(p.sv)
         ? 0.28
         : p.st === 1
           ? 0.3

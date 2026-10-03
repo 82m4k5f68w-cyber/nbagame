@@ -23,7 +23,28 @@ const MotionBlurShader = {
   }`,
 };
 
+/** Broadcast color grade (on the tone-mapped image, before gamma): filmic contrast, a touch of saturation, a subtle
+ *  per-arena tint from the home team's color, and a soft vignette. */
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, tint: { value: new THREE.Color(1, 1, 1) }, sat: { value: 1.08 }, con: { value: 1.06 }, vig: { value: 0.22 } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }",
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec3 tint; uniform float sat, con, vig; varying vec2 vUv;
+  void main(){
+    vec4 c = texture2D(tDiffuse, vUv);
+    vec3 x = c.rgb;
+    float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
+    x = mix(vec3(l), x, sat);
+    // contrast around linear mid-grey (0.18), applied in log space so blacks don't crush
+    x = 0.18 * pow(max(x, vec3(1e-4)) / 0.18, vec3(con));
+    x *= tint;
+    vec2 d = vUv - 0.5;
+    x *= 1.0 - vig * dot(d, d) * 2.2;
+    gl_FragColor = vec4(x, c.a);
+  }`,
+};
+
 export interface Fx {
+  setGrade(on: boolean, tint?: THREE.Color): void;
   render(dt: number): void;
   setLevel(ql: number, on: boolean, w: number, h: number, ao?: boolean): void;
   setMotion(vx: number, vy: number, amt: number): void;
@@ -39,11 +60,13 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
   ao.maxDistance = 0.04;
   const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.22, 0.35, 0.92);
   const mb = new ShaderPass(MotionBlurShader as any);
+  const gr = new ShaderPass(GradeShader as any);
   const gm = new ShaderPass(GammaCorrectionShader);
   C.addPass(rp);
   C.addPass(ao);
   C.addPass(bloom);
   C.addPass(mb);
+  C.addPass(gr);
   C.addPass(gm);
   let on = true;
   return {
@@ -60,6 +83,10 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
       C.setPixelRatio(R.getPixelRatio());
       C.setSize(w, h);
       ao.setSize(Math.round(w * R.getPixelRatio() * 0.5), Math.round(h * R.getPixelRatio() * 0.5));
+    },
+    setGrade(onG, tint) {
+      gr.enabled = onG;
+      if (tint) gr.uniforms.tint.value.copy(tint);
     },
     setMotion(vx, vy, amt) {
       mb.uniforms.vel.value.set(vx, vy);

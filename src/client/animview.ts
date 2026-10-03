@@ -21,6 +21,8 @@ const stand = (p: any) => {
   p.landT = 0;
   p.pT = 0;
   p.en = 1;
+  p.brk = 0;
+  p.acc = 0;
   G.setScalars({ rs: 0, ftq: null, pos: p.tm });
   B.owner = null;
   B.mode = "air";
@@ -40,7 +42,25 @@ const dribble = (p: any, dt: number) => {
   G.bstep(dt / 2);
   G.bstep(dt / 2);
 };
-const CELN = ["", "Shimmy", "Night night", "Flex", "Three up", "Chest thump", "Roar", "Shh", "Point to the sky", "Dap"];
+/** A defender d px in front of the handler (angle off the facing in radians). */
+const guard = (p: any, d: number, a = 0) => {
+  const o = P.find((q) => q.tm !== p.tm)!;
+  o.x = p.x + Math.cos(p.f + a) * d;
+  o.y = p.y + Math.sin(p.f + a) * d;
+  o.f = p.f + Math.PI;
+  pose3(o);
+};
+/** Trigger dribble move k (1 hesi->cross path, 2 spin, 3 behind the back) every `per` seconds. */
+const moveEvery = (p: any, t: number, k: number, per: number) => {
+  const e = t % per;
+  if (e < 0.5) {
+    p.mvk = k === 1 ? 0 : k; // the plain crossover is the "other" move kind
+    p.mvT = 0.5 - e;
+    p.mvE = e;
+    p.mvS = 1;
+  }
+};
+const CELN = ["", "Shimmy", "Night night", "Flex", "Three up", "Chest thump", "Roar", "Shh", "Point to the sky", "Dap", "Held follow-through"];
 
 export const ANIMS: [string, Setup][] = [
   ["Idle (breathing)", (p) => stand(p)],
@@ -60,6 +80,79 @@ export const ANIMS: [string, Setup][] = [
   ],
   ["Dribble (standing)", (p, t, dt) => (stand(p), dribble(p, dt))],
   ["Dribble (driving)", (p, t, dt) => (stand(p), move(p, dt, 230, 0), dribble(p, dt))],
+  ["Hard cut (bank + plant)", (p, t, dt) => (stand(p), move(p, dt, 230, t * 4.5))],
+  ["Drive start (first steps)", (p, t, dt) => (stand(p), (p.acc = 1900), move(p, dt, 90, 0))],
+  ["Stride stop", (p, t, dt) => (stand(p), (p.brk = 1), move(p, dt, 110, 0))],
+  [
+    "Defender: active hands",
+    (p, t, dt) => {
+      stand(p);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      G.setScalars({ pos: o.tm });
+      o.x = p.x + Math.cos(p.f) * 42;
+      o.y = p.y + Math.sin(p.f) * 42;
+      o.f = p.f + Math.PI;
+      o.mode = "i";
+      B.owner = o;
+      B.mode = "held";
+      G.bstep(dt / 2);
+      G.bstep(dt / 2);
+      pose3(o);
+    },
+  ],
+  [
+    "Rebound reach",
+    (p, t) => {
+      stand(p);
+      const k = t % 1.2;
+      p.z = Math.max(0, Math.sin((k / 0.8) * Math.PI) * 30) * (k < 0.8 ? 1 : 0);
+      B.owner = null;
+      B.mode = "air";
+      B.x = p.x + Math.cos(p.f) * 10 + 6;
+      B.y = p.y + Math.sin(p.f) * 10;
+      B.z = 112 - k * 10;
+    },
+  ],
+  [
+    "Hard bump (stumble + recover)",
+    (p, t) => {
+      stand(p);
+      const k = t % 1.6;
+      if (k < 1 / 60) {
+        p.hitT = 0.35;
+        p.hitX = -Math.sin(p.f);
+        p.hitY = Math.cos(p.f);
+      } else p.hitT = Math.max(0, (p.hitT || 0) - 1 / 60);
+    },
+  ],
+  ["Sudden stop (body weight)", (p, t, dt) => (stand(p), move(p, dt, 260 * Math.max(0, Math.min(1, 1 - ((t % 1.4) - 0.8) / 0.15)), 0))],
+  [
+    "Box-out",
+    (p, t) => {
+      stand(p);
+      const hx = G.hoop(1 - p.tm),
+        dir = hx > 470 ? 1 : -1;
+      p.x = hx - dir * 60;
+      p.y = 250;
+      p.f = dir > 0 ? 0 : Math.PI;
+      const o = P.find((q) => q.tm !== p.tm)!;
+      o.x = p.x - dir * 15;
+      o.y = 250 + Math.sin(t * 3) * 4;
+      o.f = p.f;
+      pose3(o);
+      B.owner = null;
+      B.mode = "air";
+      B.sh = 1;
+      B.x = hx;
+      B.y = 250;
+      B.z = 112;
+    },
+  ],
+  ["Size-up vs defender", (p, t, dt) => (stand(p), guard(p, 40), dribble(p, dt))],
+  ["Arm-bar drive", (p, t, dt) => (stand(p), guard(p, 30, 1.2), move(p, dt, 160, 0), dribble(p, dt))],
+  ["Crossover", (p, t, dt) => (stand(p), moveEvery(p, t, 1, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
+  ["Behind the back", (p, t, dt) => (stand(p), moveEvery(p, t, 3, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
+  ["Spin move", (p, t, dt) => (stand(p), moveEvery(p, t, 2, 1.3), dribble(p, dt))],
   [
     "Jump shot",
     (p, t) => {
@@ -73,6 +166,47 @@ export const ANIMS: [string, Setup][] = [
       p.z = p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.6) * Math.PI) * 24) : 0;
     },
   ],
+  ...(
+    [
+      [6, "Dunk: one hand"],
+      [11, "Dunk: two-hand power"],
+      [12, "Dunk: tomahawk"],
+      [13, "Dunk: windmill"],
+      [14, "Dunk: reverse"],
+      [15, "Dunk: 360"],
+      [19, "Hanging on the rim"],
+      [5, "Layup"],
+      [16, "Finger roll"],
+      [17, "Reverse layup"],
+      [18, "Contact layup"],
+      [7, "Euro step"],
+      [4, "Floater"],
+      [20, "Leaner"],
+      [21, "Runner"],
+    ] as [number, string][]
+  ).map(
+    ([sv, name]) =>
+      [
+        name,
+        (p: any, t: number) => {
+          stand(p);
+          // a few feet from the rim, facing it
+          const hx = G.hoop(p.tm),
+            dir = hx > 470 ? 1 : -1;
+          p.x = hx - dir * (sv === 19 ? 9 : 34);
+          p.y = 250;
+          p.f = dir > 0 ? 0 : Math.PI;
+          const k = t % 1.3;
+          p.mode = k < 0.95 ? "s" : "i";
+          p.sv = sv;
+          p.t = Math.min(k, 0.95);
+          p.z = sv === 19 ? 100 - (75 * p.ht) / 6.4 : p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.7) * Math.PI) * 40) : 0;
+          B.owner = p.t < 0.28 && sv !== 19 ? p : null;
+          B.mode = B.owner ? "held" : "air";
+          if (!B.owner) (B.x = hx), (B.y = 250), (B.z = 96 - k * 30);
+        },
+      ] as [string, Setup],
+  ),
   [
     "Hands on knees",
     (p) => {
@@ -81,7 +215,7 @@ export const ANIMS: [string, Setup][] = [
       G.setScalars({ rs: 1 });
     },
   ],
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
     (k) =>
       [
         "Celebration: " + CELN[k],
@@ -147,8 +281,6 @@ export function openStudio(setTick: (f: ((dt: number) => void) | null) => void, 
     p.f = 0.3;
     if (spin) (V as any).studio.a += dt * 0.35; // orbit the camera, not the player (keeps treadmill moves readable)
     ANIMS[cur][1](p, t, dt);
-    p.x = 470;
-    p.y = 250;
     if (p.celT > 0) p.celT = Math.max(0, p.celT); // driven by the setup, not the sim clock
     pose3(p);
   });
@@ -164,8 +296,6 @@ export function studioPose(i: number, tt: number, a = 0.6) {
     t = tt - (39 - k) / 60;
     p.f = f;
     ANIMS[i][1](p, Math.max(0, t), 1 / 60);
-    p.x = 470;
-    p.y = 250;
     pose3(p);
   }
 }

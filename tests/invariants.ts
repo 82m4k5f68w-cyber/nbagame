@@ -45,7 +45,8 @@ for (const [np, mym, mp2] of [
     if (G.B.x < -20 || G.B.x > 960 || G.B.y < -20 || G.B.y > 520 || G.B.z < -10 || G.B.z > 600) { fails.push(`${tag}: ball out of world ${[G.B.x, G.B.y, G.B.z].map((v) => v.toFixed(0))}`); break; }
     if (fails.length > 12) break;
   }
-  if (G.S !== "over") fails.push(`${tag}: game never ended`);
+  // a game still tied in overtime at the tick cap is legal basketball (random-input humans can trade empty OTs)
+  if (G.S !== "over" && !(G.q > 4 && G.sc[0] === G.sc[1])) fails.push(`${tag}: game never ended`);
   for (const tm of [0, 1]) {
     const pts = G.P.filter((p) => p.tm === tm).reduce((a, p) => a + p.stt.pts, 0);
     if (pts !== G.sc[tm]) fails.push(`${tag}: team ${tm} score ${G.sc[tm]} != players' points ${pts}`);
