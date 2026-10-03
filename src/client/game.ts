@@ -740,12 +740,24 @@ const unb64 = (s: string) => {
 };
 /** Save the game's highlights as a file (teams + clips); "Load reel" in the menu plays it back. */
 function saveReel() {
-  const o = { v: 1, np: cfg.NP, fst: G.FSTN(), i: SEL, j: lastJ, my: MYM, teams: G.cl, sc: G.sc, clips: G.HL.map((c) => ({ s: c.s, n: c.n, b: b64(c.buf) })) };
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: "application/json" }));
-  a.download = "hoops2k27-" + G.cl[0].replace(/\W/g, "") + "-vs-" + G.cl[1].replace(/\W/g, "") + ".h2kreel.json";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  const o = { v: 1, np: cfg.NP, fst: G.FSTN(), i: SEL, j: lastJ, my: MYM, teams: G.cl, sc: G.sc, clips: G.HL.map((c) => ({ s: c.s, n: c.n, b: b64(c.buf) })) },
+    blob = new Blob([JSON.stringify(o)], { type: "application/json" }),
+    name = "hoops2k27-" + G.cl[0].replace(/\W/g, "") + "-vs-" + G.cl[1].replace(/\W/g, "") + ".h2kreel.json",
+    w = window as any,
+    plain = () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    };
+  // on the published claude.ai page plain download links are blocked: ask the viewer through the downloads capability
+  if (w.claude && typeof w.claude.use === "function")
+    w.claude
+      .use("downloads")
+      .then((d: any) => (d ? d.save({ filename: name, data: blob }) : plain()))
+      .catch((e: any) => e && e.code !== "declined" && banner("COULDN'T SAVE THE REEL", String((e && e.code) || ""), "#ff6b4a"));
+  else plain();
 }
 function loadReel(file: File) {
   file.text().then((t) => {
