@@ -29,6 +29,7 @@ export function hum(): Input {
     lob: ev.r,
     sp: K.ShiftLeft || K.ShiftRight || GP.sp,
     sw: ev.q,
+    pf: ev.g,
   };
   if (GP.on) {
     i.dx += GP.dx;
@@ -43,7 +44,7 @@ export function hum(): Input {
     i.dx /= m;
     i.dy /= m;
   }
-  ev.sd = ev.su = ev.e = ev.f = ev.x = ev.cc = ev.vv = ev.r = ev.q = 0;
+  ev.sd = ev.su = ev.e = ev.f = ev.x = ev.cc = ev.vv = ev.r = ev.q = ev.g = 0;
   return i;
 }
 export function hum2(): Input {
@@ -107,6 +108,7 @@ function gpPoll0() {
   e(3, () => (ev.f = 1));
   e(4, () => (ev.cc = 1));
   e(5, () => (ev.x = 1));
+  e(10, () => (ev.g = 1)); // L3: pump fake / jab / shoulder fake
   e(8, () => {
     V.CAMM = (V.CAMM + 1) % 4;
   });
@@ -132,6 +134,7 @@ export function kd(c: string) {
     if (c === "KeyR") ev.r = 1;
     if (c === "KeyC") ev.cc = 1;
     if (c === "KeyV") ev.vv = 1;
+    if (c === "KeyG") ev.g = 1;
     if (c === "KeyT") {
       IN.TEMPO = 1 - IN.TEMPO;
       for (const k of CT) if (!(k as any).remote) k.tempo = IN.TEMPO;

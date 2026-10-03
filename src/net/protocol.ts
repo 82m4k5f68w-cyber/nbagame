@@ -12,7 +12,7 @@ const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const TAU100 = 628.3185;
 
 export const HDR = 34; // header ints
-export const PST = 26; // per-player ints (without pose)
+export const PST = 27; // per-player ints (without pose)
 export const QN = QK.length;
 
 /** Full snapshot of the sim as an int array. withPose adds joint angles (used during replays). */
@@ -85,6 +85,8 @@ export function encodeSnap(k: number): number[] {
       p.celT > 0 && p.cel ? p.cel * 1000 + r(Math.min(9.99, p.celT) * 100) : 0,
       // contact: strength (hitT, 0.01 s) and direction (degrees) - guests replay the same reaction
       p.hitT > 0 ? r(p.hitT * 100) * 1000 + ((r((Math.atan2(p.hitY || 0, p.hitX || 0) * 180) / Math.PI) + 360) % 360) : 0,
+      // one-shot actions (pump fake, jab, fall, dive, fumble, blocked) + triple threat + FT routine clock
+      (p.actT > 0 && p.act ? p.act * 1000 + r(Math.min(9.99, p.actT) * 100) : 0) + (p.ttT > 0 ? 100000 : 0) + r(Math.min(9, p.ftT || 0) * 10) * 1000000,
     );
   // replay poses: 27 joints x 10 players at 0.01 rad (keeps the presence well under the 4 KiB room limit)
   if (rp) for (const p of P) for (const k2 of QK) a.push(r(((p.q && p.q[k2]) || 0) * 100));
@@ -199,6 +201,12 @@ export function applyDiscrete(p: any, a: number[], o: number) {
     p.hitX = Math.cos(an);
     p.hitY = Math.sin(an);
   } else p.hitT = 0;
+  const av = a[o + 26] | 0,
+    lo = av % 100000;
+  p.act = (lo / 1000) | 0;
+  p.actT = (lo % 1000) / 100;
+  p.ttT = av % 1000000 >= 100000 ? 0.5 : 0;
+  p.ftT = Math.floor(av / 1000000) / 10;
 }
 /** Restore one player's full predicted-relevant state from a snapshot (used for reconciliation). */
 export function applyPlayer(p: any, a: number[], k: number) {
@@ -242,7 +250,7 @@ export function deltaDec(d: number[], base: number[], k: number): number[] {
 }
 
 // ---- inputs: absolute stick + held buttons + monotonically increasing edge counters ----
-export const EDGES = ["sd", "su", "e", "sb", "mv1", "mv2", "mv3", "lob", "sw", "skip"] as const;
+export const EDGES = ["sd", "su", "e", "sb", "mv1", "mv2", "mv3", "lob", "sw", "skip", "pf"] as const;
 export interface WireInput {
   n: number; // guest input tick
   dx: number;

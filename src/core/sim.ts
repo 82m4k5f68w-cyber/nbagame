@@ -35,6 +35,7 @@ export interface Input {
   sw?: any; // switch defender
   mt?: number; // client-measured meter time at release (online: judged on the shooter's timeline)
   tp?: number; // client-measured tempo tap time
+  pf?: any; // pump fake (no stick) / jab step (stick held) / shoulder fake (posting up)
 }
 /** A human controlling one player. `fixed` = My Player (never auto-switches). */
 export interface Ctrl {
@@ -58,6 +59,7 @@ export const cfg = {
   MYM: 0,
   DIFF: 1, // CPU difficulty: 0 Rookie, 1 Pro, 2 All-Star, 3 Hall of Fame (only the CPU side, never humans)
   playerBodies: true, // Rapier kinematic player capsules (ball can deflect off bodies)
+  JB: 1, // opening jump ball (0 = start with an inbound, used by some tests)
   input: null as null | ((c: Ctrl) => Input),
 };
 
@@ -211,8 +213,90 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
   });
   setup(0);
   S = "play";
+  if (cfg.JB !== 0) beginJB();
   snd(500, 0.2, "square");
   return j;
+}
+// ---- opening tip: centers dap, the ball goes up, a timed jump (shoot button / AI) wins the tip to a teammate ----
+export let JB: any = null;
+const tallest = (t: number) => P.filter((p) => p.tm === t).sort((a, b) => b.ht + b.j / 200 - (a.ht + a.j / 200))[0];
+function beginJB() {
+  const c0 = tallest(0),
+    c1 = tallest(1);
+  let a = 0,
+    b2 = 0;
+  for (const p of P) {
+    p.vx = p.vy = p.z = p.vz = 0;
+    p.mode = "i";
+    if (p === c0) (p.x = 461), (p.y = 250), (p.f = 0);
+    else if (p === c1) (p.x = 479), (p.y = 250), (p.f = Math.PI);
+    else {
+      const k = p.tm ? b2++ : a++,
+        ang = (p.tm ? 0 : Math.PI) + (k - 1.5) * 0.75;
+      p.x = 470 + Math.cos(ang) * 82;
+      p.y = 250 + Math.sin(ang) * 82;
+      p.f = Math.atan2(250 - p.y, 470 - p.x);
+    }
+  }
+  for (const c of [c0, c1]) (c.cel = 9), (c.celT = CEL_T); // dap before the tip
+  B.owner = null;
+  B.mode = "air";
+  B.sh = 0;
+  B.last = null;
+  B.x = 470;
+  B.y = 250;
+  B.z = 62;
+  B.vx = B.vy = B.vz = 0;
+  inb = 0;
+  const aiT = (c: Player) => 0.3 + ((Math.random() - 0.5) * 0.24) / cpuK(c, [0.6, 0.85, 1, 1.25]);
+  JB = { t: 0, c: [c0, c1], jt: [-1, -1], ai: [aiT(c0), aiT(c1)] };
+  txt("JUMP BALL", 480, 200, "#ffd23f");
+}
+const TOSS = 1.7;
+function jbStep(dt: number) {
+  const J = JB;
+  J.t += dt;
+  const tt = J.t - TOSS;
+  if (tt >= 0) {
+    B.z = Math.max(62, 62 + 230 * tt - 160 * tt * tt);
+    B.vz = 230 - 320 * tt;
+  }
+  for (let s = 0; s < 2; s++) {
+    const c = J.c[s],
+      hc = CT.find((k) => k.tm === s);
+    const wants = hc ? !!hc.inp.sd : tt >= J.ai[s];
+    if (wants && tt > -0.3 && J.jt[s] < 0 && c.z <= 0) {
+      J.jt[s] = tt;
+      c.vz = 126 + c.j * 0.9;
+    }
+    if (c.z > 0 || c.vz > 0) {
+      c.vz -= g * dt;
+      c.z = Math.max(0, c.z + c.vz * dt);
+      if (c.z <= 0) c.vz = 0;
+    }
+  }
+  if (tt >= 0.86) {
+    // the ball comes down through the centers' reach: highest hand wins
+    const reach = (s: number) => J.c[s].ht * 13.3 + J.c[s].z + Math.random() * 6;
+    const w = reach(0) >= reach(1) ? 0 : 1,
+      win = J.c[w],
+      mates = P.filter((p) => p.tm === win.tm && p !== win).sort((a, b) => Math.abs(a.x - (win.tm ? 520 : 420)) - Math.abs(b.x - (win.tm ? 520 : 420)));
+    const mate = mates[0] || win,
+      fl = 0.55;
+    B.mode = mate === win ? "air" : "pass";
+    B.to = mate === win ? null : mate;
+    B.ptype = 0;
+    B.last = win;
+    B.age = 0;
+    B.vx = (mate.x - B.x) / fl;
+    B.vy = (mate.y - B.y) / fl;
+    B.vz = (52 - B.z + 0.5 * g * fl * fl) / fl;
+    B.wv = [0, 0, 0];
+    pos = win.tm;
+    shot = 24;
+    txtW("TIP WON", win.x, win.y, 120, "#ffd23f");
+    JB = null;
+  }
 }
 /** Difficulty multiplier for CPU-controlled teams (a team with no human on it); humans' teammates play at Pro level. */
 const cpuK = (p: Player, k: number[]) => (CT.some((c) => c.tm === p.tm) ? k[1] : k[cfg.DIFF] ?? 1);
@@ -256,6 +340,7 @@ export function setup(off: number) {
   B.sc = 0;
   B.sh = 0;
   B.last = null;
+  JB = null;
   pos = off;
   shot = 24;
   PCNT[0] = PCNT[1] = 0;
@@ -475,6 +560,9 @@ export function launch(p: Player) {
     blk.stt.blk++;
     exc(0.9);
     txtW("BLOCKED!", blk.x, blk.y, 80, "#ff6b4a");
+    p.act = 6; // the shooting arm gets knocked back
+    p.actT = 0.45;
+    if (!PREDICT) (blk.cel = 14), (blk.celT = CEL_T); // the blocker holds the swat / stares him down
     snd(150, 0.15, "square");
     if (Math.random() < 0.12) tech(blk, p.tm);
     return;
@@ -599,6 +687,11 @@ export function step(p: Player, dt: number) {
   p.manT = (p.manT || 0) - dt;
   p.hitT = Math.max(0, (p.hitT || 0) - dt);
   if (p.celT > 0) p.celT = Math.max(0, p.celT - dt);
+  if (p.actT > 0) p.actT = Math.max(0, p.actT - dt);
+  if (p.ttT > 0) p.ttT = Math.max(0, p.ttT - dt);
+  if (p.upu > 0) p.upu -= dt;
+  if (ftq && ftq.s === p && has && p.mode === "i") p.ftT = (p.ftT || 0) + dt;
+  else p.ftT = 0;
   p.landT = Math.max(0, (p.landT || 0) - dt);
   {
     // smoothed acceleration along the facing direction (body leans into it)
@@ -623,6 +716,7 @@ export function step(p: Player, dt: number) {
   if (p.mvT > 0) {
     p.mvE = (p.mvE || 0) + dt;
     p.mvT -= dt;
+    if (p.mvT <= 0) p.mvEnd = T;
     const e = p.mvE,
       S = p.mvS || 1,
       k = p.mvk;
@@ -667,7 +761,15 @@ export function step(p: Player, dt: number) {
       S = -uy * (p.x - d.x) + ux * (p.y - d.y) >= 0 ? 1 : -1,
       u = hum;
     if (p.postA) {
-      if (i.mv === 1) {
+      if (i.mv === 2 && p.upu > 0) {
+        p.mvk = 4;
+        p.mvT = 0.45;
+        p.mvE = 0;
+        p.mvS = -S; // fake one way, spin back the other
+        p.cd = 0.9;
+        if (!PREDICT && dist < 40) (d.slow = Math.max(d.slow, 0.9)), (d.act = 3), (d.actT = 0.8);
+        if (u) txtW("DREAM SHAKE!", p.x, p.y, 100, "#ffd23f");
+      } else if (i.mv === 1) {
         p.hk = 1;
         p.fsv = 10;
         i.sd = 1;
@@ -706,6 +808,74 @@ export function step(p: Player, dt: number) {
     }
   }
 
+  // a diving or fallen player has no control until he is back up
+  if (p.actT > 0 && (p.act === 3 || p.act === 4)) {
+    i.dx = i.dy = 0;
+    i.sd = i.su = i.e = i.mv = i.pf = 0;
+    p.vx *= p.act === 4 ? 0.9 : 0.6;
+    p.vy *= p.act === 4 ? 0.9 : 0.6;
+  }
+  if (has && p.mode === "i" && Math.hypot(p.vx, p.vy) > 70) p.ttT = 0; // leaves the triple threat once he drives
+  // Pump fake (no stick) / jab step (stick held) / shoulder fake (posting up). Defenders can bite.
+  if (i.pf && has && p.mode === "i" && pos === p.tm && p.cd <= 0 && !ftq && !(p.mvT > 0)) {
+    const d = P[nearest(1 - p.tm, p.x, p.y)],
+      dist = Math.hypot(d.x - p.x, d.y - p.y),
+      stick = Math.hypot(i.dx, i.dy) > 0.5;
+    p.cd = 0.45;
+    if (p.postA) {
+      p.act = 8; // shoulder fake
+      p.actT = 0.4;
+      p.upu = 1.3; // the next shot / drop step out of the post becomes an up-and-under / dream shake
+      if (!PREDICT && dist < 40 && Math.random() < 0.55 - d.d / 300) (d.slow = Math.max(d.slow, 0.6)), (d.hitT = 0.2), (d.hitX = (p.x - d.x) / (dist || 1)), (d.hitY = (p.y - d.y) / (dist || 1));
+      if (hum) txtW("SHOULDER FAKE", p.x, p.y, 100, "#ffd23f");
+    } else if (stick && Math.hypot(p.vx, p.vy) < 70) {
+      p.act = 2; // jab step toward the stick
+      p.actT = 0.38;
+      p.jabX = i.dx;
+      p.jabY = i.dy;
+      p.ttT = Math.max(p.ttT || 0, 0.6);
+      if (!PREDICT && dist < 60 && Math.random() < 0.6 - d.d / 250) {
+        d.slow = Math.max(d.slow, 0.45);
+        d.vx += i.dx * 60;
+        d.vy += i.dy * 60;
+      }
+      if (hum) txtW("JAB STEP", p.x, p.y, 100, "#ffd23f");
+    } else {
+      p.act = 1; // pump fake
+      p.actT = 0.42;
+      p.ttT = Math.max(p.ttT || 0, 0.6);
+      let bit = 0;
+      if (!PREDICT)
+        for (const q of P)
+          if (q.tm !== p.tm && q.z <= 0 && Math.hypot(q.x - p.x, q.y - p.y) < 55 && Math.random() < 0.62 - q.d / 260) {
+            q.vz = 126 + q.j * 0.9; // leaves his feet
+            q.slow = Math.max(q.slow, 0.5);
+            bit = 1;
+          }
+      if (hum) txtW(bit ? "PUMP FAKE — BIT!" : "PUMP FAKE", p.x, p.y, 100, "#ffd23f");
+    }
+    i.sd = 0;
+  }
+  // backing down in the post: shoulder bumps into the defender every ~0.45 s
+  if (p.postA && has && !PREDICT) {
+    p.bdT = (p.bdT || 0) + dt;
+    const d = P[nearest(1 - p.tm, p.x, p.y)],
+      dist = Math.hypot(d.x - p.x, d.y - p.y);
+    if (dist < 22 && p.bdT > 0.45) {
+      p.bdT = 0;
+      const nx = (d.x - p.x) / (dist || 1),
+        ny = (d.y - p.y) / (dist || 1),
+        f = (p.bk * p.ht) / (d.bk * d.ht);
+      d.x += nx * 3 * f;
+      d.y += ny * 3 * f;
+      d.hitT = 0.16;
+      d.hitX = nx;
+      d.hitY = ny;
+      p.hitT = 0.12;
+      p.hitX = -nx;
+      p.hitY = -ny;
+    }
+  }
   if (p.mode === "i" && i.sb && has && pos === p.tm && p.cd <= 0 && D > 60) {
     p.mode = "b";
     p.t = 0;
@@ -713,7 +883,15 @@ export function step(p: Player, dt: number) {
     p.cd = 1.6;
     p.bx = -ux / D;
     p.by = -uy / D;
-    if (!PREDICT) P[nearest(1 - p.tm, p.x, p.y)].slow = 0.5 + 0.25 * p.bn;
+    if (!PREDICT) {
+      const d = P[nearest(1 - p.tm, p.x, p.y)];
+      d.slow = 0.5 + 0.25 * p.bn;
+      if (Math.hypot(d.x - p.x, d.y - p.y) < 30 && Math.random() < 0.12 + (p.s - d.d) / 400) {
+        d.act = 3; // lost his footing on the step-back
+        d.actT = 1.0;
+        if (hum) txtW("SHOOK HIM!", d.x, d.y, 95, "#ff6b6b");
+      }
+    }
     if (hum) txtW(p.bn > 1 ? "DOUBLE STEP-BACK!" : "STEP-BACK!", p.x, p.y, 95, "#ffd23f");
   }
   if (p.mode === "b") {
@@ -755,6 +933,12 @@ export function step(p: Player, dt: number) {
     else if (i.su || p.t > 1.4) {
       p.mt = i.su && i.mt != null ? clamp(i.mt, p.t - 0.25, p.t + 0.05) : p.t;
       p.cw = Math.min(1, contestOf(p)[0] + (p.bmp || 0) * 0.5);
+      if (p.upu > 0 && D < 120 && !ftq) {
+        p.fsv = 23; // up-and-under: step through for a layup
+        p.hk = 1;
+        p.upu = 0;
+        if (hum) txtW("UP & UNDER", p.x, p.y, 100, "#ffd23f");
+      }
       p.mode = "s";
       p.t = 0;
       p.rl = 0;
@@ -1047,6 +1231,35 @@ function dz(o: Player, dt: number) {
   }
   return B.dh;
 }
+/** Ball held (not dribbled): 1 triple threat at the right hip, 2 pump fake / jab rising toward the forehead,
+ *  3 free-throw routine (holding and spinning it before the shot). */
+export function heldBall(o: Player): number {
+  if (o.mode !== "i" || o.postA || inb > 0) return 0;
+  if (o.actT > 0 && (o.act === 1 || o.act === 2)) return 2;
+  if (ftq && ftq.s === o && (o.ftT || 0) % 3.4 > 1.7) return 3;
+  if (o.ttT > 0 && Math.hypot(o.vx, o.vy) < 70 && !ftq) return 1;
+  return 0;
+}
+const HOLDP: [number, number][] = [
+  [0, 0],
+  [-5, 4],
+  [0, 7],
+  [0, 8],
+];
+function heldZ(o: Player) {
+  const h = heldBall(o),
+    hip = o.z + o.ht * 4.9;
+  if (h === 2) {
+    const k = 1 - o.actT / (o.act === 1 ? 0.42 : 0.38),
+      u = Math.sin(Math.min(1, k) * Math.PI);
+    return o.act === 1 ? hip + u * o.ht * 4.2 : hip;
+  }
+  if (h === 3) {
+    B.a += 0.25; // spins it in his hands
+    return o.z + o.ht * 7.4;
+  }
+  return hip;
+}
 /** Two-hand dribble: which hand has it (B.dhn +1 right / -1 left) and the ball's lateral/forward offset (px; lateral
  *  negative = the handler's right). Moves switch hands (crossover low across the front, behind-the-back between the
  *  legs, spin around the hip); a close defender on the ball side makes the handler cross away from him; standing
@@ -1092,10 +1305,14 @@ function dribHand(o: Player, dt: number): [number, number] {
           sp = Math.hypot(o.vx, o.vy);
         if (Math.sign(rs2) === B.dhn && Math.abs(rs2) > 7) sw(1, 0.22); // protect: cross away from the defender
         else if (sp < 25 && dd < 60) {
-          // size-up: between the legs, then a cross back
+          // size-up, by signature package: 0 btb + cross, 1 rapid-fire between-the-legs combos (Curry),
+          // 2 slow, patient crosses (Doncic), 3 hard explosive crosses (Edwards)
           B.dsz = (B.dsz || 0) + 1;
-          sw(B.dsz % 2 ? 3 : 1, B.dsz % 2 ? 0.26 : 0.2);
-          B.dcd = 0.55;
+          const dk = (o.sg && o.sg.dk) || 0;
+          if (dk === 1) sw(B.dsz % 3 ? 3 : 1, 0.18), (B.dcd = 0.3);
+          else if (dk === 2) sw(1, 0.32), (B.dcd = 0.95);
+          else if (dk === 3) sw(1, 0.15), (B.dcd = 0.6);
+          else sw(B.dsz % 2 ? 3 : 1, B.dsz % 2 ? 0.26 : 0.2), (B.dcd = 0.55);
         }
       }
     }
@@ -1122,7 +1339,8 @@ export function bstep(dt: number) {
     {
       // Dribbling: the ball sits out beside the dribbling hand, a little in front; crossovers, behind-the-backs and
       // spins carry it to the other hand along their own paths (see dribHand).
-      const [lat, fwd] = o.mode === "i" && !o.postA ? dribHand(o, dt) : [0, 8],
+      const hold = heldBall(o),
+        [lat, fwd] = hold ? HOLDP[hold] : o.mode === "i" && !o.postA ? dribHand(o, dt) : [0, 8],
         off = lat,
         fw = fwd,
         tx = o.x + Math.cos(o.f) * fw - Math.sin(o.f) * off,
@@ -1156,7 +1374,10 @@ export function bstep(dt: number) {
             : o.z + 55 + Math.min(1, o.t / 0.4) * 28
           : inb > 0 && o.mode === "i"
             ? o.z + o.ht * 11.6 // inbounder holds it overhead
-            : dz(o, dt);
+            : heldBall(o)
+              ? heldZ(o)
+              : dz(o, dt);
+    if (heldBall(o)) B.dho = null; // the dribble starts fresh from the hand when he puts it on the floor
     B.vx = B.vy = B.vz = 0;
     return;
   }
@@ -1281,6 +1502,16 @@ export function bstep(dt: number) {
       }
       else if (B.fl) {
         txtW("AND ONE!", B.last.x, B.last.y, 110, "#ffd23f");
+        {
+          let m: Player | null = null,
+            md = 1e9;
+          for (const o of P)
+            if (o !== B.last && o.tm === B.last.tm) {
+              const dd = Math.hypot(o.x - B.last.x, o.y - B.last.y);
+              if (dd < md) (md = dd), (m = o);
+            }
+          if (m && !PREDICT) (m.cel = 13), (m.celT = CEL_T);
+        }
         STAT.andOnes++;
         if (B.flBy) {
           tf[B.flBy.tm]++;
@@ -1342,6 +1573,26 @@ export function bstep(dt: number) {
     if (d < (rc ? 26 : 12) && B.z > p.z + (rc ? -8 : 2) && B.z < p.z + 68 + p.j * 0.2 + (rc && B.ptype === 2 ? 55 : 0)) {
       if (B.mode === "pass" && p !== B.to) continue;
       if (B.mode === "air" && B.age < 0.5 && (B.vz > 0 || p.tm === B.last.tm)) continue;
+      // a contested catch can be fumbled (accidental turnover - steals stay off)
+      if (B.mode === "pass" && p === B.to && !PREDICT && !ftq && inb <= 0 && B.age > 0.15) {
+        let near = 1e9;
+        for (const q of P) if (q.tm !== p.tm) near = Math.min(near, Math.hypot(q.x - p.x, q.y - p.y));
+        if (near < 16 && Math.random() < 0.05 * (1.3 - p.s / 120)) {
+          B.mode = "air";
+          B.to = null;
+          B.vx = -B.vx * 0.3 + (Math.random() - 0.5) * 90;
+          B.vy = -B.vy * 0.3 + (Math.random() - 0.5) * 90;
+          B.vz = 70;
+          B.last = p;
+          B.age = 0;
+          p.act = 5;
+          p.actT = 0.5;
+          txtW("FUMBLED!", p.x, p.y, 95, "#ff6b4a");
+          break;
+        }
+      }
+      const wasShot = B.sh && B.last && !B.sc,
+        shooter = B.last;
       const oop = B.mode === "pass" && B.ptype === 2 && p === B.to && p.j >= 45 && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 110 && !ftq && inb <= 0;
       if (B.sh && B.last && !B.sc) p.stt.reb++;
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
@@ -1355,6 +1606,17 @@ export function bstep(dt: number) {
         PCNT[0] = PCNT[1] = 0;
       }
       snd(180, 0.05, "square");
+      if (wasShot && shooter && shooter !== p && shooter.cw != null && shooter.cw < 0.35 && Math.random() < 0.6 && !PREDICT) (shooter.cel = 11), (shooter.celT = CEL_T); // missed an open look
+      if (B.mode === "held" && p.mode === "i" && p.z <= 0 && !oop) p.ttT = 1.3; // squares up in the triple threat
+      // offensive rebound in the air at the rim: tip it in or throw down the putback
+      if (wasShot && shooter && shooter.tm === p.tm && p.z > 8 && !oop && !ftq && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 45) {
+        p.mode = "s";
+        p.t = 0.27;
+        p.sv = p.j >= 65 ? 11 : 16;
+        p.rl = 0;
+        p.hk = 1;
+        txtW(p.sv === 11 ? "PUTBACK SLAM!" : "TIP-IN", p.x, p.y, 115, "#ffd23f");
+      }
       if (oop) {
         // ALLEY-OOP: catch it in the air and throw it down
         p.mode = "s";
@@ -1384,6 +1646,13 @@ export function upd(dt: number) {
   }
   if (S !== "play") return;
   for (const c of CT) c.inp = cfg.input ? cfg.input(c) : ZIN();
+  if (JB) {
+    jbStep(dt);
+    netSim(dt);
+    recFrame();
+    for (const p of P) pose3(p);
+    return;
+  }
   P.forEach((p, k) => {
     if (inb > 0 || (ftq && p !== ftq.s)) {
       p.in = zin(k);
@@ -1485,6 +1754,43 @@ export function upd(dt: number) {
     }
   }
 }
+/** After the final buzzer (S === "over"): everyone walks toward his opposite number and daps him up. */
+export function postGame(dt: number) {
+  if (S !== "over" || RPL) return;
+  T += dt;
+  DT = dt;
+  const NP = cfg.NP;
+  for (let k = 0; k < NP; k++) {
+    const a = P[k],
+      b = P[NP + k];
+    if (!a || !b) continue;
+    const mx = (a.x + b.x) / 2,
+      my = (a.y + b.y) / 2;
+    for (const [p, o] of [
+      [a, b],
+      [b, a],
+    ] as [Player, Player][]) {
+      const tx = mx + Math.sign(p.x - o.x || 1) * 7,
+        dx = tx - p.x,
+        dy = my - p.y,
+        d = Math.hypot(dx, dy),
+        v = d > 4 ? Math.min(110, d * 2) : 0;
+      p.vx = d > 0 ? (dx / d) * v : 0;
+      p.vy = d > 0 ? (dy / d) * v : 0;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z = 0;
+      p.mode = "i";
+      p.ph += ((v * dt) / stepLen(v)) * Math.PI;
+      const tf = d > 6 ? Math.atan2(dy, dx) : Math.atan2(o.y - p.y, o.x - p.x);
+      p.f += Math.atan2(Math.sin(tf - p.f), Math.cos(tf - p.f)) * Math.min(1, dt * 8);
+      if (d < 6 && !(p.celT > 0) && !p.pgDap) (p.cel = 9), (p.celT = CEL_T), (p.pgDap = 1);
+      if (p.celT > 0) p.celT = Math.max(0, p.celT - dt);
+    }
+  }
+  if (B.owner) B.owner = null;
+  for (const p of P) pose3(p);
+}
 export function endGame() {
   S = "over";
   fx({ k: "end", w: sc[0] > sc[1] ? 0 : 1 });
@@ -1493,6 +1799,7 @@ export function endGame() {
 export function foul(d: Player, o: Player, k: string, sh: number, th: any) {
   tf[d.tm]++;
   d.pf++;
+  if (!PREDICT && Math.random() < 0.55) (d.cel = 12), (d.celT = CEL_T); // palms up: "I got ball!"
   txtW(k + " FOUL", d.x, d.y, 95, "#ff6b4a");
   snd(120, 0.3, "sawtooth", 0.1);
   B.sh = 0;
@@ -1752,6 +2059,18 @@ function loose(p: Player, t: number) {
       .some((v) => v[1] === p.k);
     if (nr || d < 90) {
       mv(p, B.x + B.vx * 0.25, B.y + B.vy * 0.25, 1.15);
+      // dive on the floor for a loose ball when the other team is closing in on it
+      if (!PREDICT && !B.sh && B.z < 14 && d > 12 && d < 36 && p.z <= 0 && !(p.actT > 0) && Math.random() < 0.12) {
+        let rival = 1e9;
+        for (const q of P) if (q.tm !== p.tm) rival = Math.min(rival, Math.hypot(q.x - B.x, q.y - B.y));
+        if (rival < 45) {
+          p.act = 4;
+          p.actT = 0.75;
+          p.vx = ((B.x - p.x) / d) * 300;
+          p.vy = ((B.y - p.y) / d) * 300;
+          if (isH(p) || isH(B.last)) txtW("DIVE!", p.x, p.y, 70, "#ffd23f");
+        }
+      }
       if (B.z > 50 && d < 28 && p.z <= 0) i.sd = 1;
     } else if (sh) mv(p, hx + dir * 190, HY + (p.k - 2) * 45, 0.7);
     else mv(p, hx + dir * 80, HY + (p.k - 2) * 50, 0.8);
@@ -1956,7 +2275,11 @@ function collide() {
               if (o.tm !== h.tm) {
                 const sh = h.mode === "c" || h.mode === "s";
                 if (Math.hypot(o.vx, o.vy) < 70 && Math.hypot(h.vx, h.vy) > 170 && Math.random() < 0.5) {
-                  txtW("OFFENSIVE FOUL", h.x, h.y, 95, "#ff6b4a");
+                  txtW("CHARGE!", h.x, h.y, 95, "#ff6b4a");
+                  o.act = 3; // took the charge: on the floor
+                  o.actT = 1.2;
+                  h.cel = 12; // arguing the call
+                  h.celT = CEL_T;
                   tf[h.tm]++;
                   h.pf++;
                   setup(o.tm);

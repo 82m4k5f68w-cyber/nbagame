@@ -678,6 +678,9 @@ function loop(n: number) {
       ACC -= STEP;
       k++;
     }
+  } else if (G.S === "over") {
+    G.postGame(Math.min(dt, 0.05)); // players walk over and dap each other up while the confetti falls
+    if (NET.role === "host") NET.hostTick();
   } else {
     G.setT(G.T + dt);
     if (ATICK) ATICK(dt);

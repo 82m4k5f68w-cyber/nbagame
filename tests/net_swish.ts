@@ -1,7 +1,7 @@
 // Drop balls straight through the net (swish) at three speeds: must score, and the net must slow the ball.
 import { rapInit } from "../src/core/physics";
 import * as G from "../src/core/sim";
-G.cfg.NP = 1; G.cfg.MYM = 0;
+G.cfg.NP = 1; G.cfg.MYM = 0; G.cfg.JB = 0; // no opening tip: the test drops its own ball
 G.cfg.input = () => ({ dx: 0, dy: 0 });
 G.setCtrls([G.mkCtrl("p1", 0)]);
 await rapInit();

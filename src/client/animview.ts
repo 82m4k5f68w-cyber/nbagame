@@ -23,6 +23,10 @@ const stand = (p: any) => {
   p.en = 1;
   p.brk = 0;
   p.acc = 0;
+  p.act = 0;
+  p.actT = 0;
+  p.ttT = 0;
+  p.ftT = 0;
   G.setInb(0);
   G.setScalars({ rs: 0, ftq: null, pos: p.tm });
   B.owner = null;
@@ -61,7 +65,7 @@ const moveEvery = (p: any, t: number, k: number, per: number) => {
     p.mvS = 1;
   }
 };
-const CELN = ["", "Shimmy", "Night night", "Flex", "Three up", "Chest thump", "Roar", "Shh", "Point to the sky", "Dap", "Held follow-through"];
+const CELN = ["", "Shimmy", "Night night", "Flex", "Three up", "Chest thump", "Roar", "Shh", "Point to the sky", "Dap", "Held follow-through", "Hands on head (missed)", "Arguing the call", "Clapping (hype)", "Swat hold"];
 
 export const ANIMS: [string, Setup][] = [
   ["Idle (breathing)", (p) => stand(p)],
@@ -201,6 +205,52 @@ export const ANIMS: [string, Setup][] = [
       dribble(p, dt);
     },
   ],
+  ...([
+    [1, 0.42, "Pump fake"],
+    [2, 0.38, "Jab step"],
+    [3, 1.2, "Taking a charge (fall)"],
+    [4, 0.75, "Loose-ball dive"],
+    [5, 0.5, "Fumbled catch"],
+    [6, 0.45, "Shot gets blocked"],
+  ] as [number, number, string][]).map(
+    ([a, T0, name]) =>
+      [
+        name,
+        (p: any, t: number) => {
+          stand(p);
+          const k = t % (T0 + 0.6);
+          p.act = a;
+          p.actT = Math.max(0, T0 - k);
+          if (a === 1 || a === 2) (p.ttT = 0.5), dribble(p, 1 / 60);
+          if (a === 2) (p.jabX = 1), (p.jabY = 0);
+        },
+      ] as [string, Setup],
+  ),
+  ["Triple threat", (p, t, dt) => (stand(p), (p.ttT = 1), dribble(p, dt))],
+  [
+    "Shoulder fake (post)",
+    (p, t) => {
+      stand(p);
+      p.postA = 1;
+      const k = t % 1;
+      p.act = 8;
+      p.actT = Math.max(0, 0.4 - k);
+      dribble(p, 1 / 60);
+    },
+  ],
+  [
+    "Free-throw routine",
+    (p, t, dt) => {
+      stand(p);
+      G.setScalars({ ftq: { s: p, i: 0, n: 2, next: 0, w: 9, fired: 0 } });
+      p.ftT = t % 3.4;
+      dribble(p, dt);
+    },
+  ],
+  [
+    "Chop steps vs defender",
+    (p, t, dt) => (stand(p), guard(p, 34), dribble(p, dt)),
+  ],
   ["Size-up vs defender", (p, t, dt) => (stand(p), guard(p, 40), dribble(p, dt))],
   ["Arm-bar drive", (p, t, dt) => (stand(p), guard(p, 30, 1.2), move(p, dt, 160, 0), dribble(p, dt))],
   ["Crossover", (p, t, dt) => (stand(p), moveEvery(p, t, 1, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
@@ -282,7 +332,7 @@ export const ANIMS: [string, Setup][] = [
       G.setScalars({ rs: 1 });
     },
   ],
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(
     (k) =>
       [
         "Celebration: " + CELN[k],

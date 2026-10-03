@@ -988,6 +988,80 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const cl2 = new THREE.Vector3(0, 0, 3),
       TV = new THREE.Vector3(),
       PV = new THREE.Vector3();
+    // ---- the benches and the two head coaches (far sideline): sit, stand and cheer on big plays; coaches pace ----
+    type BP = { gl: any; q: any; x: number; z: number; tm: number; coach: boolean; ph: number; tx: number; f: number };
+    let bench: BP[] = [],
+      lastScore = [0, 0],
+      cheerT = [0, 0];
+    function benchBuild() {
+      for (const b of bench) {
+        S.remove(b.gl.G);
+        b.gl.mesh.geometry.dispose();
+        b.gl.extra.forEach((m: any) => (m.map && m.map.dispose(), m.dispose()));
+      }
+      bench = [];
+      const SKN2 = ["#e8b88f", "#c68642", "#8d5524", "#6b4226", "#b9825a"];
+      for (const tm of [0, 1]) {
+        const sg = tm ? 1 : -1,
+          n = 4;
+        for (let k = 0; k <= n; k++) {
+          const coach = k === n,
+            fake: any = {
+              n: coach ? "Coach " + tm : "Bench " + tm + k,
+              col: coach ? "#23252e" : PC[tm] || "#555",
+              skin: SKN2[(k * 3 + tm) % SKN2.length],
+              hr: coach ? 1 : 1 + ((k + tm) % 3),
+              bd: coach ? 1 : (k + tm) % 2,
+              no: coach ? 0 : 10 + k * 7 + tm * 3,
+              ht: coach ? 6.1 : 6.4 + (k % 3) * 0.2,
+              bk: coach ? 1.15 : 1,
+              tm,
+              sg: { gs: 0 },
+            };
+          const gl = makeRig(fake, TX2);
+          S.add(gl.G);
+          const x = sg * (9 + k * 2.6),
+            z = -25.6;
+          bench.push({ gl, q: { cr: 0 }, x: coach ? sg * 13 : x, z: coach ? -24.2 : z, tm, coach, ph: Math.random() * 6, tx: sg * 13, f: 0 });
+        }
+      }
+      lastScore = [sc[0], sc[1]];
+    }
+    function benchUpd(dt: number) {
+      for (const t of [0, 1])
+        if (sc[t] > lastScore[t]) {
+          if (sc[t] - lastScore[t] >= 3 || Math.random() < 0.5) cheerT[t] = 2.2;
+          lastScore[t] = sc[t];
+        }
+      cheerT[0] = Math.max(0, cheerT[0] - dt);
+      cheerT[1] = Math.max(0, cheerT[1] - dt);
+      for (const b of bench) {
+        const q = b.q,
+          up = cheerT[b.tm] > 0 ? 1 : 0;
+        if (b.coach) {
+          // pace along the sideline in front of his bench; arms folded, arms out when his team scores
+          if (Math.abs(b.tx - b.x) < 0.2) b.tx = (b.tm ? 1 : -1) * (9 + Math.random() * 10);
+          const dir = Math.sign(b.tx - b.x),
+            v = 2.2;
+          b.x += dir * v * dt;
+          b.ph += v * dt * 2.4;
+          const s = Math.sin(b.ph);
+          Object.assign(q, { tL: s * 0.35, tR: -s * 0.35, kL: Math.max(0, -s) * 0.5, kR: Math.max(0, s) * 0.5, cr: 0, ln: 0.04, ty: 0, rz: 0, cx: 0, cy: 0 });
+          b.f += (Math.atan2(0, dir) - b.f) * Math.min(1, dt * 6);
+          if (up) Object.assign(q, { aL: 0.9, aR: 0.9, eL: 0.6, eR: 0.6, sz: 0.9, zL: 0.9 });
+          else Object.assign(q, { aL: 1.05, aR: 1.05, eL: 2.2, eR: 2.2, sz: -0.35, zL: -0.35 });
+        } else {
+          // seated: thighs level, shins down; standing and waving arms when his team scores
+          const w = Math.sin(T * 9 + b.x) * 0.3;
+          if (up) Object.assign(q, { tL: 0, tR: 0, kL: 0.05, kR: 0.05, cr: 0, ln: -0.05, aL: 2.7 + w, aR: 2.7 - w, eL: 0.3, eR: 0.3, sz: 0.4, zL: 0.4 });
+          else Object.assign(q, { tL: 1.5, tR: 1.45, kL: 1.5, kR: 1.5, cr: 4.1, ln: 0.12, aL: 0.6, aR: 0.55, eL: 1.3, eR: 1.3, sz: 0.2, zL: 0.2 });
+          b.f = Math.PI / 2; // facing the court
+        }
+        // place the rig directly (bench people are not sim players): game coords from world feet
+        const fake: any = { x: b.x * 10 + 470, y: b.z * 10 + 250, z: 0, f: b.f, q: { hz: 0, hs: 0, fL: 0, fR: 0, gL: 0.3, gR: 0.3, nk: 0, hp: 0, hy: 0, wL: 0, wR: 0, oL: 0, oR: 0, ...q } };
+        applyPose(b.gl, fake);
+      }
+    }
     let rpA = 0,
       rpT = 0;
     let pset: any = null,
@@ -1067,6 +1141,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           }
           bodyI.instanceColor!.needsUpdate = true;
         }
+        if (P !== pset && QL > 0) benchBuild();
         if (P !== pset) {
           if (pset)
             pset.forEach((p: any) => {
@@ -1081,6 +1156,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           });
           pset = P;
         }
+        if (bench.length && QL > 0) benchUpd(fdt);
         if (P.length) {
           for (const p of P)
             if (p.gl) {

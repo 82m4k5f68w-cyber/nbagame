@@ -58,7 +58,7 @@ function mcBlend(a: string, b: string | null, u: number, ph: number, amp: number
     for (let j = 0; j < MO.length; j++) MO[j] += (MT[j] - MO[j]) * u;
   }
 }
-import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -576,8 +576,47 @@ export function pose3(p: Player) {
       }
     }
   }
-  // ---- inbounder: ball overhead in both hands ----
-  if (PRO && has && md === "i" && inb > 0) {
+  // ---- held ball (triple threat, pump fake, jab, FT routine) - body first, the hands go on the ball below ----
+  const hold = has && md === "i" ? heldBall(p) : 0;
+  if (PRO && hold) {
+    st = ST.cat;
+    if (hold === 1) {
+      // triple threat: low, ball at the hip, eyes up
+      cr = Math.max(cr, 0.32);
+      kL = Math.max(kL, 0.6);
+      kR = Math.max(kR, 0.6);
+      tL = Math.max(tL, 0.35);
+      tR = Math.max(tR, 0.35);
+      ln = Math.max(ln, 0.22);
+      hz = Math.max(hz, 0.12);
+    } else if (hold === 2 && p.act === 1) {
+      // pump fake: ball snaps up toward the forehead, legs straighten, then back down
+      const u = Math.sin(clamp(1 - p.actT / 0.42, 0, 1) * Math.PI);
+      cr = 0.3 * (1 - u);
+      kL = kR = 0.6 - 0.45 * u;
+      tL = tR = 0.35 - 0.25 * u;
+      ln = 0.2 - 0.25 * u;
+      HEADX -= 0.3 * u;
+    } else if (hold === 2 && p.act === 2) {
+      // jab step: the lead foot stabs out toward the jab, weight shifts onto it, ball ripped to the far hip
+      const u = Math.sin(clamp(1 - p.actT / 0.38, 0, 1) * Math.PI);
+      tL = 0.35 + 0.55 * u;
+      kL = 0.6 + 0.3 * u;
+      tR = 0.2;
+      kR = 0.7;
+      ln = 0.25 + 0.2 * u;
+      cr = 0.35;
+      ty += 0.25 * u;
+    } else if (hold === 3) {
+      // free-throw routine: square to the rim, ball spun in the fingertips at the chest
+      cr = 0.1;
+      kL = kR = 0.25;
+      tL = tR = 0.1;
+      ln = 0.05;
+    }
+  }
+  // ---- both hands on the ball: inbounds overhead, and every held-ball state ----
+  if (PRO && has && md === "i" && (inb > 0 || hold)) {
     for (const sd of [1, -1]) {
       // each hand on its own side of the ball (the right side is (sin f, -cos f))
       const k5 = armIK(p, cr, B.x + Math.sin(p.f) * 3 * sd, B.y - Math.cos(p.f) * 3 * sd, B.z, sd, 0.9);
@@ -585,6 +624,71 @@ export function pose3(p: Player) {
       else (aL = k5.a), (eL = k5.e), (zL = k5.ab);
     }
     gL = gR = 0.4;
+  }
+  // ---- jump ball: the centers reach for the toss ----
+  if (PRO && JB && air && (JB.c[0] === p || JB.c[1] === p)) {
+    const kj = armIK(p, cr, B.x, B.y, B.z, 1, 0.6);
+    aR = kj.a;
+    eR = kj.e;
+    sz = kj.ab;
+    aL = 1.2;
+    eL = 0.8;
+  }
+  // ---- one-shot actions (sim p.act / p.actT; synced online) ----
+  if (PRO && p.actT > 0) {
+    const a = p.act,
+      T0 = a === 3 ? 1.2 : a === 4 ? 0.75 : a === 5 ? 0.5 : a === 6 ? 0.45 : 0.4,
+      e = T0 - p.actT, // elapsed
+      out = Math.min(1, p.actT / 0.3); // blend out at the end
+    if (a === 3) {
+      // fall: knocked back onto the floor (charge taken, crossed up), sits, then gets up
+      st = ST.post;
+      // seated on the floor, leaning back on both hands
+      const fall = Math.min(1, e / 0.3) * out;
+      ln = ln + (-0.55 - ln) * fall;
+      cr = cr + (4.6 - cr) * fall;
+      tL += (1.45 - tL) * fall;
+      tR += (1.35 - tR) * fall;
+      kL += (0.25 - kL) * fall;
+      kR += (0.6 - kR) * fall;
+      aL += (-0.75 - aL) * fall;
+      aR += (-0.75 - aR) * fall;
+      sz = zL = 0.35 * fall;
+      eL = eR = 0.15;
+      gL = gR = 0;
+    } else if (a === 4) {
+      // dive: horizontal, both arms stretched for the ball
+      st = ST.air;
+      const d = Math.min(1, e / 0.15) * out;
+      ln += (1.35 - ln) * d;
+      cr += (5 - cr) * d;
+      aL += (2.8 - aL) * d;
+      aR += (2.8 - aR) * d;
+      eL = eR = 0.15;
+      tL += (-0.35 - tL) * d;
+      tR += (-0.2 - tR) * d;
+      kL = kR = 0.3;
+      gL = gR = 0.1;
+    } else if (a === 5) {
+      // fumble: the ball pops off his hands
+      aL = aR = 1.7;
+      eL = eR = 0.25;
+      wL = wR = 0.6;
+      ln -= 0.15;
+      gL = gR = 0;
+    } else if (a === 6) {
+      // blocked: the shooting arm is knocked back over his head
+      aR = 3.3;
+      eR = 0.25;
+      rz += 0.25 * out;
+      ln -= 0.2 * out;
+    } else if (a === 8) {
+      // shoulder fake in the post: shoulders dip and turn one way
+      const u = Math.sin(clamp(e / 0.4, 0, 1) * Math.PI);
+      ty += 0.55 * u;
+      rz += 0.2 * u;
+      cr += 0.1 * u;
+    }
   }
   // ---- shot block attempt: the leaper's hand goes for the ball ----
   if (PRO && air && !has && md !== "c" && md !== "s" && B.owner && B.owner.tm !== p.tm && (B.owner.mode === "c" || B.owner.mode === "s") && Math.hypot(B.x - p.x, B.y - p.y) < 40) {
@@ -615,6 +719,87 @@ export function pose3(p: Player) {
       const r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0);
       (aL += (r2.a - aL) * w), (eL += (r2.e - eL) * w), (zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w);
       gL = gR = 0.2;
+    }
+  }
+  // ---- chop steps: a handler sizing up a close defender keeps his feet alive ----
+  if (PRO && has && md === "i" && !hold && sp < 45 && !(p.mvT > 0) && !p.postA && !air) {
+    let near = 1e9;
+    for (const q of P) if (q.tm !== p.tm) near = Math.min(near, Math.hypot(q.x - p.x, q.y - p.y));
+    if (near < 50) {
+      const c2 = Math.sin(T * 22 + p.k),
+        w = Math.min(1, (50 - near) / 20) * (1 - sp / 45);
+      tL += (0.25 + c2 * 0.1 - tL) * w;
+      tR += (0.25 - c2 * 0.1 - tR) * w;
+      kL += (0.55 + Math.max(0, c2) * 0.25 - kL) * w;
+      kR += (0.55 + Math.max(0, -c2) * 0.25 - kR) * w;
+      cr = Math.max(cr, 0.28 * w);
+    }
+  }
+  // ---- defenders: hand-check a driver, squeeze over screens, point at their man ----
+  if (PRO && pos !== p.tm && B.owner && md === "i" && !air) {
+    const o = B.owner,
+      dd = Math.hypot(o.x - p.x, o.y - p.y);
+    if (dd < 24 && Math.hypot(o.vx, o.vy) > 140) {
+      // hand on the driver's hip
+      const k8 = armIK(p, cr, o.x, o.y, o.z + o.ht * 5, -1, 0.9);
+      aL = k8.a;
+      eL = k8.e;
+      zL = k8.ab;
+      gL = 0.1;
+    }
+    if (p.scr > 0) {
+      // fighting over a screen: turn the shoulders sideways, arms tucked
+      ty += 1.0;
+      aL = aR = 0.5;
+      eL = eR = 1.7;
+      sz = -0.2;
+      zL = -0.2;
+    } else if (Math.hypot(B.x - p.x, B.y - p.y) > 220 && Math.sin(T * 0.9 + p.k * 1.7) > 0.85) {
+      // calling out his man: point with the right arm
+      const mk = P[(1 - p.tm) * cfg.NP + p.k];
+      if (mk) {
+        const k9 = armIK(p, cr, mk.x, mk.y, mk.z + mk.ht * 8, 1, 0.9);
+        aR = Math.min(k9.a, 1.7);
+        eR = 0.15;
+        sz = k9.ab;
+        gR = 0.6;
+      }
+    }
+  }
+  // ---- offense off the ball: open teammates call for it ----
+  if (PRO && pos === p.tm && !has && B.owner && B.owner.tm === p.tm && md === "i" && !air && !(p.setT > 0)) {
+    let open = 1e9;
+    for (const q of P) if (q.tm !== p.tm) open = Math.min(open, Math.hypot(q.x - p.x, q.y - p.y));
+    if (open > 50 && Math.hypot(B.owner.vx, B.owner.vy) < 120 && Math.sin(T * 1.3 + p.k * 2.1) > 0.4) {
+      aR = 2.6;
+      eR = 0.25;
+      sz = 0.25;
+      gR = 0.05;
+      LOOK.x = B.owner.x;
+      LOOK.y = B.owner.y;
+      LOOK.z = B.owner.z + 60;
+      LOOK.on = 1;
+    }
+  }
+  // ---- free throws: players along the lane lean in, ready to box out ----
+  if (PRO && ftq && ftq.s !== p && md === "i" && Math.abs(hoop(ftq.s.tm) - p.x) < 150 && Math.abs(p.y - HY) < 70) {
+    cr = 0.32;
+    ln = 0.3;
+    tL = tR = 0.35;
+    kL = kR = 0.7;
+    hz = 0.22;
+    aL = aR = 0.75;
+    eL = eR = 1.1;
+    sz = zL = 0.35;
+  }
+  // ---- fatigue body language: shoulders slump, head forward, shorter arm swing ----
+  {
+    const tired = clamp((0.6 - (p.en ?? 1)) / 0.4, 0, 1);
+    if (tired > 0 && md === "i" && !air) {
+      cx += 0.14 * tired;
+      ln += 0.06 * tired;
+      HEADX += 0.18 * tired;
+      if (!has) (aL *= 1 - 0.4 * tired), (aR *= 1 - 0.4 * tired);
     }
   }
   // Planted screener: wide base, knees bent, arms folded across the chest.
@@ -659,7 +844,7 @@ export function pose3(p: Player) {
   }
   // Signature celebration (CEL): arms and torso blend into the move while the legs keep running.
   // Hands on knees: catching a breath at dead balls (free throws, after makes) when tired or lined up.
-  if (md === "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && (ftq ? ftq.s !== p : rs > 0.3 && (p.en ?? 1) < 0.75)) {
+  if (md === "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && (ftq ? ftq.s !== p && !(Math.abs(hoop(ftq.s.tm) - p.x) < 150 && Math.abs(p.y - HY) < 70) : rs > 0.3 && (p.en ?? 1) < 0.75)) {
     st = ST.rest;
     ln = 0.55;
     cx = 0.22;
@@ -751,6 +936,48 @@ export function pose3(p: Player) {
         aL = m(aL, 0.2);
         eL = m(eL, 0.35);
         ty += Math.sin(e * 2.2) * 0.35 * k;
+        break;
+      case 11: // missed an open look: hands on the head
+        aL = m(aL, 2.55);
+        aR = m(aR, 2.55);
+        eL = m(eL, 2.2);
+        eR = m(eR, 2.2);
+        sz = m(sz, 0.75);
+        zL = m(zl, 0.75);
+        HEADX = -0.25 * k;
+        break;
+      case 12: {
+        // arguing the call: arms out, palms up, shrug
+        const sh = Math.sin(e * 7) * 0.15;
+        aL = m(aL, 0.9 + sh);
+        aR = m(aR, 0.9 - sh);
+        eL = m(eL, 0.9);
+        eR = m(eR, 0.9);
+        sz = m(sz, 0.55);
+        zL = m(zl, 0.55);
+        oL = m(oL, 1.3);
+        oR = m(oR, -1.3);
+        gL = gR = m(gR, 0.05);
+        break;
+      }
+      case 13: {
+        // hyping a teammate: clapping in front of the chest
+        const cl = Math.abs(Math.sin(e * 9));
+        aL = m(aL, 1.35);
+        aR = m(aR, 1.35);
+        eL = m(eL, 0.9);
+        eR = m(eR, 0.9);
+        sz = m(sz, -0.15 + 0.5 * cl);
+        zL = m(zl, -0.15 + 0.5 * cl);
+        break;
+      }
+      case 14:
+        // swat hold: the blocking arm stays up, staring him down
+        aR = m(aR, 2.85);
+        eR = m(eR, 0.2);
+        wR = m(wR, -0.5);
+        gR = m(gR, 0.05);
+        ln = m(ln, -0.12);
         break;
       case 10: {
         // held follow-through (gooseneck) after a green, released after ~1 s
@@ -920,10 +1147,15 @@ export function pose3(p: Player) {
         r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9);
       if (r2.over < 0.6) {
         const w = md === "c" ? Math.min(1, p.t / 0.12) : 1;
-        aL += (r2.a - aL) * w;
-        eL += (r2.e - eL) * w;
-        zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w;
-        wL = -0.35 * w; // palm facing the ball
+        // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early
+        const gs = (p.sg && p.sg.gs) || 0,
+          k7 = md === "s" ? p.t / 0.4 : 0,
+          off = gs === 2 && k7 > 0.6 ? Math.min(1, (k7 - 0.6) / 0.15) : 0;
+        aL += (r2.a - aL) * w * (1 - off);
+        eL += (r2.e - eL) * w * (1 - off);
+        zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w * (1 - off);
+        wL = -0.35 * w;
+        if (gs === 1 && k7 > 0.68) (wL = 0.7), (oL = 0.6); // thumb flick
         gL = 0.15;
       }
     }
@@ -1002,7 +1234,7 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
   return IK;
 }
 /** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */
-const RELK: Record<string, number> = { jump: 0.7, mshot: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
+const RELK: Record<string, number> = { jump: 0.7, mshot: 0.7, upunder: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
 const NQ = 29,
   VALS = new Float64Array(NQ),
   LOOK = { x: 0, y: 0, z: 0, on: 0 };

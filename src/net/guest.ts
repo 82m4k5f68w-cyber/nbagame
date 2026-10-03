@@ -276,6 +276,7 @@ export class GuestSession {
     if (i.mv) bump("mv" + i.mv);
     if (i.lob) bump("lob");
     if (i.sw) bump("sw");
+    if (i.pf) bump("pf");
     if ((i as any).skip) bump("skip");
     if (p && !G.RPL && G.S === "play") {
       this.inbuf.push({ n: this.n, i: { ...i } });

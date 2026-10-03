@@ -129,7 +129,7 @@ export const PRE: Record<string, number[]> = {
 };
 /** Shot clip kinds: dunks (finish at the rim, then hang) and layup-type finishes (tempo uses the short timing). */
 export const isDunkSv = (v: number) => v === 6 || (v >= 11 && v <= 15);
-export const isLaySv = (v: number) => v === 5 || v === 7 || (v >= 16 && v <= 18) || isDunkSv(v);
+export const isLaySv = (v: number) => v === 5 || v === 7 || (v >= 16 && v <= 18) || v === 23 || isDunkSv(v);
 export const CL: Record<string, Record<string, number[]>> = {
     jump: {
       aR: [0, 1, 0.55, 2.25, 0.7, 2.95, 1, 2.6],
@@ -382,6 +382,19 @@ export const CL: Record<string, Record<string, number[]>> = {
       tR: [0, -0.3, 1, -0.45],
       kR: [0, 0.4, 1, 0.3],
     },
+    upunder: {
+      ty: [0, 0.9, 0.4, 0.2, 1, 0],
+      aR: [0, 1.4, 0.45, 2.9, 1, 2.9],
+      eR: [0, 1.0, 0.45, 0.3, 1, 0.3],
+      wR: [0, -0.2, 0.6, 0.8, 1, 0.8],
+      aL: [0, 1.2, 1, 0.7],
+      eL: [0, 1.5, 1, 1.2],
+      ln: [0, 0.35, 0.4, 0.2, 1, 0.1],
+      tL: [0, 0.4, 0.35, 1.2, 1, 1.1],
+      kL: [0, 0.6, 0.35, 1.4, 1, 1.2],
+      tR: [0, -0.4, 1, -0.3],
+      kR: [0, 0.5, 1, 0.4],
+    },
     hang: {
       aR: [0, 3.05, 1, 3.05],
       aL: [0, 3.05, 1, 3.05],
@@ -448,13 +461,14 @@ export const CL: Record<string, Record<string, number[]>> = {
     "leaner", // 20 drifting jumper, body tilted into the shot
     "runner", // 21 one-foot runner on the move
     "mshot", // 22 motion-captured jump shot (CMU), with the classic high release
+    "upunder", // 23 up-and-under out of the post (step through)
   ],
   SIG: Record<string, any> = {
-    Curry: { cl: 1, w: 0.15, off: 1, ce: [1, 8, 2] }, // shimmy, point up, night night
-    Doncic: { l: -0.28, f: 0.05, ce: [7, 5, 7], hs: 0, face: { w: 1.04, jw: 1.1, jl: 1.05, nw: 1.1 } }, // swept hair, full beard
+    Curry: { cl: 1, w: 0.15, off: 1, ce: [1, 8, 2], dk: 1, gs: 0 }, // shimmy, point up, night night
+    Doncic: { l: -0.28, f: 0.05, ce: [7, 5, 7], dk: 2, hs: 0, face: { w: 1.04, jw: 1.1, jl: 1.05, nw: 1.1 } }, // swept hair, full beard
     Jokic: { a: -0.2, k: 0.3, l: 0.06 },
     Wembanyama: { a: 0.4, g: 0.5, w: 0.2 },
-    Edwards: { k: 0.2, f: 0.05, ce: [4, 6, 6] },
+    Edwards: { k: 0.2, f: 0.05, ce: [4, 6, 6], dk: 3 },
     "Gilgeous-Alexander": { a: 0.1, l: -0.16 },
     Brunson: { l: -0.1, k: 0.05 },
     Towns: { a: 0.1, l: -0.12 },
@@ -500,5 +514,8 @@ export function formOf(name: string) {
   // signature celebrations [after a three, after a dunk / and-one, clutch / on fire] (see pose.ts CEL)
   const pk = (a: number[]) => a[(r() * a.length) | 0];
   f.ce = [pk([1, 4, 7, 8]), pk([3, 5, 6]), pk([2, 6, 7, 8])] as any;
+  f.dk = (r() * 4) | 0; // signature dribble package (see sim dribHand size-ups)
+  f.gs = (r() * 3) | 0; // guide-hand style: 0 classic, 1 thumb flick, 2 early drop
+  f.fr = r(); // free-throw routine seed
   return { ...f, ...(SIG[name] || {}) };
 }
