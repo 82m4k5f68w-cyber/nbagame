@@ -1,6 +1,6 @@
 // Broadcast presentation: center banners (runs, clutch time, timeouts, violations), play-by-play commentary captions
 // (+ optional speech), the tip-off intro card, momentum / timeouts / play-call bug, gamepad rumble.
-import { P, sc, q, clock, cl, PC, TS, DSN, PCN, JB, BENCH, CT, badgesOf, BADGE, ovr, cfg, type Player } from "../core/sim";
+import { P, sc, q, clock, cl, PC, TS, DSN, PCN, JB, BENCH, CT, badgesOf, BADGE, ovr, cfg, gameLike, type Player } from "../core/sim";
 import { V } from "./view";
 import { KMAP } from "./input";
 const kn = (id: string) => (KMAP[id] || "?").replace(/^Key|^Digit/, "");
@@ -308,7 +308,7 @@ export function drawPlayerIntro(t: number, rec: string) {
       X.textAlign = "left";
       X.fillStyle = "#ffd23f";
       X.font = "800 14px system-ui";
-      X.fillText((NP > 1 ? POSN[p.k] || "" : "STARTING") + " · " + cl[p.tm].toUpperCase() + (home ? " (YOU)" : ""), x0 + 215, 200);
+      X.fillText((NP >= 5 ? POSN[p.k] || "" : "STARTING") + " · " + cl[p.tm].toUpperCase() + (home ? " (YOU)" : ""), x0 + 215, 200);
       X.fillStyle = "#fff";
       X.font = "900 40px system-ui";
       X.fillText(p.n.toUpperCase().slice(0, 15), x0 + 215, 248);
@@ -374,7 +374,7 @@ export function drawIntro() {
 }
 /** Under the score bug: momentum meter, timeouts left (dots), your defense setting / play call, challenge flag. */
 export function drawBug(me: number) {
-  if (cfg.GM !== "game" && cfg.GM !== "clutch") return;
+  if (!gameLike()) return;
   // timeouts
   for (let t = 0; t < 2; t++)
     for (let k = 0; k < 4; k++) {

@@ -2,7 +2,7 @@
 // Contest / Dunk Contest / HORSE / Clutch Challenges, and Season mode (schedule, standings, playoffs; localStorage).
 import * as G from "../core/sim";
 import { cfg, nChoices, RO } from "../core/sim";
-import { M, TUT, CLUTCH, startPractice, start3pt, startDunk, startHorse, startClutch, stopMode } from "../core/modes";
+import { M, TUT, CLUTCH, startPractice, start3pt, startDunk, startHorse, startClutch, stopMode, startStreet, startKing, startAllStar, startDaily, dailySpec } from "../core/modes";
 import { ov2 } from "../core/data";
 
 let X: CanvasRenderingContext2D = null as any;
@@ -13,7 +13,12 @@ export const bindModes = (s: Shell) => (SH = s);
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 export const MODES: [string, string, string][] = [
   ["season", "🏆", "Season"],
+  ["daily", "📅", "Daily Challenge"],
   ["clutch", "⏱", "Clutch Challenges"],
+  ["allstar", "⭐", "All-Star Game"],
+  ["street", "🏙", "Street 1v1 to 21"],
+  ["street3", "🧱", "Street 3v3"],
+  ["king", "👑", "King of the Court"],
   ["3pt", "🎯", "3-Point Contest"],
   ["dunk", "💥", "Dunk Contest"],
   ["horse", "🐴", "HORSE"],
@@ -56,6 +61,11 @@ function go(k: string, arg = 0) {
   else if (k === "dunk") startDunk(s);
   else if (k === "horse") startHorse(s, o >= 0 ? o : undefined);
   else if (k === "clutch") startClutch(arg, s, o >= 0 ? o : undefined);
+  else if (k === "street") startStreet(s, o, 1);
+  else if (k === "street3") startStreet(s, o, 3);
+  else if (k === "king") startKing(s, arg);
+  else if (k === "allstar") startAllStar();
+  else if (k === "daily") startDaily();
   SH.ov.style.display = "none";
   SH.ov.classList.remove("mu-on");
 }
@@ -194,6 +204,38 @@ export function modeEvent(f: any) {
     good = r.win;
     h = r.win ? "YOU WIN H-O-R-S-E" : "H-O-R-S-E";
     body = `<p class="hint">${E(r.names[0])}: ${"HORSE".slice(0, r.letters[0]) || "—"} · ${E(r.names[1])}: ${"HORSE".slice(0, r.letters[1]) || "—"}</p>`;
+  } else if (k === "street" || k === "allstar") {
+    good = r.win;
+    h = r.win ? (k === "street" ? "YOU RUN THE COURT" : "ALL-STAR WIN") : k === "street" ? "SENT HOME" : "ALL-STAR LOSS";
+    body = `<div class="sc"><span>${E(r.teams[0])}</span><b>${r.sc[0]}</b><i>—</i><b>${r.sc[1]}</b><span>${E(r.teams[1])}</span></div>`;
+  } else if (k === "king") {
+    good = r.win;
+    const best = Math.max(lsGet("h2k_king", 0), r.rung);
+    lsPut("h2k_king", best);
+    if (r.win && r.rung < r.total) {
+      h = "NEXT CHALLENGER";
+      lastArg = r.rung;
+      body = `<p class="hint">You beat ${E(r.opp)}. ${r.rung} down, ${r.total - r.rung} to go. Best run: ${best}.</p>`;
+    } else {
+      h = r.win ? "KING OF THE COURT" : "DETHRONED";
+      lastArg = 0;
+      body = `<p class="hint">${r.win ? "You beat every challenger!" : `${E(r.opp)} sends you off after ${r.rung} win${r.rung === 1 ? "" : "s"}.`} Best run: ${best} of ${r.total}.</p>`;
+    }
+  } else if (k === "daily") {
+    good = r.win;
+    const s = r.daily || dailySpec(),
+      lb = lsGet("h2k_daily", {}),
+      d = (lb[s.seed] = lb[s.seed] || { tries: 0, best: null, wins: 0 });
+    d.tries++;
+    if (r.win) d.wins++;
+    if (d.best == null || r.margin > d.best) d.best = r.margin;
+    lsPut("h2k_daily", lb);
+    const days = Object.keys(lb).sort().reverse().slice(0, 7);
+    h = r.win ? "DAILY CHALLENGE BEATEN" : "DAILY CHALLENGE FAILED";
+    body = `<p class="hint">${E(s.c.n)} — ${E(s.c.d)}</p><div class="sc"><span>YOU</span><b>${G.sc[0]}</b><i>—</i><b>${G.sc[1]}</b><span>CPU</span></div>
+     <table class="bx"><tr><th>DAY</th><th>TRIES</th><th>WINS</th><th>BEST MARGIN</th></tr>${days
+       .map((k2) => `<tr${+k2 === s.seed ? ' style="color:#ffd23f"' : ""}><td>${String(k2).replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}</td><td>${lb[k2].tries}</td><td>${lb[k2].wins}</td><td>${lb[k2].best > 0 ? "+" : ""}${lb[k2].best}</td></tr>`)
+       .join("")}</table><p class="hint">A new scenario every day — same one for everybody.</p>`;
   } else if (k === "clutch") {
     good = r.win;
     const c = CLUTCH[r.ci],
@@ -209,7 +251,7 @@ export function modeEvent(f: any) {
     ov.style.display = "flex";
     ov.classList.remove("mu-on");
     ov.innerHTML = `<div class="fin"><div class="logo" style="font-size:38px;animation:none;color:${good ? "#ffd23f" : "#ff8a6b"}">${h}</div>${body}
-     <div class="row"><button class="big" id="mag">↻ AGAIN</button>${k === "clutch" ? `<button class="ghost" id="mcl">More challenges</button>` : ""}<button class="ghost" id="mme">Menu</button></div></div>`;
+     <div class="row"><button class="big" id="mag">${k === "king" && good && lastArg ? "NEXT CHALLENGER ▶" : "↻ AGAIN"}</button>${k === "clutch" ? `<button class="ghost" id="mcl">More challenges</button>` : ""}<button class="ghost" id="mme">Menu</button></div></div>`;
     $("#mag").onclick = () => go(lastKind, lastArg);
     $("#mme").onclick = () => SH.menu();
     const mc = document.getElementById("mcl");

@@ -13,7 +13,8 @@ export const CW = 940,
   HY = 250,
   RR = 7.5,
   BR = 3.9;
-export const hoop = (t: number) => (t ? HXs[0] : HXs[1]),
+/** The basket team t attacks. Half-court games (street / King of the Court): everyone plays at the right basket. */
+export const hoop = (t: number) => (cfg.HALF ? HXs[1] : t ? HXs[0] : HXs[1]),
   clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export const W3 = (x: number, y: number, z = 0) => [(x - 470) * 0.1, z * 0.1, (y - 250) * 0.1];
 
@@ -70,6 +71,9 @@ export const cfg = {
   SUBS: 1, // fatigue substitutions + foul-outs (5v5, offline; online rosters stay fixed)
   BADGES: 1, // rating badges + hot zones + rhythm/cold streaks
   ONLINE: 0, // online game: fixed rosters (no subs) and rating-only shot windows (the guest's meter must match the host)
+  HALF: 0, // half-court game (street rules): check ball at the top, make-it-take-it, 1s and 2s
+  TO: 0, // points to win (street / king); 0 = timed quarters
+  ASTAR: 0, // All-Star game: mixed rosters, open floor, lobs, fouls off
   GM: "game" as string, // game mode: game | practice | tutorial | 3pt | dunk | horse | clutch (modes.ts)
   input: null as null | ((c: Ctrl) => Input),
 };
@@ -170,9 +174,20 @@ export const mkT = () => {
 mkT();
 export const nChoices = () => (cfg.NP > 1 ? TM.length : ALL.length);
 export const RO = (i: number): [string, Tuple[], string] =>
-  cfg.NP > 1 ? [TM[i][1], TM[i][2], TM[i][0]] : [TM[ALL[i].t][1], [ALL[i].a], ALL[i].a[0]];
+  cfg.NP > 1
+    ? [TM[i][1], cfg.NP >= 5 ? TM[i][2] : TM[i][2].slice().sort((a, b) => ov2(b) - ov2(a)).slice(0, cfg.NP), TM[i][0]]
+    : [TM[ALL[i].t][1], [ALL[i].a], ALL[i].a[0]];
+/** All-Star teams: the league's best, drafted alternately into Team Gold and Team Ice. */
+export function allStar(t: number): [string, Tuple[], string] {
+  const all = TM.flatMap((x) => x[2]).sort((a, b) => ov2(b) - ov2(a)),
+    pick = all.slice(0, cfg.NP * 2).filter((_, k) => (k % 4 === 0 || k % 4 === 3 ? 0 : 1) === t);
+  // bigs at the back of the lineup so the positions read right
+  pick.sort((a, b) => a[10] - b[10]);
+  return t ? ["#4fb3ff", pick, "Team Ice"] : ["#e0a526", pick, "Team Gold"];
+}
 let SEL = 0;
 function RS(ti: number, t: number): [string, Tuple[], string] {
+  if (cfg.ASTAR && cfg.NP > 1) return allStar(t);
   if (cfg.MYM && t === 0) {
     if (cfg.NP === 1) return [MYP.d.col, [MYP.t], MYP.t[0]];
     const b = RO(ti);
@@ -199,7 +214,7 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
     const col = t && RS(ti, t)[0] === RS(i, 0)[0] ? "#b03a2e" : RS(ti, t)[0];
     RS(ti, t)[1].forEach((a, k) => P.push(mkP(a, t, k, col)));
     // generated reserves (fictional), a few points below the starters, for fatigue subs and foul-outs
-    BENCH[t] = NP > 1 ? reserves(RS(ti, t)[1], RS(ti, t)[2]).map((a, k) => mkP(a, t, k, col)) : [];
+    BENCH[t] = NP >= 5 && !cfg.ASTAR ? reserves(RS(ti, t)[1], RS(ti, t)[2]).map((a, k) => mkP(a, t, k, col)) : [];
   });
   ROST[0] = P.filter((p) => p.tm === 0);
   ROST[1] = P.filter((p) => p.tm === 1);
@@ -576,7 +591,7 @@ function rulesTick(dt: number) {
       }
     }
   }
-  if (!cfg.VIOL || ftq || inb > 0 || !B.owner || rs > 0) {
+  if (!cfg.VIOL || cfg.HALF || ftq || inb > 0 || !B.owner || rs > 0) {
     TS.lane.fill(0); // a shot / loose ball / dead ball resets the count
     return;
   }
@@ -635,9 +650,16 @@ const TEND: Record<string, number[]> = {
 };
 export function tendOf(p: Player): number[] {
   const t = TEND[p.n];
+  if (cfg.ASTAR) {
+    // All-Star game: everybody wants the highlight dunk or the logo three
+    const b = t || [0.2, 0.2, 0.3, 0.1, 0.4, 0.2];
+    return [b[0] + 0.15, b[1] * 0.4, b[2] + 0.45, 0, b[4] + 0.2, b[5]];
+  }
   if (t) return t;
   return [p.c >= 84 ? 0.3 : p.c >= 75 ? 0.15 : 0.03, 0.25, p.s >= 84 || p.i >= 86 ? 0.35 : 0.2, p.i >= 84 && p.ht >= 6.8 ? 0.3 : 0, 0.3, p.st === 1 || p.st === 3 ? 0.4 : 0.1];
 }
+/** Modes that play a real game (rules, AI, scoring) rather than a drill. */
+export const gameLike = () => cfg.GM === "game" || cfg.GM === "clutch" || cfg.GM === "street" || cfg.GM === "king" || cfg.GM === "allstar" || cfg.GM === "daily";
 /** Seconds left on the broadcast (12-minute) clock, whatever the real quarter length. */
 export const bcast = () => (clock * 720) / QTRLEN;
 /** Default matchups: which opponent slot each defender guards. Best defender on their best scorer, worst on their worst. */
@@ -673,6 +695,7 @@ export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: num
   return b >= 0 ? b : skip ? nearest(t, x, y, ex) : ex >= 0 ? nearest(t, x, y) : t * NP;
 }
 export function setup(off: number) {
+  if (cfg.HALF) return setupHalf(off);
   if (S === "play" && P.length) subs();
   TS.bc = 0;
   TS.lane.fill(0);
@@ -717,6 +740,47 @@ export function setup(off: number) {
     TS.adv = -1;
   }
   txt("INBOUND", 480, 230);
+}
+/** Street / King of the Court: check the ball at the top; offense spread around the arc, defense in front of them. */
+function setupHalf(off: number) {
+  const NP = cfg.NP,
+    hx = HXs[1],
+    spots = [
+      [hx - 300, HY],
+      [hx - 200, HY - 170],
+      [hx - 200, HY + 170],
+      [hx - 60, HY - 220],
+      [hx - 60, HY + 220],
+    ];
+  for (let k = 0; k < NP; k++) {
+    const o = P[off * NP + k],
+      e = P[(1 - off) * NP + k],
+      s = spots[k];
+    o.x = s[0];
+    o.y = s[1];
+    e.x = s[0] + (hx - s[0]) * 0.18;
+    e.y = s[1] + (HY - s[1]) * 0.18;
+  }
+  P.forEach((p) => {
+    p.vx = p.vy = p.z = p.vz = 0;
+    p.mode = "i";
+    p.t = 0;
+    p.ai = {};
+    p.cd = 0;
+    p.f = Math.atan2(HY - p.y, hx - p.x) + (p.tm !== off ? Math.PI : 0);
+  });
+  B.owner = P[off * NP];
+  B.mode = "held";
+  B.sc = 0;
+  B.sh = 0;
+  B.last = null;
+  JB = null;
+  pos = off;
+  shot = 24;
+  PCNT[0] = PCNT[1] = 0;
+  for (const c of CT) if (!c.fixed) c.idx = off === c.tm ? c.tm * NP : nearestFree(c, B.owner.x, B.owner.y);
+  inb = 0.6;
+  txt("CHECK BALL", 480, 230);
 }
 /** Nearest teammate for a controller, skipping players other humans already hold. */
 function nearestFree(c: Ctrl, x: number, y: number, ex = -1) {
@@ -1362,7 +1426,7 @@ export function step(p: Player, dt: number) {
     }
     if (has && (i.pass || i.e || i.lob)) {
       const r = i.pass || pick(p, i);
-      const lobIt = !i.lob && !isH(p) && r && r.j >= 55 && Math.hypot(hoop(r.tm) - r.x, HY - r.y) < 100 && Math.random() < 0.6;
+      const lobIt = !i.lob && !isH(p) && r && r.j >= (cfg.ASTAR ? 45 : 55) && Math.hypot(hoop(r.tm) - r.x, HY - r.y) < (cfg.ASTAR ? 140 : 100) && Math.random() < (cfg.ASTAR ? 0.92 : 0.6);
       if (r && !PREDICT) pass(p, r, i.lob || lobIt ? 2 : undefined);
     } else if (i.e && p.cd <= 0) {
       p.cd = 0.8; // steals are OFF by design (user request): reach-ins do nothing
@@ -1723,7 +1787,7 @@ export function ai(p: Player, dt: number) {
       od = Math.hypot(dh - o.x, HY - o.y),
       cpu = !CT.some((c) => c.tm === t),
       hotO = (o.heat || 0) >= 2 || (o.hzm && o.hzm[zoneOf(o, od)] >= 2);
-    let ou = (B.owner === o ? 22 : 26) * cpuK(p, [1.35, 1.12, 1, 0.86]); // tighter on-ball defense on harder levels
+    let ou = (B.owner === o ? 22 : 26) * cpuK(p, [1.35, 1.12, 1, 0.86]) * (cfg.ASTAR ? 1.6 : 1); // tighter on-ball defense on harder levels (All-Star: nobody plays D)
     if (ds === 1) ou = B.owner === o ? ou + 8 : ou * 1.6; // sag: go under screens, wall off the paint
     else if (ds === 2) ou = B.owner === o ? ou * 0.82 : ou * 0.6; // tight: pressure and deny
     if (cpu && cfg.BADGES && od > 220 && o.c < 72 && B.owner !== o) ou += 34; // sag off a non-shooter
@@ -2016,8 +2080,8 @@ export function bstep(dt: number) {
     if (B.sh && d < 20) B.rim = Math.min(B.rim ?? 99, Math.hypot(d - RR, B.z - 100)); // closest approach to the iron
     if (B.sh && !B.sc && B.vz < 0 && ((pz >= 100 && B.z < 100 && d < RR - 1.2) || (B.abv === b && B.z < 97 && B.z > 80 && d < RR - 0.6))) {
       B.sc = 1;
-      const t = b ? 0 : 1,
-        pts = B.ft ? 1 : B.three && B.last.tm === t ? 3 : 2;
+      const t = cfg.HALF && B.last ? B.last.tm : b ? 0 : 1,
+        pts = B.ft ? 1 : cfg.HALF ? (B.three ? 2 : 1) : B.three && B.last.tm === t ? 3 : 2;
       sc[t] += pts;
       exc(1);
       runAdd(t, pts);
@@ -2076,7 +2140,7 @@ export function bstep(dt: number) {
           for (const o of [sh, m]) if (o) (o.cel = 9), (o.celT = CEL_T);
         }
       }
-      else if (B.fl) {
+      else if (B.fl && !cfg.HALF) {
         txtW("AND ONE!", B.last.x, B.last.y, 110, "#ffd23f");
         {
           let m: Player | null = null,
@@ -2098,7 +2162,11 @@ export function bstep(dt: number) {
       }
       else {
         rs = 1.4;
-        pend = 1 - t;
+        pend = cfg.HALF ? t : 1 - t; // street: make it, take it
+        if (cfg.TO && sc[t] >= cfg.TO) {
+          rs = 0;
+          endGame();
+        }
         if (cfg.replays && (B.dk || (B.gn && B.three && isH(B.last)))) {
           RQ = 1;
           HLN = (B.dk ? (B.oop ? "Alley-oop — " : "Slam — ") : "From deep — ") + (B.last ? B.last.n : "");
@@ -2240,6 +2308,12 @@ export function bstep(dt: number) {
         pos = p.tm;
         shot = 24;
         PCNT[0] = PCNT[1] = 0;
+        // street: a change of possession has to be taken back and checked at the top
+        if (cfg.HALF && !PREDICT && rs <= 0) {
+          rs = 0.5;
+          pend = p.tm;
+          txtW("TAKE IT BACK", p.x, p.y, 100, "#9fe7ff");
+        }
       }
       snd(180, 0.05, "square");
       if (wasShot && shooter && shooter !== p && shooter.cw != null && shooter.cw < 0.35 && Math.random() < 0.6 && !PREDICT) (shooter.cel = 11), (shooter.celT = CEL_T); // missed an open look
@@ -2335,7 +2409,7 @@ export function upd(dt: number) {
     inb -= dt;
     if (inb <= 0 && B.owner && B.mode === "held") {
       const o = B.owner;
-      if (NP > 1) {
+      if (NP > 1 && !cfg.HALF) {
         let b = null,
           bv = -1e9;
         for (const q of P)
@@ -2402,7 +2476,7 @@ export function upd(dt: number) {
   }
   if (clock > 0 && !ftq && inb <= 0) clock = Math.max(0, clock - dt);
   if (q >= 4 && Math.abs(sc[0] - sc[1]) <= 6 && B.owner && Math.floor(T / 2.6) !== Math.floor((T - dt) / 2.6)) fx({ k: "chant", tm: 1 - pos });
-  if (cfg.GM === "game" || cfg.GM === "clutch") rulesTick(dt);
+  if (gameLike()) rulesTick(dt);
   if (S !== "play" || rs > 0) return; // a violation / timeout just stopped play
   if (B.owner && !ftq && inb <= 0 && cfg.SCLK) shot -= dt;
   if (shot <= 0 && !ftq) {
@@ -2519,7 +2593,7 @@ export function foul(d: Player, o: Player, k: string, sh: number, th: any, flag 
   snd(120, 0.3, "sawtooth", 0.1);
   B.sh = 0;
   B.ft = 0;
-  const n = sh ? (th ? 3 : 2) : tf[d.tm] >= 5 ? 2 : 0;
+  const n = cfg.HALF ? 0 : sh ? (th ? 3 : 2) : tf[d.tm] >= 5 ? 2 : 0;
   if (n) {
     startFT(o, n, flag ? o.tm : 0, 0);
     if (flag) ftq.keep = 1;

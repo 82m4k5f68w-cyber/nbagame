@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
 import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
@@ -928,7 +928,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         sum = (t: number, k: string) => R2(t).reduce((a: number, p: any) => a + (p.stt[k] || 0), 0),
         pct = (t: number) => (sum(t, "fga") ? Math.round((100 * sum(t, "fgm")) / sum(t, "fga")) + "%" : "—"),
         top = (t: number) => R2(t).slice().sort((a: any, b: any) => b.stt.pts - a.stt.pts)[0];
-      if (SCFG.GM !== "game" && SCFG.GM !== "clutch") return ["", "", ""];
+      if (!gameLike()) return ["", "", ""];
       if (TS.run[1] >= 8) return [TS.run[0] ? "" : TS.run[1] + "-0", "RUN", TS.run[0] ? TS.run[1] + "-0" : ""];
       switch (Math.floor(T / 6) % 5) {
         case 0:

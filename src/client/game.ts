@@ -32,6 +32,7 @@ function fatal(m: string) {
 export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mode: string; online?: boolean | { host?: boolean; join?: string }; quick?: { sel: number; opp: number } }) {
   GS.mode = o.mode;
   cfg.NP = o.np;
+  NP0 = o.np;
   // Both renderers now run the same Rapier ball and hand-accurate release (2D used to get the legacy ball).
   cfg.physics = "rapier";
   cfg.hand = true;
@@ -243,6 +244,7 @@ const POS = ["PG", "SG", "SF", "PF", "C"],
   DIFFN = ["Rookie", "Pro", "All-Star", "Hall of Fame"],
   avg = (a: any[], k: number) => Math.round(a.reduce((s2, p) => s2 + p[k], 0) / a.length);
 let OPP = -1; // -1 = random opponent
+let NP0 = 5; // team size the hub booted with (5v5 hubs can also play 3v3 / 2v2)
 let QLEN = 60;
 
 /** The matchup screen: your team vs. the opponent, lineups, ratings, difficulty, and a settings drawer. */
@@ -278,17 +280,18 @@ export function menu() {
         <ol class="lu">${pl
           .map(
             (p, k) =>
-              `<li style="--d:${k * 60}ms"><img alt="" src="${avatar(p, r[0])}"><span class="pn">${NP > 1 ? POS[k] : "#" + p[12]}</span><b>${esc(p[0])}</b><span class="po">${ov2(p)}</span></li>`,
+              `<li style="--d:${k * 60}ms"><img alt="" src="${avatar(p, r[0])}"><span class="pn">${NP >= 5 ? POS[k] : "#" + p[12]}</span><b>${esc(p[0])}</b><span class="po">${ov2(p)}</span></li>`,
           )
           .join("")}</ol></section>`;
     };
   const oppI = OPP < 0 ? -1 : OPP;
   ov.innerHTML = `<div class="mu">
-  <header class="mu-top"><div class="logo">HOOPS<span>2K27</span></div><div class="mu-sub">${NP > 1 ? "5V5" : "1V1 SHOWDOWN"} · ${V.r3d ? "3D ARENA" : "2D COURT"}</div>
+  <header class="mu-top"><div class="logo">HOOPS<span>2K27</span></div><div class="mu-sub">${NP > 1 ? NP + "V" + NP : "1V1 SHOWDOWN"} · ${V.r3d ? "3D ARENA" : "2D COURT"}</div>
    <div class="rec" title="Your record vs the CPU">${R.w}W · ${R.l}L${R.st > 1 ? ` · 🔥 ${R.st} straight` : ""}</div><button id="set" class="gear">⚙ Settings</button></header>
   <div class="vs">${side(SEL, true)}
    <div class="mid"><div class="vsb">VS</div>
     <div class="chips"><b>DIFFICULTY</b>${DIFFN.map((n, i) => opt("", "df", i, cfg.DIFF, n)).join("")}</div>
+    ${NP0 > 1 ? `<div class="chips"><b>TEAM SIZE</b>${[5, 3, 2].map((n) => `<button data-tsz="${n}" class="${NP === n ? "on" : ""}">${n}v${n}</button>`).join("")}</div>` : ""}
     <div class="chips"><b>QUARTERS</b>${[30, 60, 120, 180].map((q) => `<button data-ql="${q}" class="${QLEN === q ? "on" : ""}">${q < 60 ? q + "s" : q / 60 + " min"}</button>`).join("")}</div>
     <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → your ${NP > 1 ? "team" : "star"} · ↑ ↓ opponent · Enter tip off</p>${modeStrip()}</div>
    ${oppI < 0 ? `<section class="side rnd"><div class="sh"><button class="arw" data-cy="o" data-d="-1" aria-label="Previous">◀</button><div class="badge">?</div><div class="tn"><small>OPPONENT</small><b>Random</b></div><button class="arw" data-cy="o" data-d="1" aria-label="Next">▶</button></div><p class="hint" style="margin:10px 0">A surprise ${NP > 1 ? "team" : "star"} every game. Use ▶ or ↑ ↓ to pick one.</p><ol class="lu q">${(NP > 1 ? POS : ["?"])
@@ -356,6 +359,7 @@ export function menu() {
     );
   bindStrip();
   grp("df", (v) => (cfg.DIFF = v));
+  grp("tsz", (v) => (cfg.NP = v), true);
   grp("ql", (v) => (QLEN = v));
   grp("m", (v) => (V.METER = v));
   grp("s", (v) => (IN.TEMPO = v));
@@ -608,7 +612,7 @@ export function startLocal(i: number, o: { j?: number } = {}) {
     G.setS("intro");
     V.introDone = 1;
     const r = rec.get();
-    introRec = `${G.cl[0]} vs ${G.cl[1]} · ${cfg.NP > 1 ? "5-on-5" : "1-on-1"} · ${DIFFN[cfg.DIFF]} · your record ${r.w}-${r.l}`;
+    introRec = `${G.cl[0]} vs ${G.cl[1]} · ${cfg.NP}-on-${cfg.NP} · ${DIFFN[cfg.DIFF]} · your record ${r.w}-${r.l}`;
   }
   ov.style.display = "none";
   ov.classList.remove("mu-on");
@@ -1047,7 +1051,7 @@ function loop(n: number) {
   music.level = Math.min(1, audio.EXC * 0.8 + Math.abs(G.TS.mom) * 0.5);
   {
     const meT = (CT[V.focus] || CT[0] || { tm: 0 }).tm,
-      game = cfg.GM === "game" || cfg.GM === "clutch";
+      game = G.gameLike();
     music.offense = G.pos === meT ? 1 : 0;
     music.dead = G.rs > 0 || G.inb > 0 || !!G.ftq ? 1 : 0;
     music.mode =

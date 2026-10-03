@@ -3,7 +3,7 @@
 // the clocks are frozen, shots are watched until they resolve, and results go to the shell as FX {k:"mode"}.
 import * as G from "./sim";
 import { cfg, HOOK, type Player } from "./sim";
-import { TM, isDunkSv } from "./data";
+import { TM, isDunkSv, ov2 } from "./data";
 
 export const M: any = { kind: "" };
 const PARK = (p: Player, k: number) => {
@@ -103,21 +103,29 @@ function toSlot0(t: number, p: Player) {
 const best = (t: number, f: (p: Player) => number) => G.P.filter((p) => p.tm === t).sort((a, b) => f(b) - f(a))[0];
 const saved = { JB: 1, FOULS: 1, VIOL: 1, SUBS: 1 };
 /** Common start: a normal game with no jump ball, then the mode takes over. */
-function begin(kind: string, sel: number, opp: number | undefined) {
+/** Modes that are a real game (the normal sim runs them; the mode only sets the rules and reads the result). */
+const GAMELIKE = new Set(["clutch", "street", "king", "allstar", "daily"]);
+function begin(kind: string, sel: number, opp: number | undefined, o: { np?: number; half?: number; to?: number; astar?: number } = {}) {
   stopMode();
   Object.assign(saved, { JB: cfg.JB, FOULS: cfg.FOULS, VIOL: cfg.VIOL, SUBS: cfg.SUBS });
+  M.np0 = cfg.NP;
+  if (o.np) cfg.NP = o.np;
+  cfg.HALF = o.half || 0;
+  cfg.TO = o.to || 0;
+  cfg.ASTAR = o.astar || 0;
   cfg.JB = 0;
   cfg.GM = kind;
   cfg.ONLINE = 0;
-  if (kind !== "clutch") {
+  if (!GAMELIKE.has(kind) || kind === "allstar") {
     cfg.FOULS = 0;
     cfg.VIOL = 0;
     cfg.SUBS = 0;
   }
+  if (kind === "street" || kind === "king") (cfg.VIOL = 0), (cfg.SUBS = 0);
   G.start(sel, opp != null && opp >= 0 ? { j: opp } : {});
   cfg.JB = saved.JB;
   G.FX.length = 0; // no "INBOUND" from the normal start
-  if (kind !== "clutch") {
+  if (!GAMELIKE.has(kind)) {
     // the human always runs slot 0 (the mode's shooter); no inbound pass to a parked teammate
     G.setInb(0);
     for (const c of G.CT) {
@@ -131,10 +139,23 @@ function begin(kind: string, sel: number, opp: number | undefined) {
   M.done = 0;
   HOOK.pre = pre;
   HOOK.post = post;
-  HOOK.end = kind === "clutch" ? postClutch : null;
+  HOOK.end = kind === "clutch" || kind === "daily" ? postClutch : GAMELIKE.has(kind) ? endGameMode : null;
+}
+/** Street / King / All-Star: the game itself decides; report the result. */
+function endGameMode() {
+  if (M.done) return;
+  const win = G.sc[0] > G.sc[1];
+  if (M.kind === "king") {
+    if (win) M.rung++;
+    return finish({ win, rung: M.rung, total: M.ladder.length, next: M.ladder[M.rung], opp: G.cl[1] });
+  }
+  finish({ win, sc: G.sc.slice(), teams: G.cl.slice() });
 }
 export function stopMode() {
   if (M.kind) Object.assign(cfg, { FOULS: saved.FOULS, VIOL: saved.VIOL, SUBS: saved.SUBS });
+  if (M.kind && M.np0) cfg.NP = M.np0;
+  M.np0 = 0;
+  cfg.HALF = cfg.TO = cfg.ASTAR = 0;
   M.kind = "";
   cfg.GM = "game";
   HOOK.pre = HOOK.post = HOOK.end = null;
@@ -485,12 +506,94 @@ function postClutch() {
     G.setS("over");
     return finish({ win: true, ci: M.ci });
   }
-  if (G.S === "over") finish({ win: G.sc[0] > G.sc[1], ci: M.ci });
+  if (G.S === "over") finish({ win: G.sc[0] > G.sc[1], ci: M.ci, margin: G.sc[0] - G.sc[1], daily: M.daily });
+}
+// ======================= Street 21 / King of the Court / All-Star / Daily =======================
+/** Team index -> that team's best player in the 1v1 list, and back. */
+export const starOfTeam = (ti: number) => {
+  const best = TM[ti][2].slice().sort((a, b) => ov2(b) - ov2(a))[0];
+  return G.ALL.findIndex((x) => x.a === best);
+};
+export const teamOfStar = (i: number) => (G.ALL[i] ? G.ALL[i].t : 0);
+/** Street ball: half court, check ball at the top, 1s and 2s, make-it-take-it, call your own fouls, first to 21. */
+export function startStreet(sel: number, opp: number | undefined, np: number) {
+  stopMode(); // read the menu's team size, not the last mode's
+  const from = cfg.NP;
+  const map = (i: number | undefined) => (i == null || i < 0 ? undefined : np === 1 && from > 1 ? starOfTeam(i) : np > 1 && from === 1 ? teamOfStar(i) : i);
+  let s = map(sel)!,
+    o = map(opp);
+  if (o === s) o = undefined;
+  begin("street", s, o, { np, half: 1, to: 21 });
+  G.setup(0);
+  G.ban("STREET · " + (np === 1 ? "1-ON-1" : np + "-ON-" + np) + " TO 21", "Half court · 1s and 2s · make it, take it · take it back on a change of possession", "#ff9a2e");
+}
+/** King of the Court: 1-on-1 to 11 (1s and 2s) up a ladder of opponents, weakest first. Lose once and you're off. */
+export function startKing(sel: number, rung = 0) {
+  stopMode();
+  const me0 = cfg.NP > 1 ? starOfTeam(sel) : sel;
+  if (!rung || !M.ladder) {
+    const mine = G.ALL[me0] && G.ALL[me0].a;
+    M.ladder = G.ALL.map((x, i) => i)
+      .filter((i) => G.ALL[i].a !== mine)
+      .sort((a, b) => ov2(G.ALL[a].a) - ov2(G.ALL[b].a))
+      .filter((_, k, arr) => k % Math.max(1, Math.floor(arr.length / 10)) === 0)
+      .slice(0, 10);
+    M.kme = me0;
+    M.rung = 0;
+  }
+  const r = rung || 0,
+    ld = M.ladder,
+    meK = M.kme;
+  begin("king", meK, ld[r], { np: 1, half: 1, to: 11 });
+  M.ladder = ld;
+  M.kme = meK;
+  M.rung = r;
+  G.setup(0);
+  G.ban("KING OF THE COURT", `Challenger ${r + 1} of ${ld.length}: ${G.cl[1].toUpperCase()} · first to 11, 1s and 2s`, "#ffd23f");
+}
+/** All-Star game: the league's ten best split into Team Gold and Team Ice; no defense, lots of lobs. */
+export function startAllStar() {
+  stopMode();
+  begin("allstar", 0, 1, { np: cfg.NP === 1 ? 3 : cfg.NP, astar: 1 });
+  G.setup(0);
+  G.ban("ALL-STAR GAME", "Team Gold vs Team Ice · fouls off · let it fly", "#e0a526");
+}
+/** Daily Challenge: one scenario per day (same for everybody that day), seeded by the date. */
+export function dailySpec(d = new Date()) {
+  const seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let h = seed;
+  const r = () => ((h = (h * 1103515245 + 12345) >>> 0) / 4294967296);
+  const base = CLUTCH[(r() * CLUTCH.length) | 0],
+    me = (r() * TM.length) | 0;
+  let op = (r() * TM.length) | 0;
+  if (op === me) op = (op + 1) % TM.length;
+  const dm = ((r() * 3) | 0) - 1;
+  return { seed, me, op, c: { ...base, t: Math.max(4, base.t + ((r() * 9) | 0) - 4), me: base.me + dm, n: base.n.replace(/Down \d|Up \d/, (m) => m) } };
+}
+export function startDaily() {
+  stopMode();
+  const s = dailySpec(),
+    c = s.c,
+    np = cfg.NP;
+  G.setQtrLen(720);
+  begin("daily", np > 1 ? s.me : starOfTeam(s.me), np > 1 ? s.op : starOfTeam(s.op));
+  G.setScalars({ q: 4, clock: c.t, sc: [c.me, c.op] });
+  G.setup(c.pos);
+  G.TS.clutch = 1;
+  M.ci = -1;
+  M.daily = s;
+  M.goal = c.goal;
+  G.ban("DAILY CHALLENGE", `${G.cl[0]} vs ${G.cl[1]} · ${c.me}-${c.op} · ${Math.round(c.t)} s · ${c.d}`, "#ff5a5a");
 }
 // ======================= hooks =======================
 function pre(dt: number) {
   const k = M.kind;
-  if (k !== "clutch") {
+  if (k === "street" || k === "king") {
+    G.setClock(G.QTRLEN); // no game clock: first to the target score
+    return;
+  }
+  if (k === "allstar") return;
+  if (k !== "clutch" && k !== "daily") {
     G.setClock(G.QTRLEN);
     G.setShot(24);
   }
@@ -505,8 +608,8 @@ function post(dt: number) {
   const k = M.kind,
     p = me(),
     B = G.B;
-  if (G.rs > 0 && k !== "clutch") G.setRs(0); // no inbounds after makes: the mode decides what happens next
-  if (k === "clutch") return void postClutch();
+  if (GAMELIKE.has(k)) return void ((k === "clutch" || k === "daily") && postClutch());
+  if (G.rs > 0) G.setRs(0); // no inbounds after makes: the mode decides what happens next
   if (M.done) return;
   if (k === "practice" || k === "tutorial") {
     const r = watchShot(p, dt);

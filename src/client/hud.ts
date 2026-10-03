@@ -1,5 +1,5 @@
 // Heads-up display: score bug, player strip, shot meters, contest ring, pass/open markers, floating texts.
-import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, type Player } from "../core/sim";
+import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, gameLike, type Player } from "../core/sim";
 import { V, pr, fmt, MN } from "./view";
 import { isLaySv } from "../core/data";
 import { K, tempoOf, TX } from "./input";
@@ -234,7 +234,7 @@ export function hud2() {
   }
 }
 export function hud() {
-  if (cfg.GM !== "game" && cfg.GM !== "clutch") return hudTexts();
+  if (!gameLike()) return hudTexts();
   X.fillStyle = "rgba(8,10,24,.88)";
   X.beginPath();
   X.rect(230, 6, 500, 62);

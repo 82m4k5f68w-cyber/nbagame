@@ -9,7 +9,7 @@
     "test:fk": "tsx tests/fk.ts",
     "test:fuzz": "tsx tests/fuzz.ts",
     "test:browser": "node tests/browser.mjs",
-    "test": "npm run typecheck && tsx tests/fk.ts && tsx tests/fuzz.ts && tsx tests/greens.ts && tsx tests/curry_greens.ts && tsx tests/passes.ts && tsx tests/dribble_moves.ts && tsx tests/invariants.ts && tsx tests/net_swish.ts && tsx tests/rules.ts",
+    "test": "npm run typecheck && tsx tests/fk.ts && tsx tests/fuzz.ts && tsx tests/greens.ts && tsx tests/curry_greens.ts && tsx tests/passes.ts && tsx tests/dribble_moves.ts && tsx tests/invariants.ts && tsx tests/net_swish.ts && tsx tests/rules.ts && tsx tests/modes_sim.ts",
     "serve": "npx serve dist",
     "server": "tsx server/relay.ts",
     "host:dedicated": "tsx server/headless-host.ts",
