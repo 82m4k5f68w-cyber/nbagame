@@ -6,7 +6,7 @@ const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-119
 const pg = await b.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = [];
 pg.on("pageerror", (e) => errs.push(String(e)));
-const url = "file://" + path.resolve("dist/hoops2k27-hub.html");
+const url = "file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro";
 await pg.goto(url);
 await pg.waitForTimeout(400);
 await pg.evaluate(() => document.querySelector('button[data-g="5v5-2d"][data-my="0"][data-mp="0"]').click());

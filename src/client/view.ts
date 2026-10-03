@@ -17,7 +17,9 @@ export const V = {
   shake: null as null | ((a: number) => void),
   focus: 0, // which controller this screen follows (CT index)
   COMM: 1, // commentary captions
-  VOICE: 0, // speak the commentary (speechSynthesis)
+  INTRO: 1, // player introductions before the tip
+  introDone: 0, // the intro sequence ran for this game (skip the small lineup card)
+  VOICE: 1, // speak the commentary (browser text-to-speech)
   MUSIC: 1, // dynamic arena music
   RUMBLE: 1, // gamepad rumble
   CB: 0, // colorblind-safe meter colors

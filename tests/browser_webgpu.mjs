@@ -9,7 +9,7 @@ const b = await chromium.launch({
 const pg = await b.newPage({ viewport: { width: 960, height: 600 } });
 const errs = [];
 pg.on("pageerror", (e) => errs.push(String(e)));
-await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?webgpu");
+await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?webgpu&nointro");
 await pg.waitForTimeout(300);
 await pg.evaluate(() => document.querySelector('button[data-g="5v5-3d"][data-my="0"][data-mp="0"]').click());
 await pg.waitForFunction(() => window.H2K && window.H2K.V.backend, null, { timeout: 60000 });

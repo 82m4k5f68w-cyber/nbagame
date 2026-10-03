@@ -134,6 +134,9 @@ await ev(() => document.getElementById("mme").click());
 // ---- season: record one game
 await ev(() => window.H2K.openMode("season"));
 await ev(() => document.getElementById("snx").click());
+res.intro = await ev(() => window.H2K.G.S);
+await pg.keyboard.press("Space");
+res.afterIntro = await ev(() => window.H2K.G.S);
 await ev(() => {
   const G = window.H2K.G;
   for (let i = 0; i < 400 && G.JB; i++) G.upd(1 / 60);
@@ -153,6 +156,7 @@ res.season = await ev(() => !!document.querySelector(".season") && document.quer
 // ---- halftime in a normal game
 await ev(() => window.H2K.menu());
 await ev(() => document.getElementById("tip").click());
+await pg.keyboard.press("Enter");
 await ev(() => {
   const G = window.H2K.G;
   for (let i = 0; i < 400 && G.JB; i++) G.upd(1 / 60);
@@ -189,6 +193,8 @@ const ok =
   res.clutch.kind === "clutch" &&
   /CHALLENGE/.test(res.clutchEnd) &&
   res.season &&
+  res.intro === "intro" &&
+  res.afterIntro === "play" &&
   res.half === "half" &&
   res.afterHalf === "play" &&
   !errs.length;

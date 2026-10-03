@@ -371,6 +371,7 @@ export const TS = {
   bc: 0, // seconds the ball has been in the backcourt this possession
   call: null as any, // last whistle that can be challenged {t: team that can challenge, d, o, n, until, p}
   gt: 0,
+  qs: [] as number[][], // cumulative score at the end of each quarter
 };
 export const DSN = ["NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING"],
   PCN = ["AUTO", "PICK & ROLL", "PINDOWN", "FLARE", "ISOLATION"];
@@ -387,6 +388,7 @@ function resetRules() {
   TS.bc = 0;
   TS.call = null;
   TS.gt = 0;
+  TS.qs = [];
 }
 /** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
 export const cm = (e: string, n?: string, n2?: string) => fx({ k: "cm", e, n, n2 });
@@ -767,6 +769,9 @@ export function launch(p: Player) {
     rT = lay ? 0.28 : p.st === 1 ? 0.3 : 0.4;
   let gr;
   B.d0 = isFT ? null : D0;
+  // play-by-play: the call as he rises ("Curry pulls up..."); the result line follows on the make / miss
+  if (!isFT && !lay && !PREDICT)
+    cm("rise", p.n, D0 > 300 ? "deep" : three ? "three" : p.sbw > 0 ? "step" : p.sv === 2 ? "fade" : p.sv === 21 || p.sv === 20 ? "float" : Math.hypot(p.vx, p.vy) > 60 || (p.mvEnd != null && T - p.mvEnd < 0.6) ? "pull" : "mid");
   if (hum && cx > 0.45 && !lay) txtW(cx > 0.75 ? "SMOTHERED" : "CONTESTED", p.x, p.y, 108, "#ff6b6b");
   if (hum && notes.length && !lay) txtW(notes.join(" · "), p.x, p.y, 150, notes.some((n) => n === "DEEP" || n === "COLD") ? "#7fd4ff" : "#ffb347");
   if (hum) {
@@ -2017,6 +2022,7 @@ export function bstep(dt: number) {
         p.stt.reb++;
         if (p.tm === B.last.tm) p.stt.orb++;
         if (!B.ft) zoneRes(B.last, B.d0, false);
+        if (!B.ft) cm(p.tm === B.last.tm ? "missO" : "miss", B.last.n, p.n);
         if (hasB(p, "GC") && Math.random() < 0.3) cm("board", p.n);
       }
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
@@ -2186,6 +2192,7 @@ export function upd(dt: number) {
   if (clock <= 0 && !ftq && !(B.sh && !B.owner)) {
     if (q >= 4 && sc[0] !== sc[1]) endGame();
     else {
+      TS.qs.push([sc[0], sc[1]]);
       q++;
       tf = [0, 0];
       for (const p of P) p.en = Math.min(1, (p.en ?? 1) + 0.25); // quarter break
@@ -2991,7 +2998,7 @@ const RSP = [0.15, 0.25, 0.4, 0.7, 1];
 export let RSPD = 0.4;
 export const setRplSpeed = (d: number) => (RSPD = RSP[clamp(RSP.indexOf(RSPD) + d, 0, RSP.length - 1)]);
 /** Game highlights (copies of the replay buffer) for the end-of-game reel and saved reels. */
-export const HL: { s: string; n: number; buf: Float32Array }[] = [];
+export const HL: { s: string; n: number; buf: Float32Array; q?: number }[] = [];
 export let HLN = ""; // label for the next highlight
 export const setHLN = (s: string) => (HLN = s);
 export const FSTN = () => FST;
@@ -3002,7 +3009,7 @@ function saveHL() {
     const o = ((recS + recN - n + k) % RCAP) * FST;
     buf.set(REC.subarray(o, o + FST), k * FST);
   }
-  HL.push({ s: HLN || "Highlight", n, buf });
+  HL.push({ s: HLN || "Highlight", n, buf, q });
   HLN = "";
   if (HL.length > 8) HL.shift();
 }
@@ -3012,7 +3019,7 @@ export function playClip(c: { n: number; buf: Float32Array }) {
   recN = Math.min(c.n, RCAP);
   REC.set(c.buf.subarray(0, recN * FST), 0);
   LIVE = { p: P.map((p) => [p.x, p.y, p.z, p.f, p.q ? { ...p.q } : null]), b: [B.x, B.y, B.z, B.a] };
-  RPL = { i: 0, reel: 1 };
+  RPL = { i: 0, reel: 1, rs };
 }
 export function startReplay() {
   LIVE = { p: P.map((p) => [p.x, p.y, p.z, p.f, p.q ? { ...p.q } : null]), b: [B.x, B.y, B.z, B.a] };
@@ -3036,11 +3043,12 @@ function rplStep(dt: number) {
       p.q = l[4];
     });
     [B.x, B.y, B.z, B.a] = LIVE.b;
+    const reel = r.reel;
     RPL = null;
     RQ = 0;
     RPK = 0;
     recClear();
-    rs = 0.001;
+    rs = reel ? r.rs : 0.001; // a reel (halftime / final) must not trigger the next inbound
     return;
   }
   recApply(n);

@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt } from "./view";
 import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
@@ -922,8 +922,33 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     jum.position.set(0, 27, 0);
     S.add(jum);
     let jk = "";
+    /** Live team stats that rotate on the jumbotron's lower panel (every ~6 s). */
+    function jStat(): [string, string, string] {
+      const R2 = (t: number) => (ROST[t] && ROST[t].length ? ROST[t] : P.filter((p: any) => p.tm === t)),
+        sum = (t: number, k: string) => R2(t).reduce((a: number, p: any) => a + (p.stt[k] || 0), 0),
+        pct = (t: number) => (sum(t, "fga") ? Math.round((100 * sum(t, "fgm")) / sum(t, "fga")) + "%" : "—"),
+        top = (t: number) => R2(t).slice().sort((a: any, b: any) => b.stt.pts - a.stt.pts)[0];
+      if (SCFG.GM !== "game" && SCFG.GM !== "clutch") return ["", "", ""];
+      if (TS.run[1] >= 8) return [TS.run[0] ? "" : TS.run[1] + "-0", "RUN", TS.run[0] ? TS.run[1] + "-0" : ""];
+      switch (Math.floor(T / 6) % 5) {
+        case 0:
+          return [pct(0), "FIELD GOAL %", pct(1)];
+        case 1:
+          return [sum(0, "tpm") + "/" + sum(0, "tpa"), "3-POINTERS", sum(1, "tpm") + "/" + sum(1, "tpa")];
+        case 2:
+          return [String(sum(0, "reb")), "REBOUNDS", String(sum(1, "reb"))];
+        case 3: {
+          const a = top(0),
+            b = top(1);
+          return [a ? a.n.split(" ").pop()!.toUpperCase().slice(0, 10) + " " + a.stt.pts : "", "TOP SCORERS", b ? b.n.split(" ").pop()!.toUpperCase().slice(0, 10) + " " + b.stt.pts : ""];
+        }
+        default:
+          return [String(sum(0, "ast")), "ASSISTS", String(sum(1, "ast"))];
+      }
+    }
     function jumbo() {
-      const k = sc[0] + "-" + sc[1] + "-" + fmt(clock) + "-" + Math.ceil(shot) + "-" + qtrN + PC.join();
+      const st = jStat(),
+        k = sc[0] + "-" + sc[1] + "-" + fmt(clock) + "-" + Math.ceil(shot) + "-" + qtrN + PC.join() + st.join();
       if (k === jk) return;
       jk = k;
       const c = j2;
@@ -931,22 +956,34 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       c.fillRect(0, 0, 1024, 512);
       for (const b of [0, 1]) {
         c.fillStyle = PC[b] || "#333";
-        c.fillRect(b ? 520 : 24, 110, 480, 230);
+        c.fillRect(b ? 520 : 24, 92, 480, 190);
       }
       c.fillStyle = "#ffd23f";
-      c.font = "italic 900 58px system-ui";
+      c.font = "italic 900 50px system-ui";
       c.textAlign = "center";
-      c.fillText("HOOPS 2K27", 512, 76);
+      c.fillText("HOOPS 2K27", 512, 66);
       c.fillStyle = "#fff";
-      c.font = "800 44px system-ui";
-      c.fillText(((cl && cl[0]) || "").toUpperCase().slice(0, 12), 264, 170);
-      c.fillText(((cl && cl[1]) || "").toUpperCase().slice(0, 12), 760, 170);
-      c.font = "900 150px system-ui";
-      c.fillText(String(sc[0]), 264, 320);
-      c.fillText(String(sc[1]), 760, 320);
+      c.font = "800 40px system-ui";
+      c.fillText(((cl && cl[0]) || "").toUpperCase().slice(0, 12), 264, 142);
+      c.fillText(((cl && cl[1]) || "").toUpperCase().slice(0, 12), 760, 142);
+      c.font = "900 120px system-ui";
+      c.fillText(String(sc[0]), 264, 266);
+      c.fillText(String(sc[1]), 760, 266);
       c.fillStyle = "#ffd23f";
-      c.font = "800 64px ui-monospace,monospace";
-      c.fillText((qtrN > 4 ? "OT" : "Q" + qtrN) + "  " + fmt(clock), 512, 440);
+      c.font = "800 54px ui-monospace,monospace";
+      c.fillText((qtrN > 4 ? "OT" : "Q" + qtrN) + "  " + fmt(clock), 512, 350);
+      if (st[1]) {
+        // live stats panel
+        c.fillStyle = st[1] === "RUN" ? "#5a0d0d" : "#0d1430";
+        c.fillRect(24, 382, 976, 110);
+        c.fillStyle = "#fff";
+        c.font = "900 52px system-ui";
+        c.fillText(st[0], 230, 455);
+        c.fillText(st[2], 794, 455);
+        c.fillStyle = st[1] === "RUN" ? "#ff6b4a" : "#9fe7ff";
+        c.font = "800 34px system-ui";
+        c.fillText(st[1], 512, 450);
+      }
       jt.needsUpdate = true;
     }
     // ceiling light panels (bloom picks them up)

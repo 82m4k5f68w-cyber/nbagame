@@ -10,7 +10,7 @@ for (const m of modes) {
   const errs = [];
   pg.on("pageerror", (e) => errs.push(String(e)));
   pg.on("console", (msg) => msg.type() === "error" && errs.push("console:" + msg.text()));
-  await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html"));
+  await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro");
   await pg.waitForTimeout(500);
   await pg.evaluate((m) => document.querySelector(`button[data-g="${m}"][data-my="0"][data-mp="0"]`).click(), m);
   await pg.waitForTimeout(1200);

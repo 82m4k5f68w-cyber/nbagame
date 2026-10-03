@@ -11,7 +11,7 @@ import { setHudCtx, hud, hud2, contestFx, meter, openMark, passMark, replayHud }
 import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
 import { audio } from "./audio";
 import { music } from "./music";
-import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr } from "./broadcast";
+import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr, drawPlayerIntro, introLen } from "./broadcast";
 import { NET } from "./net/session";
 import { openStudio, studioPose } from "./animview";
 import { M as MODE, stopMode } from "../core/modes";
@@ -38,6 +38,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   cfg.replays = true;
   V.r3d = o.r3d;
   loadSet();
+  if (/[?&]nointro\b/.test(location.search)) V.INTRO = 0; // tests
   if (o.my != null && o.my) MYM = 1;
   IN.MP2 = o.mp ? 1 : 0;
   C = $("#c") as HTMLCanvasElement;
@@ -98,7 +99,12 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     }
   };
   bindInput();
+  C.parentElement!.addEventListener("pointerdown", () => endIntro());
   addEventListener("keydown", (e) => {
+    if (G.S === "intro" && (e.code === "Space" || e.code === "Enter" || e.code === "Escape")) {
+      e.preventDefault();
+      return endIntro();
+    }
     if (menuKeys) menuKeys(e);
     if ((e.code === "Escape" || e.code === "KeyP") && !NET.role && !G.RPL && (G.S === "play" || G.S === "pause")) {
       e.preventDefault();
@@ -139,7 +145,7 @@ function loadSet() {
     if (o.df != null) cfg.DIFF = o.df;
     if (o.ql) QLEN = o.ql;
     if (o.ru) Object.assign(cfg, o.ru);
-    for (const k of ["COMM", "VOICE", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO"]) if (o[k] != null) (V as any)[k] = o[k];
+    for (const k of ["COMM", "VOICE", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO"]) if (o[k] != null) (V as any)[k] = o[k];
   } catch (e) {}
 }
 function saveSet() {
@@ -149,7 +155,7 @@ function saveSet() {
       JSON.stringify({
         m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN,
         ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
-        COMM: V.COMM, VOICE: V.VOICE, MUSIC: V.MUSIC, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
+        COMM: V.COMM, VOICE: V.VOICE, MUSIC: V.MUSIC, INTRO: V.INTRO, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
       }),
     );
   } catch (e) {}
@@ -300,7 +306,7 @@ export function menu() {
     <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
    <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
    <div class="opts"><h3>RULES</h3><b>FOULS</b>${onoff("rf", cfg.FOULS)}<b>SHOT CLOCK</b>${onoff("rc", cfg.SCLK)}<b>VIOLATIONS</b>${onoff("rv", cfg.VIOL)}<i class="sm">3 seconds · 8 seconds · goaltending</i><b>FATIGUE &amp; SUBS</b>${onoff("rs", cfg.SUBS)}<i class="sm">5v5: reserves check in, 6 fouls = out</i><b>BADGES &amp; HOT ZONES</b>${onoff("rb", cfg.BADGES)}</div>
-   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
+   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>PLAYER INTROS</b>${onoff("pi", V.INTRO)}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
    <div class="opts"><h3>ACCESSIBILITY</h3><b>METER COLORS</b>${opt("", "cb", 0, V.CB, "Standard")}${opt("", "cb", 1, V.CB, "Colorblind-safe")}<b>METER SIZE</b>${opt("", "bm", 0, V.BIGM, "Normal")}${opt("", "bm", 1, V.BIGM, "Large")}<b>AUTO-RELEASE ASSIST</b>${onoff("au", V.AUTO)}<i class="sm">hold &amp; release only: lets go near the top for you</i></div>
    <div class="opts keys"><h3>CONTROLS</h3>${ACTS.map(([id, l]) => `<button data-key="${id}" title="Click, then press a key">${esc(l)} <kbd>${esc(keyName(KMAP[id]))}</kbd></button>`).join("")}<button id="krs" class="ghost">Reset keys</button></div>
    ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i></div>` : ""}
@@ -375,6 +381,7 @@ export function menu() {
     if (v === 2) comment("clutch");
   });
   grp("mu", (v) => (V.MUSIC = v));
+  grp("pi", (v) => (V.INTRO = v));
   grp("ru", (v) => ((V.RUMBLE = v), rumble(0.6, 200)));
   grp("cb", (v) => (V.CB = v));
   grp("bm", (v) => (V.BIGM = v));
@@ -533,7 +540,15 @@ function resume() {
   G.setS("play");
   ov.style.display = "none";
 }
-let lastJ: number | undefined;
+let lastJ: number | undefined,
+  introT = 0,
+  introRec = "";
+const endIntro = () => {
+  if (G.S !== "intro") return;
+  G.setS("play");
+  comment("tip", G.cl[0], G.cl[1]);
+  music.riff("charge");
+};
 export const esc = (s: any) => String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
 
 /** Local game: P1 on team 0 (+ P2 on team 1 for local 2-player). */
@@ -551,6 +566,15 @@ export function startLocal(i: number, o: { j?: number } = {}) {
   V.focus = 0;
   G.setQtrLen(QLEN);
   lastJ = G.start(i, o);
+  // pre-game player introductions (offline games with an opening tip); the sim waits in S "intro"
+  V.introDone = 0;
+  introT = 0;
+  if (V.INTRO && cfg.JB && !NET.role) {
+    G.setS("intro");
+    V.introDone = 1;
+    const r = rec.get();
+    introRec = `${G.cl[0]} vs ${G.cl[1]} · ${cfg.NP > 1 ? "5-on-5" : "1-on-1"} · ${DIFFN[cfg.DIFF]} · your record ${r.w}-${r.l}`;
+  }
   ov.style.display = "none";
   ov.classList.remove("mu-on");
   lastFx = G.FX.length ? G.FX[G.FX.length - 1].id - 1 : 0;
@@ -574,8 +598,16 @@ function drainFx() {
     else if (f.k === "shake") (V.shake && V.shake(f.v), rumble(f.v, 120 + f.v * 200));
     else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
     else if (f.k === "chant") audio.chant();
-    else if (f.k === "ban") banner(f.s, f.sub, f.c);
-    else if (f.k === "cm") comment(f.e, f.n, f.n2);
+    else if (f.k === "ban") {
+      banner(f.s, f.sub, f.c);
+      if (/RUN|CLUTCH/.test(f.s)) music.riff("stinger");
+      else if (/TIMEOUT/.test(f.s)) music.riff("letsgo");
+    }
+    else if (f.k === "cm") {
+      comment(f.e, f.n, f.n2);
+      const mine = P.some((p) => p.n === f.n && p.tm === (CT[V.focus] || CT[0] || { tm: 0 }).tm);
+      if (mine && /^(dunk|dunkAnd1|splash|three|block)$/.test(f.e)) music.riff("stinger");
+    }
     else if (f.k === "half" && !NET.role && cfg.GM === "game" && G.S === "play" && !G.RPL) halftime();
     else if (f.k === "mode") (modeEvent(f), GS.onMode && GS.onMode(f));
   }
@@ -599,26 +631,60 @@ function autoRel(p: any) {
 /** Halftime: first-half leaders and team splits over the arena, then back to it. */
 function halftime() {
   G.setS("half");
-  ov.style.display = "flex";
   ov.classList.remove("mu-on");
+  // the show opens with the best of the first half, then the numbers
+  const clips = G.HL.filter((c) => (c.q || 1) <= 2).slice(-4);
+  comment("half");
+  if (clips.length) {
+    banner("HALFTIME", "FIRST-HALF HIGHLIGHTS", "#ffd23f");
+    playReel(clips, halfStats);
+  } else halfStats();
+}
+function halfStats() {
+  if (G.S !== "half") return;
+  ov.style.display = "flex";
   const top = (t: number, k: string) => G.ROST[t].slice().sort((a, b) => b.stt[k] - a.stt[k])[0],
     row = (k: string, l: string) =>
       `<tr><td>${esc(top(0, k).n)} <b>${top(0, k).stt[k]}</b></td><th>${l}</th><td><b>${top(1, k).stt[k]}</b> ${esc(top(1, k).n)}</td></tr>`,
-    sum = (t: number, k: string) => G.ROST[t].reduce((a, p) => a + p.stt[k], 0),
-    pc = (t: number) => (sum(t, "fga") ? Math.round((100 * sum(t, "fgm")) / sum(t, "fga")) : 0);
+    sum = (t: number, k: string) => G.ROST[t].reduce((a, p) => a + (p.stt[k] || 0), 0),
+    pc = (m: number, a: number) => (a ? Math.round((100 * m) / a) : 0),
+    qs = G.TS.qs,
+    q1 = qs[0] || [0, 0],
+    q2 = [G.sc[0] - q1[0], G.sc[1] - q1[1]],
+    bars: [string, number, number, string?][] = [
+      ["FG%", pc(sum(0, "fgm"), sum(0, "fga")), pc(sum(1, "fgm"), sum(1, "fga")), "%"],
+      ["3PT", sum(0, "tpm"), sum(1, "tpm")],
+      ["REBOUNDS", sum(0, "reb"), sum(1, "reb")],
+      ["ASSISTS", sum(0, "ast"), sum(1, "ast")],
+      ["BLOCKS", sum(0, "blk"), sum(1, "blk")],
+      ["HUSTLE", sum(0, "orb") + sum(0, "chg") + sum(0, "dv"), sum(1, "orb") + sum(1, "chg") + sum(1, "dv")],
+    ];
   ov.innerHTML = `<div class="fin ht" style="--c0:${G.PC[0]};--c1:${G.PC[1]}"><div class="logo" style="font-size:40px;animation:none">HALFTIME</div>
    <div class="sc"><span style="--c:${G.PC[0]}">${esc(G.cl[0])}</span><b>${G.sc[0]}</b><i>—</i><b>${G.sc[1]}</b><span style="--c:${G.PC[1]}">${esc(G.cl[1])}</span></div>
-   <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}<tr><td><b>${pc(0)}%</b></td><th>FG%</th><td><b>${pc(1)}%</b></td></tr><tr><td><b>${sum(0, "orb") + sum(0, "chg") + sum(0, "dv")}</b></td><th>HUSTLE</th><td><b>${sum(1, "orb") + sum(1, "chg") + sum(1, "dv")}</b></td></tr></table>
-   <p class="hint">${esc(halfNote())}</p><div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button></div></div>`;
-  comment("timeout", G.cl[G.sc[0] >= G.sc[1] ? 1 : 0]);
+   <table class="bx qtr"><tr><th></th><th>Q1</th><th>Q2</th><th>HALF</th></tr><tr><td>${esc(G.cl[0])}</td><td>${q1[0]}</td><td>${q2[0]}</td><td><b>${G.sc[0]}</b></td></tr><tr><td>${esc(G.cl[1])}</td><td>${q1[1]}</td><td>${q2[1]}</td><td><b>${G.sc[1]}</b></td></tr></table>
+   <div class="cmp">${bars
+     .map(([k, a2, b2, u]) => {
+       const t = a2 + b2 || 1;
+       return `<div><em>${a2}${u || ""}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em>${b2}${u || ""}</em><small>${k}</small></div>`;
+     })
+     .join("")}</div>
+   <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}</table>
+   <p class="hint">${esc(halfNote())}</p><div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button>${G.HL.length ? `<button class="ghost" id="h3">▶ Highlights again</button>` : ""}</div></div>`;
   const go = () => {
     clearTimeout(ht);
     if (G.S !== "half") return;
     ov.style.display = "none";
     G.setS("play");
+    music.riff("charge");
   };
-  const ht = setTimeout(go, 12000);
+  const ht = setTimeout(go, 15000);
   $("#h2").onclick = go;
+  const h3 = document.getElementById("h3");
+  if (h3)
+    h3.onclick = () => {
+      clearTimeout(ht);
+      playReel(G.HL.filter((c) => (c.q || 1) <= 2).slice(-4), halfStats);
+    };
   ($("#h2") as HTMLElement).focus();
 }
 function halfNote() {
@@ -860,6 +926,7 @@ function overlay() {
   hud2();
   drawBug(NET.role ? (CT[V.focus] || CT[0]).tm : CT.length ? CT[0].tm : -1);
   modeHud();
+  if (G.S === "intro") return drawPlayerIntro(introT, introRec);
   drawIntro();
   drawBanners();
   X.textAlign = "center";
@@ -925,6 +992,10 @@ function loop(n: number) {
       ACC -= STEP;
       k++;
     }
+  } else if (G.S === "intro") {
+    introT += dt;
+    G.setT(G.T + dt);
+    if (introT >= introLen()) endIntro();
   } else if (G.S === "over") {
     G.postGame(Math.min(dt, 0.05)); // players walk over and dap each other up while the confetti falls
     if (NET.role === "host") NET.hostTick();
@@ -936,9 +1007,28 @@ function loop(n: number) {
   audio.tick(dt);
   bcTick(dt);
   music.on = V.MUSIC;
-  music.clutch = G.TS.clutch && G.S === "play" ? 1 : 0;
   music.level = Math.min(1, audio.EXC * 0.8 + Math.abs(G.TS.mom) * 0.5);
-  music.tick(G.S === "play" && !G.RPL ? 1 : G.S === "half" || G.S === "over" ? 0.6 : 0);
+  {
+    const meT = (CT[V.focus] || CT[0] || { tm: 0 }).tm,
+      game = cfg.GM === "game" || cfg.GM === "clutch";
+    music.offense = G.pos === meT ? 1 : 0;
+    music.dead = G.rs > 0 || G.inb > 0 || !!G.ftq ? 1 : 0;
+    music.mode =
+      G.S === "intro" || (G.JB && G.S === "play")
+        ? "pregame"
+        : G.S === "half" || G.S === "over" || G.S === "pause"
+          ? "calm"
+          : G.S !== "play" && !G.RPL
+            ? "off"
+            : !game
+              ? "pregame"
+              : G.TS.clutch
+                ? "clutch"
+                : G.TS.run[1] >= 8
+                  ? "hype"
+                  : "organ";
+  }
+  music.tick();
   drainFx();
   dribSound();
   for (const o of TX) {

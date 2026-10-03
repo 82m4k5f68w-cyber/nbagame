@@ -134,6 +134,14 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Online (PROTO 4): header ints 34-39 = jump ball t, timeouts, momentum, ds/pc, clutch; FX "b"/"c" relay banners and
   commentary; EDGES +to/ch/ds; quick chat ring `Q` (keys 1-6, `CHAT`), `rm` rematch votes, `elo` in slots (local rating).
 
+## Presentation (v4.0)
+- Pre-game intros: the shell holds the sim in `S="intro"` (`introT`, `drawPlayerIntro`, `introLen`) then `endIntro()`; `?nointro`
+  (tests) or `V.INTRO=0` skips. Two-part commentary: sim `cm("rise", name, kind)` at release + the make/`miss`/`missO` result
+  completes the same caption; speech queue `say()` (max 2 pending, big plays interrupt). Halftime = `playReel` of first-half
+  `HL` (clips carry `q`; a reel restores `rs`, never triggers an inbound) then `halfStats` (quarter scores `TS.qs`).
+  Jumbotron lower panel `jStat()` rotates team stats every 6 s / shows runs. Music modes (`music.mode`): pregame / organ / hype /
+  clutch / calm, chosen in `game.ts loop`; `music.riff(name)` queues organ riffs on the next bar.
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.

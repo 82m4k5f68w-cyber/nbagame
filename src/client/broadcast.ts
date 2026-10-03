@@ -38,29 +38,93 @@ const LINES: Record<string, ((n: string, n2: string) => string)[]> = {
   chalWin: [(t) => `The challenge is successful — call overturned!`],
   chalLose: [(t) => `The call stands. ${t} lose the challenge.`],
   fire: [(n) => `${n} is ON FIRE!`],
-  block: [(n) => `REJECTED by ${n}!`],
+  block: [(n) => `REJECTED by ${n}!`, (n) => `Get that outta here! ${n} with the block!`],
+  tip: [(a, b) => `Welcome in, everybody. ${a} and ${b}, and we are ready for the tip.`, (a, b) => `It's ${a} against ${b} tonight. Here's the jump ball.`],
+  half: [(a) => `That's the half. Let's look back at the best of it.`],
 };
 const CAP: { s: string; t: number }[] = [];
-let lastSpeak = 0;
+// two-part play-by-play: the call as he rises, then the result on the same caption ("Curry pulls up... BANG!")
+const RISE: Record<string, ((n: string) => string)[]> = {
+  deep: [(n) => `${n} from way downtown...`, (n) => `${n} from the logo...`, (n) => `${n}, are you serious, from there...`],
+  three: [(n) => `${n} for three...`, (n) => `${n} lets it fly...`, (n) => `${n} from deep...`],
+  step: [(n) => `${n} steps back...`, (n) => `${n}, the step-back...`],
+  fade: [(n) => `${n} turns, fades...`, (n) => `${n} on the fadeaway...`],
+  float: [(n) => `${n} floats one up...`, (n) => `${n} on the runner...`],
+  pull: [(n) => `${n} pulls up...`, (n) => `${n} stops and pops...`],
+  mid: [(n) => `${n} rises...`, (n) => `${n} for the jumper...`],
+};
+const TAIL: Record<string, string[]> = {
+  three: ["BANG!", "GOT IT!", "COUNT IT!", "YES!"],
+  splash: ["SPLASH!", "Nothing but net!", "Wet!"],
+  two: ["Good!", "Got it.", "Money."],
+  and1: ["Good — and the foul!"],
+  miss: ["No good.", "Off the iron.", "Rims out.", "Short."],
+  missO: ["No good — but they get the board!", "Off the rim, tipped back!"],
+};
+const BIG = new Set(["dunk", "dunkAnd1", "and1", "fire", "run", "clutch", "block", "flagrant", "goaltend", "foulout", "chalWin", "chalLose"]);
+let rise: null | { n: string; t: number; c: { s: string; t: number } } = null,
+  voice: SpeechSynthesisVoice | null = null,
+  queued = 0;
+function pickVoice() {
+  try {
+    const vs = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
+    voice = vs.find((v) => /daniel|alex|google us english|david|guy|male/i.test(v.name)) || vs[0] || null;
+  } catch (e) {}
+}
+if (typeof speechSynthesis !== "undefined") {
+  pickVoice();
+  try {
+    speechSynthesis.onvoiceschanged = pickVoice;
+  } catch (e) {}
+}
+/** Speak a line. now = cut off whatever is being said (a new play); hype = louder, faster, higher. */
+function say(s: string, now: boolean, hype = 0) {
+  if (!V.VOICE || typeof speechSynthesis === "undefined") return;
+  try {
+    if (now) {
+      speechSynthesis.cancel();
+      queued = 0;
+    } else if (queued >= 2) return; // never fall behind the game
+    const u = new SpeechSynthesisUtterance(s);
+    if (voice) u.voice = voice;
+    u.rate = 1.1 + hype * 0.15;
+    u.pitch = 0.92 + hype * 0.22;
+    u.volume = 0.85 + hype * 0.15;
+    queued++;
+    u.onend = u.onerror = () => (queued = Math.max(0, queued - 1));
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
 export function comment(e: string, n = "", n2 = "") {
+  const t = performance.now();
+  if (e === "rise") {
+    const L = RISE[n2] || RISE.mid,
+      s = pick(L)(n);
+    const c = { s, t: 3.6 };
+    CAP.push(c);
+    if (CAP.length > 2) CAP.shift();
+    rise = { n, t, c };
+    say(s, true, n2 === "deep" ? 0.4 : 0);
+    return;
+  }
+  // the result of the shot he just rose up with
+  const tail = TAIL[e];
+  if (rise && rise.n === n && t - rise.t < 4000 && tail) {
+    const s = pick(tail);
+    rise.c.s += " " + s;
+    rise.c.t = 3.6;
+    rise = null;
+    say(s, false, e === "three" || e === "splash" ? 1 : e === "two" || e === "and1" ? 0.5 : 0);
+    return;
+  }
+  if (e === "miss" || e === "missO") return; // misses only get called as the end of a call
   const L = LINES[e];
   if (!L) return;
   const s = pick(L)(n, n2);
   CAP.push({ s, t: 3.6 });
   if (CAP.length > 2) CAP.shift();
-  if (V.VOICE && typeof speechSynthesis !== "undefined") {
-    try {
-      const now = performance.now();
-      if (speechSynthesis.speaking && now - lastSpeak < 2500) return; // don't talk over the last call
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(s);
-      u.rate = 1.12;
-      u.pitch = 0.95;
-      u.volume = 0.9;
-      speechSynthesis.speak(u);
-      lastSpeak = now;
-    } catch (e) {}
-  }
+  const big = BIG.has(e);
+  say(s, big && e !== "run" && e !== "clutch", big ? 1 : 0);
 }
 export function bcTick(dt: number) {
   for (const b of BN) b.t -= dt;
@@ -142,9 +206,101 @@ export function drawBanners() {
       X.globalAlpha = 1;
     });
 }
-/** Tip-off card: both starting fives with OVRs while the centers walk in for the jump ball. */
+// ---------------- pre-game player introductions ----------------
+const POSN = ["POINT GUARD", "SHOOTING GUARD", "SMALL FORWARD", "POWER FORWARD", "CENTER"];
+const INTRO_TITLE = 1.8,
+  cardT = () => (cfg.NP > 1 ? 0.8 : 1.8);
+/** Length of the intro sequence (title card + one card per starter, away team first). */
+export const introLen = () => INTRO_TITLE + P.length * cardT() + 0.4;
+export function drawPlayerIntro(t: number, rec: string) {
+  if (!P.length) return;
+  X.save();
+  X.fillStyle = "rgba(4,6,16,.55)";
+  X.fillRect(0, 0, 960, 540);
+  if (t < INTRO_TITLE) {
+    const a = Math.min(1, t * 3, (INTRO_TITLE - t) * 4);
+    X.globalAlpha = a;
+    X.textAlign = "center";
+    X.fillStyle = "#ffd23f";
+    X.font = "800 16px system-ui";
+    X.fillText("TONIGHT · LIVE FROM THE ARENA", 480, 190);
+    for (let k = 0; k < 2; k++) {
+      const x = k ? 690 : 270,
+        s = Math.min(1, t * 2.5);
+      X.fillStyle = PC[k];
+      rr(x - 170 + (k ? 1 - s : s - 1) * 120, 215, 340, 96, 12);
+      X.fill();
+      X.fillStyle = "#fff";
+      X.font = "900 40px system-ui";
+      X.fillText(cl[k].toUpperCase(), x + (k ? 1 - s : s - 1) * 120, 275);
+    }
+    X.fillStyle = "#fff";
+    X.font = "italic 900 34px system-ui";
+    X.fillText("VS", 480, 275);
+    X.font = "700 13px system-ui";
+    X.fillStyle = "#cfd6ee";
+    X.fillText(rec, 480, 345);
+  } else {
+    // away team first, then the home team (you) last, like a real arena
+    const i = Math.min(P.length - 1, Math.floor((t - INTRO_TITLE) / cardT())),
+      NP = cfg.NP,
+      p = i < NP ? P[NP + i] : P[i - NP],
+      lt = t - INTRO_TITLE - i * cardT(),
+      a = Math.min(1, lt * 6, Math.max(0, cardT() - lt) * 6),
+      sl = Math.max(0, 1 - lt * 5) * 80;
+    if (p) {
+      const home = p.tm === 0,
+        x0 = 200 + (home ? -sl : sl);
+      X.globalAlpha = a;
+      X.fillStyle = "rgba(8,10,24,.92)";
+      rr(x0, 160, 560, 210, 14);
+      X.fill();
+      X.fillStyle = p.col || PC[p.tm];
+      rr(x0, 160, 190, 210, 14);
+      X.fill();
+      X.fillStyle = "rgba(255,255,255,.95)";
+      X.textAlign = "center";
+      X.font = "900 110px system-ui";
+      X.fillText(String(p.no), x0 + 95, 305);
+      X.textAlign = "left";
+      X.fillStyle = "#ffd23f";
+      X.font = "800 14px system-ui";
+      X.fillText((NP > 1 ? POSN[p.k] || "" : "STARTING") + " · " + cl[p.tm].toUpperCase() + (home ? " (YOU)" : ""), x0 + 215, 200);
+      X.fillStyle = "#fff";
+      X.font = "900 40px system-ui";
+      X.fillText(p.n.toUpperCase().slice(0, 15), x0 + 215, 248);
+      X.font = "700 15px system-ui";
+      X.fillStyle = "#cfd6ee";
+      X.fillText(`OVR ${ovr(p)} · ${Math.floor(p.ht)}'${Math.round((p.ht - Math.floor(p.ht)) * 12)}" · 3PT ${p.c} · INS ${p.i} · DEF ${p.d}`, x0 + 215, 282);
+      const bs = badgesOf(p);
+      X.font = "800 12px system-ui";
+      let bx = x0 + 215;
+      for (const b of bs.slice(0, 3)) {
+        const s = "★ " + BADGE[b][0].toUpperCase(),
+          w = X.measureText(s).width + 16;
+        X.fillStyle = "rgba(255,210,63,.15)";
+        rr(bx, 305, w, 24, 6);
+        X.fill();
+        X.fillStyle = "#ffd23f";
+        X.fillText(s, bx + 8, 322);
+        bx += w + 8;
+      }
+      if (!bs.length) {
+        X.fillStyle = "rgba(255,255,255,.4)";
+        X.fillText("STARTING " + (NP > 1 ? "FIVE" : "TONIGHT"), x0 + 215, 322);
+      }
+    }
+  }
+  X.globalAlpha = 1;
+  X.textAlign = "center";
+  X.font = "700 12px system-ui";
+  X.fillStyle = "rgba(255,255,255,.6)";
+  X.fillText("SPACE / ENTER / click to skip", 480, 500);
+  X.restore();
+}
+/** Tip-off card: both starting fives with OVRs while the centers walk in for the jump ball (when the intros were skipped). */
 export function drawIntro() {
-  if (!JB || JB.t > 2.4 || !P.length || cfg.GM !== "game") return;
+  if (!JB || JB.t > 2.4 || !P.length || cfg.GM !== "game" || V.introDone) return;
   const a = Math.min(1, JB.t * 4, (2.4 - JB.t) * 3),
     NP = cfg.NP;
   X.save();
