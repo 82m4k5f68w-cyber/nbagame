@@ -1418,24 +1418,29 @@ export function pose3(p: Player) {
       // would pop): the body carries on from where it is and eases into the new target
       // (arms move fast on purpose - dribble pushes, shot rises - so they need a bigger break; a joint that is still
       // blending only restarts for a big one, so quick legit motion never trails behind a chain of restarts)
-      const dev = Math.abs(v - (I.pt[j] + I.pv[j] * DT)),
+      const dev = Math.abs(wrapPi(v - (I.pt[j] + I.pv[j] * DT))),
         jump = dev > (hd ? 0.08 : j >= 4 && j <= 8 ? 0.25 : 0.12) * (I.t[j] < I.tf[j] ? 3 : 1);
       if (trans || jump) {
         const cur = o[k] ?? v;
-        I.x[j] = cur - v;
-        I.v[j] = I.lv[j] - (jump ? I.pv[j] : 0);
+        I.x[j] = wrapPi(cur - v); // joint angles are circular: 2 pi apart is the same pose (spins, IK across +-pi)
+        I.v[j] = clamp(I.lv[j] - (jump ? I.pv[j] : 0), -40, 40);
         I.t[j] = 0;
         // big switches blend longer, so the catch-up never whips
-        I.tf[j] = Math.max(trans ? BLEND[st] * (hd ? 0.4 : 0.65) : 0, Math.min(0.32, 0.08 + Math.abs(I.x[j]) * (hd ? 0.12 : 0.1)));
+        // (a state change uses that state's own blend time - snappy into a shot; inside a state, big jumps blend
+        // longer so the catch-up never whips, except during shots and moves where timing is everything)
+        const quick = st === ST.shot || st === ST.move,
+          big = Math.min(quick ? 0.1 : 0.32, 0.08 + Math.abs(I.x[j]) * (hd ? 0.12 : 0.1));
+        I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? 0 : big * 0.75) : big;
         I.b[j] = v;
       }
-      I.pv[j] = jump ? I.pv[j] : (v - I.pt[j]) / DT;
+      I.pv[j] = jump ? 0 : wrapPi(v - I.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
       I.pt[j] = v;
+      if (Math.abs(v - I.b[j]) > Math.PI) I.b[j] = v; // the filter never runs the long way round
       I.b[j] += (v - I.b[j]) * (hd ? Math.min(1, f * 1.6) : f);
       I.t[j] += DT;
       o[k] = I.b[j] + inert(I.x[j], I.v[j], I.tf[j], I.t[j]);
     }
-    I.lv[j] = (o[k] - I.last[j]) / DT;
+    I.lv[j] = wrapPi(o[k] - I.last[j]) / DT;
     I.last[j] = o[k];
   }
   if (mir) o.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
@@ -1520,6 +1525,7 @@ function face(p: Player, st: number, hyT: number, hpT: number) {
   c.ex += (clamp((hyT - (q.hy || 0)) * 0.8, -0.55, 0.55) - c.ex) * Math.min(1, DT * 20);
   c.ey += (clamp((hpT - (q.hp || 0)) * 0.8, -0.45, 0.45) - c.ey) * Math.min(1, DT * 20);
 }
+const wrapPi = (a: number) => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
 /** Inertialization offset at time t (Bollo): starts at x0 with velocity v0, reaches 0 with zero velocity and
  *  acceleration at tf; velocity pointing away from zero is dropped and tf shortened so it never overshoots. */
 function inert(x0: number, v0: number, tf: number, t: number) {
@@ -1561,6 +1567,10 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
     al = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
   IK.right = right;
   IK.a = ph2 - al;
+  // keep the shoulder in its real range: a target straight overhead and a hair behind wraps atan2 from +pi to -pi,
+  // which would swing the arm backwards (rim right above on a layup). Over the top up to ~150 deg past vertical; the
+  // unavoidable seam sits far behind-and-high where no arm can reach (and blending smooths it)
+  if (IK.a < -2.6) IK.a += 2 * Math.PI;
   IK.e = Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
   IK.ab = clamp(Math.atan2(right ? tx : -tx, Math.max(0.2, Math.abs(ty2))), -0.4, abMax);
   IK.over = raw - (L1 + L2);

@@ -421,9 +421,12 @@ export const ANIMS: [string, Setup][] = [
           p.mode = k < 0.95 ? "s" : "i";
           p.sv = sv;
           p.t = Math.min(k, 0.95);
+          // finishes travel to the rim: the hand arrives at the release (0.28 s), like in a game
+          if (sv !== 19 && sv !== 20 && sv !== 21 && p.mode === "s") p.x = hx - dir * (34 - 26 * Math.min(1, p.t / 0.28));
           p.z = sv === 19 ? 100 - (75 * p.ht) / 6.4 : p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.7) * Math.PI) * 40) : 0;
           B.owner = p.t < 0.28 && sv !== 19 ? p : null;
           B.mode = B.owner ? "held" : "air";
+          if (B.owner) (B.x = p.x + Math.cos(p.f) * 8), (B.y = p.y + Math.sin(p.f) * 8), (B.z = p.z + 55); // rides with him (as bstep does)
           if (!B.owner) (B.x = hx), (B.y = 250), (B.z = 96 - k * 30);
         },
       ] as [string, Setup],

@@ -181,6 +181,12 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   hand, low hand on the drive, then chop steps when < 85 px.
 - Online PROTO 5, PST 28: per-player int 27 = `proFlags` base-64 pack (hupT, plantT, engT, eng, pk, dcl, frT, rl).
 - Dead pass rule (bstep): a pass rolling slowly on the floor or older than 3 s becomes a loose ball (`B.mode "air"`).
+- Blend offsets are circular (`wrapPi`): 2 pi apart is the same pose (spin moves accumulate ty; arm IK flips across
+  +-pi); `armIK` keeps the shoulder in -2.6 .. 3.7 (over the top for targets overhead). Shot/move states cap in-state
+  blend times at .1 s (releases stay crisp; blend.ts checks the layup arm against the old blend).
+- Lodged ball (bstep): resting on the iron / wedged against the glass for 1.2 s -> rolls out toward mid-court, never
+  into the board (tests/rim_wedge.ts). Open shooters call for the ball (`p.callT` shout face); on-ball defenders ride
+  the driver's hip (armIK) under 34 px.
 
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
@@ -199,6 +205,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - A pass stuck in mode "pass" (speed 0 against a wall) was catchable only by its target -> frozen street game. Any ball
   state that only ONE player may resolve needs a timeout/fallback.
 - Never `git stash` while background tests are running: they read the working tree.
+- The Animation Studio doesn't run bstep: a held ball must be placed by the entry, or ball-targeted IK reaches for a
+  ball left across the court (looked like a layup bug).
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 

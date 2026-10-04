@@ -2200,18 +2200,23 @@ export function bstep(dt: number) {
     B.vy *= 0.9;
     if (Math.abs(B.vz) < 25) B.vz = 0;
   }
-  // A ball balanced on the iron (it happens): after a beat it rolls off, away from the middle of the rim.
-  if (!B.sc && B.z > 97 && B.z < 112 && !inNet() && Math.hypot(B.vx, B.vy, B.vz) < 15) {
+  // A ball balanced on the iron or wedged between the back iron and the glass (it happens): after a beat it rolls off,
+  // away from the middle of the rim - but never toward the backboard (that just wedged it again)
+  if (!B.owner && !B.sc && B.z > 94 && B.z < 112 && !inNet() && Math.hypot(B.vx, B.vy, B.vz) < 30) {
     B.stk = (B.stk || 0) + dt;
     if (B.stk > 1.2 && !PREDICT) {
       B.stk = 0;
       const hx = Math.abs(B.x - HXs[0]) < Math.abs(B.x - HXs[1]) ? HXs[0] : HXs[1],
-        dx = B.x - hx || 0.1,
+        court = hx > 470 ? -1 : 1, // toward mid-court
         dy = B.y - HY,
-        d = Math.hypot(dx, dy) || 1;
+        side = Math.abs(dy) > 1 ? Math.sign(dy) : Math.random() < 0.5 ? -1 : 1;
+      let dx = B.x - hx;
+      if (dx * court < 0) dx = court * (2 + Math.random() * 4); // behind the rim: roll it out front
+      const d = Math.hypot(dx, dy) || 1;
       B.vx = (dx / d) * 55;
-      B.vy = (dy / d) * 55;
-      B.vz = 35;
+      B.vy = (dy / d) * 55 + side * 12;
+      B.vz = 40;
+      B.x += court * 2; // off the glass
     }
   } else B.stk = 0;
   // World bounds for both engines (a fast Rapier ball could tunnel past or fly over the thin arena walls).
