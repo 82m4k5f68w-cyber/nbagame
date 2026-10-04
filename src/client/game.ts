@@ -715,7 +715,7 @@ function halfStats() {
      })
      .join("")}</div>
    <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}</table>
-   <p class="hint">${esc(halfNote())}</p><div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button>${G.HL.length ? `<button class="ghost" id="h3">▶ Highlights again</button>` : ""}</div></div>`;
+   <p class="hint">${esc(halfNote())}</p>${G.halftimeAdjust().map((s) => `<p class="hint" style="opacity:.8">📋 ${esc(s)}</p>`).join("")}<div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button>${G.HL.length ? `<button class="ghost" id="h3">▶ Highlights again</button>` : ""}</div></div>`;
   const go = () => {
     clearTimeout(ht);
     if (G.S !== "half") return;

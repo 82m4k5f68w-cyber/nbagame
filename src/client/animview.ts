@@ -330,6 +330,7 @@ export const ANIMS: [string, Setup][] = [
   ["Crossover", (p, t, dt) => (stand(p), moveEvery(p, t, 1, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
   ["Behind the back", (p, t, dt) => (stand(p), moveEvery(p, t, 3, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
   ["Spin move", (p, t, dt) => (stand(p), moveEvery(p, t, 2, 1.3), dribble(p, dt))],
+  ["Post back-down", (p, t, dt) => (stand(p), (p.postA = 1), move(p, dt, 45, Math.PI), dribble(p, dt))],
   [
     "Jump shot",
     (p, t) => {

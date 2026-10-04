@@ -392,7 +392,15 @@ export const TS = {
   mu: [null, null] as (number[] | null)[], // matchups per team (defender slot -> opponent slot)
   adv: -1, // team whose next inbound is advanced to the frontcourt (late timeout)
   qs: [] as number[][], // cumulative score at the end of each quarter
+  // scouting (adaptive AI): per team, decayed shot attempts / makes / contest by range [rim, mid, three]
+  sk: [scoutNew(), scoutNew()],
+  gp: [0, 0], // game plan per team (GPN): what the CPU offense leans on after reading its own shooting
+  gpT: [0, 0], // possessions since the last adjustment
 };
+function scoutNew() {
+  return { a: [0, 0, 0], m: [0, 0, 0], c: [0, 0, 0] };
+}
+export const GPN = ["BALANCED", "ATTACK THE PAINT", "MID-RANGE & POST", "LET IT FLY", "FEED THE HOT HAND"];
 export const DSN = ["NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING"],
   PCN = ["AUTO", "PICK & ROLL", "PINDOWN", "FLARE", "ISOLATION"];
 function resetRules() {
@@ -411,6 +419,9 @@ function resetRules() {
   TS.qs = [];
   TS.adv = -1;
   TS.mu = [null, null];
+  TS.sk = [scoutNew(), scoutNew()];
+  TS.gp = [0, 0];
+  TS.gpT = [0, 0];
   for (let t = 0; t < 2; t++) if (!CT.some((c) => c.tm === t)) TS.mu[t] = autoMatch(t);
 }
 /** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
@@ -446,6 +457,7 @@ export function winMul(p: Player, D0: number, note?: string[]) {
 /** Make/miss bookkeeping for hot zones and cold streaks. */
 function zoneRes(p: Player, D0: number, made: boolean) {
   if (!p || !p.hzm || D0 == null) return;
+  scout(p, D0, made, B.cx ?? 0);
   const z = zoneOf(p, D0);
   if (made) {
     p.hzm[z] = Math.min(4, (p.hzm[z] || 0) + 1);
@@ -456,6 +468,113 @@ function zoneRes(p: Player, D0: number, made: boolean) {
     p.cold = (p.cold || 0) + 1;
     if (p.cold === 3 && cfg.BADGES) (txtW("ICE COLD", p.x, p.y, 120, "#7fd4ff"), cm("cold", p.n));
   }
+}
+/** Scouting: every field goal feeds a decayed record per range (0 rim, 1 mid, 2 three) for the shooter (~last 6
+ *  shots) and his team (~last 14). The CPU reads it: a cold or smothered shooter changes his diet, a team that can't
+ *  hit from deep changes its whole offense (gamePlan). */
+const rngOf = (D0: number) => (D0 < 90 ? 0 : D0 < 237 ? 1 : 2);
+export function scout(p: Player, D0: number, made: boolean, cx: number) {
+  const r = rngOf(D0),
+    s = p.sk || (p.sk = scoutNew()),
+    k = TS.sk[p.tm];
+  if (!k) return;
+  for (let w = 0; w < 2; w++) {
+    const o = w ? k : s,
+      dec = w ? 0.93 : 0.84;
+    for (let j = 0; j < 3; j++) (o.a[j] *= dec), (o.m[j] *= dec), (o.c[j] *= dec);
+    o.a[r] += 1;
+    o.m[r] += made ? 1 : 0;
+    o.c[r] += cx;
+  }
+}
+/** Expected points per shot from a range, shrunk toward a league prior (so 1-for-1 doesn't change anything). */
+const PRI = [1.25, 0.84, 1.08];
+function pps(o: any, r: number) {
+  const n = o.a[r],
+    w = n / (n + 4);
+  return w * ((o.m[r] / (n || 1)) * (r === 2 ? 3 : 2)) + (1 - w) * PRI[r];
+}
+/** How a player is doing from a range lately (pct -1 = not enough shots) and how tight his looks have been. */
+export function form(p: Player, r: number) {
+  const s = p.sk;
+  if (!s || s.a[r] < 1.5) return { pct: -1, ct: 0, n: s ? s.a[r] : 0 };
+  return { pct: s.m[r] / s.a[r], ct: s.c[r] / s.a[r], n: s.a[r] };
+}
+const hotNow = (q: Player) => (q.heat || 0) >= 3 || (q.hzm && Math.max(...q.hzm) >= 3);
+/** CPU coaching: re-read the team's shooting every few possessions and pick a game plan; defensively, take away what
+ *  the other team is living on. Human teams keep their own calls (their defense/plays come from the pause menu). */
+export function gamePlan(t: number) {
+  if (CT.some((c) => c.tm === t) || cfg.NP < 2 || !gameLike() || cfg.ASTAR) return;
+  if (++TS.gpT[t] < 4) return;
+  // defense reads the other side's sheet: they live at the rim -> sag; they're raining threes -> run them off the line
+  const o = TS.sk[1 - t],
+    ds = pps(o, 2) > 1.2 && o.a[2] >= 4 ? 2 : pps(o, 0) > 1.35 && o.a[0] >= 4 ? 1 : TS.ds[t] === 3 ? 3 : 0;
+  if (ds !== TS.ds[t]) {
+    TS.ds[t] = ds;
+    if (ds) txt(cl[t].toUpperCase() + " DEFENSE: " + DSN[ds], 480, 170, "#9fe7ff");
+  }
+  // somebody on the other side is cooking: the best defender takes the assignment
+  const mu = TS.mu[t],
+    NP = cfg.NP;
+  if (mu) {
+    let hs = -1,
+      hv = 0;
+    for (let j = 0; j < NP; j++) {
+      const q = P[(1 - t) * NP + j],
+        v = (q.heat || 0) + (q.hzm ? Math.max(...q.hzm) : 0) * 0.5;
+      if (v >= 3 && v > hv) (hv = v), (hs = j);
+    }
+    if (hs >= 0) {
+      let bd = 0;
+      for (let j = 1; j < NP; j++) if (P[t * NP + j].d > P[t * NP + bd].d) bd = j;
+      const cur = mu.indexOf(hs);
+      if (cur >= 0 && cur !== bd && P[t * NP + bd].d > P[t * NP + cur].d + 3) {
+        (mu[cur] = mu[bd]), (mu[bd] = hs);
+        txt(P[t * NP + bd].n.toUpperCase() + " PICKS UP " + P[(1 - t) * NP + hs].n.toUpperCase(), 480, 190, "#9fe7ff");
+        cm("assign", P[t * NP + bd].n, P[(1 - t) * NP + hs].n);
+      }
+    }
+  }
+  const k = TS.sk[t],
+    n = k.a[0] + k.a[1] + k.a[2];
+  if (n < 6) return;
+  const e = [pps(k, 0), pps(k, 1), pps(k, 2)],
+    old = TS.gp[t];
+  let gp = 0;
+  if (P.some((q) => q.tm === t && !q.off && (q.heat || 0) >= 3)) gp = 4;
+  else if (e[2] < 0.85 && k.a[2] >= 4) gp = e[0] >= e[1] + 0.15 ? 1 : 2; // bricking from deep: get to the paint / the elbows
+  else if (e[0] < 0.95 && k.a[0] >= 4) gp = e[2] >= 1.0 ? 3 : 2; // walled off at the rim: shoot over them
+  else if (e[2] > 1.25 && k.a[2] >= 4) gp = 3; // it's falling: keep firing
+  if (gp !== old && (gp || TS.gpT[t] >= 8)) {
+    TS.gp[t] = gp;
+    TS.gpT[t] = 0;
+    // a play call to match (pick-and-roll gets to the rim, pindowns free the mid-range, flares free shooters)
+    TS.pc[t] = gp === 1 ? 1 : gp === 2 ? 2 : gp === 3 ? 3 : gp === 4 ? 4 : 0;
+    STAT["gp" + gp] = (STAT["gp" + gp] || 0) + 1;
+    if (gp) {
+      ban("ADJUSTMENT", cl[t].toUpperCase() + ": " + GPN[gp], PC[t]);
+      cm("adjust", cl[t], GPN[gp].toLowerCase());
+    }
+  }
+}
+/** Halftime: every CPU coach re-reads the first half (no waiting for the usual few possessions). Returns what each
+ *  CPU team changed (for the halftime screen); idempotent per half. */
+let halfAdj = -1;
+export function halftimeAdjust() {
+  const out: string[] = [];
+  if (halfAdj === T) return out;
+  halfAdj = T;
+  for (let t = 0; t < 2; t++) {
+    if (CT.some((c) => c.tm === t)) continue;
+    const g0 = TS.gp[t];
+    TS.gpT[t] = 99;
+    gamePlan(t);
+    const k = TS.sk[t],
+      e3 = pps(k, 2),
+      e0 = pps(k, 0);
+    out.push(cl[t] + ": " + (TS.gp[t] !== g0 ? "new game plan — " : "sticking with ") + GPN[TS.gp[t]].toLowerCase() + (TS.ds[t] ? ", " + DSN[TS.ds[t]].toLowerCase() + " on D" : "") + (k.a[2] >= 3 ? ` (${e3.toFixed(2)} pts/shot from three, ${e0.toFixed(2)} at the rim)` : ""));
+  }
+  return out;
 }
 /** Scoring runs drive momentum (crowd, small shot bonus) and AI timeouts. */
 function runAdd(t: number, pts: number) {
@@ -653,6 +772,48 @@ const TEND: Record<string, number[]> = {
   Murray: [0.3, 0.4, 0.2, 0, 0.35, 0.3],
 };
 export function tendOf(p: Player): number[] {
+  const b = baseTend(p);
+  if (cfg.ASTAR || !gameLike() || isH(p)) return b;
+  // adapt: a cold or smothered shooter stops forcing threes - he takes the mid-range pull-up or puts it on the floor;
+  // a hot one keeps firing; the team's game plan tilts everybody
+  const o = TW;
+  for (let j = 0; j < 6; j++) o[j] = b[j];
+  const f3 = form(p, 2),
+    fm = form(p, 1);
+  let cut = 0;
+  if ((p.cold || 0) >= 3) cut += 0.35;
+  if (f3.pct >= 0 && f3.n >= 2.5 && f3.pct < 0.25) cut += 0.3;
+  if (f3.pct >= 0 && f3.ct > 0.6) cut += 0.25; // every look has a hand in his face
+  if (hotNow(p)) cut -= 0.4; // feeling it
+  cut = clamp(cut, -0.4, 0.75);
+  if (cut > 0) {
+    const m = o[0] * cut,
+      toMid = fm.pct >= 0 && fm.pct < 0.3 ? 0.25 : p.c + 6 >= p.i ? 0.6 : 0.35;
+    o[0] -= m;
+    o[1] += m * toMid;
+    o[2] += m * (1 - toMid) * (p.i >= 70 ? 0.8 : 0.5);
+    o[3] += m * (1 - toMid) * (p.i >= 70 ? 0.2 : 0);
+    o[4] += 0.1 * cut; // and moves it more
+    o[5] *= 1 - 0.5 * cut; // fewer step-back threes
+  } else if (cut < 0) o[0] *= 1 - cut;
+  if (fm.pct >= 0 && fm.n >= 2.5 && fm.pct < 0.25) (o[2] += o[1] * 0.4), (o[1] *= 0.6);
+  switch (TS.gp[p.tm]) {
+    case 1:
+      (o[0] *= 0.55), (o[2] *= 1.5), (o[3] *= 1.4);
+      break;
+    case 2:
+      (o[0] *= 0.6), (o[1] = o[1] * 1.6 + 0.08), (o[3] *= 1.5);
+      break;
+    case 3:
+      (o[0] = o[0] * 1.35 + (p.c >= 78 ? 0.08 : 0)), (o[2] *= 0.8);
+      break;
+    case 4:
+      o[4] = hotNow(p) ? o[4] * 0.4 : o[4] + 0.35;
+  }
+  return o;
+}
+const TW = [0, 0, 0, 0, 0, 0];
+function baseTend(p: Player): number[] {
   const t = TEND[p.n];
   if (cfg.ASTAR) {
     // All-Star game: everybody wants the highlight dunk or the logo three
@@ -660,7 +821,8 @@ export function tendOf(p: Player): number[] {
     return [b[0] + 0.15, b[1] * 0.4, b[2] + 0.45, 0, b[4] + 0.2, b[5]];
   }
   if (t) return t;
-  return [p.c >= 84 ? 0.3 : p.c >= 75 ? 0.15 : 0.03, 0.25, p.s >= 84 || p.i >= 86 ? 0.35 : 0.2, p.i >= 84 && p.ht >= 6.8 ? 0.3 : 0, 0.3, p.st === 1 || p.st === 3 ? 0.4 : 0.1];
+  // (modern shot diet: capable shooters live behind the arc, the mid-range is a speciality - NBA ~42% of shots are threes)
+  return [p.c >= 84 ? 0.5 : p.c >= 75 ? 0.38 : p.c >= 68 ? 0.16 : 0.03, p.c >= 75 ? 0.14 : 0.2, p.s >= 84 || p.i >= 86 ? 0.35 : 0.2, p.i >= 84 && p.ht >= 6.8 ? 0.3 : 0, 0.3, p.st === 1 || p.st === 3 ? 0.4 : 0.1];
 }
 /** Modes that play a real game (rules, AI, scoring) rather than a drill. */
 export const gameLike = () => cfg.GM === "game" || cfg.GM === "clutch" || cfg.GM === "street" || cfg.GM === "king" || cfg.GM === "allstar" || cfg.GM === "daily";
@@ -700,7 +862,7 @@ export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: num
 }
 export function setup(off: number) {
   if (cfg.HALF) return setupHalf(off);
-  if (S === "play" && P.length) subs();
+  if (S === "play" && P.length) subs(), gamePlan(1 - off), gamePlan(off);
   TS.bc = 0;
   TS.lane.fill(0);
   const NP = cfg.NP,
@@ -902,7 +1064,7 @@ export function launch(p: Player) {
     ftq.fired = 1;
     if (ftq.i + 1 >= ftq.n && !ftq.tech && !ftq.keep) ftq = null;
   } else B.ft = 0;
-  let b = D0 < 90 || p.hk ? (p.i / 100) * (p.hk ? 0.72 : 0.8) : D0 < 237 ? ((p.c * 0.5 + p.i * 0.5) / 100) * 0.58 : (p.c / 100) * 0.5;
+  let b = D0 < 90 || p.hk ? (p.i / 100) * (p.hk ? 0.74 : 0.86) : D0 < 237 ? ((p.c * 0.5 + p.i * 0.5) / 100) * 0.58 : (p.c / 100) * 0.5;
   let ct = 0,
     blk = null;
   {
@@ -910,7 +1072,7 @@ export function launch(p: Player) {
     ct = c0;
     blk = o0;
   }
-  b -= Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1)) * 0.3;
+  b -= Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1)) * (D0 < 90 || p.hk ? 0.15 : 0.3); // (finishes: NBA at-rim ~65%)
   if (p.sbw > 0) b += 0.06;
   const cx = hum && p.cw != null ? p.cw : Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1) + (p.bmp || 0) * 0.5),
     rat = shotRat(p, D0, isFT),
@@ -920,6 +1082,7 @@ export function launch(p: Player) {
     rT = lay ? 0.28 : p.st === 1 ? 0.3 : 0.4;
   let gr;
   B.d0 = isFT ? null : D0;
+  B.cx = cx;
   // play-by-play: the call as he rises ("Curry pulls up..."); the result line follows on the make / miss
   if (!isFT && !lay && !PREDICT)
     cm("rise", p.n, D0 > 300 ? "deep" : three ? "three" : p.sbw > 0 ? "step" : p.sv === 2 ? "fade" : p.sv === 21 || p.sv === 20 ? "float" : Math.hypot(p.vx, p.vy) > 60 || (p.mvEnd != null && T - p.mvEnd < 0.6) ? "pull" : "mid");
@@ -954,7 +1117,14 @@ export function launch(p: Player) {
         why = cx > 0.6 ? " · HEAVY CONTEST" : (p.en ?? 1) < 0.45 ? " · TIRED LEGS" : "";
       txtW(TEMPO && p.tp == null ? "NO TEMPO" : (far ? "VERY " : "SLIGHTLY ") + (off > 0 ? "LATE" : "EARLY") + why, p.x, p.y, 95, "#ff9966");
     }
-  } else gr = Math.random() < clamp(((rat / 100) * 0.75 + 0.1 - cx * 0.45 + (p.sbw > 0 ? 0.1 : 0)) * cpuK(p, [0.78, 0.92, 1, 1.1]) * Math.sqrt(wm0), 0.05, 0.95);
+  } else if (lay || isFT) gr = Math.random() < clamp(((rat / 100) * 0.75 + (isFT ? 0.1 : 0.22) - cx * (isFT ? 0.45 : 0.32) + (p.sbw > 0 ? 0.1 : 0)) * cpuK(p, [0.78, 0.92, 1, 1.1]) * Math.sqrt(wm0), 0.05, 0.95);
+  else {
+    // CPU jumpers, calibrated to NBA shooting splits: an open three goes in ~30% (poor shooter) .. ~46% (elite),
+    // mid-range ~36-50%, and a full contest takes about a third off (league: open 38% vs tight 33% from three)
+    const base = three ? 0.34 + (0.16 * (rat - 60)) / 40 : 0.38 + (0.14 * (rat - 60)) / 40,
+      pm = clamp(base * (1 - 0.25 * cx) * (p.sbw > 0 ? 0.95 : 1) * cpuK(p, [0.85, 0.94, 1, 1.06]) * Math.sqrt(wm0), 0.04, 0.6);
+    gr = Math.random() < pm / (0.98 - cx * 0.25); // (the make roll below keeps its contest factor)
+  }
   if ((p.heat || 0) >= 3 && D0 > 265 && !isFT) txtW("HEAT CHECK!", p.x, p.y, 160, "#ff9a2e");
   B.owner = null;
   B.mode = "air";
@@ -1030,7 +1200,7 @@ export function launch(p: Player) {
     snd(150, 0.2, "square", 0.12);
     return;
   }
-  if (!fd && blk && blk.z > 10 && Math.hypot(blk.x - p.x, blk.y - p.y) < 24 && Math.random() < 0.08 + (ct * 0.3 * blk.d) / 100) {
+  if (!fd && blk && blk.z > 10 && Math.hypot(blk.x - p.x, blk.y - p.y) < 24 && Math.random() < 0.025 + (ct * 0.13 * blk.d) / 100) {
     B.vx = (p.x - blk.x) * 8 + (Math.random() - 0.5) * 80;
     B.vy = (Math.random() - 0.5) * 120;
     B.vz = 60;
@@ -1624,7 +1794,13 @@ export function ai(p: Player, dt: number) {
     if (p.mode !== "i") return;
     const dn = P[nearest(1 - t, p.x, p.y)],
       D0 = Math.hypot(oh - p.x, HY - p.y);
-    if (p.cd <= 0 && D0 > 150 && Math.hypot(dn.x - p.x, dn.y - p.y) < 38 && Math.random() < dt * 4 * tendOf(p)[5]) i.sb = 1;
+    // step-back: a weapon to create space once the possession has developed (or the clock is running out), not the
+    // first thing off the bring-up - at arcade quarter lengths it comes sooner
+    {
+      const pf = clamp((QTRLEN - 30) / 150, 0, 1),
+        el = 24 - shot;
+      if (p.cd <= 0 && D0 > 150 && Math.hypot(dn.x - p.x, dn.y - p.y) < 38 && (el > 3 + 8 * pf || shot < 8) && Math.random() < dt * 4 * tendOf(p)[5]) i.sb = 1;
+    }
     if (p.sbw > 0 && D0 > 120) {
       i.sd = 1;
       a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
@@ -1634,6 +1810,19 @@ export function ai(p: Player, dt: number) {
     const D = Math.hypot(oh - p.x, HY - p.y),
       md = manOf(p),
       dirO = oh > 470 ? -1 : 1;
+    // catch-and-shoot: just caught a pass with space - shoot it in rhythm (a shooter from deep, anyone from mid-range)
+    if (B.pp && B.pp.p !== p && B.pp.p.tm === t && T - B.pp.t < 0.7 && !a.cs && p.cd <= 0 && !CT.some((c) => c.tm === t && c.idx === P.indexOf(p))) {
+      a.cs = 1;
+      const od0 = Math.hypot(dn.x - p.x, dn.y - p.y),
+        good = D >= 237 ? p.c >= 70 && D < 295 : D > 90 && p.c + p.i >= 140;
+      if (good && od0 > 36 && Math.random() < 0.62 + (p.c - 75) / 50) {
+        i.sd = 1;
+        a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
+        a.r = 0;
+        return;
+      }
+    }
+    if (!(B.pp && T - B.pp.t < 0.7)) a.cs = 0;
     // in the lane too long: get a shot up
     if (cfg.VIOL && TS.lane[P.indexOf(p)] > 2.3 && p.cd <= 0) {
       i.sd = 1;
@@ -1670,6 +1859,7 @@ export function ai(p: Player, dt: number) {
         r = Math.random() * (td[0] + td[1] + td[2] + td[3] + 0.15);
       a.w = 0;
       a.pt = 0.8;
+      a.adj = 0;
       if (r < td[0] && p.c >= 70) a.r = (p.c >= 90 ? 255 : 240) + Math.random() * (p.c >= 95 ? 70 : 25);
       else if (r < td[0] + td[1]) a.r = 140 + Math.random() * 80;
       else if (r < td[0] + td[1] + td[2]) a.r = 40 + Math.random() * 40;
@@ -1691,6 +1881,19 @@ export function ai(p: Player, dt: number) {
         a.fk = 1;
         a.w = 0.25;
         return;
+      }
+      // smothered behind the arc (or he's cold from there): don't force it - jab and go to the pull-up, or drive
+      if (!a.adj && D >= 230 && a.w > 0.3 && p.cd <= 0 && (dd0 < 22 || ((p.cold || 0) >= 3 && dd0 < 40)) && !isH(p)) {
+        a.adj = 1;
+        STAT.counter = (STAT.counter || 0) + 1;
+        const f3 = form(p, 2);
+        if (dd0 < 22 || f3.pct < 0.3 || Math.random() < 0.6) {
+          a.w = 0;
+          const slow = !!md && p.s - md.s >= 4;
+          if (slow || p.i > p.c + 4 || Math.random() < 0.4) (a.r = 40 + Math.random() * 40), (i.mv = Math.random() < 0.5 ? 1 : undefined);
+          else (a.r = 150 + Math.random() * 60), (i.mv = 1); // hesitation into the elbow pull-up
+          return;
+        }
       }
       if (a.fk === 1 && dn.z > 6) {
         a.fk = 2; // he bit: rise up as he flies by (or drive past him)
@@ -1718,7 +1921,27 @@ export function ai(p: Player, dt: number) {
           return;
         }
       }
-      if (!hold && a.w > 0.45 && (dd0 > 30 || shot < 7 || a.w > 1.3)) {
+      // patience (scaled by quarter length: arcade 1-min quarters stay quick, 3-min+ play at NBA tempo): early in the
+      // clock only a wide-open look, a shot at the rim or a transition chance goes up; otherwise work the ball
+      const pf = clamp((QTRLEN - 30) / 150, 0, 1),
+        el = 24 - shot;
+      let back = 0;
+      for (const q of P) if (q.tm !== t && !q.off && Math.hypot(oh - q.x, HY - q.y) < D) back++;
+      const need = el < 1 + 6 * pf ? 58 : el < 2 + 10 * pf ? 40 : 30,
+        wait = NP > 1 && back >= Math.min(3, NP) && D > 75 && dd0 < need && shot > 7 && el < 2 + 14 * pf;
+      // a shooter waiting behind the arc with a step of room lets it fly (it's still a good look)
+      if (wait && D >= 237 && p.c >= 76 && dd0 > 34 && a.w > 0.6 && Math.random() < dt * 2.5) {
+        a.fk = 0;
+        i.sd = 1;
+        a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
+        a.r = 0;
+        return;
+      }
+      if (wait) {
+        a.pt = Math.min(a.pt, 0.15); // look for the extra pass
+        if (a.w > 0.9 && Math.random() < dt * 1.5) (a.r = 45 + Math.random() * 40), (a.w = 0); // or attack the basket
+      }
+      if (!hold && !wait && a.w > 0.45 && (dd0 > 30 || shot < 7 || a.w > 1.3)) {
         a.fk = 0;
         i.sd = 1;
         a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
@@ -1757,8 +1980,9 @@ export function ai(p: Player, dt: number) {
           return (Math.min(od, 80) / 80) * 0.6 + (ql(r, dd) / 100) * 0.5 + (dd < D ? 0.12 : 0) + (OFFS[t] === r ? 0.45 : 0) + (r.my || isH(r) ? 0.2 : 0) + star + kick;
         };
       const own = (Math.min(Math.hypot(dn.x - p.x, dn.y - p.y), 80) / 80) * 0.6 + (ql(p, D) / 100) * 0.5;
+      const pf2 = clamp((QTRLEN - 30) / 150, 0, 1);
       let bo = null,
-        bv = own + 0.12 + (0.3 - tendOf(p)[4]) * 0.3;
+        bv = own + 0.12 + (0.3 - tendOf(p)[4]) * 0.3 - (24 - shot < 12 ? 0.14 * pf2 : 0); // early in the clock: move it
       for (const r of P)
         if (r.tm === t && r !== p) {
           const v = val(r);
@@ -1770,8 +1994,8 @@ export function ai(p: Player, dt: number) {
       const prs = Math.hypot(dn.x - p.x, dn.y - p.y) < 40;
       if (
         bo &&
-        PCNT[t] < 3 &&
-        T - LASTP[t] > 1.1 &&
+        PCNT[t] < 3 + Math.round(3 * pf2) &&
+        T - LASTP[t] > 1.1 - 0.4 * pf2 &&
         Math.hypot(bo.x - p.x, bo.y - p.y) < 280 &&
         (Math.abs(hoop(t) - bo.x) < Math.abs(hoop(t) - p.x) + 40 || prs || D < 130 || (shot < 9 && bo === starOf(t))) &&
         Math.random() < (prs ? 0.8 : 0.5)
@@ -2629,6 +2853,8 @@ export function foul(d: Player, o: Player, k: string, sh: number, th: any, flag 
   fx({ k: "whistle", tm: d.tm });
   tf[d.tm]++;
   d.pf++;
+  STAT.fouls++;
+  STAT["f_" + k] = (STAT["f_" + k] || 0) + 1;
   whistle(d, o, k === "SHOOTING" ? LASTP_FOUL : 0.6);
   if (!PREDICT && Math.random() < 0.55) (d.cel = 12), (d.celT = CEL_T); // palms up: "I got ball!"
   txtW(k + " FOUL", d.x, d.y, 95, "#ff6b4a");
@@ -2657,6 +2883,7 @@ function tech(d: Player, ret: number) {
   startFT(b, 1, ret, 1);
 }
 function startFT(s: Player, n: number, ret?: any, tech?: any) {
+  STAT.fts += n;
   ftq = { s, n, i: -1, ret, tech, next: 0.9, w: 1.2, fired: 0 };
 }
 function ftLay() {
@@ -2732,7 +2959,7 @@ function ftIn(dt: number) {
 }
 export const OFFS: (Player | null)[] = [null, null];
 /** Game counters (tests / tuning): screens that connected, shooting fouls, and-ones. */
-export const STAT = { screens: 0, shootFouls: 0, andOnes: 0, fouls: 0 };
+export const STAT: Record<string, number> = { screens: 0, shootFouls: 0, andOnes: 0, fouls: 0, fts: 0 };
 /**
  * Half-court plays. One per possession window (~5.5 s), chosen from personnel:
  *  pnr   - big sets a ball screen on the handler's defender, plants, then rolls (or pops if he can shoot)
@@ -3029,7 +3256,7 @@ function shootingFoul(p: Player, lay: boolean): Player | null {
     if (o.z > 4) c += hs > 50 ? 0.3 : 0.03; // flying in vs. straight up
     if (d < 15) c += 0.14; // already chest to chest
     if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2 + (hasB(p, "PZ") ? 0.08 : 0);
-    c *= 1.2 - o.d / 220;
+    c *= (1.2 - o.d / 220) * 0.55; // (x.55: calibrated to NBA free-throw rate, ~0.22 FTA per possession)
     if (c > bp) (bp = c), (best = o), (fl = lay && o.z > 4 && hs > 170 && close > 140 ? 1 : 0);
   }
   if (!best || Math.random() >= clamp(bp, 0, 0.6)) return null;
@@ -3176,7 +3403,7 @@ function collide() {
                   cm("charge", o.n, h.n);
                   whistle(h, o, 0.55);
                   setup(o.tm);
-                } else if (Math.random() < 0.3) foul(o, h, sh ? "SHOOTING" : "BLOCKING", sh ? 1 : 0, 0);
+                } else if (Math.random() < (sh ? 0.3 : 0.07) * (hit > 240 ? 1.6 : 1)) foul(o, h, sh ? "SHOOTING" : "BLOCKING", sh ? 1 : 0, 0); // (blocking: calibrated to NBA personal-foul rates)
               }
             }
           }

@@ -5,14 +5,21 @@ import * as G from "../src/core/sim";
 import { rapInit } from "../src/core/physics";
 import { skeleton } from "../src/core/pose";
 const parts: [number, number, string][] = [[1, 4.6, "chest"], [12, 2.6, "sh"], [16, 2.6, "sh"], [13, 1.6, "el"], [17, 1.6, "el"], [15, 1.2, "hand"], [19, 1.2, "hand"]];
+// (pooled over two seeded stretches: one run is chaotic - any change anywhere sends it down a different game)
 function run(avoid: number) {
-  let s = 99;
+  let ticks = 0;
+  const cnt: Record<string, number> = {};
+  for (const seed of [99, 4242]) ticks += run1(avoid, seed, cnt);
+  const pc = (k: string) => ((cnt[k] || 0) / ticks) * 100;
+  return { pc, row: Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${((v / ticks) * 100).toFixed(1)}%`).join(" ") };
+}
+function run1(avoid: number, seed: number, cnt: Record<string, number>) {
+  let s = seed;
   Math.random = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
   Object.assign(G.cfg, { NP: 5, physics: "rapier", hand: true, MYM: 0, AVOID: avoid });
   G.cfg.input = () => ({ dx: 0, dy: 0 }); G.setCtrls([]); G.start(0); G.setup(0); G.setInb(0);
   const SK = G.P.map(() => new Float32Array(60));
   let ticks = 0;
-  const cnt: Record<string, number> = {};
   for (let i = 0; i < 60 * 120; i++) {
     G.upd(1 / 60);
     if (G.RPL || G.S !== "play" || G.ftq || G.inb > 0 || G.rs > 0 || G.JB) continue;
@@ -31,8 +38,7 @@ function run(avoid: number) {
     }
     for (const k of seen) cnt[k] = (cnt[k] || 0) + 1;
   }
-  const pc = (k: string) => ((cnt[k] || 0) / ticks) * 100;
-  return { pc, row: Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${((v / ticks) * 100).toFixed(1)}%`).join(" ") };
+  return ticks;
 }
 (async () => {
   await rapInit();

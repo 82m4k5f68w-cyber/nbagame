@@ -1547,10 +1547,12 @@ function plantFeet(p: Player, o: any, sp: number) {
  *  stride needs it; legs use soft IK near full extension. Blended in/out with the locomotion states. */
 const PSK = new Float32Array(60);
 type FootS = { st: number; x: number; y: number; z: number; sx: number; sy: number; sz: number; u: number; dur: number; tx: number; ty: number };
+export let SWA = 0.6;
+export const setSWA = (v: number) => (SWA = v);
 function stepSolve(p: Player, o: any, sp: number) {
   const md = p.mode,
     st = p.anS,
-    ok = p.z < 1 && md === "i" && !p.postA && !(p.mvT > 0) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || (st === ST.cel && sp > 25));
+    ok = p.z < 1 && md === "i" && !(p.mvT > 0 && p.mvk === 2) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || (st === ST.cel && sp > 25));
   const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
   S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
   skeleton(p, PSK);
@@ -1588,6 +1590,19 @@ function stepSolve(p: Player, o: any, sp: number) {
     for (const F of S.f) if (F && !F.st) (F.sx = F.x), (F.sy = F.y), (F.sz = F.z), (F.u = 0), (F.dur = 0.15);
     S.reg = reg;
   }
+  // standing: which foot steps? the one that is farthest from where it belongs (a turn in place pivots on the other)
+  let need = -1;
+  if (!reg && S.f[0] && S.f[1] && S.f[0].st && S.f[1].st) {
+    let best = 7 * s;
+    for (let k = 0; k < 2; k++) {
+      const P0 = k ? 8 : 4,
+        hx = PSK[P0 * 3],
+        hy = PSK[P0 * 3 + 1],
+        lat = ((PSK[(P0 + 2) * 3] - hx) * sf - (PSK[(P0 + 2) * 3 + 1] - hy) * cf) * (st === ST.post ? 1.6 : 1) + (st === ST.post ? (k ? 2 : -2) * s : 0),
+        e = Math.hypot(S.f[k].x - (hx + sf * lat), S.f[k].y - (hy - cf * lat));
+      if (e > best && S.last !== k) (best = e), (need = k);
+    }
+  }
   for (let k = 0; k < 2; k++) {
     const P0 = k ? 8 : 4,
       hx = PSK[P0 * 3],
@@ -1598,7 +1613,8 @@ function stepSolve(p: Player, o: any, sp: number) {
     let F = S.f[k];
     if (!F) F = S.f[k] = { st: 1, x: ax, y: ay, z: 0, sx: ax, sy: ay, sz: 0, u: 0, dur: 0.2, tx: ax, ty: ay };
     // the animated foot's spread from the hip (stance width, slides) = where this foot naturally lands sideways
-    const lat = (ax - hx) * sf - (ay - hy) * cf;
+    // (posting up: a wide, low base to lean into the defender)
+    const lat = ((ax - hx) * sf - (ay - hy) * cf) * (st === ST.post ? 1.6 : 1) + (st === ST.post ? (k ? 2 : -2) * s : 0);
     const restX = hx + sf * lat,
       restY = hy - cf * lat;
     if (reg) {
@@ -1608,6 +1624,7 @@ function stepSolve(p: Player, o: any, sp: number) {
       if (stance && !F.st) {
         // touchdown, where the foot is (normally its target: the swing ends there)
         F.st = 1;
+        F.zo = F.z; // (an early touchdown - the duty factor eased under it - settles the last bit instead of snapping)
         F.z = 0;
       } else if (!stance && F.st) {
         // lift-off: swing to where the body will be half a stance from now ... plus that half stance ahead
@@ -1615,6 +1632,7 @@ function stepSolve(p: Player, o: any, sp: number) {
         (F.sx = F.x), (F.sy = F.y), (F.sz = F.z);
         const s0 = (ph - duty * 2 * Math.PI) / ((1 - duty) * 2 * Math.PI);
         F.sw0 = s0 > 0.1 ? s0 : 0; // a swing started mid-phase (from standing) counts from here; a normal toe-off from 0
+        F.fr = 1; // aim the landing spot from the first swing tick (a sprint is already ~8% into the swing by then)
       }
       if (!F.st) {
         const sw0 = (ph - duty * 2 * Math.PI) / ((1 - duty) * 2 * Math.PI),
@@ -1625,12 +1643,13 @@ function stepSolve(p: Player, o: any, sp: number) {
         const tr = p.tread ? 0 : tLeft, // on the studio treadmill the body doesn't travel - the floor does
           nx = restX + p.vx * tr + ux * ahead,
           ny = restY + p.vy * tr + uy * ahead,
-          ke = sw < 0.05 ? 1 : Math.min(1, DT * 18);
+          ke = F.fr ? 1 : Math.min(1, DT * 18);
+        F.fr = 0;
         F.tx += (nx - F.tx) * ke;
         F.ty += (ny - F.ty) * ke;
         // swing profile: leaves with some speed (doesn't trail out of the leg's reach behind the body), lands at zero
         // speed relative to the floor (no stop-dead at touchdown): e(0)=0, e'(0)=a, e(1)=1, e'(1)=0
-        const a = 0.6,
+        const a = SWA,
           e = sw * (a + sw * (3 - 2 * a + sw * (a - 2)));
         F.x = F.sx + (F.tx - F.sx) * e;
         F.y = F.sy + (F.ty - F.sy) * e;
@@ -1639,8 +1658,10 @@ function stepSolve(p: Player, o: any, sp: number) {
       }
     } else {
       // standing: feet stay planted; a shuffle step when the body turned or drifted away from this foot (one at a time)
-      if (F.st && S.last !== k && Math.hypot(F.x - restX, F.y - restY) > 7 * s && !(S.f[1 - k] && !S.f[1 - k].st)) {
-        (F.st = 0), (F.u = 0), (F.dur = 0.2), (F.sx = F.x), (F.sy = F.y), (F.sz = F.z), (S.last = k);
+      if (F.st && need === k) {
+        // a longer step takes a little longer (a pivot's quarter turn ~.2 s, a reset after a big drift ~.3 s)
+        const dd = Math.hypot(F.x - restX, F.y - restY);
+        (F.st = 0), (F.u = 0), (F.dur = clamp(0.14 + dd / (s * 160), 0.16, 0.3)), (F.sx = F.x), (F.sy = F.y), (F.sz = F.z), (S.last = k);
       }
       if (!F.st) {
         F.u = Math.min(1, F.u + DT / F.dur);
@@ -1653,6 +1674,7 @@ function stepSolve(p: Player, o: any, sp: number) {
         if (F.u >= 1) (F.st = 1), (F.z = 0), (S.last = -1);
       }
     }
+    if (F.st && F.zo) F.zo = F.zo < 0.05 ? 0 : F.zo * Math.exp(-DT / 0.035);
     // pelvis dip so a planted foot stays within reach
     const fw = (F.x - hx) * cf + (F.y - hy) * sf;
     if (F.st) drop = Math.max(drop, hz - F.z - Math.sqrt(Math.max(0, (Lm * 0.965) ** 2 - fw * fw)));
@@ -1661,7 +1683,7 @@ function stepSolve(p: Player, o: any, sp: number) {
   {
     const w = 22;
     // (+ a defender sits in his stance: now that his feet are really on the floor the knees only bend if the hips drop)
-    const sit = st === ST.def ? 3 * s : 0;
+    const sit = st === ST.def ? 3 * s : st === ST.post ? 5 * s : 0;
     S.dv = (S.dv || 0) + (w * w * (clamp(drop + sit, 0, 5 + sit) - S.drop) - 2 * w * (S.dv || 0)) * DT;
     S.drop = Math.max(0, S.drop + S.dv * DT);
   }
@@ -1678,7 +1700,7 @@ function stepSolve(p: Player, o: any, sp: number) {
       hz = PSK[P0 * 3 + 2] - S.drop * W,
       fw = (F.x - hx) * cf + (F.y - hy) * sf,
       lt = (F.x - hx) * sf - (F.y - hy) * cf, // + = the body's right
-      dz = F.z - hz,
+      dz = F.z + (F.st ? F.zo || 0 : 0) - hz,
       vert = Math.hypot(dz, lt),
       ds = Lm * 0.94,
       d0 = Math.max(0.35 * Lm, Math.hypot(fw, vert)),
@@ -1708,6 +1730,16 @@ function stepSolve(p: Player, o: any, sp: number) {
         fz += r0 * roll * (1 - sw) * (1 - sw) * (1 + 2 * sw); // smooth fade (zero slope at touchdown)
       }
     } else if (!F.st) fz += 0.2 * Math.sin(Math.PI * F.u);
+    {
+      // the toe roll / swing pitch are continuous by design, except where a contact flips early: carry the gap and fade it
+      let add = fz - (tI - kI);
+      if (F.pst != null && F.pst !== F.st) F.pd = (F.pa || 0) - add;
+      else F.pd = Math.abs(F.pd || 0) < 1e-3 ? 0 : F.pd * Math.exp(-DT / 0.06);
+      add += F.pd;
+      F.pa = add;
+      F.pst = F.st;
+      fz = tI - kI + add;
+    }
     o[fk] += (fz - o[fk]) * W;
     if (k) abR = ab;
     else abL = ab;
