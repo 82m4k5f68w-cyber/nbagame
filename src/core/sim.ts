@@ -2021,6 +2021,19 @@ export function ai(p: Player, dt: number) {
     else if (ds === 2) ou = B.owner === o ? ou * 0.82 : ou * 0.6; // tight: pressure and deny
     if (cpu && cfg.BADGES && od > 220 && o.c < 72 && B.owner !== o) ou += 34; // sag off a non-shooter
     if (cpu && hotO) ou *= 0.78; // stay attached to the hot hand
+    // the CPU scouts his man (human or not): where does he score? take that away, give him the other thing
+    if (cpu && o.sk && !cfg.ASTAR) {
+      const s = o.sk,
+        n = s.a[0] + s.a[1] + s.a[2];
+      if (n >= 3) {
+        const p3 = s.a[2] / n,
+          pr = s.a[0] / n,
+          m3 = s.a[2] >= 1.5 ? s.m[2] / s.a[2] : 0.35,
+          mr = s.a[0] >= 1.5 ? s.m[0] / s.a[0] : 0.6;
+        if (od > 200 && (m3 >= 0.45 || (p3 > 0.55 && m3 >= 0.34))) ou *= 0.8; // a shooter: crowd him at the line
+        else if (od > 200 && pr > 0.5 && mr >= 0.55 && m3 < 0.34) ou += B.owner === o ? 10 : 6; // a driver who can't shoot: give him the jumper
+      }
+    }
     const l = od || 1;
     const hb = B.owner,
       hh = Math.hypot(dh - hb.x, HY - hb.y);
@@ -3145,7 +3158,8 @@ function loose(p: Player, t: number) {
     }
   }
   if (fly) {
-    if (rk < K2) mv(p, hx + dir * (26 + rk * 22), HY + (rk ? 36 : -8) * (p.k % 2 ? 1 : -1), 1.1);
+    // (modern spacing: the shooting side sends its closest man and a big; the rest get back)
+    if (rk < K2 && !(sh && rk > 0 && p.ht < 6.75 && NP > 2)) mv(p, hx + dir * (26 + rk * 22), HY + (rk ? 36 : -8) * (p.k % 2 ? 1 : -1), 1.1);
     else if (sh) mv(p, hx + dir * 190, HY + (p.k - 2) * 45, 0.7);
     else mv(p, hx + dir * 70, HY + (p.k - 2) * 50, 0.8);
   } else {

@@ -1559,7 +1559,9 @@ export const setSWA = (v: number) => (SWA = v);
 function stepSolve(p: Player, o: any, sp: number) {
   const md = p.mode,
     st = p.anS,
-    ok = p.z < 1 && md === "i" && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || (st === ST.cel && sp > 25));
+    // (+ the gather of a jumper: the feet stay planted - or take the hop into the clip's stance - while the hips dip)
+    gat = md === "c" && st === ST.shot && !p.hk && !isLaySv(p.sv || 0) && !isDunkSv(p.sv || 0),
+    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.cel && sp > 25));
   const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
   S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
   skeleton(p, PSK);
@@ -1606,7 +1608,7 @@ function stepSolve(p: Player, o: any, sp: number) {
         hx = PSK[P0 * 3],
         hy = PSK[P0 * 3 + 1],
         lat = ((PSK[(P0 + 2) * 3] - hx) * sf - (PSK[(P0 + 2) * 3 + 1] - hy) * cf) * (st === ST.post ? 1.6 : 1) + (st === ST.post ? (k ? 2 : -2) * s : 0),
-        e = Math.hypot(S.f[k].x - (hx + sf * lat), S.f[k].y - (hy - cf * lat));
+        e = gat ? Math.hypot(S.f[k].x - PSK[(P0 + 2) * 3], S.f[k].y - PSK[(P0 + 2) * 3 + 1]) : Math.hypot(S.f[k].x - (hx + sf * lat), S.f[k].y - (hy - cf * lat));
       if (e > best && S.last !== k) (best = e), (need = k);
     }
   }
@@ -1622,8 +1624,9 @@ function stepSolve(p: Player, o: any, sp: number) {
     // the animated foot's spread from the hip (stance width, slides) = where this foot naturally lands sideways
     // (posting up: a wide, low base to lean into the defender)
     const lat = ((ax - hx) * sf - (ay - hy) * cf) * (st === ST.post ? 1.6 : 1) + (st === ST.post ? (k ? 2 : -2) * s : 0);
-    const restX = hx + sf * lat,
-      restY = hy - cf * lat;
+    // (a jumper's gather keeps the clip's stagger too: the shooting foot a little ahead)
+    const restX = gat ? ax : hx + sf * lat,
+      restY = gat ? ay : hy - cf * lat;
     if (reg) {
       // gait schedule: leg phase 0 = touchdown (L lands at ph = pi/2, R at 3pi/2, where the clips swing them forward)
       const ph = (((p.ph - (k ? 1.5 : 0.5) * Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI),
