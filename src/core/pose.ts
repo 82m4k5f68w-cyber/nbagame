@@ -797,6 +797,34 @@ export function pose3(p: Player) {
   }
   // ---- Pro Play v3 ----
   if (PRO) {
+    // closeout: a defender flying at the ball handler gets a hand up on the way, then breaks down with short choppy
+    // steps (butt low, weight back) so he can't be blown by; the high hand takes the shot side, the low hand the drive
+    const o = B.owner;
+    if (o && o.tm !== p.tm && !air && md === "i" && !(p.hupT > 0) && !(p.celT > 0)) {
+      const dx = o.x - p.x,
+        dy = o.y - p.y,
+        d = Math.hypot(dx, dy) || 1,
+        ap = (p.vx * dx + p.vy * dy) / d;
+      if (d < 140 && d > 14 && ap > 50) {
+        const w = clamp((ap - 50) / 110, 0, 1) * clamp((140 - d) / 50, 0, 1),
+          brk = clamp((85 - d) / 40, 0, 1) * w, // breaking down: chop steps
+          shoot = o.mode === "c" || o.mode === "s" ? 1 : 0.65,
+          ch = Math.sin(T * 27 + p.k * 1.3);
+        aR += (2.2 + 0.7 * shoot - aR) * w;
+        eR += (0.5 - 0.35 * shoot - eR) * w;
+        sz += (0.2 - sz) * w;
+        aL += (0.75 - aL) * w;
+        eL += (0.7 - eL) * w;
+        gR = 0.05;
+        tL += (0.42 + ch * 0.12 - tL) * brk;
+        tR += (0.42 - ch * 0.12 - tR) * brk;
+        kL += (0.95 + Math.max(0, ch) * 0.2 - kL) * brk;
+        kR += (0.95 + Math.max(0, -ch) * 0.2 - kR) * brk;
+        ln += (0.24 - ln) * brk;
+        cr = Math.max(cr, 0.5 * brk);
+        toe += 0.15 * brk; // up on the balls of the feet
+      }
+    }
     // contest with a hand up, feet on the floor (vs a pump faker)
     if ((p.hupT || 0) > 0 && !air && !has) {
       const w = Math.min(1, p.hupT * 4);

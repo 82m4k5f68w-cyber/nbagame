@@ -1588,8 +1588,23 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           tp = [pw[0] + Math.cos(SO.a) * SO.d, ah + ((SO as any).dy ?? 1.7) + (fz ? 0 : up), pw[2] + Math.sin(SO.a) * SO.d];
           tl = [pw[0], ah + (fz ? 0 : up), pw[2]];
         }
-        cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : RPL && RPK ? 0.35 : 0.1);
-        cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : 0.14);
+        let lerpK = SO ? 1 : RPL && RPK ? 0.35 : 0.1;
+        if (!SO && !RPL && GS === "over" && sc[0] !== sc[1]) {
+          // final buzzer: the camera drifts in to the winners' top scorer (face close-up: the grin, the roar)
+          const wt = sc[0] > sc[1] ? 0 : 1;
+          let st: any = null;
+          for (const q of P) if (q.tm === wt && !q.off && (!st || (q.stt?.pts || 0) > (st.stt?.pts || 0))) st = q;
+          if (st) {
+            const hw = W3(st.x, st.y, st.z),
+              hh = (st.ht / 6.4) * 5.9 + st.z * 0.1,
+              a = Math.PI / 2 - st.f - Math.PI / 2 + Math.sin(T * 0.25) * 0.5; // in front of him, slow sway
+            tp = [hw[0] + Math.sin(a + Math.PI / 2) * 6.5, hh + 0.6, hw[2] + Math.cos(a + Math.PI / 2) * 6.5];
+            tl = [hw[0], hh - 0.5, hw[2]];
+            lerpK = 0.03;
+          }
+        }
+        cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), lerpK);
+        cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : lerpK === 0.03 ? 0.05 : 0.14);
         cam.lookAt(cl2);
         if (shake > 0.001) {
           cam.position.x += (Math.random() - 0.5) * shake;

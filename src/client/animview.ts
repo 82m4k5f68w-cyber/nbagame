@@ -123,6 +123,18 @@ export const ANIMS: [string, Setup][] = [
     },
   ],
   [
+    "Closeout (hand up, chop steps)",
+    (p, t, dt) => {
+      stand(p);
+      guard(p, 60);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      o.f = p.f + Math.PI;
+      B.owner = o;
+      B.mode = "held";
+      move(p, dt, 150, 0);
+    },
+  ],
+  [
     "Vertical jump (motion capture)",
     (p, t) => {
       stand(p);

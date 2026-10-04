@@ -26,3 +26,11 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   Challenge all reach a result, no NaN, street play stays in the right half, stopMode restores the team size.
 - browser_link.mjs — a highlight becomes a #reel= share link; opening it plays the clip in the same mode.
 - browser_tour.mjs — relay: a three-player 1v1 tournament (bye + final, champion) and a 3v3 online game.
+- faces.ts — facial expressions (pose.ts `face()`): yell / grin / grimace / frustration drive the right channels,
+  every player blinks, and a whole game keeps every face value finite and in range.
+- lefty.ts — a left-handed shooter (SIG `lh`, Brunson): the shot is mirrored, the release comes from the LEFT hand, and
+  green releases still go in through the full Rapier pipeline.
+- blend.ts — inertialized blending A/B (cfg.INZ 1 vs 0) on the same seeded 5v5 stretch: fewer pops (jerk p99.9 and the
+  worst single one) while following the pose targets about as closely.
+- street_stalls.ts (not in `npm test`, slow) — seeded Street 3v3 games must keep scoring (no 90 s without a basket);
+  `N=40 npx tsx tests/street_stalls.ts`.

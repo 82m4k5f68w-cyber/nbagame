@@ -159,6 +159,29 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Online: lobby team size (`setOpt("np")`, `cap()`), tournament (`L.tour`, `tourStart/tourPlay/tourResult`, spectators tm -1),
   replay links `#...&reel=` (packClip: every 2nd frame, int16, deflate-raw, base64url; main.ts opens the mode, `playLinkReel`).
 
+## Faces & feel (v4.2)
+- Faces: 11 face bones under `hd` in rig3d (`fb`: jaw `jw` hinge, mouth interior `mi` scaled open with teeth, mouth line
+  `mo`, corners `c`, brows `b`, closing lids `l` (folded to scale .02 at rest), irises `y`; `fr` = rest positions).
+  `pose.ts face()` (end of pose3) writes `p.fc` {jw, sm, br, an, sq, wd, bl, ex, ey}: celebrations (CEL -> grin / smirk /
+  yell / wince / arguing), contact `hitT` (gritted teeth + flinch blink), dunk in the air, `p.frT` (miss: set on the
+  shooter when the miss is rebounded), shot focus, defense, fatigue, final score; slot-seeded blinks; eyes take the head
+  turn's remainder. `applyFace` (client) maps it to bones. Studio: "Face: ..." entries use a close-up (studio.h/dy).
+  Final buzzer: render3d camera drifts in on the winners' top scorer.
+- Lefties: SIG `lh` (Brunson). pose3 mirrors the whole solved pose (arms swap, oL/oR negate, legs swap, hs/ty/rz/cy/hy
+  negate) while shooting (`md 's'`, or 'c' with the ball) and sets `q.mir`; `handPos` then walks the LEFT arm chain
+  (fk.ts checks both), render3d pins the ball to `wL`; dribHand starts lefties in the left hand.
+- Guide hand `gs` 0-5: classic, thumb flick, early drop, elbow out, rides high, two-hand push (formOf hash, SIG overrides).
+- Blending = per-joint inertialization (`p.inz`, `inert()` quintic, Bollo): restart on a state change (tf = BLEND[st] x
+  .65, head x .4) or when a joint's target leaves its linear prediction (head .08, arms .25, else .12; x3 while still
+  blending), tf grows with the jump size (max .32 s); a light 50 ms filter on top. `cfg.INZ=0` = old exponential
+  smoothing (tests/blend.ts A/B). wR never smoothed (and the lefty's wL).
+- Mocap: `MC_JUMP` (CMU 16_03 airborne part, from retarget.ts `jump()`) drives legs/pelvis/chest in non-shot jumps
+  (speed < 160), phase from vz: u = (1 - vz/vz0)/2, vz0 = sqrt(vz^2 + 2gz). Subject 06 has no layups (dribbles/shots only).
+- Closeouts (pose3 Pro Play v3): a defender closing on the handler (approach > 50 px/s, < 140 px) raises the shot-side
+  hand, low hand on the drive, then chop steps when < 85 px.
+- Online PROTO 5, PST 28: per-player int 27 = `proFlags` base-64 pack (hupT, plantT, engT, eng, pk, dcl, frT, rl).
+- Dead pass rule (bstep): a pass rolling slowly on the floor or older than 3 s becomes a loose ball (`B.mode "air"`).
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.
@@ -173,6 +196,11 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Never `open(p,'w').write(open(p).read()...)` in one python line (truncates the file first): use the scratchpad rp.py helper.
 - canvas.ts / main.ts are `@ts-nocheck`: a missing import there type-checks fine and throws at runtime (check imports by hand).
 - Mode starts must call `stopMode()` before reading `cfg.NP` (otherwise they inherit the previous mode's team size).
+- A pass stuck in mode "pass" (speed 0 against a wall) was catchable only by its target -> frozen street game. Any ball
+  state that only ONE player may resolve needs a timeout/fallback.
+- Never `git stash` while background tests are running: they read the working tree.
+- Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
+  (tests/blend.ts) before tuning blend times by eye.
 
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and
