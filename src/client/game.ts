@@ -525,7 +525,7 @@ function pause() {
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
   ov.innerHTML = `<div class="logo" style="font-size:38px">PAUSED</div><div class="sub">${esc(G.cl[0])} ${G.sc[0]} — ${G.sc[1]} ${esc(G.cl[1])} · Q${G.q}</div><div id="pz">
-  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button>${cfg.NP > 1 && cfg.GM === "game" ? `<button id="pmu">🛡 Matchups</button>` : ""}<button id="prs">↻ Restart game</button>${V.r3d ? `<button id="pan">🎬 Animation Studio</button>` : ""}<button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
+  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button>${cfg.NP > 1 && cfg.GM === "game" ? `<button id="pmu">🛡 Matchups</button>` : ""}${G.gameLike() ? `<button id="psc">📋 Scouting report</button>` : ""}<button id="prs">↻ Restart game</button>${V.r3d ? `<button id="pan">🎬 Animation Studio</button>` : ""}<button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
   $("#pr").onclick = resume;
   const re = () => (saveSet(), pause());
   if (V.r3d) {
@@ -540,10 +540,46 @@ function pause() {
   };
   const pmu = document.getElementById("pmu");
   if (pmu) pmu.onclick = matchups;
+  const psc = document.getElementById("psc");
+  if (psc) psc.onclick = scouting;
   $("#prs").onclick = () => (MODE.kind ? replayMode() : startLocal(SEL, { j: lastJ }));
   if (V.r3d) $("#pan").onclick = () => studio();
   $("#pq").onclick = menu;
   ($("#pr") as HTMLElement).focus();
+}
+/** Pause → Scouting report: what each side is living on lately (decayed shot records), who is hot / cold / smothered,
+ *  and the CPU coach's current game plan and defense - the adaptive AI made visible. */
+function scouting() {
+  const NP = cfg.NP,
+    RN = ["RIM", "MID", "3PT"],
+    rec = (o: any, r: number) => (o && o.a[r] >= 0.5 ? `${Math.round(o.m[r])}/${Math.round(o.a[r])}` : "—"),
+    tag = (p: any) => {
+      const f3 = G.form(p, 2);
+      return (p.heat || 0) >= 3
+        ? `<b style="color:#ff9a2e">ON FIRE</b>`
+        : (p.cold || 0) >= 3
+          ? `<b style="color:#7fd4ff">ICE COLD</b>`
+          : f3.pct >= 0 && f3.ct > 0.6
+            ? `<b style="color:#ff6b6b">SMOTHERED</b>`
+            : p.hzm && Math.max(...p.hzm) >= 2
+              ? `<b style="color:#ffd23f">HOT ZONE: ${G.ZN[p.hzm.indexOf(Math.max(...p.hzm))]}</b>`
+              : "";
+    },
+    team = (t: number) => {
+      const k = G.TS.sk[t],
+        cpu = !CT.some((c) => c.tm === t);
+      return `<h3 style="margin:10px 0 4px;color:${G.PC[t]}">${esc(G.cl[t])}${cpu ? " (CPU)" : ""}</h3>
+      <p class="hint" style="margin:2px 0">${cpu ? `Game plan: <b>${G.GPN[G.TS.gp[t]]}</b> · ` : ""}Play: <b>${G.PCN[G.TS.pc[t]]}</b> · Defense: <b>${G.DSN[G.TS.ds[t]]}</b><br>Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
+      <table class="bx" style="max-width:640px">${[...Array(NP).keys()]
+        .map((j) => {
+          const p = P[t * NP + j];
+          return `<tr><td>${esc(p.n)}</td>${RN.map((n, r) => `<td><small>${n}</small> ${rec(p.sk, r)}</td>`).join("")}<td>${tag(p)}</td></tr>`;
+        })
+        .join("")}</table>`;
+    };
+  ov.innerHTML = `<div class="logo" style="font-size:34px">SCOUTING REPORT</div><p class="hint">Recent shots (older ones fade). The CPU reads the same sheet: cold or smothered shooters change their shots, its coach changes the plan.</p>
+   ${team(0)}${team(1)}<div id="pz"><button id="mub">◀ Back</button></div>`;
+  $("#mub").onclick = pause;
 }
 /** Pause → Matchups: pick who each of your defenders guards (or let the coach hide your weakest defender). */
 function matchups() {

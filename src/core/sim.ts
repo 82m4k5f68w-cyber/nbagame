@@ -3,7 +3,7 @@
 // Game coordinates: x 0..940, y 0..500 (10 px = 1 ft), z up (rim z=100). Team 0 attacks the RIGHT hoop.
 import { TM, SP, OV, ov2, formOf, isDunkSv, SIG, type Tuple } from "./data";
 const SIGK = (p: Player) => !!SIG[p.n];
-import { pose3, handPos } from "./pose";
+import { pose3, handPos, skeleton } from "./pose";
 import { RAP, rapStep, rapSyncPlayers } from "./physics";
 
 export const CW = 940,
@@ -489,7 +489,7 @@ export function scout(p: Player, D0: number, made: boolean, cx: number) {
 }
 /** Expected points per shot from a range, shrunk toward a league prior (so 1-for-1 doesn't change anything). */
 const PRI = [1.25, 0.84, 1.08];
-function pps(o: any, r: number) {
+export function pps(o: any, r: number) {
   const n = o.a[r],
     w = n / (n + 4);
   return w * ((o.m[r] / (n || 1)) * (r === 2 ? 3 : 2)) + (1 - w) * PRI[r];
@@ -1282,17 +1282,24 @@ export function launch(p: Player) {
         vx = B.vx,
         vy = B.vy,
         vz = B.vz,
-        T2 = 0;
-      const W = B.wv;
+        T2 = 0,
+        w0 = B.wv[0],
+        w1 = B.wv[1];
+      // (exactly what rapStep + Rapier do each half-frame: drag, Magnus, gravity, symplectic Euler, and the spin
+      // decaying with the ball body's angular damping .3 - a constant spin over-predicted the lift on long heaves)
+      const h = 1 / 120,
+        wd = 1 / (1 + h * 0.3);
       while (T2 < 4) {
-        vx *= 1 - 0.0004;
-        vy *= 1 - 0.0004;
-        vz += (0.0032 * (W[0] * vy - W[1] * vx) - g) * 0.004;
+        vx *= 1 - 0.1 * h;
+        vy *= 1 - 0.1 * h;
+        vz += 0.0032 * (w0 * vy - w1 * vx) * h - g * h;
         const qz = z;
-        x += vx * 0.004;
-        y += vy * 0.004;
-        z += vz * 0.004;
-        T2 += 0.004;
+        x += vx * h;
+        y += vy * h;
+        z += vz * h;
+        w0 *= wd;
+        w1 *= wd;
+        T2 += h;
         if (qz >= 100 && z < 100 && vz < 0) break;
       }
       B.vx += ((tx - x) / Math.max(0.2, T2)) * 0.9;
@@ -2128,17 +2135,19 @@ function dz(o: Player, dt: number) {
   const top = dribTop(o),
     sp = Math.hypot(o.vx, o.vy);
   if (B.dh == null || B.dho !== o) {
-    B.dh = top;
+    // the first push starts from the hands (a catch at the chest, a triple threat), not from a ball teleported to the hip
+    B.dh = B.dho === null && B.hold === o ? clamp(B.z, top, top + 22) : top;
     B.dvv = 0;
     B.dhd = 0.08;
     B.dho = o;
+    B.fr0 = T;
   }
   B.dtop = top;
   if (B.dhd > 0) {
     // in the hand: the catch is cushioned (the hand gives a little upward), then the push
     B.dhd -= dt;
     B.dvv *= Math.exp(-28 * dt);
-    B.dh = Math.min(top + 5, B.dh + B.dvv * dt);
+    B.dh = Math.min(Math.max(top + 5, B.dh), B.dh + B.dvv * dt);
     if (B.dhd <= 0) B.dvv = -(165 + sp * 0.4);
   } else {
     B.dvv -= g * dt;
@@ -2163,6 +2172,7 @@ export function heldBall(o: Player): number {
   if (o.ttT > 0 && Math.hypot(o.vx, o.vy) < 70 && !ftq) return 1;
   return 0;
 }
+const HSK = new Float32Array(60);
 const HOLDP: [number, number][] = [
   [0, 0],
   [-5, 4],
@@ -2277,7 +2287,7 @@ export function bstep(dt: number) {
         B.dvy = (B.dvy || 0) + ((ty - B.y) * k - (B.dvy || 0) * c) * dt;
         B.x += B.dvx * dt;
         B.y += B.dvy * dt;
-        if (Math.hypot(tx - B.x, ty - B.y) > 14) (B.x = tx), (B.y = ty);
+        if (Math.hypot(tx - B.x, ty - B.y) > 14 && T - (B.fr0 ?? -9) > 0.35) (B.x = tx), (B.y = ty); // (the first dribble out of the hands swings over, no snap)
       } else {
         B.x = tx;
         B.y = ty;
@@ -2307,6 +2317,18 @@ export function bstep(dt: number) {
       const h = handPos(o);
       if (h && h[2] > 10) (B.x = clamp(h[0], 6, CW - 6)), (B.y = clamp(h[1], 6, CH - 6)), (B.z = h[2]); // (a finish on the end line can reach past the wall)
     }
+    // held in both hands (triple threat, pump fake, jab, FT routine, inbound): the formula spot is where the hands
+    // are GOING (B.tg*, the pose's IK target); the ball itself sits between the drawn palms, so a catch at the chest
+    // carries the ball down to the hip with the hands instead of teleporting there ahead of them
+    if (o.mode === "i" && !o.postA && (heldBall(o) || inb > 0) && cfg.hand && cfg.PRO && o.q && o.q.wR != null) {
+      B.tgx = B.x;
+      B.tgy = B.y;
+      B.tgz = B.z;
+      B.tgo = o;
+      skeleton(o, HSK);
+      const z = (HSK[47] + HSK[59]) / 2;
+      if (z > 8) (B.x = clamp((HSK[45] + HSK[57]) / 2, 6, CW - 6)), (B.y = clamp((HSK[46] + HSK[58]) / 2, 6, CH - 6)), (B.z = z);
+    } else B.tgo = null;
     B.vx = B.vy = B.vz = 0;
     return;
   }
@@ -3159,7 +3181,10 @@ function offBall(p: Player, t: number) {
       bd = 1e9;
     spots.forEach((sp, j) => {
       if (used.has(j)) return;
-      const d = Math.hypot(sp[0] - q.x, sp[1] - q.y) + (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 ? 400 : 0);
+      // (stay out of the driver's way: a spot where the ball handler is heading is taken last - drift on the drive)
+      const bx = h ? h.x + h.vx * 0.5 : B.x,
+        by = h ? h.y + h.vy * 0.5 : B.y,
+        d = Math.hypot(sp[0] - q.x, sp[1] - q.y) + (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 || Math.hypot(sp[0] - bx, sp[1] - by) < 120 ? 400 : 0);
       if (d < bd) (bd = d), (b = j);
     });
     used.add(b);
@@ -3362,13 +3387,13 @@ function collide() {
       const dx = A.x - C.x,
         dy = A.y - C.y,
         d = Math.hypot(dx, dy);
-      // bodies are wider than deep: face to face they stop at 16 px (as always), shoulder to shoulder at up to ~26 (the rig's real shoulder width)
+      // bodies are wider than deep: face to face they stop at 16 px (as always), shoulder to shoulder at up to ~28 (the rig's real shoulder width)
       // (so broad shoulders don't sink into each other) - how sideways each one stands to the other
       let dm = 16;
-      if (cfg.PRO && d < 26 && d > 0) {
+      if (cfg.PRO && d < 29 && d > 0) {
         const sA = Math.abs(Math.sin(Math.atan2(-dy, -dx) - A.f)),
           sC = Math.abs(Math.sin(Math.atan2(dy, dx) - C.f));
-        dm = 16 + 4 * (sA * Math.min(1.2, A.bk) + sC * Math.min(1.2, C.bk));
+        dm = 16 + 5 * (sA * Math.min(1.2, A.bk) + sC * Math.min(1.2, C.bk));
       }
       if (d < dm && d > 0 && A.z < 8 && C.z < 8) {
         if (!cfg.PRO) {

@@ -43,5 +43,8 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - adapt.ts — adaptive CPU: a cold / smothered shooter's tendencies move off the three, a hot one's up, humans are never
   adapted; gamePlan picks attack-the-paint / let-it-fly, tight D vs shooters, a 2-3 zone vs a rim-only team, the best
   defender onto a hot scorer; no trend from one miss; human teams keep their calls; a few adjustments per full game.
+- contact.ts — contact QA on a seeded 5v5 stretch: the dribble hand meets the ball at the top of the bounce (p50 < 6,
+  p90 < 22 px), a ball held in both hands sits between the palms (p90 < 6 px, one tick behind), toes never sink more
+  than 4 px into the floor (lying after a dive included).
 - stats.ts (not in npm test) — realism report vs NBA averages over N full CPU games (`N=4 QL=180 SEED=1 npx tsx
   tests/stats.ts`): assist rate, FT rate, FG/3P%, shot mix and contest by range, shot clock at FGA, ORB%, ORtg.

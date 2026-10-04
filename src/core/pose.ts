@@ -640,7 +640,12 @@ export function pose3(p: Player) {
   if (PRO && has && md === "i" && (inb > 0 || hold)) {
     for (const sd of [1, -1]) {
       // each hand on its own side of the ball (the right side is (sin f, -cos f))
-      const k5 = armIK(p, cr, B.x + Math.sin(p.f) * 3 * sd, B.y - Math.cos(p.f) * 3 * sd, B.z, sd, 0.9);
+      // (aim for where the ball is going - B.tg*, set by the host's bstep - not the ball, which rides in these hands)
+      const own = B.tgo === p,
+        bx = own ? B.tgx : B.x,
+        by = own ? B.tgy : B.y,
+        bz = own ? B.tgz : B.z,
+        k5 = armIK(p, cr, bx + Math.sin(fv(p)) * 3 * sd, by - Math.cos(fv(p)) * 3 * sd, bz, sd, 0.9);
       if (sd > 0) (aR = k5.a), (eR = k5.e), (sz = k5.ab);
       else (aL = k5.a), (eL = k5.e), (zL = k5.ab);
     }
@@ -1437,7 +1442,7 @@ export function pose3(p: Player) {
         // big switches blend longer, so the catch-up never whips
         // (a state change uses that state's own blend time - snappy into a shot; inside a state, big jumps blend
         // longer so the catch-up never whips, except during shots and moves where timing is everything)
-        const quick = st === ST.shot || st === ST.move,
+        const quick = (st === ST.shot || st === ST.move) && !hd, // (the head never snaps: a tip-in's look from the ball to the rim)
           big = Math.min(quick ? 0.1 : 0.32, 0.08 + Math.abs(I.x[j]) * (hd ? 0.12 : 0.1));
         I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? 0 : big * 0.75) : big;
         I.b[j] = v;
@@ -1455,6 +1460,42 @@ export function pose3(p: Player) {
   }
   if (mir) o.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
   o.mir = mir ? 1 : 0;
+  // contact: the dribble hand meets the ball at the top of every bounce even while the arm is still blending out of
+  // another pose (a catch, a triple threat) - post-blend, weighted by how close the ball is to the hand
+  {
+    // (each hand's contact weight eases in and out over ~60 ms, so the correction itself never pops)
+    const on = !process.env.NOCT && PRO && has && md === "i" && !p.postA && !hold && inb <= 0 && B.mode === "held" && B.dtop != null && !(p.pT > 0);
+    const bz = on ? Math.max(B.z, B.dtop - 8) : 0,
+      right = on ? armIK(p, o.cr, B.x, B.y, bz, 0, 0.6).right : false,
+      // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
+      wt = on ? clamp((B.z - (B.dtop - 16)) / 8, 0, 1) * clamp((B.dtop + 12 - B.z) / 6, 0, 1) : 0,
+      r = Math.min(1, DT * 16);
+    p.ctR = (p.ctR || 0) + ((on && right ? wt : 0) - (p.ctR || 0)) * r;
+    p.ctL = (p.ctL || 0) + ((on && !right ? wt : 0) - (p.ctL || 0)) * r;
+    // (each arm solves for its own side, so a crossover hands the contact over without either arm snapping)
+    const K = p.ctK || (p.ctK = [0, 0, 0, 0, 0, 0]); // last solution per arm: when contact ends (a pass, a shot) it fades out from there
+    if (p.ctR > 0.01) {
+      if (on) {
+        const k = armIK(p, o.cr, B.x, B.y, bz, 1, 0.6);
+        (K[0] = k.a), (K[1] = k.e), (K[2] = k.ab);
+      }
+      const k = { a: K[0], e: K[1], ab: K[2] },
+        da = wrapPi(k.a - o.aR),
+        w = p.ctR * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1); // (an IK branch flip is not a correction)
+      (o.aR += da * w), (o.eR += (k.e - o.eR) * w), (o.sz += (k.ab - o.sz) * w);
+    }
+    if (p.ctL > 0.01) {
+      if (on) {
+        const k = armIK(p, o.cr, B.x, B.y, bz, -1, 0.6);
+        (K[3] = k.a), (K[4] = k.e), (K[5] = k.ab);
+      }
+      const k = { a: K[3], e: K[4], ab: K[5] },
+        z0 = o.zL ?? o.sz,
+        da = wrapPi(k.a - o.aL),
+        w = p.ctL * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
+      (o.aL += da * w), (o.eL += (k.e - o.eL) * w), (o.zL = z0 + (k.ab - z0) * w);
+    }
+  }
   if (PRO && cfg.PLANT !== 0) plantFeet(p, o, sp);
   if (PRO && cfg.AVOID !== 0) avoidBodies(p, o);
   face(p, st, hyT, hpT);
@@ -1552,7 +1593,8 @@ function plantFeet(p: Player, o: any, sp: number) {
  *  Standing still, the feet stay put and take a shuffle step only when the body has turned or drifted too far.
  *  Hips, torso, arms and the animated foot spread (style) still come from the animation; the pelvis dips when a long
  *  stride needs it; legs use soft IK near full extension. Blended in/out with the locomotion states. */
-const PSK = new Float32Array(60);
+const PSK = new Float32Array(60),
+  LYJ = [3, 5, 6, 7, 9, 10, 11, 13, 15, 17, 19]; // head, knees, ankles, toes, elbows, hands
 type FootS = { st: number; x: number; y: number; z: number; sx: number; sy: number; sz: number; u: number; dur: number; tx: number; ty: number };
 export let SWA = 0.6;
 export const setSWA = (v: number) => (SWA = v);
@@ -1561,7 +1603,7 @@ function stepSolve(p: Player, o: any, sp: number) {
     st = p.anS,
     // (+ the gather of a jumper: the feet stay planted - or take the hop into the clip's stance - while the hips dip)
     gat = md === "c" && st === ST.shot && !p.hk && !isLaySv(p.sv || 0) && !isDunkSv(p.sv || 0),
-    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.air && md === "i") || (st === ST.cel && sp > 25));
+    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 3 || p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.air && md === "i") || (st === ST.cel && sp > 25));
   const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
   S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
   skeleton(p, PSK);
@@ -1571,6 +1613,12 @@ function stepSolve(p: Player, o: any, sp: number) {
     Lm = L1 + L2,
     cf = Math.cos(fv(p)),
     sf = Math.sin(fv(p));
+  // lying on the floor (a dive, knocked down): nothing may sink through it - lift the whole body by the deepest point
+  if (p.actT > 0 && (p.act === 3 || p.act === 4) && p.z < 2) {
+    let m = 0;
+    for (const j of LYJ) m = Math.min(m, PSK[j * 3 + 2]);
+    if (m < 0) o.cr += m / 4; // (cr lowers the root by 4 px per unit)
+  }
   if (S.w < 0.01) {
     S.f.length = 0; // re-seeded from the animated feet next time
     return;
@@ -1586,7 +1634,10 @@ function stepSolve(p: Player, o: any, sp: number) {
   const side = v > 1 ? Math.abs((p.vx / v) * sf - (p.vy / v) * cf) : 0; // 1 = moving straight sideways (a slide)
   // duty factor (slides never leave the floor), eased: a sudden stop or turn must not re-classify a swinging foot
   // (its swing progress would jump back)
-  const dT = Math.min(0.75, 0.62 - 0.27 * spd + 0.22 * side);
+  // (... but a planted foot must stay within the leg's reach while the body travels over it: a fast slide gets a short
+  // hop - both feet briefly off the floor - instead of a stance that stretches the leg 30% past its length)
+  const reachH = Math.sqrt(Math.max(1, (Lm * 0.95) ** 2 - (PSK[14] - 4 * s) ** 2)),
+    dT = Math.min(0.75, 0.62 - 0.27 * spd + 0.22 * side, (1.7 * reachH) / (2 * stepLen(v)));
   S.duty = S.duty == null ? dT : S.duty + (dT - S.duty) * Math.min(1, DT * 4);
   const reg = S.reg === 1 ? (v > 18 ? 1 : 0) : v > 30 ? 1 : 0; // moving / standing, with hysteresis (no flip-flop)
   const duty = reg ? S.duty : 1,
@@ -1650,10 +1701,27 @@ function stepSolve(p: Player, o: any, sp: number) {
           tLeft = ((1 - sw) * (1 - duty) * 2 * stepL) / Math.max(v, 1), // seconds until touchdown
           ahead = duty * stepL * (1 - 0.35 * side); // touch down this far ahead of the hip (the hip passes over it mid-stance); slides take shorter steps
         // (the landing spot is eased: a sudden cut moves it, it doesn't teleport the swinging foot)
-        const tr = p.tread ? 0 : tLeft, // on the studio treadmill the body doesn't travel - the floor does
-          nx = restX + p.vx * tr + ux * ahead,
-          ny = restY + p.vy * tr + uy * ahead,
-          ke = F.fr ? 1 : Math.min(1, DT * 18);
+        const tr = p.tread ? 0 : tLeft; // on the studio treadmill the body doesn't travel - the floor does
+        let nx = restX + p.vx * tr + ux * ahead,
+          ny = restY + p.vy * tr + uy * ahead;
+        {
+          // keep the whole stance within the leg's reach: from touchdown (along = al) to lift-off (al - travel) the
+          // foot stays inside the reach circle around its hip, so a wide slide narrows instead of over-stretching
+          const hX = hx + p.vx * tr,
+            hY = hy + p.vy * tr,
+            R = reachH * 0.92,
+            trv = duty * 2 * stepL;
+          let al = (nx - hX) * ux + (ny - hY) * uy,
+            lt = -(nx - hX) * uy + (ny - hY) * ux;
+          al = Math.min(al, R);
+          if (al - trv < -R) al = trv - R;
+          const am = Math.max(Math.abs(al), Math.abs(al - trv)),
+            lm = Math.sqrt(Math.max(0, R * R - am * am));
+          lt = clamp(lt, -lm, lm);
+          nx = hX + ux * al - uy * lt;
+          ny = hY + uy * al + ux * lt;
+        }
+        const ke = F.fr ? 1 : Math.min(1, DT * 18);
         F.fr = 0;
         F.tx += (nx - F.tx) * ke;
         F.ty += (ny - F.ty) * ke;

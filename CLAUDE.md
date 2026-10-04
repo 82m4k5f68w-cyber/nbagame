@@ -39,6 +39,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Shooting: `step` ('c' charge, 's' shot) -> `launch(p)`. Green window: `win=(.07+rating/100*.05)*(1-.45*contest)`; meter ideal .6 (.45 quick style). Green is at the TOP of the meter. Only greens go in for jumpers; layups/hooks are rating-based. Tempo is per controller (`ctrl.tempo`). Online, the release carries the shooter's own measured meter time (`Input.mt`/`tp`), clamped to the server's view.
 - Contest: `contestOf(p)` (lag-compensated for remote shooters via `ctrl.lag`), locked at release (`p.cw`). Meters: `hud.ts meter(p)` (4 styles, `V.METER`).
 - Aim: `launch` solves a parabola, then (Rapier) pre-simulates with drag+Magnus and corrects range AND sideways error. This is why greens still go in with real physics.
+  The pre-sim must mirror `rapStep` + Rapier step for step (h = 1/120, symplectic Euler, spin decaying with the ball's
+  angular damping .3): with a constant spin it over-predicted Magnus lift and heaves fell short (85% -> 98% on green).
 - Release point: `pose.ts handPos(p)` — analytic forward kinematics that matches the three.js rig exactly (`tests/fk.ts`), so the server/Node sim releases from the same hand as the 3D client.
 - Physics: `bstep` (legacy ball) vs `physics.ts rapInit/rapStep` (Rapier ball, rim = 24 capsules, board, floor, walls). Shots, loose balls and passes (with backspin) fly through Rapier. `rapSyncPlayers`: kinematic torso capsules (`cfg.playerBodies`, on) that only touch a loose/shot ball, never the shooter right after release or passes. Dribble: `dz` push/bounce/catch cycle (hand pushes down, e=.82 floor bounce, cushioned catch at `dribTop` = hip height, lower when guarded) beside the right hand + a critically damped spring for xy; the hand IK waits at the hip (`B.dtop`); the client plays the bounce sound by watching `B.z` (no net events).
 - Net: `NETS/netSim` 16-strand diamond weave, rope constraints, real gravity, 2 sub-steps for fast balls, two-way ball-vs-strand contact (reaction only below the rim, so makes are decided by the iron), rim hits shake the mesh; `tests/net_swish.ts`. 3D draws instanced tube strands, 2D projected strands.
@@ -201,8 +203,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   The 3D client's footIK fades out by `p.stp.w`. tests/footslide.ts A/B: sliding 128 -> ~20 px/s, leg jerk budget 1.9x.
 - Blender restarts read the blender's own last output (`I.last`), never `o[k]` (which carries the stepping IK).
 - Ball in hand (bstep): in 'c'/'s' the sim ball sits at `handPos` (clamped to the arena) - 2D/replays/guests see it in
-  the hand (was 1.7 ft off on a formula). Body spacing (collide): 16 px face to face, up to ~26 shoulder to shoulder
-  (16 + 4 x sideways-ness x build per player). `avoidBodies` (cfg.AVOID): elbows/hands/shoulders inside another
+  the hand (was 1.7 ft off on a formula). Body spacing (collide): 16 px face to face, up to ~28 shoulder to shoulder
+  (16 + 5 x sideways-ness x build per player). `avoidBodies` (cfg.AVOID): elbows/hands/shoulders inside another
   torso capsule (his last skeleton `p.skel`) tuck / bend / twist out, proportional to penetration (tests/overlap.ts).
 
 ## Smart CPU (v4.4)
@@ -227,6 +229,22 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   (mode 'c': rest spots = the clip's own ankles, so the stagger is kept); spin moves turn the whole body with a root
   yaw `p.ry` (`fv(p)` = drawn facing, used by skeleton/handPos/armIK/stepping/rig3d/canvas; fk.ts checks it);
   standing pivots step the foot farthest from its spot; touchdowns that come early settle z/pitch (`F.zo/F.pd`).
+  Reach: the duty factor is capped so the stance travel fits the leg's horizontal reach (fast slides get a short hop),
+  and the landing spot is clamped so the whole stance stays inside the reach circle around its hip; leg IK is soft
+  from 88% of its length (lift-off knee pops). Stance-foot reach error p99 12 -> 3.5 px, leg jerk 2.1x -> 1.3x.
+
+## Contact & polish (v4.5)
+- Held ball (bstep): in triple threat / pump fake / jab / FT routine / inbound the formula spot becomes the hands'
+  TARGET (`B.tgx/tgy/tgz`, `B.tgo`; pose3's two-hand IK aims there) and the ball itself sits between the drawn palms
+  (skeleton joints 15/19 of the last pose). A dribble out of the hands starts from there (`dz`: first push from the
+  ball's height, no 14 px snap for .35 s, `B.fr0`).
+- Dribble contact (end of pose3, post-blend): each arm solves its own-side IK to the ball near the top of the bounce,
+  weights `p.ctR/ctL` eased at 16/s, ignored for IK branch flips (> .8 rad), fading from the last solution `p.ctK`
+  when contact ends. tests/contact.ts.
+- Lying (act 3/4, stepSolve): the root is lifted by the deepest of head/knees/ankles/toes/elbows/hands.
+- Pre-sim aim mirrors Rapier (see Aim). Heads never snap on quick (shot/move) state changes.
+- Pause -> Scouting report (game.ts `scouting()`): both teams' recent shot records, the CPU plan/defense, HOT/COLD/
+  SMOTHERED tags. Spacers avoid spots the ball handler is driving toward (offBall pick, 0.5 s ahead).
 
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
@@ -261,4 +279,4 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and
-badge windows online (rosters are fixed there), commentary is text templates + browser speech, mobile joystick, heaves >45 ft only ~73% on green, Classic has no new features.
+badge windows online (rosters are fixed there), commentary is text templates + browser speech, mobile joystick, Classic has no new features.
