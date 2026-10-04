@@ -378,7 +378,7 @@ export const clutchTime = () => q >= 4 && clock <= Math.max(12, QTRLEN * 0.4) &&
 /** Team state: timeouts left, defense setting, play call, challenge used, current scoring run, momentum (-1..1, + = team 0). */
 export const TS = {
   to: [4, 4],
-  ds: [0, 0], // 0 normal, 1 sag / protect paint, 2 tight / deny, 3 switch everything
+  ds: [0, 0], // 0 normal, 1 sag / protect paint, 2 tight / deny, 3 switch everything, 4 2-3 zone (5v5)
   pc: [0, 0], // 0 auto, 1 pick-and-roll, 2 pindown, 3 flare, 4 isolation
   chal: [1, 1],
   run: [0, 0] as number[], // [team, points] of the current unanswered run
@@ -401,7 +401,7 @@ function scoutNew() {
   return { a: [0, 0, 0], m: [0, 0, 0], c: [0, 0, 0] };
 }
 export const GPN = ["BALANCED", "ATTACK THE PAINT", "MID-RANGE & POST", "LET IT FLY", "FEED THE HOT HAND"];
-export const DSN = ["NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING"],
+export const DSN = ["NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING", "2-3 ZONE"],
   PCN = ["AUTO", "PICK & ROLL", "PINDOWN", "FLARE", "ISOLATION"];
 function resetRules() {
   TS.to = [4, 4];
@@ -508,7 +508,9 @@ export function gamePlan(t: number) {
   if (++TS.gpT[t] < 4) return;
   // defense reads the other side's sheet: they live at the rim -> sag; they're raining threes -> run them off the line
   const o = TS.sk[1 - t],
-    ds = pps(o, 2) > 1.2 && o.a[2] >= 4 ? 2 : pps(o, 0) > 1.35 && o.a[0] >= 4 ? 1 : TS.ds[t] === 3 ? 3 : 0;
+    rimHot = pps(o, 0) > 1.35 && o.a[0] >= 4,
+    // they live at the rim and can't shoot it: pack the paint with a zone (5v5), or at least sag
+    ds = pps(o, 2) > 1.2 && o.a[2] >= 4 ? 2 : rimHot ? (cfg.NP === 5 && pps(o, 2) < 1.0 ? 4 : 1) : TS.ds[t] === 3 ? 3 : 0;
   if (ds !== TS.ds[t]) {
     TS.ds[t] = ds;
     if (ds) txt(cl[t].toUpperCase() + " DEFENSE: " + DSN[ds], 480, 170, "#9fe7ff");
@@ -2011,7 +2013,9 @@ export function ai(p: Player, dt: number) {
     const nd = P[nearest(1 - t, p.x, p.y)];
     mv(p, x + (p.x - nd.x) * 0.35, s[1] + Math.sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
   } else if (B.owner) {
-    const o = p.manT > 0 && p.man != null ? P[p.man] : guardOf(p),
+    const zone = TS.ds[t] === 4 && NP === 5 && !cfg.HALF,
+      zo = zone ? zoneMan(p, t, dh) : null,
+      o = zo || (p.manT > 0 && p.man != null ? P[p.man] : guardOf(p)),
       ds = TS.ds[t],
       od = Math.hypot(dh - o.x, HY - o.y),
       cpu = !CT.some((c) => c.tm === t),
@@ -2039,7 +2043,20 @@ export function ai(p: Player, dt: number) {
       hh = Math.hypot(dh - hb.x, HY - hb.y);
     if (hh < 140 && p.k !== hb.k && nearest(t, hb.x, hb.y, t * NP + hb.k) === t * NP + p.k)
       mv(p, hb.x + (dh - hb.x) * 0.35, hb.y + (HY - hb.y) * 0.35, 1.1);
-    else {
+    else if (zone) {
+      // zone: guard whoever is in your area, but never leave it (the spot leans toward the ball)
+      let tx = ZS.x,
+        ty = ZS.y;
+      if (zo) {
+        const cx = o.x + ((dh - o.x) / l) * Math.min(ou, 30),
+          cy = o.y + ((HY - o.y) / l) * Math.min(ou, 30),
+          d = Math.hypot(cx - ZS.x, cy - ZS.y),
+          k = d > 75 ? 75 / d : 1;
+        tx = ZS.x + (cx - ZS.x) * k;
+        ty = ZS.y + (cy - ZS.y) * k;
+      }
+      mv(p, tx, ty, 0.95);
+    } else {
       let tx = o.x + ((dh - o.x) / l) * ou,
         ty = o.y + ((HY - o.y) / l) * ou;
       if (dh > 470 ? B.x < 470 : B.x > 470) tx = dh > 470 ? Math.max(tx, 455) : Math.min(tx, 485);
@@ -2057,6 +2074,34 @@ export function ai(p: Player, dt: number) {
   }
 }
 
+/** 2-3 zone: the two smallest guard the top, the next two the blocks, the tallest the middle. Each defender's spot
+ *  (ZS) shifts toward the ball; he takes the opponent nearest his spot inside his area (the ball handler first), or
+ *  nobody (he holds his spot). */
+const ZS = { x: 0, y: 0 },
+  ZR = [0, 1, 2, 3, 4];
+function zoneMan(p: Player, t: number, dh: number) {
+  const NP = cfg.NP,
+    dir = dh > 470 ? -1 : 1;
+  for (let k = 0; k < NP; k++) ZR[k] = k;
+  ZR.sort((a, b) => P[t * NP + a].ht - P[t * NP + b].ht || a - b);
+  const r = ZR.indexOf(p.k),
+    side = r === 0 || r === 2 ? -1 : 1,
+    by = clamp(B.y - HY, -160, 160),
+    bx = Math.abs(B.x - dh);
+  // spots: tops ~17 ft out at the elbows, blocks ~4 ft out wide of the lane, the middle under the rim
+  const fx = r < 2 ? 165 : r < 4 ? 40 : 30,
+    fy = r < 2 ? 62 * side : r < 4 ? 72 * side : 0;
+  ZS.x = dh + dir * (fx + (r < 2 ? clamp(bx - 200, -40, 60) * 0.3 : 0));
+  ZS.y = HY + fy + by * (r < 2 ? 0.35 : 0.25);
+  let best: Player | null = null,
+    bd = r < 2 ? 120 : 95;
+  for (const q of P) {
+    if (q.tm === t || q.off) continue;
+    const d = Math.hypot(q.x - ZS.x, q.y - ZS.y) - (B.owner === q ? 40 : 0);
+    if (d < bd) (bd = d), (best = q);
+  }
+  return best;
+}
 /** Step length (px) at a ground speed (px/s): short walking steps up to long sprinting strides (~5.5 ft). */
 export const stepLen = (sv: number) => 24 + Math.min(300, sv) * 0.11;
 /** Signature celebration after a big bucket (slot 0 three, 1 dunk/and-one, 2 clutch). Arms and torso only: the

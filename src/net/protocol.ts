@@ -60,7 +60,7 @@ export function encodeSnap(k: number): number[] {
       G.TS.to[0],
       G.TS.to[1],
       r(G.TS.mom * 100),
-      G.TS.ds[0] + G.TS.ds[1] * 4 + G.TS.pc[0] * 16 + G.TS.pc[1] * 128,
+      G.TS.ds[0] + G.TS.ds[1] * 8 + G.TS.pc[0] * 64 + G.TS.pc[1] * 512,
       G.TS.clutch,
     ];
   for (const p of P)
@@ -147,10 +147,10 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
   G.TS.to[0] = a[35];
   G.TS.to[1] = a[36];
   G.TS.mom = L(37) / 100;
-  G.TS.ds[0] = a[38] & 3;
-  G.TS.ds[1] = (a[38] >> 2) & 3;
-  G.TS.pc[0] = (a[38] >> 4) & 7;
-  G.TS.pc[1] = (a[38] >> 7) & 7;
+  G.TS.ds[0] = a[38] & 7;
+  G.TS.ds[1] = (a[38] >> 3) & 7;
+  G.TS.pc[0] = (a[38] >> 6) & 7;
+  G.TS.pc[1] = (a[38] >> 9) & 7;
   G.TS.clutch = a[39];
   G.OFFS[0] = at(a[18]);
   G.OFFS[1] = at(a[19]);

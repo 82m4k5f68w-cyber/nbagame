@@ -1561,7 +1561,7 @@ function stepSolve(p: Player, o: any, sp: number) {
     st = p.anS,
     // (+ the gather of a jumper: the feet stay planted - or take the hop into the clip's stance - while the hips dip)
     gat = md === "c" && st === ST.shot && !p.hk && !isLaySv(p.sv || 0) && !isDunkSv(p.sv || 0),
-    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.cel && sp > 25));
+    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.air && md === "i") || (st === ST.cel && sp > 25));
   const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
   S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
   skeleton(p, PSK);

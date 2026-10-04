@@ -62,6 +62,16 @@ import { rapInit } from "../src/core/physics";
   G.gamePlan(0);
   ok(G.TS.gp[1] === 3 && G.TS.pc[1] === 3, "team walled off at the rim lets it fly (gp " + G.TS.gp[1] + ")");
   ok(G.TS.ds[0] === 2, "opponent raining threes -> tight / deny defense (ds " + G.TS.ds[0] + ")");
+  // the other side scores at will at the rim and can't shoot: 2-3 zone
+  fresh();
+  {
+    const t0 = G.P.filter((p) => p.tm === 0);
+    for (let k = 0; k < 8; k++) G.scout(t0[k % 5], 40, k % 4 !== 0, 0.3);
+    for (let k = 0; k < 5; k++) G.scout(t0[k % 5], 260, false, 0.3);
+    G.TS.gpT[1] = 10;
+    G.gamePlan(1);
+    ok(G.TS.ds[1] === 4, "opponent living at the rim, cold from three -> 2-3 zone (ds " + G.TS.ds[1] + ")");
+  }
   // a hot scorer draws the best defender
   fresh();
   {
