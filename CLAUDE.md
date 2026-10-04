@@ -203,7 +203,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Ball in hand (bstep): in 'c'/'s' the sim ball sits at `handPos` (clamped to the arena) - 2D/replays/guests see it in
   the hand (was 1.7 ft off on a formula). Body spacing (collide): 16 px face to face, up to ~26 shoulder to shoulder
   (16 + 4 x sideways-ness x build per player). `avoidBodies` (cfg.AVOID): elbows/hands/shoulders inside another
-  torso capsule (his last skeleton `p._sk`) tuck / bend / twist out, proportional to penetration (tests/overlap.ts).
+  torso capsule (his last skeleton `p.skel`) tuck / bend / twist out, proportional to penetration (tests/overlap.ts).
 
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
@@ -227,6 +227,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - `wrapPi` is for angles only: the crouch channel `cr` (index 9) is a distance (a 6.3 crouch change read as ~0).
 - Post-blend IK that writes into `o[k]` leaks into the next blend restart unless restarts use `I.last`.
 - Measure jerk with teleports excluded (setup after a basket moves everyone: a cut, not a pop).
+- The claude.ai artifact publish check misread a build as a "PR review page" (refused: "too large for a review
+  page") because of one minified function (avoidBodies: a nested array-literal table + array destructuring). Bisect
+  by commit / by disabling functions and publishing variants; rewriting it with typed arrays fixed it.
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 
