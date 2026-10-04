@@ -1,7 +1,7 @@
 // Pro Play pose solver: joint angles per player (p.q), shot clips, and analytic hand forward kinematics.
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
 import { CL, CK, isLaySv, isDunkSv } from "./data";
-import { MC_RAW, MC_CH } from "./mocap";
+import { MC_RAW, MC_CH, MC_JUMP } from "./mocap";
 
 // ---- motion capture base layer (CMU mocap retargeted by scripts/mocap/retarget.ts) ----
 const MCC: Record<string, { n: number; v: Float32Array; mean: Float32Array; speed: number; stride: number; dir: number }> = {};
@@ -58,7 +58,7 @@ function mcBlend(a: string, b: string | null, u: number, ph: number, amp: number
     for (let j = 0; j < MO.length; j++) MO[j] += (MT[j] - MO[j]) * u;
   }
 }
-import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, g as GRAV, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -154,6 +154,20 @@ export function pose3(p: Player) {
     kR = 0.7;
     toe = 0.45;
     st = ST.air;
+    if (PRO && sp < 160) {
+      // vertical jump (rebound, block, contest): captured legs and trunk (CMU 16_03), timed by where he is in his
+      // flight - takeoff extension, the tuck at the top, legs reaching for the floor before touchdown
+      const vz0 = Math.sqrt(Math.max(1, (p.vz || 0) * (p.vz || 0) + 2 * GRAV * p.z)),
+        u = clamp((1 - (p.vz || 0) / vz0) / 2, 0, 1),
+        w = Math.min(1, (160 - sp) / 80);
+      tL += (smp(MC_JUMP.tL, u)! - tL) * w;
+      tR += (smp(MC_JUMP.tR, u)! - tR) * w;
+      kL += (smp(MC_JUMP.kL, u)! - kL) * w;
+      kR += (smp(MC_JUMP.kR, u)! - kR) * w;
+      ln += (smp(MC_JUMP.ln, u)! - ln) * w;
+      cx += (smp(MC_JUMP.cx, u)! - cx) * w;
+      toe = 0.45 * (1 - w) + 0.6 * w * Math.min(1, u * 6, (1 - u) * 3); // pointed off the floor, flexing to land
+    }
   }
   if (md === "c" || md === "s") {
     st = ST.shot;

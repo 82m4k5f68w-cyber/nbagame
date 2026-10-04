@@ -114,11 +114,26 @@ export const ANIMS: [string, Setup][] = [
       stand(p);
       const k = t % 1.2;
       p.z = Math.max(0, Math.sin((k / 0.8) * Math.PI) * 30) * (k < 0.8 ? 1 : 0);
+      p.vz = k < 0.8 ? ((30 * Math.PI) / 0.8) * Math.cos((k / 0.8) * Math.PI) : 0;
       B.owner = null;
       B.mode = "air";
       B.x = p.x + Math.cos(p.f) * 10 + 6;
       B.y = p.y + Math.sin(p.f) * 10;
       B.z = 112 - k * 10;
+    },
+  ],
+  [
+    "Vertical jump (motion capture)",
+    (p, t) => {
+      stand(p);
+      const k = (t % 1.5) - 0.3; // airborne for 0.94 s (vz 150 px/s, g 320)
+      p.z = k > 0 && k < 0.94 ? 150 * k - 160 * k * k : 0;
+      p.vz = k > 0 && k < 0.94 ? 150 - 320 * k : 0;
+      B.owner = null;
+      B.mode = "air";
+      B.x = p.x + Math.cos(p.f) * 400;
+      B.y = p.y + Math.sin(p.f) * 400;
+      B.z = 60;
     },
   ],
   [
