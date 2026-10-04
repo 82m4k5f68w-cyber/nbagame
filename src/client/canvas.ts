@@ -2,7 +2,7 @@
 // Canvas renderers: the 2D broadcast-style court (2D modes) and the software-3D fallback used when WebGL is unavailable.
 // They draw from the shared sim state onto the HUD canvas context.
 import { P, B, T, pos, PC, HXs, HY, RR, W3, isH, NETS, cfg } from "../core/sim";
-import { skeleton } from "../core/pose";
+import { skeleton, fv } from "../core/pose";
 import { pr } from "./view";
 let X: CanvasRenderingContext2D = null as any;
 export const setCanvasCtx = (x: CanvasRenderingContext2D) => (X = x);
@@ -492,7 +492,7 @@ export function scene3c() {
 export function segs3c(p: any, out: any[]) {
   const q = p.q,
     S = p.ht / 6.4,
-    th = Math.PI / 2 - p.f,
+    th = Math.PI / 2 - fv(p),
     cs = Math.cos(th),
     sn = Math.sin(th),
     w = W3(p.x, p.y, p.z),

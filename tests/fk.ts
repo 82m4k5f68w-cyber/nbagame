@@ -12,7 +12,7 @@ for (let n = 0; n < 300; n++) {
   for (const k of QK) q[k] = r() / 2;
   q.cr = Math.random();
   q.mir = n % 2; // every other pose: a lefty's mirrored shot (handPos follows the left hand)
-  const p: any = { n: "Test " + n, x: 100 + Math.random() * 700, y: 50 + Math.random() * 400, z: Math.random() * 40, f: r(), ht: 6 + Math.random() * 1.4, bk: 0.85 + Math.random() * 0.5, col: "#552583", skin: "#8d5524", hr: 1, bd: 0, no: 23, q };
+  const p: any = { n: "Test " + n, x: 100 + Math.random() * 700, y: 50 + Math.random() * 400, z: Math.random() * 40, f: r(), ht: 6 + Math.random() * 1.4, bk: 0.85 + Math.random() * 0.5, col: "#552583", skin: "#8d5524", hr: 1, bd: 0, no: 23, q, ry: n % 3 ? 0 : r() }; // (every third: mid-spin root yaw)
   // the REAL 3D rig (same code the browser draws), posed with applyPose
   const m = makeRig(p, null as any);
   m.G.scale.setScalar(p.ht / 6.4);
@@ -40,7 +40,7 @@ import { skeleton } from "../src/core/pose";
     const r = () => (Math.random() - 0.5) * 3;
     const q: any = { cr: 0.3, hz: 0.1 };
     for (const k of QK) if (q[k] == null) q[k] = r() / 2;
-    const p: any = { x: 400, y: 250, z: 10, f: r(), ht: 6.6, bk: 1.1, q };
+    const p: any = { x: 400, y: 250, z: 10, f: r(), ht: 6.6, bk: 1.1, q, ry: n % 3 ? 0 : r() };
     skeleton(p, out);
     const h = handPos(p, [0, -0.32, 0.05])!;
     worst2 = Math.max(worst2, Math.hypot(out[57] - h[0], out[58] - h[1], out[59] - h[2]));

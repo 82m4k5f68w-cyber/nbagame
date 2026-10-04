@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { W3, cl } from "../core/sim";
-import { RIG, hipAb } from "../core/pose";
+import { RIG, hipAb, fv } from "../core/pose";
 
 const L1 = RIG.L1, // thigh (hip -> knee pivot)
   L2 = RIG.L2; // shin (knee -> ankle)
@@ -422,7 +422,7 @@ export function applyPose(m: Rig, p: any) {
   if (!q) return;
   const w = W3(p.x, p.y, p.z);
   m.G.position.set(w[0], w[1] - q.cr * 0.4, w[2]);
-  m.G.rotation.y = Math.PI / 2 - p.f;
+  m.G.rotation.y = Math.PI / 2 - fv(p);
   m.tl.rotation.set(-q.tL, 0, hipAb(q, -1));
   m.tr.rotation.set(-q.tR, 0, hipAb(q, 1));
   m.kl.rotation.x = q.kL;

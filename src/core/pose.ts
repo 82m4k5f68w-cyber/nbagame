@@ -106,8 +106,12 @@ export function clip(p: Player, k: number) {
   return o;
 }
 
+/** Drawn facing: the sim's facing plus the root yaw of a spin move (p.ry, 0 otherwise). Every FK / IK / renderer
+ *  that places the body uses this, so they all agree. */
+export const fv = (p: Player) => p.f + (p.ry || 0);
 /** Write this tick's joint angles into p.q (in place, smoothed when Pro Play is on). */
 export function pose3(p: Player) {
+  if (!(p.mvT > 0 && p.mvk === 2)) p.ry = 0;
   const PRO = cfg.PRO,
     has = B.owner === p,
     air = p.z > 2,
@@ -539,7 +543,10 @@ export function pose3(p: Player) {
     const e = p.mvE || 0,
       sd = p.mvS || 1;
     if (p.mvk === 2) {
-      ty += (e / 0.45) * 6.283 * sd;
+      // spin: the whole body turns (root yaw p.ry, drawn by every renderer and solved by the stepping: the planted
+      // foot is the pivot, the free leg swings round); eased - it winds up, whips through, settles
+      const u = clamp(e / 0.45, 0, 1);
+      p.ry = u * u * (3 - 2 * u) * 6.283 * sd;
       ln = 0.25;
       cr = 0.2;
     } else if (p.mvk === 1) {
@@ -1476,8 +1483,8 @@ function avoidBodies(p: Player, o: any) {
   const sk = p.skel || (p.skel = new Float32Array(60));
   skeleton(p, AV);
   const s = p.ht / 6.4,
-    cf = Math.cos(p.f),
-    sf = Math.sin(p.f),
+    cf = Math.cos(fv(p)),
+    sf = Math.sin(fv(p)),
     ua = RIG.ua * s * 10,
     sw = RIG.shX * p.bk * s * 10;
   let dsz = 0,
@@ -1552,7 +1559,7 @@ export const setSWA = (v: number) => (SWA = v);
 function stepSolve(p: Player, o: any, sp: number) {
   const md = p.mode,
     st = p.anS,
-    ok = p.z < 1 && md === "i" && !(p.mvT > 0 && p.mvk === 2) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || (st === ST.cel && sp > 25));
+    ok = p.z < 1 && md === "i" && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || (st === ST.cel && sp > 25));
   const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
   S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
   skeleton(p, PSK);
@@ -1560,8 +1567,8 @@ function stepSolve(p: Player, o: any, sp: number) {
     L1 = RIG.L1 * s * 10,
     L2 = RIG.L2 * s * 10,
     Lm = L1 + L2,
-    cf = Math.cos(p.f),
-    sf = Math.sin(p.f);
+    cf = Math.cos(fv(p)),
+    sf = Math.sin(fv(p));
   if (S.w < 0.01) {
     S.f.length = 0; // re-seeded from the animated feet next time
     return;
@@ -1850,7 +1857,7 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
   const S2 = p.ht / 6.4,
     w = W3(p.x, p.y, p.z),
     b = W3(x, y, z),
-    th = Math.PI / 2 - p.f,
+    th = Math.PI / 2 - fv(p),
     X1 = b[0] - w[0],
     Y1 = b[1] - (w[1] - cr * 0.4),
     Z1 = b[2] - w[2],
@@ -1955,7 +1962,7 @@ export function handPos(p: Player, pt: V = [0, -0.62, 0.1]): number[] | null {
   v = add(v, [0, RIG.hip, 0]);
   const s = p.ht / 6.4;
   v = [v[0] * s, v[1] * s, v[2] * s];
-  v = ry(v, Math.PI / 2 - p.f);
+  v = ry(v, Math.PI / 2 - fv(p));
   const w = W3(p.x, p.y, p.z);
   v = add(v, [w[0], w[1] - q.cr * 0.4, w[2]]);
   return [v[0] * 10 + 470, v[2] * 10 + 250, v[1] * 10];
@@ -2001,7 +2008,7 @@ export function skeleton(p: Player, out: Float32Array) {
     s = p.ht / 6.4,
     k = p.bk,
     w = W3(p.x, p.y, p.z);
-  const RG = rot(1, Math.PI / 2 - p.f, new Float64Array(9));
+  const RG = rot(1, Math.PI / 2 - fv(p), new Float64Array(9));
   for (let i = 0; i < 9; i++) RG[i] *= s;
   const G: Fr = { R: RG, t: [w[0], w[1] - (q.cr || 0) * 0.4, w[2]] };
   const bd = child(G, [0, RIG.hip, 0], euler(q.ln || 0, q.ty || 0, q.rz || 0, "YXZ", new Float64Array(9))),
