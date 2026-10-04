@@ -200,6 +200,10 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   keeps planted feet in reach, defenders sit 3 px lower. Studio treadmill: `p.tread` moves the floor instead.
   The 3D client's footIK fades out by `p.stp.w`. tests/footslide.ts A/B: sliding 128 -> ~20 px/s, leg jerk budget 2.2x.
 - Blender restarts read the blender's own last output (`I.last`), never `o[k]` (which carries the stepping IK).
+- Ball in hand (bstep): in 'c'/'s' the sim ball sits at `handPos` (clamped to the arena) - 2D/replays/guests see it in
+  the hand (was 1.7 ft off on a formula). Body spacing (collide): 16 px face to face, up to ~26 shoulder to shoulder
+  (16 + 4 x sideways-ness x build per player). `avoidBodies` (cfg.AVOID): elbows/hands/shoulders inside another
+  torso capsule (his last skeleton `p._sk`) tuck / bend / twist out, proportional to penetration (tests/overlap.ts).
 
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.

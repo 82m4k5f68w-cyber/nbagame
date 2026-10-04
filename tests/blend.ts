@@ -7,7 +7,7 @@ const W = (a: number) => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
 function run(inz: number) {
   let s = 12345;
   Math.random = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
-  Object.assign(G.cfg, { NP: 5, physics: "rapier", hand: true, MYM: 0, PRO: 1, INZ: inz, PLANT: 0 }); // blending alone (foot placement has its own test)
+  Object.assign(G.cfg, { NP: 5, physics: "rapier", hand: true, MYM: 0, PRO: 1, INZ: inz, PLANT: 0, AVOID: 0 }); // blending alone (placement and avoidance have their own tests)
   G.cfg.input = () => ({ dx: 0, dy: 0 });
   G.setCtrls([]);
   G.start(0); G.setup(0); G.setInb(0);

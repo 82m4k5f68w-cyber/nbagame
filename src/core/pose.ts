@@ -1449,7 +1449,83 @@ export function pose3(p: Player) {
   if (mir) o.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
   o.mir = mir ? 1 : 0;
   if (PRO && cfg.PLANT !== 0) plantFeet(p, o, sp);
+  if (PRO && cfg.AVOID !== 0) avoidBodies(p, o);
   face(p, st, hyT, hpT);
+}
+/** Body avoidance: an elbow, hand or shoulder that ends up inside a nearby player's torso (capsule pelvis -> neck,
+ *  from his last skeleton) is moved out by the pose, not by the physics: a sideways hit tucks the arm in (less
+ *  abduction), a hit in front bends the elbow and drops the arm, a shoulder hit twists the chest to slip past.
+ *  Visual only (no gameplay effect); intended contact (hand on the hip, box-outs) ends at the surface. */
+const AV = new Float32Array(60);
+function segDist(px: number, py: number, pz: number, s: Float32Array, a: number, b: number) {
+  const ax = s[a * 3], ay = s[a * 3 + 1], az = s[a * 3 + 2], bx = s[b * 3], by = s[b * 3 + 1], bz = s[b * 3 + 2];
+  const vx = bx - ax, vy = by - ay, vz = bz - az, L2 = vx * vx + vy * vy + vz * vz || 1;
+  const u = clamp(((px - ax) * vx + (py - ay) * vy + (pz - az) * vz) / L2, 0, 1);
+  const qx = ax + vx * u - px, qy = ay + vy * u - py, qz = az + vz * u - pz;
+  return [Math.hypot(qx, qy, qz), -qx, -qy] as const; // distance, and the push-out direction (xy, from the axis)
+}
+function avoidBodies(p: Player, o: any) {
+  const sk = p._sk || (p._sk = new Float32Array(60));
+  skeleton(p, AV);
+  const s = p.ht / 6.4,
+    cf = Math.cos(p.f),
+    sf = Math.sin(p.f),
+    ua = RIG.ua * s * 10,
+    sw = RIG.shX * p.bk * s * 10;
+  let dsz = 0,
+    dzL = 0,
+    daR = 0,
+    daL = 0,
+    deR = 0,
+    deL = 0,
+    dcy = 0;
+  for (const q of P) {
+    if (q === p || q.off || !q._skOk || Math.hypot(q.x - p.x, q.y - p.y) > 32) continue;
+    const R0 = 4.8 * (q.ht / 6.4) * Math.min(1.15, q.bk);
+    // joints: 12/16 shoulders, 13/17 elbows, 15/19 hands; torso capsule = pelvis (0) .. neck (2)
+    for (const [j, r, side, part] of [
+      [13, 1.7, 1, 1],
+      [17, 1.7, -1, 1],
+      [15, 1.3, 1, 2],
+      [19, 1.3, -1, 2],
+      [12, 2.6, 1, 0],
+      [16, 2.6, -1, 0],
+    ] as const) {
+      const [d, nx, ny] = segDist(AV[j * 3], AV[j * 3 + 1], AV[j * 3 + 2], q._sk, 0, 2),
+        pen = R0 + r * s - d;
+      if (pen <= 0) continue;
+      const nn = Math.hypot(nx, ny) || 1,
+        fw = (nx * cf + ny * sf) / nn, // + = push the part forward (the other body is behind it)
+        lat = (nx * sf - ny * cf) / nn, // + = push toward the body's right
+        left = side === 1; // joint 13/15/12 are the LEFT arm (skeleton order: left first)
+      if (part === 0) {
+        dcy += -fw * (pen / sw) * (left ? -1 : 1) * 0.8; // twist the chest so that shoulder slips past
+        continue;
+      }
+      const k = Math.min(0.6, (pen / ua) * 3);
+      // sideways: tuck the arm in (a push toward the body's centre line reduces abduction)
+      const inward = Math.max(0, left ? lat : -lat); // + = the push points inward for this arm
+      left ? (dzL -= k * 1.6 * inward) : (dsz -= k * 1.6 * inward);
+      // in front of him: bend the elbow, drop the arm a little; behind: raise it forward
+      const bk = Math.max(0, -fw),
+        fr = Math.max(0, fw);
+      left ? ((deL += k * 1.8 * bk), (daL += k * 0.8 * (fr - bk))) : ((deR += k * 1.8 * bk), (daR += k * 0.8 * (fr - bk)));
+    }
+  }
+  // (proportional to the penetration, which grows and shrinks continuously: contact starts and ends smoothly)
+  if (dsz || dzL || daR || daL || deR || deL || dcy) {
+    const z0 = o.zL ?? o.sz;
+    o.sz += clamp(dsz, -0.7, 0);
+    o.zL = z0 + clamp(dzL, -0.7, 0);
+    o.aR += clamp(daR, -0.6, 0.6);
+    o.aL += clamp(daL, -0.6, 0.6);
+    o.eR = Math.min(2.6, o.eR + clamp(deR, 0, 1));
+    o.eL = Math.min(2.6, o.eL + clamp(deL, 0, 1));
+    o.cy = (o.cy || 0) + clamp(dcy, -0.5, 0.5);
+    skeleton(p, AV);
+  }
+  sk.set(AV);
+  p._skOk = 1;
 }
 /** Foot placement in the core (so the 2D view, replays, the server skeleton and the 3D rig all agree). Runs after
  *  blending, on the drawn pose; the 3D client's footIK then only refines what is left. */

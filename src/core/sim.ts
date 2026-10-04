@@ -57,6 +57,7 @@ export interface Ctrl {
 export const cfg = {
   NP: 5,
   PRO: 1,
+  AVOID: 1, // arms/shoulders kept out of other players' torsos in the pose (0 = off, for A/B tests)
   PLANT: 1, // stance feet pinned to the floor in the core pose (0 = off, for A/B tests)
   INZ: 1, // inertialized animation blending (0 = the old exponential smoothing, for A/B tests)
   physics: "rapier" as "rapier" | "legacy",
@@ -2015,6 +2016,12 @@ export function bstep(dt: number) {
               ? heldZ(o)
               : dz(o, dt);
     if (heldBall(o)) B.dho = null; // the dribble starts fresh from the hand when he puts it on the floor
+    // gather and shot: the ball sits in the shooting hand's palm (the same FK the release uses), so the 2D view,
+    // replays and guests see it in the hand too - not 1.7 ft away on a formula (the 3D view used to hide that)
+    if ((o.mode === "c" || o.mode === "s") && cfg.hand && cfg.PRO && o.q && o.q.wR != null) {
+      const h = handPos(o);
+      if (h && h[2] > 10) (B.x = clamp(h[0], 6, CW - 6)), (B.y = clamp(h[1], 6, CH - 6)), (B.z = h[2]); // (a finish on the end line can reach past the wall)
+    }
     B.vx = B.vy = B.vz = 0;
     return;
   }
@@ -3066,7 +3073,15 @@ function collide() {
       const dx = A.x - C.x,
         dy = A.y - C.y,
         d = Math.hypot(dx, dy);
-      if (d < 16 && d > 0 && A.z < 8 && C.z < 8) {
+      // bodies are wider than deep: face to face they stop at 16 px (as always), shoulder to shoulder at up to ~26 (the rig's real shoulder width)
+      // (so broad shoulders don't sink into each other) - how sideways each one stands to the other
+      let dm = 16;
+      if (cfg.PRO && d < 26 && d > 0) {
+        const sA = Math.abs(Math.sin(Math.atan2(-dy, -dx) - A.f)),
+          sC = Math.abs(Math.sin(Math.atan2(dy, dx) - C.f));
+        dm = 16 + 4 * (sA * Math.min(1.2, A.bk) + sC * Math.min(1.2, C.bk));
+      }
+      if (d < dm && d > 0 && A.z < 8 && C.z < 8) {
         if (!cfg.PRO) {
           const s = (16 - d) / 2 / d;
           A.x += dx * s;
@@ -3080,7 +3095,7 @@ function collide() {
           mA = A.bk * A.ht * (A.setT > 0 ? 3 : A.postA ? 1.7 : 1),
           mC = C.bk * C.ht * (C.setT > 0 ? 3 : C.postA ? 1.7 : 1),
           rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny,
-          ov = 16 - d;
+          ov = dm - d;
         for (const [sc0, df] of [
           [A, C],
           [C, A],

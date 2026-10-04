@@ -37,3 +37,5 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - rim_wedge.ts — a ball resting on the iron or wedged between the back iron and the glass comes free (both hoops).
 - footslide.ts — procedural stepping A/B (cfg.PLANT 0/1) on a seeded 5v5 stretch: how fast feet on the floor skate
   (must drop >= 80%), and the leg-joint jerk budget (p99.9, teleports excluded).
+- overlap.ts — live-play body overlap (arm / shoulder / chest spheres inside another player) with pose avoidance on vs
+  off: elbows in chests drop >= 40%, shoulder-to-shoulder and shoulder-in-chest stay under their budgets.
