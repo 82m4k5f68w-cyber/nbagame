@@ -1712,7 +1712,7 @@ function stepSolve(p: Player, o: any, sp: number) {
       lt = (F.x - hx) * sf - (F.y - hy) * cf, // + = the body's right
       dz = F.z + (F.st ? F.zo || 0 : 0) - hz,
       vert = Math.hypot(dz, lt),
-      ds = Lm * 0.94,
+      ds = Lm * 0.88, // (soft IK from 88% of reach: the knee angle near full extension changes too fast otherwise - lift-off pops)
       d0 = Math.max(0.35 * Lm, Math.hypot(fw, vert)),
       d = d0 > ds ? ds + (Lm - ds) * (1 - Math.exp(-(d0 - ds) / (Lm - ds))) : d0,
       a1 = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1)),

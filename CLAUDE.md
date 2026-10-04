@@ -198,12 +198,35 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   with speed, lands at zero), low arc for slides; standing: feet stay put, a shuffle step when the body drifted 7 px.
   Regime moving/standing with hysteresis (18/30 px/s); teleports re-seed; pelvis dip (`S.drop`, critically damped)
   keeps planted feet in reach, defenders sit 3 px lower. Studio treadmill: `p.tread` moves the floor instead.
-  The 3D client's footIK fades out by `p.stp.w`. tests/footslide.ts A/B: sliding 128 -> ~20 px/s, leg jerk budget 2.2x.
+  The 3D client's footIK fades out by `p.stp.w`. tests/footslide.ts A/B: sliding 128 -> ~20 px/s, leg jerk budget 1.9x.
 - Blender restarts read the blender's own last output (`I.last`), never `o[k]` (which carries the stepping IK).
 - Ball in hand (bstep): in 'c'/'s' the sim ball sits at `handPos` (clamped to the arena) - 2D/replays/guests see it in
   the hand (was 1.7 ft off on a formula). Body spacing (collide): 16 px face to face, up to ~26 shoulder to shoulder
   (16 + 4 x sideways-ness x build per player). `avoidBodies` (cfg.AVOID): elbows/hands/shoulders inside another
   torso capsule (his last skeleton `p.skel`) tuck / bend / twist out, proportional to penetration (tests/overlap.ts).
+
+## Smart CPU (v4.4)
+- Scouting (sim): `scout(p, D0, made, cx)` from `zoneRes` keeps decayed records per range (0 rim, 1 mid, 2 three):
+  `p.sk` (x.84 per shot) and `TS.sk[t]` (x.93), attempts/makes/contest (`B.cx` = contest at launch). `form(p, r)`.
+- `tendOf(p)` = `baseTend` (TEND / derived) adapted for CPU players in game-like modes (never humans, never All-Star):
+  cold (`p.cold`>=3, recent 3P <25%, recent 3P contest >.6) moves deep -> mid / drive / post, fewer step-backs, more
+  passing; hot (`heat`>=3 or a hot zone) shoots more; vs a zone more threes; then the team game plan tilts it.
+  Returns a shared scratch array (TW): copy it if you keep it. Handler counter: smothered behind the arc (`dd0<22`,
+  or cold and `<40`) -> hesitation into an elbow pull-up or a drive (`a.adj`, once per decision).
+- `gamePlan(t)` (CPU teams, 5v5..2v2, from `setup` every 4+ possessions; `halftimeAdjust()` forces it at the half):
+  `TS.gp` (GPN: balanced / attack the paint / mid-range & post / let it fly / feed the hot hand) with a matching
+  `TS.pc`; points-per-shot `pps()` shrunk toward league priors; back to balanced only after 8 possessions. Defense:
+  `TS.ds` 2 vs a team hot from three, 4 (2-3 zone, 5v5) / 1 vs a rim-only team; best defender swaps onto a hot scorer
+  (`TS.mu`). Man defenders also read their man's `p.sk` (crowd a shooter, sag off a non-shooting driver).
+- 2-3 zone `zoneMan` (ds 4): spots by height rank, shifted toward the ball; take whoever is nearest the spot (ball
+  handler first), never more than 75 px from it. Online PROTO 6 packs ds/pc in 3 bits each (header int 38).
+- Realism (tests/stats.ts): handler patience scales with quarter length (`pf`), catch-and-shoot, CPU jumper odds
+  `base*(1-.25 cx)` (3P open ~34-50% by rating), finishes `i*.86`, fewer blocks / blocking fouls, only the closest
+  man and a big crash the offensive glass. Arcade tempo (~6 s per shot) is intentional.
+- Footwork: stepping also runs in post-ups (wide low base, sit 5), dribble moves, landings and the jumper gather
+  (mode 'c': rest spots = the clip's own ankles, so the stagger is kept); spin moves turn the whole body with a root
+  yaw `p.ry` (`fv(p)` = drawn facing, used by skeleton/handPos/armIK/stepping/rig3d/canvas; fk.ts checks it);
+  standing pivots step the foot farthest from its spot; touchdowns that come early settle z/pitch (`F.zo/F.pd`).
 
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
@@ -226,6 +249,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   ball left across the court (looked like a layup bug).
 - `wrapPi` is for angles only: the crouch channel `cr` (index 9) is a distance (a 6.3 crouch change read as ~0).
 - Post-blend IK that writes into `o[k]` leaks into the next blend restart unless restarts use `I.last`.
+- `G.start()` rebuilds `P`: a test holding a Player from before a restart edits a dead object (look it up again).
+- `pkill -f "tsx tests"` also matches the shell running it (exit 144): run long suites from a snapshot copy
+  (scratchpad/snap with node_modules symlinked) so src edits can't leak into the next test process.
 - Measure jerk with teleports excluded (setup after a basket moves everyone: a cut, not a pop).
 - The claude.ai artifact publish check misread a build as a "PR review page" (refused: "too large for a review
   page") because of one minified function (avoidBodies: a nested array-literal table + array destructuring). Bisect

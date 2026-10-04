@@ -38,4 +38,10 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - footslide.ts — procedural stepping A/B (cfg.PLANT 0/1) on a seeded 5v5 stretch: how fast feet on the floor skate
   (must drop >= 80%), and the leg-joint jerk budget (p99.9, teleports excluded).
 - overlap.ts — live-play body overlap (arm / shoulder / chest spheres inside another player) with pose avoidance on vs
-  off: elbows in chests drop >= 40%, shoulder-to-shoulder and shoulder-in-chest stay under their budgets.
+  off: elbows in chests drop >= 40%, shoulder-to-shoulder and shoulder-in-chest stay under their budgets (pooled
+  over two seeded stretches: a single run is chaotic).
+- adapt.ts — adaptive CPU: a cold / smothered shooter's tendencies move off the three, a hot one's up, humans are never
+  adapted; gamePlan picks attack-the-paint / let-it-fly, tight D vs shooters, a 2-3 zone vs a rim-only team, the best
+  defender onto a hot scorer; no trend from one miss; human teams keep their calls; a few adjustments per full game.
+- stats.ts (not in npm test) — realism report vs NBA averages over N full CPU games (`N=4 QL=180 SEED=1 npx tsx
+  tests/stats.ts`): assist rate, FT rate, FG/3P%, shot mix and contest by range, shot clock at FGA, ORB%, ORtg.

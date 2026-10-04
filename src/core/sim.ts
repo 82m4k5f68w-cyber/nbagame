@@ -513,7 +513,8 @@ export function gamePlan(t: number) {
     ds = pps(o, 2) > 1.2 && o.a[2] >= 4 ? 2 : rimHot ? (cfg.NP === 5 && pps(o, 2) < 1.0 ? 4 : 1) : TS.ds[t] === 3 ? 3 : 0;
   if (ds !== TS.ds[t]) {
     TS.ds[t] = ds;
-    if (ds) txt(cl[t].toUpperCase() + " DEFENSE: " + DSN[ds], 480, 170, "#9fe7ff");
+    if (ds === 4) ban("2-3 ZONE", cl[t].toUpperCase() + " PACK THE PAINT", PC[t]), cm("zone", cl[t]);
+    else if (ds) txt(cl[t].toUpperCase() + " DEFENSE: " + DSN[ds], 480, 170, "#9fe7ff");
   }
   // somebody on the other side is cooking: the best defender takes the assignment
   const mu = TS.mu[t],
@@ -799,6 +800,8 @@ export function tendOf(p: Player): number[] {
     o[5] *= 1 - 0.5 * cut; // fewer step-back threes
   } else if (cut < 0) o[0] *= 1 - cut;
   if (fm.pct >= 0 && fm.n >= 2.5 && fm.pct < 0.25) (o[2] += o[1] * 0.4), (o[1] *= 0.6);
+  // beating a zone: move it and shoot over it, don't drive into the packed paint
+  if (TS.ds[1 - p.tm] === 4) (o[0] = o[0] * 1.3 + (p.c >= 72 ? 0.06 : 0)), (o[1] *= 1.2), (o[2] *= 0.6), (o[4] += 0.15);
   switch (TS.gp[p.tm]) {
     case 1:
       (o[0] *= 0.55), (o[2] *= 1.5), (o[3] *= 1.4);

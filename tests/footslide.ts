@@ -52,7 +52,7 @@ function run(plant: number) {
   const a = run(0), b = run(1);
   console.log("foot slide px/s  off:", a.v.toFixed(1), "|", a.rows, "\n                 on: ", b.v.toFixed(1), "|", b.rows);
   console.log("leg jerk p99.9   off:", a.j.toFixed(3), " on:", b.j.toFixed(3));
-  const ok = b.v < a.v * 0.2 && b.j < a.j * 2.2; // TODO tighten the jerk budget as stepping improves
+  const ok = b.v < a.v * 0.2 && b.j < a.j * 1.9; // (2.2 before the softer leg IK and continuous touchdowns)
   console.log(ok ? "FOOTSLIDE OK" : "FOOTSLIDE FAIL");
   process.exit(ok ? 0 : 1);
 })();

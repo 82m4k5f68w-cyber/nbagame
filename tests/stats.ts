@@ -15,6 +15,7 @@ const NBA = { astr: 63.5, ftr: 0.216, pace: 98.5, pts: 113.8, fga: 89.2, fgp: 47
   const KS: Record<string, number[]> = {}; // kind: [att, made, cw sum]
   let pend: any[] = [];
   let clkSum = 0, clkN = 0, passes = 0;
+  const SPC = { t: 0, crowd: 0, nn: 0, paint: 0 }; // half-court spacing: ticks, ticks with two offensive players < 7 ft, mean nearest-teammate distance, players in the paint
   const T = { min: 0, poss: 0, pts: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ast: 0, reb: 0, orb: 0, blk: 0, teams: 0 };
   for (let g = 0; g < N; g++) {
     G.setQtrLen(QL);
@@ -36,6 +37,24 @@ const NBA = { astr: 63.5, ftr: 0.216, pace: 98.5, pts: 113.8, fga: 89.2, fgp: 47
         return false;
       });
       if (G.B.pp && G.B.pp !== lastPP) (passes++, (lastPP = G.B.pp));
+      {
+        const o = G.B.owner;
+        if (o && G.inb <= 0 && !G.ftq && Math.hypot(G.hoop(o.tm) - o.x, G.HY - o.y) < 300) {
+          const off = G.P.filter((p) => p.tm === o.tm && !p.off);
+          let cr = 0, nn = 0, pt = 0;
+          for (const a of off) {
+            let m = 1e9;
+            for (const b of off) if (a !== b) {
+              const d = Math.hypot(a.x - b.x, a.y - b.y);
+              m = Math.min(m, d);
+              if (d < 70 && !(a.setT > 0) && !(b.setT > 0)) cr = 1;
+            }
+            nn += m;
+            if (Math.abs(G.hoop(o.tm) - a.x) < 190 && Math.abs(a.y - G.HY) < 80) pt++;
+          }
+          SPC.t++, (SPC.crowd += cr), (SPC.nn += nn / off.length), (SPC.paint += pt);
+        }
+      }
       for (const p of G.P) {
         const lc = p.lc || 0;
         if (lc !== (lastLc.get(p) ?? lc)) {
@@ -92,5 +111,6 @@ const NBA = { astr: 63.5, ftr: 0.216, pace: 98.5, pts: 113.8, fga: 89.2, fgp: 47
   console.log(Object.entries(CTX).sort((a, b) => b[1][0] - a[1][0]).map(([k, [n, e]]) => `${k}:${n} (${(e / n).toFixed(1)}s)`).join("  "));
   console.log(Object.entries(KS).map(([k, [n, m, c]]) => `${k}: ${n} att ${((100 * m) / n).toFixed(0)}% cw ${(c / n).toFixed(2)}`).join("  "));
   console.log("STAT", JSON.stringify(G.STAT), "FTA total", T.fta * 2);
+  console.log("spacing: two teammates within 7 ft (no screen)", ((SPC.crowd / SPC.t) * 100).toFixed(0) + "% of half-court ticks; mean nearest teammate", (SPC.nn / SPC.t / 10).toFixed(1), "ft; offensive players in the paint", (SPC.paint / SPC.t).toFixed(2));
   console.log("ORtg (pts/100 poss):", ((100 * T.pts) / T.teams / (T.poss / (T.teams / 2))).toFixed(1), "NBA 114.5");
 })();
