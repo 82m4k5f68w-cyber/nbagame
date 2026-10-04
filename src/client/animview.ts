@@ -20,6 +20,7 @@ const stand = (p: any) => {
   p.postA = 0;
   p.hitT = 0;
   p.frT = 0;
+  p.tread = 0;
   if (p.sg && p.sg._o) p.sg = p.sg._o; // undo the studio's left-handed override
   p.landT = 0;
   p.pT = 0;
@@ -42,6 +43,7 @@ const stand = (p: any) => {
 const move = (p: any, dt: number, v: number, rel: number) => {
   p.vx = Math.cos(p.f + rel) * v;
   p.vy = Math.sin(p.f + rel) * v;
+  p.tread = 1; // the core foot placement moves the floor instead of the body
   p.ph += ((v * dt) / stepLen(v)) * Math.PI;
 };
 const dribble = (p: any, dt: number) => {

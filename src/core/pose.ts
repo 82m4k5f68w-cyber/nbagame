@@ -1418,11 +1418,13 @@ export function pose3(p: Player) {
       // would pop): the body carries on from where it is and eases into the new target
       // (arms move fast on purpose - dribble pushes, shot rises - so they need a bigger break; a joint that is still
       // blending only restarts for a big one, so quick legit motion never trails behind a chain of restarts)
-      const dev = Math.abs(wrapPi(v - (I.pt[j] + I.pv[j] * DT))),
+      const W = j === 9 ? (a: number) => a : wrapPi, // cr (crouch) is a distance, every other channel an angle
+        dev = Math.abs(W(v - (I.pt[j] + I.pv[j] * DT))),
         jump = dev > (hd ? 0.08 : j >= 4 && j <= 8 ? 0.25 : 0.12) * (I.t[j] < I.tf[j] ? 3 : 1);
       if (trans || jump) {
-        const cur = o[k] ?? v;
-        I.x[j] = wrapPi(cur - v); // joint angles are circular: 2 pi apart is the same pose (spins, IK across +-pi)
+        // (from the blender's own last output: o[k] also carries the foot-placement IK, which must not leak in)
+        const cur = I.has ? I.last[j] : o[k] ?? v;
+        I.x[j] = W(cur - v); // joint angles are circular: 2 pi apart is the same pose (spins, IK across +-pi)
         I.v[j] = clamp(I.lv[j] - (jump ? I.pv[j] : 0), -40, 40);
         I.t[j] = 0;
         // big switches blend longer, so the catch-up never whips
@@ -1433,19 +1435,205 @@ export function pose3(p: Player) {
         I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? 0 : big * 0.75) : big;
         I.b[j] = v;
       }
-      I.pv[j] = jump ? 0 : wrapPi(v - I.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
+      I.pv[j] = jump ? 0 : W(v - I.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
       I.pt[j] = v;
-      if (Math.abs(v - I.b[j]) > Math.PI) I.b[j] = v; // the filter never runs the long way round
+      if (j !== 9 && Math.abs(v - I.b[j]) > Math.PI) I.b[j] = v; // the filter never runs the long way round (angles)
       I.b[j] += (v - I.b[j]) * (hd ? Math.min(1, f * 1.6) : f);
       I.t[j] += DT;
       o[k] = I.b[j] + inert(I.x[j], I.v[j], I.tf[j], I.t[j]);
     }
-    I.lv[j] = wrapPi(o[k] - I.last[j]) / DT;
+    I.lv[j] = (j === 9 ? o[k] - I.last[j] : wrapPi(o[k] - I.last[j])) / DT;
     I.last[j] = o[k];
+    I.has = 1;
   }
   if (mir) o.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
   o.mir = mir ? 1 : 0;
+  if (PRO && cfg.PLANT !== 0) plantFeet(p, o, sp);
   face(p, st, hyT, hpT);
+}
+/** Foot placement in the core (so the 2D view, replays, the server skeleton and the 3D rig all agree). Runs after
+ *  blending, on the drawn pose; the 3D client's footIK then only refines what is left. */
+function plantFeet(p: Player, o: any, sp: number) {
+  stepSolve(p, o, sp);
+}
+/** Procedural stepping: in locomotion the feet are placed in WORLD space and the legs are solved to reach them, so a
+ *  foot on the floor cannot slide by construction. The sim's gait phase p.ph (stride-matched: pi = one step of
+ *  stepLen) schedules each leg: stance (pinned where it landed) for a speed-dependent duty factor (walk ~60%, double
+ *  support; sprint ~35%, flight), then a swing arc from the lift-off spot to the landing spot predicted from the body's
+ *  velocity (half a stance ahead of the hip, so the body passes over it mid-stance; works for backpedals and slides).
+ *  Standing still, the feet stay put and take a shuffle step only when the body has turned or drifted too far.
+ *  Hips, torso, arms and the animated foot spread (style) still come from the animation; the pelvis dips when a long
+ *  stride needs it; legs use soft IK near full extension. Blended in/out with the locomotion states. */
+const PSK = new Float32Array(60);
+type FootS = { st: number; x: number; y: number; z: number; sx: number; sy: number; sz: number; u: number; dur: number; tx: number; ty: number };
+function stepSolve(p: Player, o: any, sp: number) {
+  const md = p.mode,
+    st = p.anS,
+    ok = p.z < 1 && md === "i" && !p.postA && !(p.mvT > 0) && !(p.actT > 0 && (p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || (st === ST.cel && sp > 25));
+  const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
+  S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
+  skeleton(p, PSK);
+  const s = p.ht / 6.4,
+    L1 = RIG.L1 * s * 10,
+    L2 = RIG.L2 * s * 10,
+    Lm = L1 + L2,
+    cf = Math.cos(p.f),
+    sf = Math.sin(p.f);
+  if (S.w < 0.01) {
+    S.f.length = 0; // re-seeded from the animated feet next time
+    return;
+  }
+  // treadmill (Animation Studio: the body stays put while "moving"): the floor slides back under the feet
+  if (p.tread) for (const F of S.f) if (F) (F.x -= p.vx * DT), (F.y -= p.vy * DT), (F.sx -= p.vx * DT), (F.sy -= p.vy * DT), (F.tx -= p.vx * DT), (F.ty -= p.vy * DT);
+  // teleported (inbound setup, substitution): re-seed the feet from the animation
+  if (S.px != null && Math.hypot(p.x - S.px, p.y - S.py) > 30) S.f.length = 0;
+  S.px = p.x;
+  S.py = p.y;
+  const v = sp,
+    spd = Math.min(1, v / 250);
+  const side = v > 1 ? Math.abs((p.vx / v) * sf - (p.vy / v) * cf) : 0; // 1 = moving straight sideways (a slide)
+  // duty factor (slides never leave the floor), eased: a sudden stop or turn must not re-classify a swinging foot
+  // (its swing progress would jump back)
+  const dT = Math.min(0.75, 0.62 - 0.27 * spd + 0.22 * side);
+  S.duty = S.duty == null ? dT : S.duty + (dT - S.duty) * Math.min(1, DT * 4);
+  const reg = S.reg === 1 ? (v > 18 ? 1 : 0) : v > 30 ? 1 : 0; // moving / standing, with hysteresis (no flip-flop)
+  const duty = reg ? S.duty : 1,
+    stepL = stepLen(v),
+    ux = v > 1 ? p.vx / v : cf,
+    uy = v > 1 ? p.vy / v : sf;
+  let drop = 0;
+  // regime change (moving <-> standing): a foot that is mid-air finishes its step from where it is now
+  if (reg !== S.reg) {
+    for (const F of S.f) if (F && !F.st) (F.sx = F.x), (F.sy = F.y), (F.sz = F.z), (F.u = 0), (F.dur = 0.15);
+    S.reg = reg;
+  }
+  for (let k = 0; k < 2; k++) {
+    const P0 = k ? 8 : 4,
+      hx = PSK[P0 * 3],
+      hy = PSK[P0 * 3 + 1],
+      hz = PSK[P0 * 3 + 2],
+      ax = PSK[(P0 + 2) * 3],
+      ay = PSK[(P0 + 2) * 3 + 1];
+    let F = S.f[k];
+    if (!F) F = S.f[k] = { st: 1, x: ax, y: ay, z: 0, sx: ax, sy: ay, sz: 0, u: 0, dur: 0.2, tx: ax, ty: ay };
+    // the animated foot's spread from the hip (stance width, slides) = where this foot naturally lands sideways
+    const lat = (ax - hx) * sf - (ay - hy) * cf;
+    const restX = hx + sf * lat,
+      restY = hy - cf * lat;
+    if (reg) {
+      // gait schedule: leg phase 0 = touchdown (L lands at ph = pi/2, R at 3pi/2, where the clips swing them forward)
+      const ph = (((p.ph - (k ? 1.5 : 0.5) * Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI),
+        stance = ph < duty * 2 * Math.PI;
+      if (stance && !F.st) {
+        // touchdown, where the foot is (normally its target: the swing ends there)
+        F.st = 1;
+        F.z = 0;
+      } else if (!stance && F.st) {
+        // lift-off: swing to where the body will be half a stance from now ... plus that half stance ahead
+        F.st = 0;
+        (F.sx = F.x), (F.sy = F.y), (F.sz = F.z);
+        const s0 = (ph - duty * 2 * Math.PI) / ((1 - duty) * 2 * Math.PI);
+        F.sw0 = s0 > 0.1 ? s0 : 0; // a swing started mid-phase (from standing) counts from here; a normal toe-off from 0
+      }
+      if (!F.st) {
+        const sw0 = (ph - duty * 2 * Math.PI) / ((1 - duty) * 2 * Math.PI),
+          sw = clamp((sw0 - (F.sw0 || 0)) / Math.max(0.05, 1 - (F.sw0 || 0)), 0, 1), // 0..1 through the swing
+          tLeft = ((1 - sw) * (1 - duty) * 2 * stepL) / Math.max(v, 1), // seconds until touchdown
+          ahead = duty * stepL * (1 - 0.35 * side); // touch down this far ahead of the hip (the hip passes over it mid-stance); slides take shorter steps
+        // (the landing spot is eased: a sudden cut moves it, it doesn't teleport the swinging foot)
+        const tr = p.tread ? 0 : tLeft, // on the studio treadmill the body doesn't travel - the floor does
+          nx = restX + p.vx * tr + ux * ahead,
+          ny = restY + p.vy * tr + uy * ahead,
+          ke = sw < 0.05 ? 1 : Math.min(1, DT * 18);
+        F.tx += (nx - F.tx) * ke;
+        F.ty += (ny - F.ty) * ke;
+        // swing profile: leaves with some speed (doesn't trail out of the leg's reach behind the body), lands at zero
+        // speed relative to the floor (no stop-dead at touchdown): e(0)=0, e'(0)=a, e(1)=1, e'(1)=0
+        const a = 0.6,
+          e = sw * (a + sw * (3 - 2 * a + sw * (a - 2)));
+        F.x = F.sx + (F.tx - F.sx) * e;
+        F.y = F.sy + (F.ty - F.sy) * e;
+        // arc with no vertical kick at lift-off / touchdown; sideways steps (slides) stay low - a shuffle, not a kick
+        F.z = F.sz * (1 - e) + (2.5 + 9 * spd) * (1 - 0.7 * side) * s * 16 * sw * sw * (1 - sw) * (1 - sw);
+      }
+    } else {
+      // standing: feet stay planted; a shuffle step when the body turned or drifted away from this foot (one at a time)
+      if (F.st && S.last !== k && Math.hypot(F.x - restX, F.y - restY) > 7 * s && !(S.f[1 - k] && !S.f[1 - k].st)) {
+        (F.st = 0), (F.u = 0), (F.dur = 0.2), (F.sx = F.x), (F.sy = F.y), (F.sz = F.z), (S.last = k);
+      }
+      if (!F.st) {
+        F.u = Math.min(1, F.u + DT / F.dur);
+        const e = F.u * F.u * (3 - 2 * F.u);
+        F.x = F.sx + (restX - F.sx) * e;
+        F.y = F.sy + (restY - F.sy) * e;
+        F.z = F.sz * (1 - e) + 3 * s * 16 * F.u * F.u * (1 - F.u) * (1 - F.u);
+        F.tx = restX;
+        F.ty = restY;
+        if (F.u >= 1) (F.st = 1), (F.z = 0), (S.last = -1);
+      }
+    }
+    // pelvis dip so a planted foot stays within reach
+    const fw = (F.x - hx) * cf + (F.y - hy) * sf;
+    if (F.st) drop = Math.max(drop, hz - F.z - Math.sqrt(Math.max(0, (Lm * 0.965) ** 2 - fw * fw)));
+  }
+  // the dip rides a critically damped spring (it would step whenever a foot lands or lifts)
+  {
+    const w = 22;
+    // (+ a defender sits in his stance: now that his feet are really on the floor the knees only bend if the hips drop)
+    const sit = st === ST.def ? 3 * s : 0;
+    S.dv = (S.dv || 0) + (w * w * (clamp(drop + sit, 0, 5 + sit) - S.drop) - 2 * w * (S.dv || 0)) * DT;
+    S.drop = Math.max(0, S.drop + S.dv * DT);
+  }
+  const W = S.w * S.w * (3 - 2 * S.w);
+  o.cr += (S.drop / 4) * W;
+  // solve both legs from the (lowered) hips
+  let abL = 0,
+    abR = 0;
+  for (let k = 0; k < 2; k++) {
+    const F = S.f[k],
+      P0 = k ? 8 : 4,
+      hx = PSK[P0 * 3],
+      hy = PSK[P0 * 3 + 1],
+      hz = PSK[P0 * 3 + 2] - S.drop * W,
+      fw = (F.x - hx) * cf + (F.y - hy) * sf,
+      lt = (F.x - hx) * sf - (F.y - hy) * cf, // + = the body's right
+      dz = F.z - hz,
+      vert = Math.hypot(dz, lt),
+      ds = Lm * 0.94,
+      d0 = Math.max(0.35 * Lm, Math.hypot(fw, vert)),
+      d = d0 > ds ? ds + (Lm - ds) * (1 - Math.exp(-(d0 - ds) / (Lm - ds))) : d0,
+      a1 = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1)),
+      tI = Math.atan2(fw, vert) + a1,
+      kI = Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1)),
+      ab = Math.atan2(lt, Math.max(5, -dz)),
+      tk = k ? "tR" : "tL",
+      kk = k ? "kR" : "kL",
+      fk = k ? "fR" : "fL";
+    o[tk] += (tI - o[tk]) * W;
+    o[kk] += (kI - o[kk]) * W;
+    // feet: flat through stance (rolling onto the toes at the end), toes down in the swing
+    // (continuous: the toe-off roll at the end of stance carries into the swing and fades out before touchdown)
+    let fz = tI - kI;
+    if (reg) {
+      const ph = (((p.ph - (k ? 1.5 : 0.5) * Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI),
+        roll = (0.55 * spd + 0.1) * (1 - 0.8 * side); // slides keep the feet flat
+      if (F.st) {
+        const u = ph / (duty * 2 * Math.PI);
+        fz += Math.max(0, (u - 0.7) / 0.3) ** 2 * roll;
+      } else {
+        const sw0 = (ph - duty * 2 * Math.PI) / ((1 - duty) * 2 * Math.PI),
+          sw = clamp((sw0 - (F.sw0 || 0)) / Math.max(0.05, 1 - (F.sw0 || 0)), 0, 1),
+          r0 = F.sw0 ? 0 : 1; // a swing that started from standing has no toe-off roll to carry
+        fz += r0 * roll * (1 - sw) * (1 - sw) * (1 + 2 * sw); // smooth fade (zero slope at touchdown)
+      }
+    } else if (!F.st) fz += 0.2 * Math.sin(Math.PI * F.u);
+    o[fk] += (fz - o[fk]) * W;
+    if (k) abR = ab;
+    else abL = ab;
+  }
+  // per-leg abduction (rig: abd L = hs - hz, abd R = hs + hz)
+  o.hz += ((abR - abL) / 2 - o.hz) * W;
+  o.hs += ((abR + abL) / 2 - o.hs) * W;
 }
 /** Facial expression (p.fc, drawn by the 3D rig's face bones): what the player feels this tick, eased.
  *  jw jaw open, sm smile (-1 frown .. 1 grin), br brows raised (worried / surprised), an anger (brows knit, lowered),

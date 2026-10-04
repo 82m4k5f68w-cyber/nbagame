@@ -35,3 +35,5 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - street_stalls.ts (not in `npm test`, slow) — seeded Street 3v3 games must keep scoring (no 90 s without a basket);
   `N=40 npx tsx tests/street_stalls.ts`.
 - rim_wedge.ts — a ball resting on the iron or wedged between the back iron and the glass comes free (both hoops).
+- footslide.ts — procedural stepping A/B (cfg.PLANT 0/1) on a seeded 5v5 stretch: how fast feet on the floor skate
+  (must drop >= 80%), and the leg-joint jerk budget (p99.9, teleports excluded).

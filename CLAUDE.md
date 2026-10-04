@@ -188,6 +188,19 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   into the board (tests/rim_wedge.ts). Open shooters call for the ball (`p.callT` shout face); on-ball defenders ride
   the driver's hip (armIK) under 34 px.
 
+## Procedural stepping (v4.3)
+- `pose.ts stepSolve` (end of pose3, after blending; `cfg.PLANT`, on): in locomotion states (idle/run/def/drib/scr/cat/
+  rest, grounded, mode 'i', no move/post) the FEET live in world space (`p.stp.f[k]`: st stance/swing, x/y/z, swing
+  start sx/sy/sz + target tx/ty, sw0) and both legs are solved to reach them (sagittal soft two-bone IK + per-leg hip
+  abduction via hz/hs), so a foot on the floor cannot slide. Schedule from the sim gait phase p.ph (L touches down at
+  ph pi/2, R at 3pi/2); duty factor eased (walk .62 .. sprint .35, +.22 sideways = slides never fly); landing = rest
+  spot (animated foot spread) + body velocity x time-to-touchdown + duty x stepLen ahead; swing profile cubic (leaves
+  with speed, lands at zero), low arc for slides; standing: feet stay put, a shuffle step when the body drifted 7 px.
+  Regime moving/standing with hysteresis (18/30 px/s); teleports re-seed; pelvis dip (`S.drop`, critically damped)
+  keeps planted feet in reach, defenders sit 3 px lower. Studio treadmill: `p.tread` moves the floor instead.
+  The 3D client's footIK fades out by `p.stp.w`. tests/footslide.ts A/B: sliding 128 -> ~20 px/s, leg jerk budget 2.2x.
+- Blender restarts read the blender's own last output (`I.last`), never `o[k]` (which carries the stepping IK).
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.
@@ -207,6 +220,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Never `git stash` while background tests are running: they read the working tree.
 - The Animation Studio doesn't run bstep: a held ball must be placed by the entry, or ball-targeted IK reaches for a
   ball left across the court (looked like a layup bug).
+- `wrapPi` is for angles only: the crouch channel `cr` (index 9) is a distance (a 6.3 crouch change read as ~0).
+- Post-blend IK that writes into `o[k]` leaks into the next blend restart unless restarts use `I.last`.
+- Measure jerk with teleports excluded (setup after a basket moves everyone: a cut, not a pop).
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 

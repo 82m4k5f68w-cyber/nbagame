@@ -57,6 +57,7 @@ export interface Ctrl {
 export const cfg = {
   NP: 5,
   PRO: 1,
+  PLANT: 1, // stance feet pinned to the floor in the core pose (0 = off, for A/B tests)
   INZ: 1, // inertialized animation blending (0 = the old exponential smoothing, for A/B tests)
   physics: "rapier" as "rapier" | "legacy",
   hand: true, // release from the rig's real hand (3D) instead of a fixed height (2D legacy)

@@ -550,7 +550,8 @@ export function footIK(m: Rig, p: any, dt: number, on: boolean) {
     const a1 = Math.acos(Math.min(1, Math.max(-1, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d)))),
       tIK = Math.atan2(dz, -dy) + a1,
       kIK = Math.PI - Math.acos(Math.min(1, Math.max(-1, (L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2))));
-    const w = pl.w,
+    // the core already places the feet in locomotion (pose.ts stepSolve): this pass only covers what it doesn't
+    const w = pl.w * (1 - (p.stp ? p.stp.w : 0)),
       tFK = -th.rotation.x,
       kFK = kn.rotation.x;
     th.rotation.x = -(tFK + (tIK - tFK) * w);
