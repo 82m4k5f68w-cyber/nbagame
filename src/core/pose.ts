@@ -825,6 +825,32 @@ export function pose3(p: Player) {
         toe += 0.15 * brk; // up on the balls of the feet
       }
     }
+    // calling for the ball: an open shooter (nobody within 90 px) on the perimeter raises a hand and shouts for it,
+    // in short bursts so the floor looks alive rather than everyone waving at once
+    if (o && o.tm === p.tm && o !== p && !air && md === "i" && !(p.celT > 0) && !(p.setT > 0) && !p.postA && inb <= 0 && !ftq) {
+      const dh = Math.hypot(o.x - p.x, o.y - p.y);
+      let nd = 1e9;
+      for (const q of P) if (q.tm !== p.tm) nd = Math.min(nd, Math.hypot(q.x - p.x, q.y - p.y));
+      const cyc = (T * 0.45 + p.k * 0.37) % 1;
+      if (nd > 90 && dh > 140 && dh < 420 && cyc < 0.3) {
+        const w = Math.min(1, cyc / 0.06, (0.3 - cyc) / 0.06);
+        aR += (2.75 - aR) * w;
+        eR += (0.35 - eR) * w;
+        sz += (0.35 - sz) * w;
+        gR = 0.0; // open palm
+        p.callT = 0.1; // the face shouts (face())
+      }
+    }
+    // on-ball defense up close: the trail hand rides the driver's hip (feeling him), the other hand stays active
+    if (o && o.tm !== p.tm && !air && md === "i" && !(p.hupT > 0) && !(p.celT > 0)) {
+      const d = Math.hypot(o.x - p.x, o.y - p.y);
+      if (d < 34 && d > 10 && Math.sin(T * 1.7 + p.k) > -0.3) {
+        const r = armIK(p, cr, o.x - Math.cos(o.f) * 3, o.y - Math.sin(o.f) * 3, o.z + o.ht * 4.4, 0, 0.9),
+          w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0);
+        if (r.right) (aR += (r.a - aR) * w), (eR += (r.e - eR) * w), (sz += (r.ab - sz) * w), (gR = 0.1);
+        else (aL += (r.a - aL) * w), (eL += (r.e - eL) * w), (zL = (zL ?? sz) + (r.ab - (zL ?? sz)) * w), (gL = 0.1);
+      }
+    }
     // contest with a hand up, feet on the floor (vs a pump faker)
     if ((p.hupT || 0) > 0 && !air && !has) {
       const w = Math.min(1, p.hupT * 4);
@@ -1429,6 +1455,7 @@ function face(p: Player, st: number, hyT: number, hpT: number) {
     cel = p.celT > 0 ? p.cel : 0,
     e = CEL_T - (p.celT || 0);
   t.jw = t.sm = t.br = t.an = t.sq = t.wd = 0;
+  if (p.callT > 0) p.callT -= DT;
   switch (cel) {
     case 1: // shimmy, three-up, point up, dap, help up, hyping a teammate: grin
     case 4:
@@ -1465,6 +1492,7 @@ function face(p: Player, st: number, hyT: number, hpT: number) {
     default:
       if ((p.hitT || 0) > 0.04) (t.an = 0.7), (t.sq = 1), (t.wd = 1), (t.jw = 0.12), (t.sm = -0.35); // contact: gritted teeth
       else if (md === "s" && p.z > 6 && isDunkSv(p.sv || 0)) (t.jw = 0.75), (t.an = 0.7), (t.wd = 0.7), (t.sq = 0.35); // throwing it down
+      else if ((p.callT || 0) > 0) (t.jw = 0.35 + 0.3 * Math.abs(Math.sin(T * 9))), (t.br = 0.5), (t.wd = 0.3); // "Ball! Ball!"
       else if ((p.frT || 0) > 0) (t.sm = -0.85), (t.br = 0.75), (t.jw = 0.18 + (p.frT > 1.2 ? 0.25 : 0)), (t.sq = 0.3); // frustration after a miss
       else if (md === "s" || md === "c") (t.an = 0.3), (t.sq = 0.3), (t.sm = -0.12); // focus: lips pressed
       else if (S === "over") {

@@ -135,6 +135,28 @@ export const ANIMS: [string, Setup][] = [
     },
   ],
   [
+    "Calling for the ball (open)",
+    (p) => {
+      stand(p);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      (o.x = 120), (o.y = 470);
+      B.owner = { ...p, tm: p.tm, x: p.x - 250, y: p.y, z: 0, f: 0, ht: 6.4 } as any; // a teammate up top with the ball
+      B.mode = "held";
+    },
+  ],
+  [
+    "On-ball defense: hand on the driver",
+    (p, t, dt) => {
+      stand(p);
+      guard(p, 26);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      o.f = p.f + Math.PI;
+      B.owner = o;
+      B.mode = "held";
+      move(p, dt, 60, Math.PI / 2);
+    },
+  ],
+  [
     "Vertical jump (motion capture)",
     (p, t) => {
       stand(p);
