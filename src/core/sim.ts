@@ -57,6 +57,7 @@ export interface Ctrl {
 export const cfg = {
   NP: 5,
   PRO: 1,
+  INZ: 1, // inertialized animation blending (0 = the old exponential smoothing, for A/B tests)
   physics: "rapier" as "rapier" | "legacy",
   hand: true, // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
   replays: true,
@@ -1173,6 +1174,7 @@ export function step(p: Player, dt: number) {
   p.setT = (p.setT || 0) - dt;
   p.manT = (p.manT || 0) - dt;
   p.hitT = Math.max(0, (p.hitT || 0) - dt);
+  if (p.frT > 0) p.frT -= dt;
   if (p.celT > 0) p.celT = Math.max(0, p.celT - dt);
   if (p.actT > 0) p.actT = Math.max(0, p.actT - dt);
   if (p.ttT > 0) p.ttT = Math.max(0, p.ttT - dt);
@@ -1901,7 +1903,7 @@ function heldZ(o: Player) {
 function dribHand(o: Player, dt: number): [number, number] {
   if (B.dho2 !== o) {
     B.dho2 = o;
-    B.dhn = 1;
+    B.dhn = o.sg && o.sg.lh ? -1 : 1; // lefties start the dribble in the left hand
     B.dsw = 0;
     B.dcd = 0.4;
     B.dmv = 0;
@@ -2022,6 +2024,13 @@ export function bstep(dt: number) {
     B.vz -= g * dt;
     B.vx *= 1 - 0.1 * dt;
     B.vy *= 1 - 0.1 * dt;
+  }
+  // a pass that died (rolling slowly on the floor, or stopped against a wall) is a loose ball: anyone can get it.
+  // Without this, only its target could catch it and a dead pass in a corner froze the game.
+  if (B.mode === "pass" && !PREDICT && (B.age > 3 || (B.age > 0.5 && B.z < 12 && Math.hypot(B.vx, B.vy) < 45))) {
+    B.mode = "air";
+    B.to = null;
+    B.sh = 0;
   }
   if (B.mode === "pass" && B.to && B.age > 0.04) {
     const r = B.to,
@@ -2314,6 +2323,7 @@ export function bstep(dt: number) {
         if (p.tm === B.last.tm) p.stt.orb++;
         if (!B.ft) zoneRes(B.last, B.d0, false);
         if (!B.ft) cm(p.tm === B.last.tm ? "missO" : "miss", B.last.n, p.n);
+        if (!B.ft && !PREDICT && B.last.tm != null) B.last.frT = 1.8; // the shooter's face drops
         if (!B.ft && (B.rim ?? 99) < BR + 2.5) fx({ k: "ooh" }); // in and out: the whole building groans
         if (hasB(p, "GC") && Math.random() < 0.3) cm("board", p.n);
       }

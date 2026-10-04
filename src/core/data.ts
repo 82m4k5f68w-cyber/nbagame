@@ -470,7 +470,7 @@ export const CL: Record<string, Record<string, number[]>> = {
     Wembanyama: { a: 0.4, g: 0.5, w: 0.2 },
     Edwards: { k: 0.2, f: 0.05, ce: [4, 6, 6], dk: 3 },
     "Gilgeous-Alexander": { a: 0.1, l: -0.16 },
-    Brunson: { l: -0.1, k: 0.05 },
+    Brunson: { l: -0.1, k: 0.05, lh: 1 }, // left-handed: mirrored shot, starts his dribble with the left
     Towns: { a: 0.1, l: -0.12 },
     Fox: { k: 0.12, l: -0.08 },
     "LaMelo Ball": { k: 0.15, l: -0.2, f: 0.06 },
@@ -515,7 +515,7 @@ export function formOf(name: string) {
   const pk = (a: number[]) => a[(r() * a.length) | 0];
   f.ce = [pk([1, 4, 7, 8]), pk([3, 5, 6]), pk([2, 6, 7, 8])] as any;
   f.dk = (r() * 4) | 0; // signature dribble package (see sim dribHand size-ups)
-  f.gs = (r() * 3) | 0; // guide-hand style: 0 classic, 1 thumb flick, 2 early drop
+  f.gs = (r() * 6) | 0; // guide-hand style: 0 classic, 1 thumb flick, 2 early drop, 3 elbow out, 4 rides high, 5 two-hand push
   f.fr = r(); // free-throw routine seed
   return { ...f, ...(SIG[name] || {}) };
 }

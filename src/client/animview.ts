@@ -19,6 +19,8 @@ const stand = (p: any) => {
   p.setT = 0;
   p.postA = 0;
   p.hitT = 0;
+  p.frT = 0;
+  if (p.sg && p.sg._o) p.sg = p.sg._o; // undo the studio's left-handed override
   p.landT = 0;
   p.pT = 0;
   p.en = 1;
@@ -291,6 +293,38 @@ export const ANIMS: [string, Setup][] = [
     },
   ],
   [
+    "Jump shot (left-handed)",
+    (p, t) => {
+      stand(p);
+      p.sg = { ...(p.sg || {}), lh: 1, _o: p.sg || {} };
+      const k = t % 1.4;
+      B.owner = p;
+      B.mode = "held";
+      p.mode = k < 0.12 ? "c" : k < 0.95 ? "s" : "i";
+      p.t = k < 0.12 ? k : k - 0.12;
+      p.st = 1;
+      p.z = p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.6) * Math.PI) * 24) : 0;
+    },
+  ],
+  ...["classic", "thumb flick", "early drop", "elbow out", "rides high", "two-hand push"].map(
+    (nm, gs) =>
+      [
+        "Guide hand: " + nm,
+        (p: any, t: number) => {
+          stand(p);
+          p.sg = { ...(p.sg || {}), gs, _o: p.sg || {} };
+          const k = t % 1.4;
+          B.owner = p;
+          B.mode = "held";
+          p.mode = k < 0.12 ? "c" : k < 0.95 ? "s" : "i";
+          p.t = k < 0.12 ? k : k - 0.12;
+          p.st = 1;
+          p.sv = 0;
+          p.z = p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.6) * Math.PI) * 24) : 0;
+        },
+      ] as [string, Setup],
+  ),
+  [
     "Jump shot (motion capture)",
     (p, t) => {
       stand(p);
@@ -365,6 +399,30 @@ export const ANIMS: [string, Setup][] = [
         },
       ] as [string, Setup],
   ),
+  // faces: close-up camera on the head (eyes follow the ball, blinks keep running)
+  ...(
+    [
+      ["calm (blinks, eyes on the ball)", (p: any, t: number) => ((B.x = p.x + Math.cos(p.f) * 60 + Math.sin(t * 1.3) * 40), (B.y = p.y + Math.sin(p.f) * 60 + Math.cos(t * 1.3) * 60), (B.z = 60))],
+      ["grin", (p: any) => ((p.cel = 1), (p.celT = 1))],
+      ["yell", (p: any) => ((p.cel = 6), (p.celT = 1))],
+      ["gritted teeth (contact)", (p: any) => (p.hitT = 0.2)],
+      ["frustrated (missed)", (p: any) => (p.frT = 1)],
+      ["wince (open miss)", (p: any) => ((p.cel = 11), (p.celT = 1))],
+      ["arguing", (p: any) => ((p.cel = 12), (p.celT = 1))],
+      ["dunk face", (p: any) => ((p.mode = "s"), (p.sv = 13), (p.z = 30), (p.t = 0.1))],
+    ] as [string, (p: any, t: number) => void][]
+  ).map(
+    ([n, f]) =>
+      [
+        "Face: " + n,
+        (p: any, t: number) => {
+          stand(p);
+          (B.x = p.x + Math.cos(p.f) * 300), (B.y = p.y + Math.sin(p.f) * 300), (B.z = 55); // ball out front: he faces the camera
+          f(p, t);
+          Object.assign((V as any).studio, { d: 3.4, h: (p.ht / 6.4) * 5.9 + p.z * 0.1, dy: 0.15 });
+        },
+      ] as [string, Setup],
+  ),
 ];
 
 let cur = 0,
@@ -418,6 +476,7 @@ export function openStudio(setTick: (f: ((dt: number) => void) | null) => void, 
     t += dt;
     p.f = 0.3;
     if (spin) (V as any).studio.a += dt * 0.35; // orbit the camera, not the player (keeps treadmill moves readable)
+    (V as any).studio = { a: (V as any).studio.a, d: 17 }; // face entries zoom in
     ANIMS[cur][1](p, t, dt);
     if (p.celT > 0) p.celT = Math.max(0, p.celT); // driven by the setup, not the sim clock
     pose3(p);
@@ -433,6 +492,7 @@ export function studioPose(i: number, tt: number, a = 0.6) {
   for (let k = 0; k < 40; k++) {
     t = tt - (39 - k) / 60;
     p.f = f;
+    (V as any).studio = { a, d: 17 };
     ANIMS[i][1](p, Math.max(0, t), 1 / 60);
     pose3(p);
   }

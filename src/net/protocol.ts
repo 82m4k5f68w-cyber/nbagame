@@ -12,7 +12,7 @@ const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const TAU100 = 628.3185;
 
 export const HDR = 40; // header ints
-export const PST = 27; // per-player ints (without pose)
+export const PST = 28; // per-player ints (without pose)
 export const QN = QK.length;
 
 /** Full snapshot of the sim as an int array. withPose adds joint angles (used during replays). */
@@ -94,6 +94,7 @@ export function encodeSnap(k: number): number[] {
       p.hitT > 0 ? r(p.hitT * 100) * 1000 + ((r((Math.atan2(p.hitY || 0, p.hitX || 0) * 180) / Math.PI) + 360) % 360) : 0,
       // one-shot actions (pump fake, jab, fall, dive, fumble, blocked) + triple threat + FT routine clock
       (p.actT > 0 && p.act ? p.act * 1000 + r(Math.min(9.99, p.actT) * 100) : 0) + (p.ttT > 0 ? 100000 : 0) + r(Math.min(9, p.ftT || 0) * 10) * 1000000,
+      proFlags(p),
     );
   // replay poses: 27 joints x 10 players at 0.01 rad (keeps the presence well under the 4 KiB room limit)
   if (rp) for (const p of P) for (const k2 of QK) a.push(r(((p.q && p.q[k2]) || 0) * 100));
@@ -193,6 +194,30 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
     }
   }
 }
+/** Pro Play pose flags + the miss face, packed in one int (base-64 digits): hand-up contest, plant step, rim body
+ *  english (+ its lean), pass style, double clutch, frustration, released. So guests see the same body language. */
+const q6 = (v: number, s: number) => Math.max(0, Math.min(63, r((v || 0) * s)));
+function proFlags(p: any) {
+  return (
+    q6(p.hupT, 100) +
+    64 * (q6(p.plantT, 100) + 64 * (q6(p.engT, 100) + 64 * (Math.max(0, Math.min(31, r((p.eng || 0) * 15) + 16)) + 32 * ((p.pk & 3) + 4 * (Math.min(31, q6(p.dcl, 100)) + 32 * (Math.min(31, q6(p.frT, 10)) + 32 * (p.rl ? 1 : 0)))))))
+  );
+}
+function proApply(p: any, v: number) {
+  const d = (n: number) => {
+    const x = v % n;
+    v = Math.floor(v / n);
+    return x;
+  };
+  p.hupT = d(64) / 100;
+  p.plantT = d(64) / 100;
+  p.engT = d(64) / 100;
+  p.eng = (d(32) - 16) / 15;
+  p.pk = d(4);
+  p.dcl = d(32) / 100;
+  p.frT = d(32) / 10;
+  p.rl = d(2);
+}
 /** Discrete per-player fields (never interpolated). */
 export function applyDiscrete(p: any, a: number[], o: number) {
   p.mode = MODE[a[o + 7]] || "i";
@@ -223,6 +248,7 @@ export function applyDiscrete(p: any, a: number[], o: number) {
   p.actT = (lo % 1000) / 100;
   p.ttT = av % 1000000 >= 100000 ? 0.5 : 0;
   p.ftT = Math.floor(av / 1000000) / 10;
+  if (a[o + 27] != null) proApply(p, a[o + 27]);
 }
 /** Restore one player's full predicted-relevant state from a snapshot (used for reconciliation). */
 export function applyPlayer(p: any, a: number[], k: number) {

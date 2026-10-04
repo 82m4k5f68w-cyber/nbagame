@@ -1495,7 +1495,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           const o = B.owner;
           if (!RPL && o && o.gl && (o.mode === "c" || o.mode === "s")) {
             o.gl.G.updateMatrixWorld(true);
-            ball.position.copy(o.gl.wR.localToWorld(TV.set(0, -0.62, 0.1)));
+            ball.position.copy((o.q && o.q.mir ? o.gl.wL : o.gl.wR).localToWorld(TV.set(0, -0.62, 0.1))); // lefties: the left hand
           }
           // fire trail
           const hot = !B.owner && B.last && (B.last.heat || 0) >= 3;
@@ -1584,8 +1584,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           const pw = W3(p0.x, p0.y, 0);
           const up = p0.z * 0.1; // follow jumps
           const ah = (SO as any).h ?? 3.3; // aim height (ft)
-          tp = [pw[0] + Math.cos(SO.a) * SO.d, ah + 1.7 + up, pw[2] + Math.sin(SO.a) * SO.d];
-          tl = [pw[0], ah + up, pw[2]];
+          const fz = (SO as any).h != null; // face close-up: h already includes the jump
+          tp = [pw[0] + Math.cos(SO.a) * SO.d, ah + ((SO as any).dy ?? 1.7) + (fz ? 0 : up), pw[2] + Math.sin(SO.a) * SO.d];
+          tl = [pw[0], ah + (fz ? 0 : up), pw[2]];
         }
         cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), SO ? 1 : RPL && RPK ? 0.35 : 0.1);
         cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : 0.14);

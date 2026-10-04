@@ -40,6 +40,8 @@ export interface Rig {
   cloth: { x: number; vx: number; z: number; vz: number }[];
   plant: { on: boolean; x: number; y: number; z: number; w: number }[];
   extra: THREE.Material[];
+  // face bones (children of the head): jaw, mouth interior/line/corners, brows, lids, irises; fr = their rest positions
+  fb: { jw: THREE.Bone; mi: THREE.Bone; mo: THREE.Bone; c: THREE.Bone[]; b: THREE.Bone[]; l: THREE.Bone[]; y: THREE.Bone[]; fr: THREE.Vector3[] };
 }
 
 const MAT = new Map<string, THREE.MeshStandardMaterial>();
@@ -115,6 +117,22 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
     tfR = B(0, -0.16, 0.36),
     flL = B(-RIG.hipX, RIG.hip, 0),
     flR = B(RIG.hipX, RIG.hip, 0);
+  // face bones, placed in the same pelvis-relative frame the head parts use (head offsets are pure translations)
+  const HB = RIG.chest + RIG.neck + RIG.head,
+    FB = (x: number, y: number, z: number) => B(x, y - HB, z),
+    jw = FB(0, 2.64, 0.02), // jaw hinge (in front of the ears)
+    mi = FB(0, 2.556, 0.31), // mouth interior: scaled open with the jaw
+    mo = FB(0, 2.565, 0.365), // mouth line (width)
+    cL = FB(-0.08, 2.562, 0.36), // mouth corners (smile / frown)
+    cR = FB(0.08, 2.562, 0.36);
+  const F0 = 0.12; // rough eye spacing for the bone pivots (parts use the per-face spacing)
+  const brL = FB(-F0 - 0.01, 2.9, 0.34),
+    brR = FB(F0 + 0.01, 2.9, 0.34),
+    lL = FB(-F0 - 0.01, 2.852, 0.33), // closing lids hang from the top of the eye
+    lR = FB(F0 + 0.01, 2.852, 0.33),
+    yL = FB(-F0 - 0.01, 2.8, 0.355),
+    yR = FB(F0 + 0.01, 2.8, 0.355);
+  hd.add(jw, mi, mo, cL, cR, brL, brR, lL, lR, yL, yR);
   hips.add(bd, tl, tr, flL, flR);
   bd.add(ch, hem);
   ch.add(nk, sL, sR);
@@ -131,8 +149,8 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   eR.add(wR);
   wL.add(gL);
   wR.add(gR);
-  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR", "flL", "flR", "tfL", "tfR", "hem"],
-    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, flL, flR, tfL, tfR, hem];
+  const names = ["hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR", "flL", "flR", "tfL", "tfR", "hem", "jw", "mi", "mo", "cL", "cR", "brL", "brR", "lL", "lR", "yL", "yR"],
+    bones = [hips, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, flL, flR, tfL, tfR, hem, jw, mi, mo, cL, cR, brL, brR, lL, lR, yL, yR];
   const I = Object.fromEntries(names.map((n, i) => [n, i])) as Record<string, number>;
   hips.updateMatrixWorld(true);
   const bp = bones.map((b) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
@@ -228,22 +246,28 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
       ...((p.sg && p.sg.face) || {}),
     };
   putT(sph, sk, H, 0, 2.74, 0.0, 0.36 * F.w, 0.43, 0.39);
-  putT(sph, sk, H, 0, 2.55 - (F.jl - 1) * 0.05, 0.08, 0.27 * F.jw, 0.22 * F.jl, 0.3); // jaw
+  putT(sph, sk, I.jw, 0, 2.55 - (F.jl - 1) * 0.05, 0.08, 0.27 * F.jw, 0.22 * F.jl, 0.3); // jaw (opens on its hinge)
+  putT(sph, "#3a1416", I.mi, 0, 2.5, 0.315, 0.072, 0.056, 0.05); // mouth interior (scaled open with the jaw)
+  putT(box(0.11, 0.022, 0.02), "#f2efe6", I.mi, 0, 2.548, 0.352); // upper teeth
+  putT(box(0.1, 0.02, 0.02), "#e8e4da", I.mi, 0, 2.452, 0.345); // lower teeth
   for (const sd of [-1, 1]) {
     putT(sph, sk, H, sd * 0.36 * F.w, 2.72, 0, 0.07 * F.ea, 0.11 * F.ea, 0.07); // ear
     putT(sph, "#f8f8f8", H, sd * F.eg, 2.8, 0.33, 0.065, 0.05, 0.03); // eye white
-    putT(sph, "#1a1410", H, sd * F.eg, 2.8, 0.355, 0.035, 0.035, 0.02); // iris
+    putT(sph, "#1a1410", sd < 0 ? I.yL : I.yR, sd * F.eg, 2.8, 0.355, 0.035, 0.035, 0.02); // iris (looks around)
+    putT(sph, "#ffffff", sd < 0 ? I.yL : I.yR, sd * F.eg + 0.012, 2.812, 0.372, 0.009, 0.009, 0.006); // catchlight
     const bw = box(0.15, F.br, 0.05).rotateZ(-sd * F.ba);
-    putT(bw, hc, H, sd * F.eg, 2.9, 0.34); // brow
+    putT(bw, hc, sd < 0 ? I.brL : I.brR, sd * F.eg, 2.9, 0.34); // brow (raises / knits)
+    putT(sph, shade(sk, 0.86), sd < 0 ? I.lL : I.lR, sd * F.eg, 2.8, 0.338, 0.072, 0.056, 0.036); // closing lid (blinks, squints)
   }
   putT(sph, shade(sk, 0.9), H, 0, 2.7, 0.38, 0.06 * F.nw, 0.09 * F.nl, 0.07); // nose
-  putT(box(0.15, 0.03, 0.03), shade(sk, 0.55), H, 0, 2.565, 0.365); // mouth
-  putT(box(0.13, 0.025 * F.lp, 0.03), shade(sk, 0.75), H, 0, 2.54, 0.36); // lower lip
+  putT(box(0.13, 0.03, 0.03), shade(sk, 0.55), I.mo, 0, 2.565, 0.365); // mouth line
+  for (const sd of [-1, 1]) putT(box(0.06, 0.028, 0.03), shade(sk, 0.5), sd < 0 ? I.cL : I.cR, sd * 0.085, 2.563, 0.36); // mouth corners
+  putT(box(0.13, 0.025 * F.lp, 0.03), shade(sk, 0.75), I.jw, 0, 2.54, 0.36); // lower lip (rides the jaw)
   for (const sd of [-1, 1]) {
     putT(box(0.13, 0.025, 0.03), shade(sk, 0.78), H, sd * F.eg, 2.835, 0.335); // upper eyelid
     putT(sph, shade(sk, 1.05), H, sd * 0.2 * F.w, 2.68, 0.27, 0.09, 0.07, 0.07); // cheekbone
   }
-  putT(sph, shade(sk, 0.96), H, 0, 2.43 - (F.jl - 1) * 0.06, 0.2, 0.13 * F.jw, 0.09, 0.12); // chin
+  putT(sph, shade(sk, 0.96), I.jw, 0, 2.43 - (F.jl - 1) * 0.06, 0.2, 0.13 * F.jw, 0.09, 0.12); // chin
   // hair: the cap sits high and back so the hairline frames the forehead (never over the eyes)
   const sub = (p.sg && p.sg.hs) ?? (h >> 3) % 3;
   if (p.hr === 1) {
@@ -269,7 +293,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   }
   if (p.bd) {
     // jawline beard: follows the jaw and chin, mouth stays visible
-    putT(sph, hc, H, 0, 2.46 - (F.jl - 1) * 0.05, 0.16, 0.29 * F.jw, 0.15 * F.jl, 0.2);
+    putT(sph, hc, I.jw, 0, 2.46 - (F.jl - 1) * 0.05, 0.16, 0.29 * F.jw, 0.15 * F.jl, 0.2);
     for (const sd of [-1, 1]) putT(sph, hc, H, sd * 0.25 * F.jw, 2.6, 0.14, 0.07, 0.14, 0.14); // sideburn to jaw
     putT(box(0.22, 0.045, 0.05), hc, H, 0, 2.61, 0.37); // mustache
   }
@@ -342,7 +366,9 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture): R
   G.scale.setScalar(p.ht / 6.4);
   const pl = () => ({ on: false, x: 0, y: 0, z: 0, w: 0 });
   const cs = () => ({ x: 0, vx: 0, z: 0, vz: 0 });
-  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, tf: [tfL, tfR], hem, hs: { x: 0, vx: 0, z: 0, vz: 0, px: 0, pz: 0 }, fl: [flL, flR], cloth: [cs(), cs()], plant: [pl(), pl()], extra };
+  const rig: Rig = { G, mesh, bd, tl, tr, kl, kr, sL, sR, eL, eR, wL, wR, ch, nk, hd, al, ar, gL, gR, tf: [tfL, tfR], hem, hs: { x: 0, vx: 0, z: 0, vz: 0, px: 0, pz: 0 }, fl: [flL, flR], cloth: [cs(), cs()], plant: [pl(), pl()], extra, fb: { jw, mi, mo, c: [cL, cR], b: [brL, brR], l: [lL, lR], y: [yL, yR], fr: [] } };
+  for (const b of [cL, cR, brL, brR, lL, lR, yL, yR]) rig.fb.fr.push(b.position.clone());
+  faceRest(rig);
   if (typeof document === "undefined") return rig; // Node (FK parity test): bones + mesh only
   const cy = -RIG.chest; // chest-local offsets for the jersey prints
   const cv = (w: number, h: number) => {
@@ -418,6 +444,42 @@ export function applyPose(m: Rig, p: any) {
   m.wL.rotation.set(-(q.wL || 0), q.oL || 0, 0, "YXZ"); // forearm twist then wrist flex (matches pose.ts FK)
   m.wR.rotation.set(-(q.wR || 0), q.oR || 0, 0, "YXZ");
   m.bd.rotation.set(q.ln, q.ty, q.rz, "YXZ");
+  if (m.fb) applyFace(m, p);
+}
+
+/** Face at rest: mouth closed, lids open (the closing lids are folded up into the upper eyelid line). */
+function faceRest(m: Rig) {
+  const f = m.fb;
+  f.mi.scale.set(1, 0.001, 1);
+  for (const l of f.l) l.scale.set(1, 0.02, 1);
+}
+/** Expressions (p.fc from pose.ts face(): jaw jw, smile sm (-1 frown .. 1), brow raise br, anger an, squint sq,
+ *  blink bl, mouth width wd, eye look ex/ey) -> face bones. Client only; the sim never reads the face. */
+function applyFace(m: Rig, p: any) {
+  const c = p.fc,
+    f = m.fb;
+  if (!c) return faceRest(m);
+  const smp = Math.max(0, c.sm);
+  f.jw.rotation.x = c.jw * 0.3 + smp * 0.05;
+  // a grin parts the lips over the upper teeth; a frown purses them (corners down, line narrower)
+  f.mi.scale.set(1 + c.wd * 0.25 + smp * 0.2, Math.max(0.001, c.jw * 0.95, smp * 0.32), 1);
+  f.mo.scale.x = 1 + c.wd * 0.3 + smp * 0.25 + Math.min(0, c.sm) * 0.15;
+  for (let s = 0; s < 2; s++) {
+    const sd = s ? 1 : -1,
+      cr = f.c[s],
+      r0 = f.fr[s];
+    cr.position.set(r0.x + sd * (c.wd * 0.025 + smp * 0.035), r0.y + c.sm * (c.sm > 0 ? 0.014 : 0.034), r0.z + smp * 0.006);
+    cr.rotation.z = sd * c.sm * 0.7;
+    const br = f.b[s],
+      r1 = f.fr[2 + s];
+    br.position.y = r1.y + c.br * 0.035 - c.an * 0.02;
+    br.rotation.z = sd * (c.an * 0.38 - c.br * 0.22);
+    const lid = Math.max(c.bl, c.sq * 0.5, Math.max(0, c.sm) * 0.22);
+    f.l[s].scale.set(1, Math.max(0.02, lid), 1);
+    const ey = f.y[s],
+      r3 = f.fr[6 + s];
+    ey.position.set(r3.x + c.ex * 0.035, r3.y - c.ey * 0.03, r3.z);
+  }
 }
 
 /** Cloth: each shorts-hem flap bone chases its thigh's rotation through an underdamped spring, so the hem trails the

@@ -1,6 +1,6 @@
 // Pro Play pose solver: joint angles per player (p.q), shot clips, and analytic hand forward kinematics.
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
-import { CL, CK, isLaySv } from "./data";
+import { CL, CK, isLaySv, isDunkSv } from "./data";
 import { MC_RAW, MC_CH } from "./mocap";
 
 // ---- motion capture base layer (CMU mocap retargeted by scripts/mocap/retarget.ts) ----
@@ -58,7 +58,7 @@ function mcBlend(a: string, b: string | null, u: number, ph: number, amp: number
     for (let j = 0; j < MO.length; j++) MO[j] += (MT[j] - MO[j]) * u;
   }
 }
-import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -1209,7 +1209,9 @@ export function pose3(p: Player) {
   MCF = 0;
   // ---- head tracking: everyone follows the ball; the handler and shooters read the rim ----
   let hy = 0,
-    hp = 0;
+    hp = 0,
+    hyT = 0,
+    hpT = 0;
   const nk = -(ln + cx) * 0.35;
   {
     // idle glance: off the ball and standing at a dead ball, eyes wander (bench, crowd, a teammate) now and then
@@ -1232,9 +1234,11 @@ export function pose3(p: Player) {
     if (dist > 6) {
       const d = Math.atan2(Math.sin(Math.atan2(dy, dx) - p.f), Math.cos(Math.atan2(dy, dx) - p.f)),
         hz2 = p.z + p.ht * 9.3;
-      hy = clamp(-d - ty - cy, -1.25, 1.25);
-      hp = clamp(Math.atan2(hz2 - LOOK.z, dist) - (ln + cx) * 0.9 - nk, -0.75, 0.8);
-      if (Math.abs(-d - ty - cy) > 2.2) hy *= 0.4; // target behind: don't owl-turn
+      hyT = -d - ty - cy;
+      hpT = Math.atan2(hz2 - LOOK.z, dist) - (ln + cx) * 0.9 - nk;
+      hy = clamp(hyT, -1.25, 1.25);
+      hp = clamp(hpT, -0.75, 0.8);
+      hy *= 1 - 0.6 * clamp((Math.abs(hyT) - 1.8) / 0.6, 0, 1); // target behind: don't owl-turn (eases in, no snap)
     }
     hp += HEADX;
     LOOK.on = 0;
@@ -1249,7 +1253,8 @@ export function pose3(p: Player) {
         r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9);
       if (r2.over < 0.6) {
         const w = md === "c" ? Math.min(1, p.t / 0.12) : 1;
-        // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early
+        // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early, 3 elbow flared out wide,
+        // 4 rides high with the ball after the release, 5 old-school two-hand push (both wrists snap)
         const gs = (p.sg && p.sg.gs) || 0,
           k7 = md === "s" ? p.t / 0.4 : 0,
           off = gs === 2 && k7 > 0.6 ? Math.min(1, (k7 - 0.6) / 0.15) : 0;
@@ -1258,15 +1263,37 @@ export function pose3(p: Player) {
         zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w * (1 - off);
         wL = -0.35 * w;
         if (gs === 1 && k7 > 0.68) (wL = 0.7), (oL = 0.6); // thumb flick
+        if (gs === 3) (zL = (zL ?? sz) + 0.28 * w), (oL = -0.35 * w); // elbow out, palm faces the ball's side
+        if (gs === 4 && k7 > 0.7) {
+          const u = Math.min(1, (k7 - 0.7) / 0.2); // the guide arm keeps rising beside the shooting arm
+          (aL += (aR - 0.15 - aL) * u), (eL += (0.35 - eL) * u), (wL = -0.1);
+        }
+        if (gs === 5 && k7 > 0.66) (wL = 0.85), (aL += 0.15), (eL = Math.max(0, eL - 0.3)); // pushes through with both
         gL = 0.15;
       }
     }
   }
-  // ---- blend: each animation state has its own transition time (snappy into a shot, slow into a rest) ----
-  if (st !== p.anS) p.anS = st;
+  // ---- left-handed shooters: the whole shot is mirrored across the body (shooting arm, guide hand, legs, twist).
+  // Everything above was solved for a right-hander (guide-hand IK included); mirroring is exact, and handPos follows
+  // the left hand while q.mir is set, so the release point and the 3D ball stay in the shooting hand.
+  const mir = !!(p.sg && p.sg.lh) && (md === "s" || (md === "c" && has));
+  if (mir) {
+    let t = aL;
+    (aL = aR), (aR = t), (t = eL), (eL = eR), (eR = t);
+    t = zL == null ? sz : zL;
+    (zL = sz), (sz = t);
+    (t = wL), (wL = wR), (wR = t), (t = oL), (oL = -oR), (oR = -t), (t = gL), (gL = gR), (gR = t);
+    (t = tL), (tL = tR), (tR = t), (t = kL), (kL = kR), (kR = t), (t = fL), (fL = fR), (fR = t);
+    (hs = -hs), (ty = -ty), (rz = -rz), (cy = -cy), (hy = -hy), (hyT = -hyT);
+  }
+  // ---- blend: inertialization. On a state change the old pose's offset from the new target (and its velocity)
+  // decays to zero along a quintic over that state's blend time (snappy into a shot, slow into a rest), so the new
+  // animation plays with no lag while the transition stays smooth (C2, no overshoot). Inside a state only a light
+  // 50 ms filter smooths the targets (IK and clip switches).
   const q = p.q,
     sm = PRO && q && q.wR != null,
-    f = sm ? 1 - Math.exp((-DT * 3) / BLEND[st]) : 1,
+    INZ = cfg.INZ !== 0,
+    f = sm ? 1 - Math.exp((-DT * 3) / (INZ ? Math.min(0.05, BLEND[st]) : BLEND[st])) : 1,
     o = q || (p.q = {});
   VALS[0] = tL;
   VALS[1] = tR;
@@ -1297,12 +1324,146 @@ export function pose3(p: Player) {
   VALS[26] = hs;
   VALS[27] = oL;
   VALS[28] = oR;
+  // per joint: x/v = offset and its velocity at the last restart, t/tf = time since and blend length, b = filtered
+  // target, pt/pv = last target and its velocity (to spot a target that jumps), last/lv = last output and velocity
+  const I =
+    p.inz ||
+    (p.inz = { b: new Float64Array(NQ), x: new Float64Array(NQ), v: new Float64Array(NQ), t: new Float64Array(NQ).fill(9), tf: new Float64Array(NQ).fill(0.1), pt: new Float64Array(NQ), pv: new Float64Array(NQ), last: new Float64Array(NQ), lv: new Float64Array(NQ), ok: 0 });
+  const trans = st !== p.anS && sm && I.ok;
+  if (!sm || !I.ok) for (let j = 0; j < NQ; j++) (I.b[j] = VALS[j]), (I.pt[j] = VALS[j]), (I.pv[j] = 0), (I.x[j] = 0), (I.v[j] = 0), (I.t[j] = 9);
+  p.anS = st;
+  I.ok = 1;
   for (let j = 0; j < NQ; j++) {
     const k = QK[j],
-      v = VALS[j];
+      v = VALS[j],
+      hd = j === 20 || j === 21;
     // wR is never smoothed (the wrist flick at release must be crisp); the head turns a bit quicker than the body
-    o[k] = sm && j !== 13 && o[k] != null ? o[k] + (v - o[k]) * (j === 20 || j === 21 ? Math.min(1, f * 1.6) : f) : v;
+    if (j === 13 || !sm) {
+      o[k] = v;
+      I.b[j] = v;
+    } else if (!INZ) {
+      I.b[j] += (v - I.b[j]) * (hd ? Math.min(1, f * 1.6) : f);
+      o[k] = I.b[j];
+      I.pt[j] = v;
+    } else {
+      // restart this joint's blend on a state change, or when its target jumps (a clip/IK/look-target switch that
+      // would pop): the body carries on from where it is and eases into the new target
+      // (arms move fast on purpose - dribble pushes, shot rises - so they need a bigger break; a joint that is still
+      // blending only restarts for a big one, so quick legit motion never trails behind a chain of restarts)
+      const dev = Math.abs(v - (I.pt[j] + I.pv[j] * DT)),
+        jump = dev > (hd ? 0.08 : j >= 4 && j <= 8 ? 0.25 : 0.12) * (I.t[j] < I.tf[j] ? 3 : 1);
+      if (trans || jump) {
+        const cur = o[k] ?? v;
+        I.x[j] = cur - v;
+        I.v[j] = I.lv[j] - (jump ? I.pv[j] : 0);
+        I.t[j] = 0;
+        // big switches blend longer, so the catch-up never whips
+        I.tf[j] = Math.max(trans ? BLEND[st] * (hd ? 0.4 : 0.65) : 0, Math.min(0.32, 0.08 + Math.abs(I.x[j]) * (hd ? 0.12 : 0.1)));
+        I.b[j] = v;
+      }
+      I.pv[j] = jump ? I.pv[j] : (v - I.pt[j]) / DT;
+      I.pt[j] = v;
+      I.b[j] += (v - I.b[j]) * (hd ? Math.min(1, f * 1.6) : f);
+      I.t[j] += DT;
+      o[k] = I.b[j] + inert(I.x[j], I.v[j], I.tf[j], I.t[j]);
+    }
+    I.lv[j] = (o[k] - I.last[j]) / DT;
+    I.last[j] = o[k];
   }
+  if (mir) o.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
+  o.mir = mir ? 1 : 0;
+  face(p, st, hyT, hpT);
+}
+/** Facial expression (p.fc, drawn by the 3D rig's face bones): what the player feels this tick, eased.
+ *  jw jaw open, sm smile (-1 frown .. 1 grin), br brows raised (worried / surprised), an anger (brows knit, lowered),
+ *  sq squint, wd mouth stretched wide (yell, grimace), bl blink, ex/ey where the eyes look beyond the head turn.
+ *  Driven by celebrations (synced), contact (hitT, synced), misses (frT), dunks in the air, effort, defense, fatigue
+ *  and the final score. Deterministic (blinks from T and the player's slot), no side effects. */
+const FT = { jw: 0, sm: 0, br: 0, an: 0, sq: 0, wd: 0 };
+function face(p: Player, st: number, hyT: number, hpT: number) {
+  const c = p.fc || (p.fc = { jw: 0, sm: 0, br: 0, an: 0, sq: 0, wd: 0, bl: 0, ex: 0, ey: 0 }),
+    t = FT,
+    md = p.mode,
+    cel = p.celT > 0 ? p.cel : 0,
+    e = CEL_T - (p.celT || 0);
+  t.jw = t.sm = t.br = t.an = t.sq = t.wd = 0;
+  switch (cel) {
+    case 1: // shimmy, three-up, point up, dap, help up, hyping a teammate: grin
+    case 4:
+    case 8:
+    case 9:
+    case 16:
+      (t.sm = 1), (t.jw = 0.14), (t.br = 0.25);
+      break;
+    case 13:
+      (t.sm = 1), (t.jw = 0.2 + 0.35 * Math.abs(Math.sin(e * 9))), (t.br = 0.3); // "let's go!"
+      break;
+    case 2: // night-night, shh: a smirk
+    case 7:
+      (t.sm = 0.55), (t.sq = 0.35), (t.br = -0.1);
+      break;
+    case 3: // flex, chest thump, roar, the block stare-down, jersey tug: yell
+    case 5:
+    case 6:
+    case 14:
+      (t.jw = 0.95), (t.an = 0.85), (t.sq = 0.55), (t.wd = 0.8), (t.sm = -0.1);
+      break;
+    case 15:
+      (t.jw = 0.45 + 0.25 * Math.abs(Math.sin(e * 7))), (t.an = 0.5), (t.sq = 0.4), (t.wd = 0.5);
+      break;
+    case 11: // missed an open look: wince
+      (t.jw = 0.3), (t.br = 0.9), (t.sq = 0.6), (t.sm = -0.7), (t.wd = 0.3);
+      break;
+    case 12: // arguing a call: talking, brows knit
+      (t.jw = 0.12 + 0.4 * Math.abs(Math.sin(e * 11) * Math.sin(e * 4.3))), (t.an = 0.75), (t.br = 0.2), (t.sm = -0.4);
+      break;
+    case 10: // held follow-through on a green: cool, confident
+      (t.sm = 0.35), (t.sq = 0.2);
+      break;
+    default:
+      if ((p.hitT || 0) > 0.04) (t.an = 0.7), (t.sq = 1), (t.wd = 1), (t.jw = 0.12), (t.sm = -0.35); // contact: gritted teeth
+      else if (md === "s" && p.z > 6 && isDunkSv(p.sv || 0)) (t.jw = 0.75), (t.an = 0.7), (t.wd = 0.7), (t.sq = 0.35); // throwing it down
+      else if ((p.frT || 0) > 0) (t.sm = -0.85), (t.br = 0.75), (t.jw = 0.18 + (p.frT > 1.2 ? 0.25 : 0)), (t.sq = 0.3); // frustration after a miss
+      else if (md === "s" || md === "c") (t.an = 0.3), (t.sq = 0.3), (t.sm = -0.12); // focus: lips pressed
+      else if (S === "over") {
+        const won = sc[p.tm] > sc[1 - p.tm];
+        if (won) (t.sm = 1), (t.jw = 0.18), (t.br = 0.3);
+        else (t.sm = -0.75), (t.br = 0.6), (t.sq = 0.2);
+      } else if (st === ST.def) (t.an = 0.4), (t.sq = 0.25), (t.sm = -0.1);
+      else if ((p.en ?? 1) < 0.6) t.jw = 0.22 + 0.12 * Math.sin(T * 4.5 + p.k); // gassed: breathing through the mouth
+  }
+  const kf = Math.min(1, DT * 10),
+    kj = Math.min(1, DT * 16);
+  c.jw += (t.jw - c.jw) * kj;
+  c.sm += (t.sm - c.sm) * kf;
+  c.br += (t.br - c.br) * kf;
+  c.an += (t.an - c.an) * kf;
+  c.sq += (t.sq - c.sq) * kf;
+  c.wd += (t.wd - c.wd) * kj;
+  // blinks: every 2.6-4.6 s per player (slot-seeded), a quick 0.15 s close; a flinch blink on contact
+  const per = 2.6 + ((p.k * 7) % 5) * 0.5,
+    ph = (T + p.k * 1.37) % per;
+  c.bl = ph < 0.15 ? Math.sin((ph / 0.15) * Math.PI) : 0;
+  if ((p.hitT || 0) > 0.3) c.bl = 1;
+  // eyes take what the head turn did not (clamped to the eye's travel), and lead it a little
+  const q = p.q;
+  c.ex += (clamp((hyT - (q.hy || 0)) * 0.8, -0.55, 0.55) - c.ex) * Math.min(1, DT * 20);
+  c.ey += (clamp((hpT - (q.hp || 0)) * 0.8, -0.45, 0.45) - c.ey) * Math.min(1, DT * 20);
+}
+/** Inertialization offset at time t (Bollo): starts at x0 with velocity v0, reaches 0 with zero velocity and
+ *  acceleration at tf; velocity pointing away from zero is dropped and tf shortened so it never overshoots. */
+function inert(x0: number, v0: number, tf: number, t: number) {
+  if (x0 === 0 && v0 === 0) return 0;
+  if (x0 * v0 > 0) v0 = 0;
+  if (v0 !== 0) tf = Math.min(tf, Math.max(1e-3, (-5 * x0) / v0));
+  if (t >= tf) return 0;
+  const tf2 = tf * tf;
+  let a0 = (-8 * v0 * tf - 20 * x0) / tf2;
+  if (a0 * x0 < 0) a0 = 0; // must accelerate toward zero, never away
+  const A = -(a0 * tf2 + 6 * v0 * tf + 12 * x0) / (2 * tf2 * tf2 * tf),
+    Bq = (3 * a0 * tf2 + 16 * v0 * tf + 30 * x0) / (2 * tf2 * tf2),
+    C = -(3 * a0 * tf2 + 12 * v0 * tf + 20 * x0) / (2 * tf2 * tf);
+  return (((A * t + Bq) * t + C) * t + a0 / 2) * t * t + v0 * t + x0;
 }
 /** Two-bone arm IK toward a game-space point (px). side: +1 right arm, -1 left, 0 = the arm on the target's side.
  *  Returns shoulder raise a, elbow e, abduction ab (for zL/sz), and how far the target is beyond reach (dist).
@@ -1393,17 +1554,19 @@ function palmAt(p: Player, aR: number, eR: number, sz: number, wR: number, ln: n
   p.q = q0;
   return h;
 }
-/** World position (game coords) of a point in the right wrist frame; default = palm. */
+/** World position (game coords) of a point in the shooting wrist frame (the right one; the left one while a lefty's
+ *  shot is mirrored, q.mir); default = palm. */
 export function handPos(p: Player, pt: V = [0, -0.62, 0.1]): number[] | null {
   const q = p.q;
   if (!q) return null;
-  let v: V = ry(rx(pt, -(q.wR || 0)), q.oR || 0); // wrist flex, then forearm twist (pronation/supination)
+  const L = !!q.mir;
+  let v: V = ry(rx(pt, -((L ? q.wL : q.wR) || 0)), (L ? q.oL : q.oR) || 0); // wrist flex, then forearm twist (pronation/supination)
   v = add(v, [0, -RIG.fa, 0]);
-  v = rx(v, -q.eR);
+  v = rx(v, -(L ? q.eL : q.eR));
   v = add(v, [0, -RIG.ua, 0]);
   // XYZ Euler: R = Rx * Ry * Rz (applied to the vector right-to-left)
-  v = rx(rz(v, q.sz), -q.aR);
-  v = add(v, [RIG.shX * p.bk, RIG.sh, 0]);
+  v = L ? rx(rz(v, -(q.zL ?? q.sz)), -q.aL) : rx(rz(v, q.sz), -q.aR);
+  v = add(v, [(L ? -1 : 1) * RIG.shX * p.bk, RIG.sh, 0]);
   // YXZ Euler: R = Ry * Rx * Rz
   v = ry(rx(v, q.cx || 0), q.cy || 0);
   v = add(v, [0, RIG.chest, 0]);

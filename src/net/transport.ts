@@ -18,6 +18,6 @@ export interface Transport {
   connected(): boolean;
   leave(): void;
 }
-export const PROTO = 4;
+export const PROTO = 5;
 /** Presence objects must stay under ~4 KiB of JSON (room capability limit). */
 export const PRESENCE_MAX = 3900;
