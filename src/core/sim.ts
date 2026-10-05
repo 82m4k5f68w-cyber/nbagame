@@ -2309,10 +2309,12 @@ export function ai(p: Player, dt: number) {
     }
     // transition: fill the lanes - the closest man runs to the rim, two wide to the corners, the last one trails
     if (TS.tr[t] && B.owner.tm === t && NP > 1 && !cfg.HALF) {
-      const dir = oh > 470 ? -1 : 1;
-      let rk = 0;
-      for (const q of P) if (q.tm === t && q !== B.owner && q !== p && !q.off && Math.hypot(oh - q.x, HY - q.y) < Math.hypot(oh - p.x, HY - p.y)) rk++;
-      const side = p.y < HY ? -1 : 1,
+      const dir = oh > 470 ? -1 : 1,
+        run = P.filter((q) => q.tm === t && q !== B.owner && !q.off).sort((a, b) => Math.hypot(oh - a.x, HY - a.y) - Math.hypot(oh - b.x, HY - b.y)),
+        rk = run.indexOf(p),
+        // the two wings split the corners (the higher one takes the top side), not both to the same one
+        mate = rk === 1 ? run[2] : rk === 2 ? run[1] : null,
+        side = mate ? (p.y < mate.y || (p.y === mate.y && rk === 1) ? -1 : 1) : p.y < HY ? -1 : 1,
         lane = rk === 0 ? [oh + dir * 22, HY + side * 18] : rk < 3 ? [oh + dir * 55, HY + side * 195] : [oh + dir * 245, HY + side * 50];
       mv(p, lane[0], lane[1], 1.1);
       if (rk < 3) i.sp = 1;
