@@ -347,6 +347,25 @@ export const ANIMS: [string, Setup][] = [
       move(p, dt, 60, Math.sin(t * 2) > 0 ? Math.PI / 2 : -Math.PI / 2);
     },
   ],
+  ...([
+    ["Help: take the charge", "i"],
+    ["Help: verticality", "s"],
+  ] as [string, string][]).map(
+    ([n, md]) =>
+      [
+        n,
+        (p: any) => {
+          stand(p);
+          const o = P.find((q) => q.tm !== p.tm)!;
+          G.setScalars({ pos: o.tm });
+          (o.x = p.x + Math.cos(p.f) * 30), (o.y = p.y + Math.sin(p.f) * 30), (o.f = p.f + Math.PI), (o.mode = md), (o.t = 0.2);
+          B.owner = o;
+          B.mode = "held";
+          (B.x = o.x + Math.cos(o.f) * 6), (B.y = o.y + Math.sin(o.f) * 6), (B.z = md === "s" ? o.z + 70 : o.z + 32); // (no bstep in the studio)
+          p.helpT = 0.6;
+        },
+      ] as any,
+  ),
   [
     "Chinned rebound",
     (p, t) => {

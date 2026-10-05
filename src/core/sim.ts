@@ -3837,7 +3837,10 @@ function collide() {
               fc = 2;
               if (o.tm !== h.tm) {
                 const sh = h.mode === "c" || h.mode === "s";
-                if (Math.hypot(o.vx, o.vy) < 70 && Math.hypot(h.vx, h.vy) > 170 && Math.random() < 0.5) {
+                // (no charge in the restricted area under the rim; a help defender who got there and set his feet
+                // draws it more often)
+                const ra = Math.hypot(o.x - hoop(h.tm), o.y - HY) < 40;
+                if (!ra && Math.hypot(o.vx, o.vy) < 70 && Math.hypot(h.vx, h.vy) > 170 && Math.random() < (o.helpT > 0 ? 0.62 : 0.5)) {
                   txtW("CHARGE!", h.x, h.y, 95, "#ff6b4a");
                   o.act = 3; // took the charge: on the floor
                   o.actT = 1.2;

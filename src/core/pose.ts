@@ -779,6 +779,36 @@ export function pose3(p: Player) {
     cr = Math.max(cr, 0.28 * w);
     gL = gR = 0.05;
   }
+  // ---- help defender meeting the drive: brace for the charge (forearms across the chest), or go straight up with
+  //      both arms (verticality) once the driver leaves his feet ----
+  if (PRO && (p.helpT || 0) > 0 && !has && md === "i" && B.owner && B.owner.tm !== p.tm) {
+    const dv = B.owner,
+      d = Math.hypot(dv.x - p.x, dv.y - p.y),
+      w = clamp((60 - d) / 25, 0, 1) * Math.min(1, p.helpT * 5);
+    if (w > 0) {
+      if (dv.mode === "c" || dv.mode === "s") {
+        aL += (2.95 - aL) * w;
+        aR += (2.95 - aR) * w;
+        eL += (0.15 - eL) * w;
+        eR += (0.15 - eR) * w;
+        sz += (0.12 - sz) * w;
+        zL = (zL ?? sz) + (0.12 - (zL ?? sz)) * w;
+        gL = gR = 0.05;
+      } else if (!air) {
+        aL += (0.55 - aL) * w;
+        aR += (0.55 - aR) * w;
+        eL += (2.0 - eL) * w;
+        eR += (2.0 - eR) * w;
+        hL += (0.95 - hL) * w;
+        hR += (0.95 - hR) * w;
+        sz += (0.25 - sz) * w;
+        zL = (zL ?? sz) + (0.25 - (zL ?? sz)) * w;
+        ln += 0.08 * w;
+        cr = Math.max(cr, 0.25 * w);
+        gL = gR = 0.7;
+      }
+    }
+  }
   // ---- chop steps: a handler sizing up a close defender keeps his feet alive ----
   if (PRO && has && md === "i" && !hold && sp < 45 && !(p.mvT > 0) && !p.postA && !air) {
     let near = 1e9;
@@ -1566,6 +1596,10 @@ export function pose3(p: Player) {
     if (mode && mode !== p.ctM) p.ctB = T;
     p.ctM = mode;
     const ks = T - (p.ctB ?? -9) < 0.18 ? 0.25 : 1;
+    // contact starting from nothing: the stored solution starts at the drawn arm (a stale one from long ago would be
+    // eased through - the arm swung via an old pose while the weight rose)
+    if (wR > 0 && (p.ctR || 0) < 0.01) (K[0] = o.aR), (K[1] = o.eR), (K[2] = o.sz);
+    if (wL > 0 && (p.ctL || 0) < 0.01) (K[3] = o.aL), (K[4] = o.eL), (K[5] = o.zL ?? o.sz);
     // (weights ride a critically damped spring: they start and stop with zero velocity, so contact never pops)
     {
       const om = cat || con ? 22 : 18;
