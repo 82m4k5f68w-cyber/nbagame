@@ -360,6 +360,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   spots, least total travel + ball / driver / busy-teammate penalties + stickiness `p.ai.spj`) - no more running across
   the floor through a teammate. Debug tag `p.br` = the off-ball branch that moved a player (spot/scr/use/seal/cut/tr/
   dho/hold/lane/SP). Unintended close pairs (no screen/handoff/transition) 12.7% -> 8.6% of half-court ticks.
+- Fronting the post (CPU man D): a man 0.3 ft+ shorter than a big who is sealing (`o.br === "seal"`) gets between him
+  and the ball (15 px ball-side); `p.br` is reset at the top of every `ai()` tick. Transition wings split the corners.
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 

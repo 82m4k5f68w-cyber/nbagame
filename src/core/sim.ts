@@ -1966,6 +1966,7 @@ const NOIN = (o: Input) => {
   return o;
 };
 export function ai(p: Player, dt: number) {
+  p.br = ""; // (the off-ball branch tag is per tick)
   const NP = cfg.NP,
     a = p.ai,
     t = p.tm,
@@ -2439,6 +2440,14 @@ export function ai(p: Player, dt: number) {
           uy = (HY - o.y) / l;
         tx += -uy * sh * -1;
         ty += ux * sh * -1;
+      }
+      // fronting the post: a smaller man on a big who is sealing on the block gets between him and the ball (the help
+      // behind him takes the lob); the entry pass then has to go over the top
+      if (cpu && B.owner !== o && o.br === "seal" && o.ht - p.ht >= 0.3 && od < 120) {
+        const bl = Math.hypot(B.x - o.x, B.y - o.y) || 1;
+        tx = o.x + ((B.x - o.x) / bl) * 15;
+        ty = o.y + ((B.y - o.y) / bl) * 15;
+        STAT.front = (STAT.front || 0) + 1;
       }
       if (dh > 470 ? B.x < 470 : B.x > 470) tx = dh > 470 ? Math.max(tx, 455) : Math.min(tx, 485);
       mv(p, tx, ty, 0.92);
