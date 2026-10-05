@@ -83,6 +83,8 @@ namespace Hoops.Core
         }
         /// <summary>Pelvis height helper: vertical extension of a leg (thigh t, knee k).</summary>
         static double Ext(double t, double k) => RIG.L1 * Math.Cos(t) + RIG.L2 * Math.Cos(t - k);
+        /// <summary>Blend offset wrap: cr (crouch, channel 9) is a distance, every other channel an angle.</summary>
+        static double Wq(int j, double a) => j == 9 ? a : wrapPi(a);
 
         /// <summary>Write this tick's joint angles into p.q (in place, smoothed when Pro Play is on).</summary>
         public static void pose3(Player p)
@@ -1533,7 +1535,385 @@ namespace Hoops.Core
                     zL = 0.1;
                 }
             }
-//@@CONTINUE@@
+            // ---- secondary motion (light ragdoll): a damped spring on the torso. Contact impulses (sized by the hit, so the
+            // momentum of the collision carries into the reaction) and the body's own inertia when speeding up, stopping or
+            // cutting drive it; it overshoots and settles. Big hits make the arms flail for balance and force a recovery step.
+            if (PRO)
+            {
+                double cf = Math.Cos(p.f),
+                    sf = Math.Sin(p.f),
+                    ax = (p.vx - (p.svx ?? p.vx)) / DT,
+                    ay = (p.vy - (p.svy ?? p.vy)) / DT;
+                p.svx = p.vx;
+                p.svy = p.vy;
+                double afw = clamp(ax * cf + ay * sf, -6000, 6000),
+                    asd = clamp(-ax * sf + ay * cf, -6000, 6000);
+                if (Or0(p.hitT) > Or0(p.hit0) + 0.01)
+                {
+                    double hfw = Or0(p.hitX) * cf + Or0(p.hitY) * sf,
+                        hsd = -Or0(p.hitX) * sf + Or0(p.hitY) * cf;
+                    p.sfv = Or0(p.sfv) + hfw * p.hitT * 13;
+                    p.ssv = Or0(p.ssv) + hsd * p.hitT * 13;
+                }
+                p.hit0 = Or0(p.hitT);
+                double air2 = p.z > 2 ? 0.4 : 1; // no footing in the air: softer
+                p.sfv = Or0(p.sfv) + (-110 * Or0(p.sf) - 12 * Or0(p.sfv) - (md == "i" ? afw * 0.007 * air2 : 0)) * DT;
+                p.ssv = Or0(p.ssv) + (-110 * Or0(p.ss) - 12 * Or0(p.ssv) - (md == "i" ? asd * 0.007 * air2 : 0)) * DT;
+                p.sf = clamp(Or0(p.sf) + p.sfv * DT, -0.55, 0.55);
+                p.ss = clamp(Or0(p.ss) + p.ssv * DT, -0.55, 0.55);
+                ln += p.sf;
+                rz += p.ss * 0.9;
+                cx += p.sf * 0.4;
+                // the head and loose arms trail the torso (they lag its spring velocity)
+                HEADX -= p.sf * 0.55;
+                if (md == "i" && !has)
+                {
+                    aL -= clamp(p.sfv * 0.06, -0.3, 0.3);
+                    aR -= clamp(p.sfv * 0.06, -0.3, 0.3);
+                }
+                double wob = Hypot(p.sf, p.ss);
+                if (wob > 0.12 && md == "i" && !has)
+                {
+                    // balance: arms out, a quick step to catch the fall
+                    double k = Math.Min(1, (wob - 0.12) / 0.25);
+                    sz += 0.7 * k;
+                    zL = (zL ?? sz) + 0.7 * k;
+                    aL += 0.4 * k;
+                    aR += 0.4 * k;
+                    hs += clamp(-p.ss * 0.9, -0.3, 0.3);
+                    tL += p.sf * 0.5;
+                    tR += p.sf * 0.5;
+                }
+            }
+            // ---- additive layer: breathing (deeper when tired) ----
+            {
+                double tired = 1 - p.en; // (TS p.en ?? 1: en starts at 1)
+                cx += Math.Sin(Sim.T * (2.1 + tired * 3) + p.k * 1.7) * (0.012 + tired * 0.05);
+            }
+            // ---- feet: flat on the floor through stance, toe-off behind the body, pointed in the air ----
+            double fL = tL - kL + toe + (st == ST.run || st == ST.drib ? Math.Max(0, -tL - 0.12) * 0.9 * spd : 0),
+                fR = tR - kR + toe + (st == ST.run || st == ST.drib ? Math.Max(0, -tR - 0.12) * 0.9 * spd : 0);
+            if (MCF > 0 && !air) { fL += (MFL - fL) * MCF; fR += (MFR - fR) * MCF; } // captured ankles (heel-strike, toe-off)
+            MCF = 0;
+            // ---- head tracking: everyone follows the ball; the handler and shooters read the rim ----
+            double hy = 0,
+                hp = 0,
+                hyT = 0,
+                hpT = 0;
+            double nk = -(ln + cx) * 0.35;
+            {
+                // idle glance: off the ball and standing at a dead ball, eyes wander (bench, crowd, a teammate) now and then
+                double gl0 = Math.Sin(Sim.T * 0.37 + p.k * 2.1);
+                if (!Util.T(LOOK.on) && !has && sp < 20 && (rs > 0 || ftq != null || inb > 0) && gl0 > 0.55)
+                {
+                    var o = P[(int)((p.k * 3 + Math.Floor((Sim.T * 0.37) / 3)) % P.Count)];
+                    if (o != null && o != p) { LOOK.x = o.x; LOOK.y = o.y; LOOK.z = o.z + o.ht * 9; LOOK.on = 1; }
+                    else { LOOK.x = p.x; LOOK.y = p.y < 250 ? -60 : 560; LOOK.z = 60; LOOK.on = 1; } // the crowd
+                }
+                if (!Util.T(LOOK.on))
+                {
+                    if ((has && (md == "c" || md == "s")) || (has && md == "i" && !Util.T(p.postA)))
+                    {
+                        double hx = hoop(p.tm);
+                        LOOK.x = hx; LOOK.y = HY; LOOK.z = 100;
+                        if (B.mode == "pass" && B.to != null) { LOOK.x = B.to.x; LOOK.y = B.to.y; LOOK.z = 60; }
+                    }
+                    else { LOOK.x = B.x; LOOK.y = B.y; LOOK.z = B.z; }
+                }
+                double dx = LOOK.x - p.x,
+                    dy = LOOK.y - p.y,
+                    dist = Hypot(dx, dy);
+                if (dist > 6)
+                {
+                    double d = Math.Atan2(Math.Sin(Math.Atan2(dy, dx) - p.f), Math.Cos(Math.Atan2(dy, dx) - p.f)),
+                        hz2 = p.z + p.ht * 9.3;
+                    hyT = -d - ty - cy;
+                    hpT = Math.Atan2(hz2 - LOOK.z, dist) - (ln + cx) * 0.9 - nk;
+                    hy = clamp(hyT, -1.25, 1.25);
+                    hp = clamp(hpT, -0.75, 0.8);
+                    hy *= 1 - 0.6 * clamp((Math.Abs(hyT) - 1.8) / 0.6, 0, 1); // target behind: don't owl-turn (eases in, no snap)
+                }
+                hp += HEADX;
+                LOOK.on = 0;
+                HEADX = 0;
+            }
+            // ---- guide hand: on the side of the ball from the gather until the release, then it peels away ----
+            if (PRO && has && (md == "c" || md == "s") && !Util.T(p.postA) && (!IsLaySv(I(Or0(p.sv))) || p.sv == 11 || p.sv == 14 || p.sv == 15 || md == "c"))
+            {
+                var ball = palmAt(p, aR, eR, sz, wR, ln, ty, rz, cx, cy, cr);
+                if (ball != null)
+                {
+                    double lx = -Math.Sin(p.f),
+                        ly = Math.Cos(p.f);
+                    var r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9);
+                    if (r2.over < 0.6)
+                    {
+                        double w = md == "c" ? Math.Min(1, p.t / 0.12) : 1;
+                        // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early, 3 elbow flared out wide,
+                        // 4 rides high with the ball after the release, 5 old-school two-hand push (both wrists snap)
+                        double gs = p.sg != null ? Or0(p.sg.gs) : 0,
+                            k7 = md == "s" ? p.t / 0.4 : 0,
+                            off = gs == 2 && k7 > 0.6 ? Math.Min(1, (k7 - 0.6) / 0.15) : 0;
+                        aL += (r2.a - aL) * w * (1 - off);
+                        eL += (r2.e - eL) * w * (1 - off);
+                        zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w * (1 - off);
+                        wL = -0.35 * w;
+                        if (gs == 1 && k7 > 0.68) { wL = 0.7; oL = 0.6; } // thumb flick
+                        if (gs == 3) { zL = (zL ?? sz) + 0.28 * w; oL = -0.35 * w; } // elbow out, palm faces the ball's side
+                        if (gs == 4 && k7 > 0.7)
+                        {
+                            double u = Math.Min(1, (k7 - 0.7) / 0.2); // the guide arm keeps rising beside the shooting arm
+                            aL += (aR - 0.15 - aL) * u;
+                            eL += (0.35 - eL) * u;
+                            wL = -0.1;
+                        }
+                        if (gs == 5 && k7 > 0.66) { wL = 0.85; aL += 0.15; eL = Math.Max(0, eL - 0.3); } // pushes through with both
+                        gL = 0.15;
+                    }
+                }
+            }
+            // ---- left-handed shooters: the whole shot is mirrored across the body (shooting arm, guide hand, legs, twist).
+            // Everything above was solved for a right-hander (guide-hand IK included); mirroring is exact, and handPos follows
+            // the left hand while q.mir is set, so the release point and the 3D ball stay in the shooting hand.
+            bool mirr = p.sg != null && Util.T(p.sg.lh) && (md == "s" || (md == "c" && has));
+            if (mirr)
+            {
+                double t = aL;
+                aL = aR; aR = t; t = eL; eL = eR; eR = t;
+                t = zL == null ? sz : zL.Value;
+                zL = sz; sz = t;
+                t = wL; wL = wR; wR = t; t = oL; oL = -oR; oR = -t; t = gL; gL = gR; gR = t; t = hL; hL = hR; hR = t;
+                t = tL; tL = tR; tR = t; t = kL; kL = kR; kR = t; t = fL; fL = fR; fR = t;
+                hs = -hs; ty = -ty; rz = -rz; cy = -cy; hy = -hy; hyT = -hyT;
+            }
+            // ---- blend: inertialization. On a state change the old pose's offset from the new target (and its velocity)
+            // decays to zero along a quintic over that state's blend time (snappy into a shot, slow into a rest), so the new
+            // animation plays with no lag while the transition stays smooth (C2, no overshoot). Inside a state only a light
+            // 50 ms filter smooths the targets (IK and clip switches).
+            bool sm = PRO && p.q != null && p.posed, // (TS q && q.wR != null)
+                INZ = cfg.INZ != 0;
+            double fS = sm ? 1 - Math.Exp((-DT * 3) / (INZ ? Math.Min(0.05, BLEND[st]) : BLEND[st])) : 1;
+            var oq = p.q ?? (p.q = new Q());
+            VALS[0] = tL;
+            VALS[1] = tR;
+            VALS[2] = kL;
+            VALS[3] = kR;
+            VALS[4] = aL;
+            VALS[5] = aR;
+            VALS[6] = clamp(eL, -0.05, 2.75); // (elbows never bend backwards)
+            VALS[7] = clamp(eR, -0.05, 2.75);
+            VALS[8] = sz;
+            VALS[9] = cr;
+            VALS[10] = ln;
+            VALS[11] = rz;
+            VALS[12] = ty;
+            VALS[13] = wR;
+            VALS[14] = wL;
+            VALS[15] = zL == null ? sz : zL.Value;
+            VALS[16] = hz;
+            VALS[17] = cx;
+            VALS[18] = cy;
+            VALS[19] = nk;
+            VALS[20] = hy;
+            VALS[21] = clamp(hp, -0.85, 0.8); // (the neck has limits: looking far down at a low ball is the chest's job too)
+            VALS[22] = fL;
+            VALS[23] = fR;
+            VALS[24] = gL;
+            VALS[25] = gR;
+            VALS[26] = hs;
+            VALS[27] = oL;
+            VALS[28] = oR;
+            VALS[29] = hL;
+            VALS[30] = hR;
+            // per joint: x/v = offset and its velocity at the last restart, t/tf = time since and blend length, b = filtered
+            // target, pt/pv = last target and its velocity (to spot a target that jumps), last/lv = last output and velocity
+            var iz = p.inz ?? (p.inz = new Inz());
+            bool trans = st != p.anS && sm && Util.T(iz.ok),
+                fromReach = p.anS == ST.cat || p.anS == ST.air; // (hands out for a catch / up for a rebound, then straight into a shot)
+            if (!sm || !Util.T(iz.ok))
+                for (int j = 0; j < NQ; j++) { iz.b[j] = VALS[j]; iz.pt[j] = VALS[j]; iz.pv[j] = 0; iz.x[j] = 0; iz.v[j] = 0; iz.t[j] = 9; }
+            p.anS = st;
+            iz.ok = 1;
+            for (int j = 0; j < NQ; j++)
+            {
+                double v = VALS[j];
+                bool hd = j == 20 || j == 21;
+                // wR is never smoothed (the wrist flick at release must be crisp); the head turns a bit quicker than the body
+                if (j == 13 || !sm)
+                {
+                    oq[j] = v;
+                    iz.b[j] = v;
+                }
+                else if (!INZ)
+                {
+                    iz.b[j] += (v - iz.b[j]) * (hd ? Math.Min(1, fS * 1.6) : fS);
+                    oq[j] = iz.b[j];
+                    iz.pt[j] = v;
+                }
+                else
+                {
+                    // restart this joint's blend on a state change, or when its target jumps (a clip/IK/look-target switch that
+                    // would pop): the body carries on from where it is and eases into the new target
+                    // (cr (crouch, j 9) is a distance, every other channel an angle: W = identity / wrapPi)
+                    double dev = Math.Abs(Wq(j, v - (iz.pt[j] + iz.pv[j] * DT)));
+                    bool jump = dev > (hd ? 0.08 : j >= 4 && j <= 8 ? 0.25 : 0.12) * (iz.t[j] < iz.tf[j] ? 3 : 1);
+                    if (trans || jump)
+                    {
+                        // (from the blender's own last output: o[k] also carries the foot-placement IK, which must not leak in)
+                        double cur = Util.T(iz.has) ? iz.last[j] : oq[j]; // (TS o[k] ?? v: sm implies p.q was fully written)
+                        iz.x[j] = Wq(j, cur - v); // joint angles are circular: 2 pi apart is the same pose (spins, IK across +-pi)
+                        iz.v[j] = clamp(iz.lv[j] - (jump ? iz.pv[j] : 0), -40, 40);
+                        iz.t[j] = 0;
+                        // (a state change uses that state's own blend time - snappy into a shot; inside a state, big jumps blend
+                        // longer so the catch-up never whips, except during shots and moves where timing is everything)
+                        bool quick = (st == ST.shot || st == ST.move) && !hd; // (the head never snaps)
+                        double big = Math.Min(quick ? 0.1 : 0.32, 0.08 + Math.Abs(iz.x[j]) * (hd ? 0.12 : 0.1));
+                        // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
+                        iz.tf[j] = trans ? Math.Max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : 0) : big * 0.75) : big;
+                        iz.b[j] = v;
+                    }
+                    iz.pv[j] = jump ? 0 : Wq(j, v - iz.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
+                    iz.pt[j] = v;
+                    if (j != 9 && Math.Abs(v - iz.b[j]) > Math.PI) iz.b[j] = v; // the filter never runs the long way round (angles)
+                    iz.b[j] += (v - iz.b[j]) * (hd ? Math.Min(1, fS * 1.6) : fS);
+                    iz.t[j] += DT;
+                    oq[j] = iz.b[j] + inert(iz.x[j], iz.v[j], iz.tf[j], iz.t[j]);
+                }
+                iz.lv[j] = (j == 9 ? oq[j] - iz.last[j] : wrapPi(oq[j] - iz.last[j])) / DT;
+                iz.last[j] = oq[j];
+                iz.has = 1;
+            }
+            if (mirr) oq.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
+            oq.mir = mirr ? 1 : 0;
+            p.posed = true;
+            // contact (post-blend, so it holds even while the arms are still blending out of another pose):
+            // - the dribble hand meets the ball at the top of every bounce,
+            // - a receiver's two hands meet an incoming pass (either side of the ball) as it arrives.
+            // Each arm solves for its own side; its weight eases in and out over ~60 ms and it fades out from its last solution
+            // when contact ends (a pass, a shot), so the correction itself never pops; an IK branch flip is ignored.
+            {
+                var K = p.ctK ?? (p.ctK = new double[12]); // per arm: a, e, ab of the last solution + target x, y, z
+                bool drib = PRO && has && md == "i" && !Util.T(p.postA) && !Util.T(hold) && inb <= 0 && B.mode == "held" && B.dtop != null && !(p.pT > 0) && !(p.mvT > 0 && (p.mvk == 2 || p.mvk == 3)); // (spins and behind-the-backs carry the ball on their own hand paths)
+                double bd = Hypot(B.x - p.x, B.y - p.y),
+                    cl = (B.vx * (p.x - B.x) + B.vy * (p.y - B.y)) / (Util.T(bd) ? bd : 1), // closing speed of the pass
+                    tta = cl > 30 ? (bd - 24) / cl : 9; // seconds until it reaches the hands
+                bool cat = PRO && !has && B.mode == "pass" && B.to == p && tta < 0.3 && B.z < p.z + 125 && md != "s";
+                // contest: a defender close to a shooter in his gather/shot gets the ball-side hand up at the ball (late, fast)
+                var sh = B.owner ?? (Util.T(B.sh) && B.age < 0.3 && !Util.T(B.ft) ? B.last : null); // (and just after the release: the hand stays up)
+                bool con = PRO && !has && !air && !Util.T(p.postA) && sh != null && sh.tm != p.tm && (sh.mode == "c" || sh.mode == "s" || B.owner == null) && Hypot(sh.x - p.x, sh.y - p.y) < 48 && md != "s" && md != "c";
+                double cwR = 0,
+                    cwL = 0;
+                if (!con) p.ctPo = 0;
+                if (con)
+                {
+                    // (aim at the shooter's ball while he has it; after the release the hand stays where the ball left - same spot,
+                    // same arm - not chasing it)
+                    var P0 = p.ctP ?? (p.ctP = new double[] { 0, 0, 0, 1 });
+                    if (B.owner != null || !Util.T(p.ctPo))
+                    {
+                        P0[0] = B.x;
+                        P0[1] = B.y;
+                        P0[2] = Math.Max(B.z + 10, p.z + p.ht * 10.6);
+                        P0[3] = armIK(p, oq.cr, P0[0], P0[1], P0[2], 0, 0.6).right ? 1 : 0;
+                    }
+                    p.ctPo = 1;
+                    double w = clamp((48 - Hypot(sh.x - p.x, sh.y - p.y)) / 14, 0, 1);
+                    if (Util.T(P0[3])) { cwR = w; K[6] = P0[0]; K[7] = P0[1]; K[8] = P0[2]; }
+                    else { cwL = w; K[9] = P0[0]; K[10] = P0[1]; K[11] = P0[2]; }
+                }
+                else if (drib)
+                {
+                    double dtop = B.dtop.Value,
+                        bz = Math.Max(B.z, dtop - 8),
+                        // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
+                        wt = clamp((B.z - (dtop - 16)) / 8, 0, 1) * clamp((dtop + 12 - B.z) / 6, 0, 1);
+                    if (armIK(p, oq.cr, B.x, B.y, bz, 0, 0.6).right) { cwR = wt; K[6] = B.x; K[7] = B.y; K[8] = bz; }
+                    else { cwL = wt; K[9] = B.x; K[10] = B.y; K[11] = bz; }
+                }
+                else if (cat)
+                {
+                    // both hands go out to where the ball will be caught (a quarter second ahead), one on each side of it; a bounce
+                    // pass is taken at the knees, not off the floor
+                    double t2 = clamp(tta, 0, 0.3),
+                        fx = B.x + B.vx * t2,
+                        fy = B.y + B.vy * t2,
+                        fz = clamp(B.z + B.vz * t2, p.z + 24, p.z + 110),
+                        fl = Hypot(fx - p.x, fy - p.y),
+                        ux = (fx - p.x) / (Util.T(fl) ? fl : 1),
+                        uy = (fy - p.y) / (Util.T(fl) ? fl : 1),
+                        wt = clamp(1 - tta / 0.3, 0, 1);
+                    cwR = cwL = wt;
+                    K[6] = fx + uy * 3.5; K[7] = fy - ux * 3.5; K[8] = fz;
+                    K[9] = fx - uy * 3.5; K[10] = fy + ux * 3.5; K[11] = fz;
+                }
+                // (TS also computes r = min(1, DT * (cat || con ? 24 : 16)) here, unused)
+                double mode = con ? 3 : drib ? 1 : cat ? 2 : 0;
+                // a switch of contact kind (the catch becomes a dribble) eases the solution over instead of jumping to it
+                if (Util.T(mode) && mode != p.ctM) p.ctB = Sim.T;
+                p.ctM = mode;
+                double ks = Sim.T - (p.ctB ?? -9) < 0.18 ? 0.25 : 1;
+                // contact starting from nothing: the stored solution starts at the drawn arm (a stale one from long ago would be
+                // eased through - the arm swung via an old pose while the weight rose)
+                if (cwR > 0 && Or0(p.ctR) < 0.01) { K[0] = oq.aR; K[1] = oq.eR; K[2] = oq.sz; }
+                if (cwL > 0 && Or0(p.ctL) < 0.01) { K[3] = oq.aL; K[4] = oq.eL; K[5] = oq.zL; }
+                // (weights ride a critically damped spring: they start and stop with zero velocity, so contact never pops)
+                {
+                    // (a spin / behind-the-back carries the ball on its own hand path: a leftover catch or dribble fade dies off faster)
+                    double om = cat || con ? 22 : p.mvT > 0 && (p.mvk == 2 || p.mvk == 3) ? 30 : 18;
+                    p.ctRv = Or0(p.ctRv) + (om * om * (cwR - Or0(p.ctR)) - 2 * om * Or0(p.ctRv)) * DT;
+                    p.ctLv = Or0(p.ctLv) + (om * om * (cwL - Or0(p.ctL)) - 2 * om * Or0(p.ctLv)) * DT;
+                    p.ctR = clamp(Or0(p.ctR) + p.ctRv * DT, 0, 1);
+                    p.ctL = clamp(Or0(p.ctL) + p.ctLv * DT, 0, 1);
+                }
+                if (p.ctR > 0.01)
+                {
+                    if (cwR > 0)
+                    {
+                        var k = armIK(p, oq.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
+                        if (con) { oq.wR = -0.2; oq.gR = 0.05; } // fingers spread, wrist back
+                        K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks);
+                        K[1] += (k.e - K[1]) * ks;
+                        K[2] += (k.ab - K[2]) * ks;
+                    }
+                    // (contests: the plain difference; fades: wrapped, with an immediate guard below that lets go well before +-pi -
+                    // a stored catch solution that crossed the wrap made the plain difference swing the arm the long way round)
+                    if (con) p.ctPl = 1;
+                    else if (drib || cat) p.ctPl = 0;
+                    bool fade = !drib && !cat && !con && !Util.T(p.ctPl); // (a contest's fade keeps the contest's plain difference)
+                    double da = drib || cat || fade ? wrapPi(K[0] - oq.aR) : K[0] - oq.aR;
+                    // (an IK branch flip is not a correction; a fade keeps the last live guard, so a solution that was never shown
+                    // does not appear while fading out; eased, never switched: a guard flickering tick to tick was a pop of its own)
+                    double cgR = drib || cat ? clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctRg ?? 1;
+                    p.ctRg = (p.ctRg ?? cgR) + (cgR - (p.ctRg ?? cgR)) * Math.Min(1, DT * 14);
+                    double w = p.ctR * (fade ? Math.Min(p.ctRg ?? 1, clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1)) : p.ctRg ?? 1);
+                    oq.aR += da * w;
+                    oq.eR += (K[1] - oq.eR) * w;
+                    oq.sz += (K[2] - oq.sz) * w;
+                }
+                if (p.ctL > 0.01)
+                {
+                    if (cwL > 0)
+                    {
+                        var k = armIK(p, oq.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
+                        if (con) oq.gL = 0.05;
+                        K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks);
+                        K[4] += (k.e - K[4]) * ks;
+                        K[5] += (k.ab - K[5]) * ks;
+                    }
+                    double z0 = oq.zL; // (TS o.zL ?? o.sz: zL is always written above)
+                    bool fadeL = !drib && !cat && !con && !Util.T(p.ctPl);
+                    double da = drib || cat || fadeL ? wrapPi(K[3] - oq.aL) : K[3] - oq.aL;
+                    double gL2 = drib || cat ? clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctLg ?? 1;
+                    p.ctLg = (p.ctLg ?? gL2) + (gL2 - (p.ctLg ?? gL2)) * Math.Min(1, DT * 14);
+                    double w = p.ctL * (fadeL ? Math.Min(p.ctLg ?? 1, clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1)) : p.ctLg ?? 1);
+                    oq.aL += da * w;
+                    oq.eL += (K[4] - oq.eL) * w;
+                    oq.zL = z0 + (K[5] - z0) * w;
+                }
+            }
+            if (PRO && cfg.PLANT != 0) plantFeet(p, oq, sp);
+            if (PRO && cfg.AVOID != 0) avoidBodies(p, oq);
+            face(p, st, hyT, hpT);
         }
     }
 }
