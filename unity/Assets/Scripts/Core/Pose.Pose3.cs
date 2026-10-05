@@ -1019,6 +1019,224 @@ namespace Hoops.Core
                     LOOK.on = 1;
                 }
             }
+            // ---- Pro Play v3 ----
+            if (PRO)
+            {
+                // closeout: a defender flying at the ball handler gets a hand up on the way, then breaks down with short
+                // choppy steps (butt low, weight back) so he can't be blown by; the high hand takes the shot side, the low
+                // hand the drive
+                var ow = B.owner;
+                if (ow != null && ow.tm != p.tm && !air && md == "i" && !(p.hupT > 0) && !(p.celT > 0))
+                {
+                    double dx = ow.x - p.x,
+                        dy = ow.y - p.y,
+                        d = Hypot(dx, dy);
+                    if (!Util.T(d)) d = 1;
+                    double ap = (p.vx * dx + p.vy * dy) / d;
+                    if (d < 140 && d > 14 && ap > 50)
+                    {
+                        double w = clamp((ap - 50) / 110, 0, 1) * clamp((140 - d) / 50, 0, 1),
+                            brk = clamp((85 - d) / 40, 0, 1) * w, // breaking down: chop steps
+                            shoot = ow.mode == "c" || ow.mode == "s" ? 1 : 0.65,
+                            ch = Math.Sin(Sim.T * 27 + p.k * 1.3);
+                        aR += (2.2 + 0.7 * shoot - aR) * w;
+                        eR += (0.5 - 0.35 * shoot - eR) * w;
+                        sz += (0.2 - sz) * w;
+                        aL += (0.75 - aL) * w;
+                        eL += (0.7 - eL) * w;
+                        gR = 0.05;
+                        tL += (0.42 + ch * 0.12 - tL) * brk;
+                        tR += (0.42 - ch * 0.12 - tR) * brk;
+                        kL += (0.95 + Math.Max(0, ch) * 0.2 - kL) * brk;
+                        kR += (0.95 + Math.Max(0, -ch) * 0.2 - kR) * brk;
+                        ln += (0.24 - ln) * brk;
+                        cr = Math.Max(cr, 0.5 * brk);
+                        toe += 0.15 * brk; // up on the balls of the feet
+                    }
+                }
+                // calling for the ball: an open shooter (nobody within 90 px) on the perimeter raises a hand and shouts for
+                // it, in short bursts so the floor looks alive rather than everyone waving at once
+                if (ow != null && ow.tm == p.tm && ow != p && !air && md == "i" && !(p.celT > 0) && !(p.setT > 0) && !Util.T(p.postA) && inb <= 0 && ftq == null)
+                {
+                    double dh = Hypot(ow.x - p.x, ow.y - p.y);
+                    double nd = NearOpp(p);
+                    double cyc = (Sim.T * 0.45 + p.k * 0.37) % 1;
+                    if (nd > 90 && dh > 140 && dh < 420 && cyc < 0.3)
+                    {
+                        double w = Math.Min(1, Math.Min(cyc / 0.06, (0.3 - cyc) / 0.06));
+                        aR += (2.75 - aR) * w;
+                        eR += (0.35 - eR) * w;
+                        sz += (0.35 - sz) * w;
+                        gR = 0.0; // open palm
+                        p.callT = 0.1; // the face shouts (face())
+                    }
+                }
+                // on-ball defense up close: the trail hand rides the driver's hip (feeling him), the other hand stays active
+                if (ow != null && ow.tm != p.tm && !air && md == "i" && !(p.hupT > 0) && !(p.celT > 0))
+                {
+                    double d = Hypot(ow.x - p.x, ow.y - p.y);
+                    if (d < 34 && d > 10 && Math.Sin(Sim.T * 1.7 + p.k) > -0.3)
+                    {
+                        var r = armIK(p, cr, ow.x - Math.Cos(ow.f) * 3, ow.y - Math.Sin(ow.f) * 3, ow.z + ow.ht * 4.4, 0, 0.9);
+                        double w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0);
+                        if (r.right) { aR += (r.a - aR) * w; eR += (r.e - eR) * w; sz += (r.ab - sz) * w; gR = 0.1; }
+                        else { aL += (r.a - aL) * w; eL += (r.e - eL) * w; zL = (zL ?? sz) + (r.ab - (zL ?? sz)) * w; gL = 0.1; }
+                    }
+                }
+                // contest with a hand up, feet on the floor (vs a pump faker)
+                if (Or0(p.hupT) > 0 && !air && !has)
+                {
+                    double w = Math.Min(1, p.hupT * 4);
+                    aR += (2.95 - aR) * w;
+                    eR += (0.05 - eR) * w;
+                    sz += (0.12 - sz) * w;
+                    aL += (1.3 - aL) * w;
+                    eL += (0.6 - eL) * w;
+                    gR = 0.05;
+                }
+                // pass styles: behind the back (throwing arm swings behind the hip), no-look (head away from the target)
+                if (p.pT > 0 && Util.T(p.pk))
+                {
+                    double u = clamp(1 - p.pT / 0.25, 0, 1);
+                    if (p.pk == 2)
+                    {
+                        aR = -0.55 - 0.35 * u;
+                        eR = 1.2 - 0.6 * u;
+                        sz = 0.35;
+                        oR = -0.9 * u;
+                        aL = 0.4;
+                        eL = 0.5;
+                        ty -= 0.25;
+                    }
+                    else if (p.pk == 1)
+                    {
+                        LOOK.x = p.x + Math.Cos(p.f) * 200;
+                        LOOK.y = p.y + Math.Sin(p.f) * 200;
+                        LOOK.z = 70;
+                        LOOK.on = 1;
+                    }
+                    else if (p.pk == 3)
+                    {
+                        // wraparound: one arm sweeps around the defender's hip
+                        aR = 0.9 + 0.3 * u;
+                        eR = 0.4;
+                        sz = 0.9 - 0.7 * u;
+                        aL = 0.5;
+                        ln += 0.2;
+                        cr = Math.Max(cr, 0.25);
+                    }
+                }
+                // one-hand catch on the run
+                if (B.mode == "pass" && B.to == p && !air && sp > 150)
+                {
+                    aL = 0.35;
+                    eL = 0.5;
+                    zL = 0.1;
+                }
+                // double clutch: the ball comes down under the contest, then back up to the release
+                if (md == "s" && Or0(p.dcl) >= 0.09 && !Util.T(p.rl))
+                {
+                    double w = clamp(Math.Sin(((p.t - 0.14) / 0.3) * Math.PI), 0, 1);
+                    aR -= 0.95 * w;
+                    eR += 0.55 * w;
+                    aL -= 0.8 * w;
+                    eL += 0.45 * w;
+                    ln += 0.18 * w;
+                    cr += 0.05 * w;
+                }
+                // planting the outside foot on a hard cut: sit down and lean back against the momentum
+                if (Or0(p.plantT) > 0 && !air && md == "i")
+                {
+                    double w = Math.Min(1, p.plantT * 6);
+                    cr += 0.28 * w;
+                    ln -= 0.3 * w;
+                    hs += 0.12 * w;
+                }
+                // body english: lean with the ball on the rim, arms out like you can steer it
+                if (Or0(p.engT) > 0 && !has)
+                {
+                    double w = Math.Min(1, p.engT * 5),
+                        s2 = Or0(p.eng);
+                    rz += -0.35 * s2 * w;
+                    ty += 0.2 * s2 * w;
+                    aL += (1.0 - aL) * w;
+                    aR += (1.0 - aR) * w;
+                    eL += (0.45 - eL) * w;
+                    eR += (0.45 - eR) * w;
+                    sz += (0.65 - sz) * w;
+                    zL = (zL ?? sz) + (0.65 - (zL ?? sz)) * w;
+                }
+            }
+            // ---- free throws: players along the lane lean in, ready to box out ----
+            if (PRO && ftq != null && ftq.s != p && md == "i" && Math.Abs(hoop(ftq.s.tm) - p.x) < 150 && Math.Abs(p.y - HY) < 70)
+            {
+                cr = 0.32;
+                ln = 0.3;
+                tL = tR = 0.35;
+                kL = kR = 0.7;
+                hz = 0.22;
+                aL = aR = 0.75;
+                eL = eR = 1.1;
+                zL = 0.35;
+                sz = 0.35;
+            }
+            // ---- fatigue body language: shoulders slump, head forward, shorter arm swing ----
+            {
+                double tired = clamp((0.6 - p.en) / 0.4, 0, 1); // (TS p.en ?? 1: en starts at 1)
+                if (tired > 0 && md == "i" && !air)
+                {
+                    cx += 0.14 * tired;
+                    ln += 0.06 * tired;
+                    HEADX += 0.18 * tired;
+                    if (!has) { aL *= 1 - 0.4 * tired; aR *= 1 - 0.4 * tired; }
+                }
+            }
+            // Planted screener: wide base, knees bent, arms folded across the chest.
+            if (p.setT > 0 && md == "i" && !air && !has)
+            {
+                st = ST.scr;
+                gL = gR = 0.9;
+                hs = 0;
+                hz = 0.32;
+                cr = 0.3;
+                kL = kR = 0.55;
+                tL = tR = 0.25;
+                // (forearms folded across the stomach: the upper arms turn in about the bone, elbows tucked)
+                aL = aR = 0.4;
+                eL = eR = 1.85;
+                hL = hR = 1.15;
+                zL = 0.08;
+                sz = 0.08;
+                ln = 0.08;
+            }
+            // Pro Play contact + weight: bumps rock the torso away from the hit, landings sink into the knees,
+            // and players lean into acceleration.
+            if (PRO)
+            {
+                if (p.landT > 0 && md != "s")
+                {
+                    double k = p.landT / 0.28;
+                    // landing: feet split (one lands first) and the drift carries the stance sideways
+                    tL += 0.22 * k;
+                    tR -= 0.12 * k;
+                    hs += clamp((-p.vx * Math.Sin(p.f) + p.vy * Math.Cos(p.f)) / 600, -0.25, 0.25) * k;
+                    cr += 0.4 * k;
+                    kL += 0.55 * k;
+                    kR += 0.55 * k;
+                    tL += 0.3 * k;
+                    tR += 0.3 * k;
+                    ln += 0.12 * k;
+                }
+                if (md == "i" && !air) ln += clamp(Or0(p.acc) / 2600, -0.14, sp < 150 ? 0.28 : 0.2);
+            }
+            if (Util.T(p.postA))
+            {
+                st = ST.post;
+                cr = 0.45;
+                ln = 0.25;
+                sz = 0.8;
+                aL = 1.2;
+            }
 //@@CONTINUE@@
         }
     }

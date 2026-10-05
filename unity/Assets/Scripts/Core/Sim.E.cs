@@ -45,7 +45,7 @@ namespace Hoops.Core
                     double hold = heldBall(o);
                     double lat, fwd;
                     if (Util.T(hold)) { var hp = HOLDP[(int)hold]; lat = hp[0]; fwd = hp[1]; }
-                    else if (o.mode == "i" && !Util.T(o.postA)) { var dh = dribHand(o, dt); lat = dh[0]; fwd = dh[1]; }
+                    else if (o.mode == "i" && !Util.T(o.postA)) { var dh = dribHand(o, dt); lat = dh.lat; fwd = dh.fwd; }
                     else { lat = DRIB0[0]; fwd = DRIB0[1]; }
                     double off = lat,
                         // (a pump fake carries the ball up AND out in front of the forehead)
