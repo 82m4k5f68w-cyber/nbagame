@@ -2994,6 +2994,20 @@ export function bstep(dt: number) {
         dy = B.y - HY,
         side = Math.abs(dy) > 1 ? Math.sign(dy) : Math.random() < 0.5 ? -1 : 1;
       let dx = B.x - hx;
+      if (dx * court < -(RR + 1) && gameLike() && S === "play") {
+        // wedged between the back iron and the glass: no nudge gets it over the iron - the ref blows it dead (a held
+        // ball; the defense gets it, like a defensive rebound) - it froze a game once, ball and clock
+        const L = B.last,
+          tm = L ? L.tm : pos;
+        if (L && B.sh) zoneRes(L, B.d0, false);
+        fx({ k: "whistle", tm });
+        ban("LODGED BALL", "HELD BALL · " + cl[1 - tm].toUpperCase() + " BALL", "#ffd23f");
+        STAT.lodged = (STAT.lodged || 0) + 1;
+        setup(1 - tm);
+        return;
+      }
+      // (practice / contests: no possession to give - lift a wedged ball out in front of the rim)
+      if (dx * court < -(RR + 1)) (B.x = hx + court * (RR + 6)), (B.z = Math.max(B.z, 106)), (dx = court * 4);
       if (dx * court < 0) dx = court * (2 + Math.random() * 4); // behind the rim: roll it out front
       const d = Math.hypot(dx, dy) || 1;
       B.vx = (dx / d) * 55;

@@ -355,6 +355,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Closeout contest (`contestRaw`): a defender within 95 px flying at the shooter (approach > 90 px/s) counts as a
   partial contest (x .8) before he arrives - calibrated kick-out threes ~39% (were 56%). Seals: 2.5 s per possession
   (`p.ai.sealT`), only while the ball is at the arc.
+- Lodged ball (bstep): wedged 1+ px behind the back iron (between iron and glass, the old nudge could never lift it over
+  - a game froze with the clock at 0) -> game-like modes: whistle, "LODGED BALL" held ball, the defense gets it
+  (`setup(1 - shooter's team)`, counted as a miss); practice/contests: lifted out in front of the rim. rim_wedge.ts.
 - Free throws: a missed (non-final) FT moves on even when the miss caroms back into somebody's hands (`ftTick`:
   `B.owner && B.age > .3`); the shooter catching his own miss used to hold ftq - and the game clock - forever.
 - Spacing: the spacers' spots are assigned jointly once per tick per team (`SPA`, exhaustive search over <= 4 spacers x 5
