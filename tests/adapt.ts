@@ -72,6 +72,17 @@ import { rapInit } from "../src/core/physics";
     G.gamePlan(1);
     ok(G.TS.ds[1] === 4, "opponent living at the rim, cold from three -> 2-3 zone (ds " + G.TS.ds[1] + ")");
   }
+  // pick-and-roll coverage: hedge against a pull-up shooting star, drop against a non-shooter
+  fresh();
+  for (const q of G.P) if (q.tm === 0) q.c = 92;
+  G.TS.gpT[1] = 10;
+  G.gamePlan(1);
+  const hedge = G.TS.cov[1];
+  fresh();
+  for (const q of G.P) if (q.tm === 0) q.c = 60;
+  G.TS.gpT[1] = 10;
+  G.gamePlan(1);
+  ok(hedge === 1 && G.TS.cov[1] === 0, "hedges the pick-and-roll vs a shooter, drops vs a non-shooter (" + hedge + "/" + G.TS.cov[1] + ")");
   // a hot scorer draws the best defender
   fresh();
   {

@@ -396,6 +396,9 @@ export const TS = {
   sk: [scoutNew(), scoutNew()],
   gp: [0, 0], // game plan per team (GPN): what the CPU offense leans on after reading its own shooting
   gpT: [0, 0], // possessions since the last adjustment
+  trT: [-99, -99], // when each team last got the ball live (defensive rebound, loose ball): transition window
+  tr: [0, 0], // pushing in transition right now (handler attacks, wings run the lanes)
+  cov: [0, 0], // CPU pick-and-roll coverage: 0 drop (big sits in the paint), 1 hedge (big steps out at the handler)
 };
 function scoutNew() {
   return { a: [0, 0, 0], m: [0, 0, 0], c: [0, 0, 0] };
@@ -422,6 +425,9 @@ function resetRules() {
   TS.sk = [scoutNew(), scoutNew()];
   TS.gp = [0, 0];
   TS.gpT = [0, 0];
+  TS.trT = [-99, -99];
+  TS.tr = [0, 0];
+  TS.cov = [0, 0];
   for (let t = 0; t < 2; t++) if (!CT.some((c) => c.tm === t)) TS.mu[t] = autoMatch(t);
 }
 /** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
@@ -515,6 +521,16 @@ export function gamePlan(t: number) {
     TS.ds[t] = ds;
     if (ds === 4) ban("2-3 ZONE", cl[t].toUpperCase() + " PACK THE PAINT", PC[t]), cm("zone", cl[t]);
     else if (ds) txt(cl[t].toUpperCase() + " DEFENSE: " + DSN[ds], 480, 170, "#9fe7ff");
+  }
+  // pick-and-roll coverage: hedge out on a handler who punishes a big sitting back (a pull-up shooter, or their pull-ups
+  // are falling), otherwise drop and protect the rim
+  {
+    const st = starOf(1 - t),
+      cov = (st && st.c >= 86) || (pps(o, 1) > 1.0 && o.a[1] >= 4) ? 1 : 0;
+    if (cov !== TS.cov[t]) {
+      TS.cov[t] = cov;
+      txt(cl[t].toUpperCase() + (cov ? " HEDGE THE PICK-AND-ROLL" : " DROP ON THE PICK-AND-ROLL"), 480, 150, "#9fe7ff");
+    }
   }
   // somebody on the other side is cooking: the best defender takes the assignment
   const mu = TS.mu[t],
@@ -869,6 +885,8 @@ export function setup(off: number) {
   if (cfg.HALF) return setupHalf(off);
   if (S === "play" && P.length) subs(), gamePlan(1 - off), gamePlan(off);
   TS.bc = 0;
+  TS.tr[0] = TS.tr[1] = 0;
+  TS.trT[0] = TS.trT[1] = -99;
   TS.lane.fill(0);
   const NP = cfg.NP,
     ah = hoop(off),
@@ -1362,6 +1380,7 @@ export function step(p: Player, dt: number) {
   if (p.celT > 0) p.celT = Math.max(0, p.celT - dt);
   if (p.actT > 0) p.actT = Math.max(0, p.actT - dt);
   if (p.ttT > 0) p.ttT = Math.max(0, p.ttT - dt);
+  if (p.chinT > 0) p.chinT = Math.max(0, p.chinT - dt);
   if (p.upu > 0) p.upu -= dt;
   if (ftq && ftq.s === p && has && p.mode === "i") p.ftT = (p.ftT || 0) + dt;
   else p.ftT = 0;
@@ -1822,6 +1841,44 @@ export function ai(p: Player, dt: number) {
     const D = Math.hypot(oh - p.x, HY - p.y),
       md = manOf(p),
       dirO = oh > 470 ? -1 : 1;
+    // transition: a live-ball change of possession and the defense isn't back -> push it, hit the man ahead, finish
+    if (NP > 1 && !cfg.HALF && !isH(p) && T - TS.trT[t] < 4.5) {
+      let back = 0,
+        ahead: Player | null = null,
+        av = 0;
+      for (const q of P) {
+        if (q.off) continue;
+        const dq = Math.hypot(oh - q.x, HY - q.y);
+        if (q.tm !== t && dq < D + 25) back++; // (level with him counts: he can still get back)
+        if (q.tm === t && q !== p && dq < D - 80) {
+          const nd = P[nearest(1 - t, q.x, q.y)],
+            op = Math.hypot(nd.x - q.x, nd.y - q.y),
+            v = op - dq * 0.2;
+          if (op > 40 && v > av) (av = v), (ahead = q);
+        }
+      }
+      const adv = back <= (NP >= 4 ? 1 : 0) || (back === 2 && NP === 5 && !!ahead && T - TS.trT[t] < 2.5);
+      if (adv) {
+        if (!TS.tr[t]) (STAT.fb = (STAT.fb || 0) + 1), txtW(back ? "FAST BREAK" : "OPEN FLOOR", p.x, p.y, 90, "#ffd23f"), exc(0.5), cm("break", p.n, back ? "" : "open");
+        TS.tr[t] = 1;
+        if (ahead && D > 150 && T - LASTP[t] > 0.5 && Math.random() < dt * 6) {
+          i.pass = ahead; // hit the man ahead (a lob if he's at the rim)
+          if (Math.hypot(oh - ahead.x, HY - ahead.y) < 90 && ahead.j >= 60) i.lob = 1;
+          return;
+        }
+        if (D < 75 && p.cd <= 0) {
+          i.sd = 1;
+          a.rel = 0.45;
+          a.r = 0;
+          return;
+        }
+        mv(p, oh, HY + clamp(p.y - HY, -40, 40) * 0.5, 1);
+        i.sp = 1;
+        a.r = 0;
+        return;
+      }
+      if (T - TS.trT[t] > 1.5) TS.tr[t] = 0; // the defense got back: run the half-court offense
+    } else TS.tr[t] = 0;
     // catch-and-shoot: just caught a pass with space - shoot it in rhythm (a shooter from deep, anyone from mid-range)
     if (B.pp && B.pp.p !== p && B.pp.p.tm === t && T - B.pp.t < 0.7 && !a.cs && p.cd <= 0 && !CT.some((c) => c.tm === t && c.idx === P.indexOf(p))) {
       a.cs = 1;
@@ -2017,11 +2074,38 @@ export function ai(p: Player, dt: number) {
     if (p.cd <= 0 && p.s >= 72 && Math.hypot(dn.x - p.x, dn.y - p.y) < 55 && Math.random() < dt * 1.4) i.mv = 1 + ((Math.random() * 3) | 0);
   } else if (pos === t && B.mode !== "held" && B.to === p) mv(p, B.x + B.vx * 0.2, B.y + B.vy * 0.2, 1);
   else if (pos === t && B.owner) {
+    // transition: fill the lanes - the closest man runs to the rim, two wide to the corners, the last one trails
+    if (TS.tr[t] && B.owner.tm === t && NP > 1 && !cfg.HALF) {
+      const dir = oh > 470 ? -1 : 1;
+      let rk = 0;
+      for (const q of P) if (q.tm === t && q !== B.owner && q !== p && !q.off && Math.hypot(oh - q.x, HY - q.y) < Math.hypot(oh - p.x, HY - p.y)) rk++;
+      const side = p.y < HY ? -1 : 1,
+        lane = rk === 0 ? [oh + dir * 22, HY + side * 18] : rk < 3 ? [oh + dir * 55, HY + side * 195] : [oh + dir * 245, HY + side * 50];
+      mv(p, lane[0], lane[1], 1.1);
+      if (rk < 3) i.sp = 1;
+      return;
+    }
     if (offBall(p, t)) return;
     const s = SP[p.k],
       x = t ? 52.5 + s[0] : 887.5 - s[0];
     const nd = P[nearest(1 - t, p.x, p.y)];
     mv(p, x + (p.x - nd.x) * 0.35, s[1] + Math.sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
+  } else if (B.owner && TS.tr[1 - t] && B.owner.tm !== t && NP > 1 && !cfg.HALF && !isH(p)) {
+    // transition defense: everybody sprints back; the deepest man protects the rim and stops the ball near it
+    let deeper = 0;
+    const my = Math.hypot(dh - p.x, HY - p.y),
+      h = B.owner,
+      hd = Math.hypot(dh - h.x, HY - h.y);
+    for (const q of P) if (q.tm === t && q !== p && !q.off && Math.hypot(dh - q.x, HY - q.y) < my) deeper++;
+    const dir = dh > 470 ? -1 : 1;
+    if (deeper === 0) {
+      if (hd < 130) mv(p, h.x + (dh - h.x) * 0.3, h.y + (HY - h.y) * 0.3, 1.1); // step up and stop the ball
+      else mv(p, dh + dir * 35, HY + (h.y - HY) * 0.25, 1.1);
+    } else {
+      const o = guardOf(p);
+      mv(p, o.x + (dh - o.x) * 0.25, o.y + (HY - o.y) * 0.25, 1.1);
+    }
+    i.sp = 1;
   } else if (B.owner) {
     const zone = TS.ds[t] === 4 && NP === 5 && !cfg.HALF,
       zo = zone ? zoneMan(p, t, dh) : null,
@@ -2050,8 +2134,19 @@ export function ai(p: Player, dt: number) {
     }
     const l = od || 1;
     const hb = B.owner,
-      hh = Math.hypot(dh - hb.x, HY - hb.y);
-    if (hh < 140 && p.k !== hb.k && nearest(t, hb.x, hb.y, t * NP + hb.k) === t * NP + p.k)
+      hh = Math.hypot(dh - hb.x, HY - hb.y),
+      opl = PLAY[1 - t],
+      // guarding the screener in a pick-and-roll (CPU teams; a switch already handed him the ball handler instead)
+      pnrBig = cpu && !zone && opl && opl.kind === "pnr" && opl.scr === o && opl.use === hb && (opl.ph === "set" || (opl.ph === "out" && T - opl.setAt < 1.6)) && ds !== 3;
+    if (pnrBig) {
+      const dir = dh > 470 ? -1 : 1;
+      if (TS.cov[t] === 1 && (opl.ph === "set" || T - opl.setAt < 0.55)) {
+        // hedge: jump out above the screen into the handler's path, then get back to the roller
+        mv(p, hb.x + (dh - hb.x) * 0.12 + (hb.y - HY) * -0.05, hb.y + (HY - hb.y) * 0.12, 1.2);
+        i.sp = 1;
+      } else if (TS.cov[t] === 1) mv(p, o.x + (dh - o.x) * 0.35, o.y + (HY - o.y) * 0.35, 1.15); // recover
+      else mv(p, dh + dir * 85, HY + (hb.y - HY) * 0.35, 1); // drop: sit at the free-throw line, wall off the drive and the roll
+    } else if (hh < 140 && p.k !== hb.k && nearest(t, hb.x, hb.y, t * NP + hb.k) === t * NP + p.k)
       mv(p, hb.x + (dh - hb.x) * 0.35, hb.y + (HY - hb.y) * 0.35, 1.1);
     else if (zone) {
       // zone: guard whoever is in your area, but never leave it (the spot leans toward the ball)
@@ -2167,6 +2262,7 @@ function dz(o: Player, dt: number) {
  *  3 free-throw routine (holding and spinning it before the shot). */
 export function heldBall(o: Player): number {
   if (o.mode !== "i" || o.postA || inb > 0) return 0;
+  if (o.chinT > 0) return 4;
   if (o.actT > 0 && (o.act === 1 || o.act === 2)) return 2;
   if (ftq && ftq.s === o && (o.ftT || 0) % 3.4 > 1.7) return 3;
   if (o.ttT > 0 && Math.hypot(o.vx, o.vy) < 70 && !ftq) return 1;
@@ -2178,6 +2274,7 @@ const HOLDP: [number, number][] = [
   [-5, 4],
   [0, 7],
   [0, 8],
+  [0, 5],
 ];
 function heldZ(o: Player) {
   const h = heldBall(o),
@@ -2191,6 +2288,8 @@ function heldZ(o: Player) {
     B.a += 0.25; // spins it in his hands
     return o.z + o.ht * 7.4;
   }
+  if (h === 4) return o.z + o.ht * 8.1; // chinned
+
   return hip;
 }
 /** Two-hand dribble: which hand has it (B.dhn +1 right / -1 left) and the ball's lateral/forward offset (px; lateral
@@ -2587,8 +2686,15 @@ export function bstep(dt: number) {
   SORTP.sort((a, b) => b._ks - a._ks);
   for (const p of SORTP) {
     if ((p === B.last && B.age < 0.3) || p.mode === "s") continue;
-    const d = Math.hypot(p.x - B.x, p.y - B.y);
+    let d = Math.hypot(p.x - B.x, p.y - B.y);
     const rc = B.mode === "pass" && p === B.to;
+    // a pass is caught in the HANDS: once the receiver's body is close, it sticks when it reaches either palm (his
+    // last drawn skeleton), so the ball doesn't jump into his hands from two feet away
+    if (rc && d < 26 && d > 12 && p.skelOk && p.skel && !PREDICT) {
+      const k = p.skel,
+        hd = Math.min(Math.hypot(k[45] - B.x, k[46] - B.y, k[47] - B.z), Math.hypot(k[57] - B.x, k[58] - B.y, k[59] - B.z));
+      if (hd > 9 && B.age < 2.5 && d > 17) d = 99; // not in his hands yet: let it come (the pass homes in on him)
+    }
     if (d < (rc ? 26 : 12) && B.z > p.z + (rc ? -8 : 2) && B.z < p.z + 68 + p.j * 0.2 + (rc && B.ptype === 2 ? 55 : 0)) {
       if (B.mode === "pass" && p !== B.to) continue;
       if (B.mode === "air" && B.age < 0.5 && (B.vz > 0 || p.tm === B.last.tm)) continue;
@@ -2648,6 +2754,8 @@ export function bstep(dt: number) {
         if (hasB(p, "GC") && Math.random() < 0.3) cm("board", p.n);
       }
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
+      // a rebound in traffic is chinned: both hands, ball under the chin, elbows out, until he lands and looks up
+      if (B.sh && !B.ft && !PREDICT && p.mode === "i") p.chinT = p.z > 6 ? 0.45 + p.z / 200 : 0.35;
       B.owner = p;
       B.mode = "held";
       B.sh = 0;
@@ -2656,6 +2764,7 @@ export function bstep(dt: number) {
         pos = p.tm;
         shot = 24;
         PCNT[0] = PCNT[1] = 0;
+        if (!cfg.HALF && !PREDICT) TS.trT[p.tm] = T; // a live-ball change of possession: a transition chance
         // street: a change of possession has to be taken back and checked at the top
         if (cfg.HALF && !PREDICT && rs <= 0) {
           rs = 0.5;

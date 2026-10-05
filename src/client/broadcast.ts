@@ -35,6 +35,7 @@ const LINES: Record<string, ((n: string, n2: string) => string)[]> = {
   tech: [(n) => `Technical foul on ${n}. He did not like that call.`],
   cold: [(n) => `${n} has gone ice cold.`, (n) => `${n} can't buy one right now.`],
   assign: [(n, n2) => `${n} gets the call — he'll check ${n2} now.`, (n, n2) => `Defensive switch: ${n} picks up the hot hand, ${n2}.`],
+  break: [(n, k) => (k ? `${n} has nothing but open floor ahead of him!` : `${n} pushes it up the floor — they've got numbers!`), (n) => `Here comes ${n} in transition!`],
   zone: [(t) => `The ${t} switch to a two-three zone. They're daring you to shoot.`, (t) => `Zone defense from the ${t} — everybody packed in the paint.`],
   adjust: [(t, s) => `The ${t} bench makes an adjustment — ${s}.`, (t, s) => `New look from the ${t}: ${s}.`, (t, s) => `The ${t} change it up. The word is ${s}.`],
   board: [(n) => `${n} cleans the glass again.`],

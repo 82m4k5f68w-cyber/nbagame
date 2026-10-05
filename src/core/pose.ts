@@ -628,6 +628,12 @@ export function pose3(p: Player) {
       ln = 0.25 + 0.2 * u;
       cr = 0.35;
       ty += 0.25 * u;
+    } else if (hold === 4) {
+      // chinned rebound: sits down into the landing, leans over the ball, eyes up the floor
+      cr = Math.max(cr, 0.3);
+      ln = Math.max(ln, 0.28);
+      hz = Math.max(hz, 0.16);
+      cx += 0.1;
     } else if (hold === 3) {
       // free-throw routine: square to the rim, ball spun in the fingertips at the chest
       cr = 0.1;
@@ -1460,40 +1466,61 @@ export function pose3(p: Player) {
   }
   if (mir) o.wL = wL; // the (now left) shooting wrist snaps crisp, like wR does
   o.mir = mir ? 1 : 0;
-  // contact: the dribble hand meets the ball at the top of every bounce even while the arm is still blending out of
-  // another pose (a catch, a triple threat) - post-blend, weighted by how close the ball is to the hand
+  // contact (post-blend, so it holds even while the arms are still blending out of another pose):
+  // - the dribble hand meets the ball at the top of every bounce,
+  // - a receiver's two hands meet an incoming pass (either side of the ball) as it arrives.
+  // Each arm solves for its own side; its weight eases in and out over ~60 ms and it fades out from its last solution
+  // when contact ends (a pass, a shot), so the correction itself never pops; an IK branch flip is ignored.
   {
-    // (each hand's contact weight eases in and out over ~60 ms, so the correction itself never pops)
-    const on = !process.env.NOCT && PRO && has && md === "i" && !p.postA && !hold && inb <= 0 && B.mode === "held" && B.dtop != null && !(p.pT > 0);
-    const bz = on ? Math.max(B.z, B.dtop - 8) : 0,
-      right = on ? armIK(p, o.cr, B.x, B.y, bz, 0, 0.6).right : false,
-      // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
-      wt = on ? clamp((B.z - (B.dtop - 16)) / 8, 0, 1) * clamp((B.dtop + 12 - B.z) / 6, 0, 1) : 0,
-      r = Math.min(1, DT * 16);
-    p.ctR = (p.ctR || 0) + ((on && right ? wt : 0) - (p.ctR || 0)) * r;
-    p.ctL = (p.ctL || 0) + ((on && !right ? wt : 0) - (p.ctL || 0)) * r;
-    // (each arm solves for its own side, so a crossover hands the contact over without either arm snapping)
-    const K = p.ctK || (p.ctK = [0, 0, 0, 0, 0, 0]); // last solution per arm: when contact ends (a pass, a shot) it fades out from there
+    const K = p.ctK || (p.ctK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), // per arm: a, e, ab of the last solution + target x, y, z
+      drib = PRO && has && md === "i" && !p.postA && !hold && inb <= 0 && B.mode === "held" && B.dtop != null && !(p.pT > 0),
+      bd = Math.hypot(B.x - p.x, B.y - p.y),
+      cl = (B.vx * (p.x - B.x) + B.vy * (p.y - B.y)) / (bd || 1), // closing speed of the pass
+      tta = cl > 30 ? (bd - 24) / cl : 9, // seconds until it reaches the hands
+      cat = PRO && !has && B.mode === "pass" && B.to === p && tta < 0.3 && B.z < p.z + 125 && md !== "s";
+    let wR = 0,
+      wL = 0;
+    if (drib) {
+      const bz = Math.max(B.z, B.dtop - 8),
+        // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
+        wt = clamp((B.z - (B.dtop - 16)) / 8, 0, 1) * clamp((B.dtop + 12 - B.z) / 6, 0, 1);
+      if (armIK(p, o.cr, B.x, B.y, bz, 0, 0.6).right) (wR = wt), (K[6] = B.x), (K[7] = B.y), (K[8] = bz);
+      else (wL = wt), (K[9] = B.x), (K[10] = B.y), (K[11] = bz);
+    } else if (cat) {
+      // both hands go out to where the ball will be caught (a quarter second ahead), one on each side of it; a bounce
+      // pass is taken at the knees, not off the floor
+      const t2 = clamp(tta, 0, 0.3),
+        fx = B.x + B.vx * t2,
+        fy = B.y + B.vy * t2,
+        fz = clamp(B.z + B.vz * t2, p.z + 24, p.z + 110),
+        ux = (fx - p.x) / (Math.hypot(fx - p.x, fy - p.y) || 1),
+        uy = (fy - p.y) / (Math.hypot(fx - p.x, fy - p.y) || 1),
+        wt = clamp(1 - tta / 0.3, 0, 1);
+      wR = wL = wt;
+      (K[6] = fx + uy * 3.5), (K[7] = fy - ux * 3.5), (K[8] = fz);
+      (K[9] = fx - uy * 3.5), (K[10] = fy + ux * 3.5), (K[11] = fz);
+    }
+    const r = Math.min(1, DT * (cat ? 24 : 16));
+    p.ctR = (p.ctR || 0) + (wR - (p.ctR || 0)) * r;
+    p.ctL = (p.ctL || 0) + (wL - (p.ctL || 0)) * r;
     if (p.ctR > 0.01) {
-      if (on) {
-        const k = armIK(p, o.cr, B.x, B.y, bz, 1, 0.6);
+      if (wR > 0) {
+        const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
         (K[0] = k.a), (K[1] = k.e), (K[2] = k.ab);
       }
-      const k = { a: K[0], e: K[1], ab: K[2] },
-        da = wrapPi(k.a - o.aR),
-        w = p.ctR * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1); // (an IK branch flip is not a correction)
-      (o.aR += da * w), (o.eR += (k.e - o.eR) * w), (o.sz += (k.ab - o.sz) * w);
+      const da = wrapPi(K[0] - o.aR),
+        w = p.ctR * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
+      (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
     if (p.ctL > 0.01) {
-      if (on) {
-        const k = armIK(p, o.cr, B.x, B.y, bz, -1, 0.6);
+      if (wL > 0) {
+        const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
         (K[3] = k.a), (K[4] = k.e), (K[5] = k.ab);
       }
-      const k = { a: K[3], e: K[4], ab: K[5] },
-        z0 = o.zL ?? o.sz,
-        da = wrapPi(k.a - o.aL),
+      const z0 = o.zL ?? o.sz,
+        da = wrapPi(K[3] - o.aL),
         w = p.ctL * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
-      (o.aL += da * w), (o.eL += (k.e - o.eL) * w), (o.zL = z0 + (k.ab - z0) * w);
+      (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
   }
   if (PRO && cfg.PLANT !== 0) plantFeet(p, o, sp);

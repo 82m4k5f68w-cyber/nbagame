@@ -2,6 +2,7 @@
 // - the dribble hand meets the ball at the top of the bounce (post-blend contact pass),
 // - a ball held in both hands (triple threat, pump fake, jab, inbound) sits between the palms (placed by bstep from
 //   the previous tick's pose, so within one tick of hand motion),
+// - a pass is caught in the hands (palms vs ball on the tick before the catch),
 // - feet never sink through the floor (also when lying on it after a dive or a knock-down).
 import * as G from "../src/core/sim";
 import { rapInit } from "../src/core/physics";
@@ -18,7 +19,11 @@ import { skeleton } from "../src/core/pose";
   const SK = new Float32Array(60),
     drib: number[] = [],
     held: number[] = [],
-    toe: number[] = [];
+    toe: number[] = [],
+    cat: number[] = [],
+    PS = new Float32Array(60);
+  let pto: any = null,
+    pb = [0, 0, 0];
   for (let i = 0; i < 60 * 150 && G.S !== "over"; i++) {
     G.upd(1 / 60);
     if (G.RPL) G.skipReplay();
@@ -27,6 +32,9 @@ import { skeleton } from "../src/core/pose";
     if (G.S !== "play") continue;
     const B = G.B,
       o = B.owner;
+    if (o && o === pto && G.inb <= 0) cat.push(Math.min(Math.hypot(PS[45] - pb[0], PS[46] - pb[1], PS[47] - pb[2]), Math.hypot(PS[57] - pb[0], PS[58] - pb[1], PS[59] - pb[2])));
+    pto = B.mode === "pass" ? B.to : null;
+    if (pto) skeleton(pto, PS), (pb = [B.x, B.y, B.z]);
     if (o && o.mode === "i" && B.mode === "held" && !o.postA) {
       skeleton(o, SK);
       if (G.heldBall(o) || G.inb > 0) held.push(Math.hypot((SK[45] + SK[57]) / 2 - B.x, (SK[46] + SK[58]) / 2 - B.y, (SK[47] + SK[59]) / 2 - B.z));
@@ -38,10 +46,10 @@ import { skeleton } from "../src/core/pose";
       toe.push(SK[23], SK[35]);
     }
   }
-  for (const a of [drib, held, toe]) a.sort((x, y) => x - y);
+  for (const a of [drib, held, toe, cat]) a.sort((x, y) => x - y);
   const q = (a: number[], f: number) => a[Math.min(a.length - 1, Math.floor(a.length * f))];
-  console.log(`dribble top hand-ball px p50 ${q(drib, 0.5).toFixed(1)} p90 ${q(drib, 0.9).toFixed(1)} (n ${drib.length}) | held ball off the palms px p90 ${q(held, 0.9).toFixed(2)} (n ${held.length}) | toe depth px p0.1 ${q(toe, 0.001).toFixed(1)}`);
-  const ok = drib.length > 300 && q(drib, 0.5) < 6 && q(drib, 0.9) < 22 && held.length > 100 && q(held, 0.9) < 6 && q(toe, 0.001) > -4;
+  console.log(`dribble top hand-ball px p50 ${q(drib, 0.5).toFixed(1)} p90 ${q(drib, 0.9).toFixed(1)} (n ${drib.length}) | held ball off the palms px p90 ${q(held, 0.9).toFixed(2)} (n ${held.length}) | toe depth px p0.1 ${q(toe, 0.001).toFixed(1)} | pass caught: palm-ball px p50 ${q(cat, 0.5).toFixed(1)} (n ${cat.length})`);
+  const ok = drib.length > 300 && q(drib, 0.5) < 6 && q(drib, 0.9) < 22 && held.length > 100 && q(held, 0.9) < 6 && q(toe, 0.001) > -4 && cat.length > 30 && q(cat, 0.5) < 21;
   console.log(ok ? "CONTACT OK" : "CONTACT FAIL");
   process.exit(ok ? 0 : 1);
 })();
