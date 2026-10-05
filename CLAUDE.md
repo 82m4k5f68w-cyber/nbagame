@@ -341,7 +341,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   ball, elbow flash, post seal, corner) and the defense trails goal-side; `setup()` clears it (`INB.on`).
   Non-shooting fouls side out at the spot of the foul.
 - Help-side pistols (pose3, man D, ball 150+ px away, eased in by distance): ball-side hand at the ball, other at his
-  man (`guardOf`, exported), low and soft (aim 40 px out between facing and target). Catch/rebound reach fades for a
+  man (`guardOf`, exported), low and soft (aim 40 px out between facing and target). One pass away (60-150 px, his
+  man within 60 px): deny - ball-side hand into the lane (30% from his man to the ball), in a stance. Catch/rebound reach fades for a
   ball behind him. Timing card shows the contest at release (`tg.c`, WIDE OPEN .. SMOTHERED; relayed in "q").
 - Mismatches: `val()` (CPU passing) +.3 for a post scorer (i >= 76) with a defender .4 ft+ shorter near the rim, +.12
   for a quick player (s +15) on a slow man; that post scorer seals on the ball-side block off the ball and calls for it

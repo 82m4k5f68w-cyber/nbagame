@@ -890,6 +890,19 @@ export function pose3(p: Player) {
         }
         gL = gR = 0.55; // index finger out
       }
+      // one pass away: deny - the ball-side hand goes into the passing lane between the ball and his man
+      const wd = clamp((150 - bd) / 40, 0, 1) * clamp((bd - 60) / 30, 0, 1);
+      if (mk && mk !== o && wd > 0 && Math.hypot(mk.x - p.x, mk.y - p.y) < 60) {
+        const lx = mk.x + (B.x - mk.x) * 0.3,
+          ly = mk.y + (B.y - mk.y) * 0.3,
+          f = fv(p),
+          bs = Math.sin(f) * (lx - p.x) - Math.cos(f) * (ly - p.y) > 0 ? 1 : -1,
+          kd = armIK(p, cr, lx, ly, p.z + p.ht * 6.2, bs, 0.9),
+          ad = Math.min(kd.a, 1.6);
+        if (bs > 0) (aR += (ad - aR) * wd), (eR += (0.25 - eR) * wd), (sz += (kd.ab - sz) * wd), (gR = 0.1);
+        else (aL += (ad - aL) * wd), (eL += (0.25 - eL) * wd), (zL = (zL ?? sz) + (kd.ab - (zL ?? sz)) * wd), (gL = 0.1);
+        cr = Math.max(cr, 0.3 * wd); // down in a stance
+      }
     }
   }
   // ---- offense off the ball: open teammates call for it ----
