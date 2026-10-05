@@ -3450,6 +3450,7 @@ export interface Play {
   sx: number;
   sy: number;
   setAt: number;
+  rd?: number; // pick-and-roll read (CPU screeners): 0 set it, 1 slip it to the rim, 2 ghost it and pop to the arc
 }
 export const PLAY: (Play | null)[] = [null, null];
 const manOf = (o: Player) => {
@@ -3520,6 +3521,20 @@ function offBall(p: Player, t: number) {
   if (p === scr) {
     if (pl.ph === "go") {
       if (T - pl.t0 < 0.05 && isH(h) && TS.pc[t]) txtW(PCN[TS.pc[t]], p.x, p.y, 95, "#9fe7ff");
+      // read the coverage once: a hedge / trap jumps the handler - slip to the rim before contact; a switch-everything
+      // defense just swaps - a shooting screener ghosts it (fakes the screen, pops to the arc before anybody switches)
+      if (pl.kind === "pnr" && pl.rd == null) {
+        const cov = TS.cov[1 - t],
+          ds = TS.ds[1 - t],
+          r = Math.random();
+        pl.rd = (cov === 1 || TS.dbl[1 - t] === P.indexOf(use)) && r < 0.45 ? 1 : ds === 3 && p.c >= 78 && r < 0.5 ? 2 : 0;
+      }
+      if (pl.rd && Math.hypot(p.x - pl.sx, p.y - pl.sy) < 26) {
+        pl.ph = "out";
+        pl.setAt = T;
+        STAT[pl.rd === 1 ? "slip" : "ghost"] = (STAT[pl.rd === 1 ? "slip" : "ghost"] || 0) + 1;
+        return true;
+      }
       mv(p, pl.sx, pl.sy, 1.2);
       if (Math.hypot(p.x - pl.sx, p.y - pl.sy) < 7 || T - pl.t0 > 2.6) {
         pl.ph = "set";
@@ -3532,8 +3547,10 @@ function offBall(p: Player, t: number) {
       p.setT = 0.25;
       if (T - pl.setAt > (pl.kind === "pnr" ? 1.25 : 1.5)) pl.ph = "out";
     } else {
-      // roll hard to the rim, or pop to the arc if he can shoot
-      const pop = scr.c >= 80 && scr.i < 85,
+      // roll hard to the rim, or pop to the arc if he can shoot (read the coverage: a big sitting back in drop leaves
+      // the arc open for any decent shooter; a hedge leaves the rim open, so everybody dives; a ghost always pops)
+      const cov = TS.cov[1 - t],
+        pop = pl.rd === 2 || (pl.rd !== 1 && (cov === 1 ? false : scr.c >= (cov === 0 && !CT.some((c) => c.tm === 1 - t) ? 74 : 80) && scr.i < 85)),
         g = pop ? [hx + dir * 225, HY + side * -60] : [hx + dir * 30, HY + side * 14];
       mv(p, g[0], g[1], 1.2);
       if (!pop && Math.hypot(p.x - hx, p.y - HY) < 90 && Math.hypot(manOf(p).x - p.x, manOf(p).y - p.y) > 30) OFFS[t] = p;

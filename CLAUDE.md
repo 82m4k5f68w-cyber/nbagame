@@ -323,6 +323,20 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   from ST.cat / ST.air blends its arms over min(.1, .02 + .05 |offset|) s (`fromReach`; layups from idle stay crisp),
   block reach aims 8 px in front and caps aR at 3.25, contact fades keep the last live branch-flip guard (`p.ctRg/ctLg`).
 
+## Team defense & reads (v4.9)
+- Help (sim `helpPlan`, once per tick per defending team -> `HPL` {h helper, r rotator, m the man he takes}; man D,
+  3+ a side, CPU and human teams' AI defenders): the handler inside 20 ft has beaten his man (level with / past him or
+  34+ px clear, moving at the rim) -> the defender nearest the lane point (38% handler->rim) steps up (`p.helpT`), the
+  defender with the lowest (distance to the helper's man + danger of his own man) rotates (`p.rotT`). Sprint closeouts
+  when your man catches it 45+ px away. A fresh help makes the CPU driver re-read his passes at once (`a.hr`). Stats
+  `STAT.help/rot/kick/kA/kM` (kick-outs: `B.kick` on the pass, `p.kickT` on the catch, `B.kk` at launch). tests/help.ts.
+- Help poses (pose3): brace for the charge (forearms crossed, hL/hR .95) as the driver arrives; verticality (both arms
+  straight up) when he leaves his feet. Charges: none in the restricted area (< 40 px from the rim), a set helper .62.
+- Contact pass: a contact that starts from zero weight seeds its stored solution from the drawn arm (blend max 0.97).
+- FT lineup (`ftLay`): per side defense low block, offense, defense (bigs first); the rest behind the arc.
+- Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
+  screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and
 badge windows online (rosters are fixed there), commentary is text templates + browser speech, Classic has no new features.
