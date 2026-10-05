@@ -1292,7 +1292,7 @@ export function launch(p: Player) {
     // CPU jumpers, calibrated to NBA shooting splits: an open three goes in ~30% (poor shooter) .. ~46% (elite),
     // mid-range ~36-50%, and a full contest takes about a third off (league: open 38% vs tight 33% from three)
     // (re-based for v5.0's spacing / kick-outs: open looks come more often, so each one is a touch harder)
-    const base = three ? 0.355 + (0.16 * (rat - 60)) / 40 : 0.29 + (0.14 * (rat - 60)) / 40,
+    const base = three ? 0.362 + (0.16 * (rat - 60)) / 40 : 0.29 + (0.14 * (rat - 60)) / 40,
       pm = clamp(base * (1 - 0.25 * cx) * (p.sbw > 0 ? 0.95 : 1) * cpuK(p, [0.85, 0.94, 1, 1.06]) * Math.sqrt(wm0), 0.04, 0.6);
     gr = Math.random() < pm / (0.98 - cx * 0.25); // (the make roll below keeps its contest factor)
   }
