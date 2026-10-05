@@ -333,7 +333,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Help poses (pose3): brace for the charge (forearms crossed, hL/hR .95) as the driver arrives; verticality (both arms
   straight up) when he leaves his feet. Charges: none in the restricted area (< 40 px from the rim), a set helper .62.
 - Contact pass: a contact that starts from zero weight seeds its stored solution from the drawn arm (blend max 0.97).
-- FT lineup (`ftLay`): per side defense low block, offense, defense (bigs first); the rest behind the arc.
+- FT lineup (`ftLay`): per side defense low block, offense, defense (bigs first); the rest behind the arc. Poses
+  (pose3): lane players in a ready stance (box-out hands), odd slots behind the arc hands on hips, the rest on knees.
 - Spot inbounds (`setupAt(off, x, y)`, from `violation()`): frontcourt -> nearest line at the spot (baseline: box
   set; sideline: spread), defense goal-side + one up on the inbounder (hupT); backcourt -> normal `setup`. A pass
   younger than .3 s is never out of bounds (thrown from the line). While the inbounder counts, the AI offense runs the

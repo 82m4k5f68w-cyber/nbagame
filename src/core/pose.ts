@@ -1124,7 +1124,26 @@ export function pose3(p: Player) {
   }
   // Signature celebration (CEL): arms and torso blend into the move while the legs keep running.
   // Hands on knees: catching a breath at dead balls (free throws, after makes) when tired or lined up.
-  if (md === "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && (ftq ? ftq.s !== p && !(Math.abs(hoop(ftq.s.tm) - p.x) < 150 && Math.abs(p.y - HY) < 70) : rs > 0.3 && (p.en ?? 1) < 0.75)) {
+  const onLane = !!ftq && ftq.s !== p && Math.abs(hoop(ftq.s.tm) - p.x) < 150 && Math.abs(p.y - HY) < 70;
+  if (md === "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && onLane) {
+    // lined up on the lane: knees bent, weight forward, hands out ready to box out on the miss
+    cr = Math.max(cr, 0.3);
+    tL = tR = 0.35;
+    kL = kR = 0.45;
+    ln = 0.18;
+    aL = aR = 0.75;
+    eL = eR = 1.15;
+    sz = zL = 0.55;
+    gL = gR = 0.15;
+  } else if (md === "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && ftq && ftq.s !== p && p.k % 2 === 1) {
+    // behind the arc at a free throw: hands on the hips (the others rest on their knees)
+    aL = aR = -0.15;
+    sz = zL = 0.62;
+    eL = eR = 1.55;
+    hL = hR = 1.25;
+    cx = -0.05 + Math.sin(T * 2 + p.k) * 0.04;
+    gL = gR = 0.35;
+  } else if (md === "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && (ftq ? ftq.s !== p && !onLane : rs > 0.3 && (p.en ?? 1) < 0.75)) {
     st = ST.rest;
     ln = 0.55;
     cx = 0.22;
