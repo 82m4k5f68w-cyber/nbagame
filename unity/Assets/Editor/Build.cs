@@ -52,6 +52,22 @@ public static class Build
         pipe.shadowDistance = 45f;
         pipe.shadowCascadeCount = 2;
         GraphicsSettings.defaultRenderPipeline = pipe;
+        // materials are made at runtime with Shader.Find: ship URP Lit even though no asset references it
+        var gs = new SerializedObject(AssetDatabase.LoadAssetAtPath<Object>("ProjectSettings/GraphicsSettings.asset"));
+        var inc = gs.FindProperty("m_AlwaysIncludedShaders");
+        var lit = Shader.Find("Universal Render Pipeline/Lit");
+        bool has = false;
+        for (int i = 0; i < inc.arraySize; i++) has |= inc.GetArrayElementAtIndex(i).objectReferenceValue == lit;
+        if (!has && lit != null)
+        {
+            inc.InsertArrayElementAtIndex(inc.arraySize);
+            inc.GetArrayElementAtIndex(inc.arraySize - 1).objectReferenceValue = lit;
+            gs.ApplyModifiedProperties();
+        }
+        // keyboard via the built-in Input Manager (UnityEngine.Input)
+        var ps = new SerializedObject(AssetDatabase.LoadAssetAtPath<Object>("ProjectSettings/ProjectSettings.asset"));
+        var ih = ps.FindProperty("activeInputHandler");
+        if (ih != null && ih.intValue != 0) { ih.intValue = 0; ps.ApplyModifiedProperties(); }
         QualitySettings.renderPipeline = pipe;
         QualitySettings.vSyncCount = 0;
         AssetDatabase.SaveAssets();
@@ -61,7 +77,7 @@ public static class Build
     {
         ConfigurePerformance();
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-        new GameObject("Game").AddComponent<HoopsTest>();
+        // empty scene: Hoops.Game.Boot (RuntimeInitializeOnLoadMethod) creates GameMain, which builds everything from code
         EditorSceneManager.SaveScene(scene, "Assets/Main.unity");
         var r = BuildPipeline.BuildPlayer(new BuildPlayerOptions
         {
