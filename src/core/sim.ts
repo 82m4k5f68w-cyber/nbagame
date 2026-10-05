@@ -851,6 +851,9 @@ export function tendOf(p: Player): number[] {
   if (fm.pct >= 0 && fm.n >= 2.5 && fm.pct < 0.25) (o[2] += o[1] * 0.4), (o[1] *= 0.6);
   // beating a zone: move it and shoot over it, don't drive into the packed paint
   if (TS.ds[1 - p.tm] === 4) (o[0] = o[0] * 1.3 + (p.c >= 72 ? 0.06 : 0)), (o[1] *= 1.2), (o[2] *= 0.6), (o[4] += 0.15);
+  // the defense sags: shooters let it fly; the defense is up tight / denying: put it on the floor, go backdoor
+  else if (TS.ds[1 - p.tm] === 1 && p.c >= 72) (o[0] *= 1.2), (o[2] *= 0.85);
+  else if (TS.ds[1 - p.tm] === 2) (o[2] *= 1.3), (o[0] *= 0.85);
   switch (TS.gp[p.tm]) {
     case 1:
       (o[0] *= 0.55), (o[2] *= 1.5), (o[3] *= 1.4);
@@ -2367,7 +2370,9 @@ export function dribTop(o: Player) {
   const sp = Math.hypot(o.vx, o.vy);
   let tight = 0;
   for (const d of P) if (d.tm !== o.tm && Math.hypot(d.x - o.x, d.y - o.y) < 34) tight = 1;
-  return o.z + o.ht * 5 - tight * 5 + Math.min(4, sp * 0.015);
+  // (style: shifty guards keep it low, bigs dribble it high)
+  const sty = o.s >= 86 || o.ht <= 6.35 ? -2.5 : o.ht >= 6.9 ? 3 : 0;
+  return o.z + o.ht * 5 - tight * 5 + Math.min(4, sp * 0.015) + sty;
 }
 /** Live-ball height while dribbling: the hand pushes the ball down, it bounces off the floor and rises back into the
  *  hand, which absorbs it for a moment and pushes again. Faster, harder pushes when driving; lower when guarded. */
@@ -2388,7 +2393,7 @@ function dz(o: Player, dt: number) {
     B.dhd -= dt;
     B.dvv *= Math.exp(-28 * dt);
     B.dh = Math.min(Math.max(top + 5, B.dh), B.dh + B.dvv * dt);
-    if (B.dhd <= 0) B.dvv = -(165 + sp * 0.4);
+    if (B.dhd <= 0) B.dvv = -(165 + sp * 0.4) * (o.s >= 86 ? 1.15 : o.ht >= 6.9 ? 0.9 : 1); // (quick handlers pound it, bigs bounce it)
   } else {
     B.dvv -= g * dt;
     B.dh += B.dvv * dt;
