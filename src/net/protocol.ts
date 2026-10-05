@@ -330,13 +330,17 @@ export const unpackInput = (a: number[]): WireInput => ({
 });
 
 // ---- box score + events ----
-export const encodeBox = () => P.map((p) => [p.stt.pts, p.stt.reb, p.stt.ast, p.stt.fgm, p.stt.fga, p.stt.tpm, p.stt.tpa, p.stt.blk]);
+/** Box score for everyone who played (subs online): [team, roster id, pts, reb, ast, fgm, fga, tpm, tpa, blk]. */
+export const encodeBox = () => [0, 1].flatMap((t) => G.ROST[t].map((p) => [t, p.rid ?? p.k, p.stt.pts, p.stt.reb, p.stt.ast, p.stt.fgm, p.stt.fga, p.stt.tpm, p.stt.tpa, p.stt.blk]));
 export function applyBox(x: number[][]) {
   if (!x) return;
-  x.forEach((s, k) => {
-    const p = P[k];
-    if (p) [p.stt.pts, p.stt.reb, p.stt.ast, p.stt.fgm, p.stt.fga, p.stt.tpm, p.stt.tpa, p.stt.blk] = s;
-  });
+  for (const s of x) {
+    const [t, rid] = s,
+      p = [...P, ...G.BENCH[t]].find((q) => q.tm === t && (q.rid ?? q.k) === rid);
+    if (!p) continue;
+    [p.stt.pts, p.stt.reb, p.stt.ast, p.stt.fgm, p.stt.fga, p.stt.tpm, p.stt.tpa, p.stt.blk] = s.slice(2);
+    if (!G.ROST[t].includes(p)) G.ROST[t].push(p);
+  }
 }
 /** Recent FX for guests: texts (world/screen), sounds, crowd excitement, game end. Compact tuples. */
 export function encodeFx(max: number): any[] {

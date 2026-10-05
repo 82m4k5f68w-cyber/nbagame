@@ -126,6 +126,11 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   15 s (`Slot.gone`, shown OFFLINE); in a game a guest silent for 6 s is handed to the AI (`staleCheck`, every 30
   ticks; reset at start) until heard from again. Guests see "CONNECTION LOST — RECONNECTING…". `NET.rel()` = test
   readout. tests: browser_room_faults.mjs, ws_reconnect.ts.
+- Online substitutions (PROTO 10): the reserves are deterministic per team (`reserves()` seeded by the team name), every
+  Player has a stable roster id `rid` (starters 0-4, bench 5-7); the host runs `subs()` online too and publishes the
+  lineup `U` (`G.lineup()`: rids per slot); guests `applyLineup(U)` (same `swap()`) before applying the snapshot. The
+  box score `X` is keyed by [team, rid] over `ROST` (benched players keep their lines). net.ts: the dedicated host
+  (env H2K_SUBTEST) subs at 3 s and the guest must follow.
 - A hidden host tab keeps simulating via a timer (rAF stops when hidden). `npm run server` serves dist + relay;
   "Create on dedicated server" spawns `server/headless-host.ts` for that room code.
 
@@ -392,5 +397,5 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 
 ## Known gaps / ideas
-replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and
-badge windows online (rosters are fixed there), commentary is text templates + browser speech, Classic has no new features.
+replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
+fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

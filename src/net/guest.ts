@@ -123,6 +123,7 @@ export class GuestSession {
     }
     if (this.gid < 0 || s.gid !== this.gid || !s.Z) return;
     if (s.A && typeof s.A[this.t.me] === "number") this.ack = s.A[this.t.me];
+    if (s.U) G.applyLineup(s.U); // (substitutions: before the snapshot that has the new man in the slot)
     if (s.C) this.applyCtrls(s.C);
     this.recv(s.Z);
     if (s.X) applyBox(s.X);

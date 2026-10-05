@@ -30,6 +30,12 @@ function loop() {
     if (H.L.st !== "lobby") {
       G.upd(1 / 60);
       H.tick();
+      // test hook (tests/net.ts): a substitution 3 s in - the guest must follow the lineup
+      if (process.env.H2K_SUBTEST && H.k === 180 && G.cfg.NP === 5) {
+        const U = G.lineup();
+        U[0][0] = 5;
+        G.applyLineup(U);
+      }
       if (G.S === "over" && H.L.st === "over" && ++ticks > 60 * 20) {
         ticks = 0;
         H.backToLobby();

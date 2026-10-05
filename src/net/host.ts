@@ -421,6 +421,7 @@ export class HostSession {
       }
       o.gid = this.L.gid;
       o.C = G.CT.map((c) => [c.id === "p1" ? "host" : c.id, c.tm, c.idx]);
+      o.U = G.lineup(); // (subs: who is on the floor - guests swap in the same generated reserves)
       if (this.k - this.lastBox >= 30 || G.S === "over") {
         this.lastBox = this.k;
         o.X = encodeBox();

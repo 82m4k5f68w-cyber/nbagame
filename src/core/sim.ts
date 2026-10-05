@@ -73,7 +73,7 @@ export const cfg = {
   VIOL: 1, // 3-second / 8-second violations, goaltending
   SUBS: 1, // fatigue substitutions + foul-outs (5v5, offline; online rosters stay fixed)
   BADGES: 1, // rating badges + hot zones + rhythm/cold streaks
-  ONLINE: 0, // online game: fixed rosters (no subs) and rating-only shot windows (the guest's meter must match the host)
+  ONLINE: 0, // online game: rating-only shot windows (the guest's meter must match the host); subs are synced (lineup U)
   HALF: 0, // half-court game (street rules): check ball at the top, make-it-take-it, 1s and 2s
   TO: 0, // points to win (street / king); 0 = timed quarters
   ASTAR: 0, // All-Star game: mixed rosters, open floor, lobs, fouls off
@@ -218,9 +218,10 @@ export function start(i: number, o: { j?: number; sel?: number } = {}) {
   P = [];
   [i, j].forEach((ti, t) => {
     const col = t && RS(ti, t)[0] === RS(i, 0)[0] ? "#b03a2e" : RS(ti, t)[0];
-    RS(ti, t)[1].forEach((a, k) => P.push(mkP(a, t, k, col)));
+    RS(ti, t)[1].forEach((a, k) => P.push(Object.assign(mkP(a, t, k, col), { rid: k })));
     // generated reserves (fictional), a few points below the starters, for fatigue subs and foul-outs
-    BENCH[t] = NP >= 5 && !cfg.ASTAR ? reserves(RS(ti, t)[1], RS(ti, t)[2]).map((a, k) => mkP(a, t, k, col)) : [];
+    // (deterministic from the team: an online guest builds the very same bench; rid = stable roster id, bench 5+)
+    BENCH[t] = NP >= 5 && !cfg.ASTAR ? reserves(RS(ti, t)[1], RS(ti, t)[2]).map((a, k) => Object.assign(mkP(a, t, k, col), { rid: 5 + k })) : [];
   });
   ROST[0] = P.filter((p) => p.tm === 0);
   ROST[1] = P.filter((p) => p.tm === 1);
@@ -684,7 +685,7 @@ function whistle(d: Player, o: Player | null, p: number) {
 }
 /** Substitutions at dead balls (5v5): tired or fouled-out players go to the bench, rested ones come back. */
 function subs() {
-  if (!cfg.SUBS || cfg.NP < 2 || PREDICT || !BENCH[0] || cfg.ONLINE) return;
+  if (!cfg.SUBS || cfg.NP < 2 || PREDICT || !BENCH[0]) return; // (online too: the host publishes the lineup, guests follow)
   for (let t = 0; t < 2; t++) {
     const bn = BENCH[t];
     if (!bn.length) continue;
@@ -731,6 +732,21 @@ function swap(t: number, k: number, inP: Player) {
 }
 /** Bumped on every substitution (the 3D renderer rebuilds rigs for changed slots). */
 export let SUBV = 0;
+/** Online: who is on the floor, per team and slot, as stable roster ids (the host publishes it). */
+export const lineup = () => [0, 1].map((t) => P.filter((p) => p.tm === t).map((p) => p.rid ?? p.k));
+/** Online guest: make the floor match the host's lineup (the same swaps, from the same generated bench). */
+export function applyLineup(U: number[][]) {
+  if (!Array.isArray(U)) return;
+  const NP = cfg.NP;
+  for (let t = 0; t < 2; t++)
+    for (let k = 0; k < NP; k++) {
+      const want = U[t] && U[t][k],
+        cur = P[t * NP + k];
+      if (want == null || !cur || (cur.rid ?? cur.k) === want) continue;
+      const q = BENCH[t].find((b) => b.rid === want);
+      if (q) swap(t, k, q);
+    }
+}
 /** Rule ticks during live play: fatigue on the bench, paint/backcourt counts, momentum decay, clutch time, AI timeouts. */
 function rulesTick(dt: number) {
   for (let t = 0; t < 2; t++) for (const b of BENCH[t]) b.en = Math.min(1, (b.en ?? 1) + dt * 0.03);
@@ -1595,7 +1611,7 @@ export function step(p: Player, dt: number) {
   {
     const sv2 = Math.hypot(p.vx, p.vy);
     // sprinting burns the tank fast; running up and down slowly wears everyone down (subs in 5v5); standing recovers
-    const rot = cfg.SUBS && cfg.NP > 1 && !PREDICT && cfg.GM === "game" && !cfg.ONLINE,
+    const rot = cfg.SUBS && cfg.NP > 1 && !PREDICT && cfg.GM === "game",
       use = i.sp && sv2 > 150 ? 0.1 : rot ? (sv2 > 60 ? sv2 * 0.00013 : -0.01) : -0.04;
     p.en = Math.max(0, Math.min(1, (p.en == null ? 1 : p.en) - dt * use));
   }

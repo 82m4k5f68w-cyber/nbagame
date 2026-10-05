@@ -12,7 +12,8 @@ import { HDR, PST } from "../src/net/protocol";
 const arg = (k: string, d: number) => +(process.argv.find((a) => a.startsWith(k + "="))?.split("=")[1] ?? d);
 const LAG = arg("lag", 80), JIT = arg("jitter", 40), DROP = arg("drop", 0.1), SECS = arg("seconds", 12);
 const PORT = 18000 + Math.floor(Math.random() * 1000);
-const relay = spawn(process.execPath, ["--import", "tsx", "server/relay.ts", String(PORT)], { stdio: ["ignore", "pipe", "inherit"] });
+// (H2K_SUBTEST: the dedicated host subs the first reserve in 3 s into the game - online substitutions)
+const relay = spawn(process.execPath, ["--import", "tsx", "server/relay.ts", String(PORT)], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, H2K_SUBTEST: "1" } });
 await new Promise<void>((r) => relay.stdout!.on("data", (d) => String(d).includes("relay on") && r()));
 const fail = (m: string) => { console.log("FAIL:", m); relay.kill(); process.exit(1); };
 try {
@@ -65,6 +66,10 @@ try {
   if (g.rtt <= 0) fail("no ping measured");
   if (hostVx < 100) fail("guest input did not drive the host player");
   if (maxPres > 4096) fail("host presence exceeds the 4 KiB room limit");
+  // online substitution: the host subbed his first reserve (roster id 5) into team 0's slot 0
+  const sub = P[0], out = G.BENCH[0].find((b) => b.rid === 0);
+  console.log("sub:", sub.n, "rid", sub.rid, "| benched:", out && out.n, "| roster", G.ROST[0].length);
+  if (G.cfg.NP === 5 && (sub.rid !== 5 || !out || !G.ROST[0].includes(sub))) fail("guest did not follow the host's substitution");
   console.log("net ok");
   t.leave();
 } finally {
