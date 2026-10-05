@@ -2293,6 +2293,7 @@ export function ai(p: Player, dt: number) {
   else if (pos === t && B.owner) {
     // the handoff man just gave it up: he is the screen - planted for a beat
     if ((p.ai.holdT || 0) > T) {
+      p.br = "hold";
       p.setT = 0.1;
       return;
     }
@@ -2303,6 +2304,7 @@ export function ai(p: Player, dt: number) {
         dir = oh > 470 ? -1 : 1;
       mv(p, h.x + dir * 4, h.y + sd * 9, 1.2);
       i.sp = 1;
+      p.br = "dho";
       return;
     }
     // transition: fill the lanes - the closest man runs to the rim, two wide to the corners, the last one trails
@@ -2314,9 +2316,12 @@ export function ai(p: Player, dt: number) {
         lane = rk === 0 ? [oh + dir * 22, HY + side * 18] : rk < 3 ? [oh + dir * 55, HY + side * 195] : [oh + dir * 245, HY + side * 50];
       mv(p, lane[0], lane[1], 1.1);
       if (rk < 3) i.sp = 1;
+      p.br = "tr";
       return;
     }
+    p.br = "ob";
     if (offBall(p, t)) return;
+    p.br = "SP";
     const s = SP[p.k],
       x = t ? 52.5 + s[0] : 887.5 - s[0];
     const nd = P[nearest(1 - t, p.x, p.y)];
@@ -3613,6 +3618,7 @@ function offBall(p: Player, t: number) {
     const k = P.indexOf(p);
     if (cfg.VIOL && TS.lane[k] > 2.1) {
       mv(p, hx + dir * 205, p.y < HY ? HY - 130 : HY + 130, 1.15);
+      p.br = "lane";
       return true;
     }
   }
@@ -3642,6 +3648,7 @@ function offBall(p: Player, t: number) {
     }
   }
   if (p === scr) {
+    p.br = "scr";
     if (pl.ph === "go") {
       if (T - pl.t0 < 0.05 && isH(h) && TS.pc[t]) txtW(PCN[TS.pc[t]], p.x, p.y, 95, "#9fe7ff");
       // read the coverage once: a hedge / trap jumps the handler - slip to the rim before contact; a switch-everything
@@ -3683,6 +3690,7 @@ function offBall(p: Player, t: number) {
     return true;
   }
   if (p === use && pl.kind !== "pnr") {
+    p.br = "use";
     if (pl.ph === "go") mv(p, hx + dir * 28, HY + side * 60, 1); // set up low
     else {
       // run tight off the screener's shoulder, then up to the wing/top
@@ -3700,6 +3708,7 @@ function offBall(p: Player, t: number) {
     // (a short window per possession, and only while the ball is out at the arc to feed him: no clogged lane)
     if (mm && !mm.off && p.i >= 76 && p.ht - mm.ht >= 0.4 && !(TS.lane[P.indexOf(p)] > 1.6) && (p.ai.sealT || 0) < 2.5 && Math.hypot(hx - h.x, HY - h.y) > 200 && Math.hypot(hx - h.x, HY - h.y) < 300) {
       p.ai.sealT = (p.ai.sealT || 0) + DT;
+      p.br = "seal";
       const bs = h.y < HY ? -1 : 1;
       mv(p, hx + dir * 40, HY + bs * 48, 1.1);
       if (Math.hypot(p.x - (hx + dir * 40), p.y - (HY + bs * 48)) < 20) (p.callT = Math.max(p.callT || 0, 0.3)), (STAT.seal = (STAT.seal || 0) + 1);
@@ -3723,34 +3732,58 @@ function offBall(p: Player, t: number) {
     for (const o of [scr, use, h]) if (o && o.tm === t && Math.hypot(o.x - x, o.y - y) < 80) return true;
     return false;
   };
-  const pick = (q: Player) => {
-    let b = 0,
-      bd = 1e9;
-    spots.forEach((sp, j) => {
-      if (used.has(j)) return;
-      // (stay out of the driver's way: a spot where the ball handler is heading is taken last - drift on the drive)
-      const bx = h ? h.x + h.vx * 0.5 : B.x,
-        by = h ? h.y + h.vy * 0.5 : B.y,
-        d = Math.hypot(sp[0] - q.x, sp[1] - q.y) + (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 || Math.hypot(sp[0] - bx, sp[1] - by) < 120 ? 400 : 0) + (nearBusy(sp[0], sp[1]) ? 300 : 0);
-      if (d < bd) (bd = d), (b = j);
-    });
-    used.add(b);
-    return spots[b];
-  };
-  let spot = spots[0];
-  for (const q of ms) {
-    const sp = pick(q);
-    if (q === p) spot = sp;
+  // the spacers' spots are assigned together, once per tick: the assignment with the least total travel (no one
+  // running across the floor through a teammate to the spot nobody else wanted), a spot where the ball is or where
+  // the driver is heading taken last, and a little stickiness so nobody flip-flops between two spots
+  if (SPA.t !== t || SPA.at !== T) {
+    SPA.t = t;
+    SPA.at = T;
+    SPA.m.clear();
+    const bx = h ? h.x + h.vx * 0.5 : B.x,
+      by = h ? h.y + h.vy * 0.5 : B.y,
+      n = Math.min(ms.length, spots.length),
+      cost = ms.slice(0, n).map((q) =>
+        spots.map(
+          (sp, j) =>
+            Math.hypot(sp[0] - q.x, sp[1] - q.y) +
+            (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 || Math.hypot(sp[0] - bx, sp[1] - by) < 120 ? 400 : 0) +
+            (nearBusy(sp[0], sp[1]) ? 300 : 0) +
+            (q.ai.spj === j ? -45 : 0),
+        ),
+      );
+    let best = 1e18;
+    const cur: number[] = [],
+      out: number[] = [];
+    const rec = (k: number, acc: number) => {
+      if (acc >= best) return;
+      if (k === n) {
+        best = acc;
+        for (let j = 0; j < n; j++) out[j] = cur[j];
+        return;
+      }
+      for (let j = 0; j < spots.length; j++)
+        if (!used.has(j)) {
+          used.add(j);
+          cur[k] = j;
+          rec(k + 1, acc + cost[k][j]);
+          used.delete(j);
+        }
+    };
+    rec(0, 0);
+    for (let k = 0; k < n; k++) SPA.m.set(ms[k], out[k]), (ms[k].ai.spj = out[k]);
   }
+  const spot = spots[SPA.m.get(p) ?? 0];
   const md = manOf(p),
     deny = Math.hypot(md.x - p.x, md.y - p.y) < 20 && Math.hypot(md.x - hx, md.y - HY) > Math.hypot(p.x - hx, p.y - HY) - 5;
   if (deny && !iso && Math.random() < 0.02) p.ai.cutT = T;
+  p.br = p.ai.cutT && T - p.ai.cutT < 1.1 ? "cut" : "spot";
   if (p.ai.cutT && T - p.ai.cutT < 1.1) {
     mv(p, hx + dir * 25, HY + (p.y < HY ? -18 : 18), 1.25); // backdoor
     if (Math.hypot(md.x - p.x, md.y - p.y) > 26) OFFS[t] = p;
   } else mv(p, spot[0] + Math.sin(T * 0.8 + p.k) * 10, spot[1], 0.95);
   return true;
 }
+const SPA = { t: -1, at: -1, m: new Map<Player, number>() };
 function loose(p: Player, t: number) {
   const NP = cfg.NP,
     i = p.in,
