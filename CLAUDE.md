@@ -336,7 +336,10 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - FT lineup (`ftLay`): per side defense low block, offense, defense (bigs first); the rest behind the arc.
 - Spot inbounds (`setupAt(off, x, y)`, from `violation()`): frontcourt -> nearest line at the spot (baseline: box
   set; sideline: spread), defense goal-side + one up on the inbounder (hupT); backcourt -> normal `setup`. A pass
-  younger than .3 s is never out of bounds (thrown from the line).
+  younger than .3 s is never out of bounds (thrown from the line). While the inbounder counts, the AI offense runs the
+  set's action (`INB.tg` spots via `inbMove`: box = corners pop, one dives, one to the top; sideline = come back to the
+  ball, elbow flash, post seal, corner) and the defense trails goal-side; `setup()` clears it (`INB.on`).
+  Non-shooting fouls side out at the spot of the foul.
 - Help-side pistols (pose3, man D, ball 150+ px away, eased in by distance): ball-side hand at the ball, other at his
   man (`guardOf`, exported), low and soft (aim 40 px out between facing and target). Catch/rebound reach fades for a
   ball behind him. Timing card shows the contest at release (`tg.c`, WIDE OPEN .. SMOTHERED; relayed in "q").

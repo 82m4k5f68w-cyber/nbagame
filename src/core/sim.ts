@@ -863,6 +863,43 @@ export function setupAt(off: number, x: number, y: number) {
   B.x = ib.x;
   B.y = ib.y;
   STAT.spotInb = (STAT.spotInb || 0) + 1;
+  // the set's action while the inbounder counts: each player's target spot (see inbMove)
+  INB.on = 1;
+  INB.tm = off;
+  INB.tg.clear();
+  const others = P.filter((o) => o.tm === off && o !== ib && !o.off);
+  others.forEach((o, k) => {
+    const s = base
+      ? // box: the low men pop to the corners, one high man dives to the rim, the other pops to the top
+        [
+          [ah + dir * 14, HY - 215],
+          [ah + dir * 14, HY + 215],
+          [ah + dir * 26, HY + (iy < HY ? -12 : 12)],
+          [ah + dir * 250, HY],
+        ][k % 4]
+      : // sideline: the near man comes back to the ball, the top flashes to the elbow, the post seals, the corner holds
+        [
+          [ix + dir * 70, iy - side * 70],
+          [ah + dir * 150, HY + side * 50],
+          [ah + dir * 30, HY + side * 30],
+          [ah + dir * 20, HY - side * 210],
+        ][k % 4];
+    INB.tg.set(o, [clamp(s[0], 10, CW - 10), clamp(s[1], 10, CH - 10)]);
+  });
+}
+/** Spot-inbound action: offense runs to its set's spots while the inbounder counts; the defense trails a beat behind. */
+const INB = { on: 0, tm: 0, tg: new Map<Player, number[]>() };
+function inbMove(p: Player) {
+  if (p.tm === INB.tm) {
+    const s = INB.tg.get(p);
+    if (s && inb < 1.0) mv(p, s[0], s[1], 1.15), (p.in.sp = 1);
+  } else {
+    const o = guardOf(p);
+    if (!o || o === B.owner) return;
+    const h = hoop(INB.tm),
+      l = Math.hypot(h - o.x, HY - o.y) || 1;
+    if (inb < 0.85) mv(p, o.x + ((h - o.x) / l) * 20, o.y + ((HY - o.y) / l) * 20, 0.9);
+  }
 }
 /** Star tendencies (CPU): how often a player looks for a deep three, a mid-range pull-up, a drive or a post-up, how
  *  willing he is to pass, and how much he loves the step-back. Stars have their own; everyone else is derived. */
@@ -975,6 +1012,7 @@ export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: num
   return b >= 0 ? b : skip ? nearest(t, x, y, ex) : ex >= 0 ? nearest(t, x, y) : t * NP;
 }
 export function setup(off: number) {
+  INB.on = 0;
   if (cfg.HALF) return setupHalf(off);
   if (S === "play" && P.length) subs(), gamePlan(1 - off), gamePlan(off);
   TS.bc = 0;
@@ -3130,6 +3168,7 @@ export function upd(dt: number) {
   P.forEach((p, k) => {
     if (inb > 0 || (ftq && p !== ftq.s) || p.off) {
       p.in = zin(k);
+      if (inb > 0 && INB.on && !p.off && !ctrlOf(k) && p !== B.owner) inbMove(p);
       return;
     }
     const c = ctrlOf(k);
