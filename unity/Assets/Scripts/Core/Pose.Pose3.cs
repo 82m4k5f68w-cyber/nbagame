@@ -1237,6 +1237,302 @@ namespace Hoops.Core
                 sz = 0.8;
                 aL = 1.2;
             }
+            // Signature celebration (CEL): arms and torso blend into the move while the legs keep running.
+            // Hands on knees: catching a breath at dead balls (free throws, after makes) when tired or lined up.
+            bool onLane = ftq != null && ftq.s != p && Math.Abs(hoop(ftq.s.tm) - p.x) < 150 && Math.Abs(p.y - HY) < 70;
+            if (md == "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && onLane)
+            {
+                // lined up on the lane: knees bent, weight forward, hands out ready to box out on the miss
+                cr = Math.Max(cr, 0.3);
+                tL = tR = 0.35;
+                kL = kR = 0.45;
+                ln = 0.18;
+                aL = aR = 0.75;
+                eL = eR = 1.15;
+                zL = 0.55;
+                sz = 0.55;
+                gL = gR = 0.15;
+            }
+            else if (md == "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && ftq != null && ftq.s != p && p.k % 2 == 1)
+            {
+                // behind the arc at a free throw: hands on the hips (the others rest on their knees)
+                aL = aR = -0.15;
+                zL = 0.62;
+                sz = 0.62;
+                eL = eR = 1.55;
+                hL = hR = 1.25;
+                cx = -0.05 + Math.Sin(Sim.T * 2 + p.k) * 0.04;
+                gL = gR = 0.35;
+            }
+            else if (md == "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && (ftq != null ? ftq.s != p && !onLane : rs > 0.3 && p.en < 0.75))
+            {
+                st = ST.rest;
+                ln = 0.55;
+                cx = 0.22;
+                cr = 0.32;
+                tL = tR = 0.55;
+                kL = kR = 0.62;
+                aL = aR = 0.62;
+                eL = eR = 0.35;
+                sz = 0.22;
+                zL = 0.22;
+                hz = 0.14;
+                gL = gR = 0.35;
+            }
+            else if (md == "i" && !has && !air && sp >= 15 && sp < 110 && p.en < 0.6 && (rs > 0.3 || ftq != null) && !(p.celT > 0) && !(p.setT > 0))
+            {
+                // gassed, walking at a dead ball: arms hang heavy, shoulders slump, a big breath (arms and chest only - the
+                // legs keep walking)
+                double br = Math.Sin(Sim.T * 2.4 + p.k) * 0.06;
+                // hands on the hips: elbows out, forearms turned in to the hip bones, chest heaving
+                aL = aR = -0.15;
+                zL = 0.62;
+                sz = 0.62;
+                eL = eR = 1.55;
+                hL = hR = 1.25;
+                cx = -0.05 + br;
+                gL = gR = 0.35;
+            }
+            if (p.celT > 0 && Util.T(p.cel) && md == "i" && !has && !air && !Util.T(p.postA) && !(p.setT > 0))
+            {
+                st = ST.cel;
+                double e = CEL_T - p.celT,
+                    k = Math.Min(1, Math.Min(e / 0.2, p.celT / 0.35)),
+                    zl = zL == null ? sz : zL.Value;
+                int cel = p.cel == Math.Floor(p.cel) ? (int)p.cel : -1;
+                switch (cel)
+                {
+                    case 1: // shimmy: elbows tucked, shoulders shake (the chest shakes over still hips)
+                        cy += Math.Sin(e * 50) * 0.25 * k;
+                        gL = gR = Lp(gR, 0.6, k);
+                        aL = Lp(aL, 0.45, k);
+                        aR = Lp(aR, 0.45, k);
+                        eL = Lp(eL, 1.75, k);
+                        eR = Lp(eR, 1.75, k);
+                        sz = Lp(sz, 0.3, k);
+                        zL = Lp(zl, 0.3, k);
+                        ty += Math.Sin(e * 50) * 0.08 * k;
+                        rz += Math.Sin(e * 50) * 0.07 * k;
+                        ln = Lp(ln, -0.05, k);
+                        break;
+                    case 2: // night night: hands together beside the cheek, head tilted onto them
+                        HEADX = 0.35 * k;
+                        aR = Lp(aR, 2.45, k);
+                        eR = Lp(eR, 2.5, k);
+                        aL = Lp(aL, 2.25, k);
+                        eL = Lp(eL, 2.45, k);
+                        sz = Lp(sz, -0.15, k);
+                        zL = Lp(zl, -0.6, k);
+                        rz = Lp(rz, 0.24, k);
+                        ty = Lp(ty, 0.2, k);
+                        break;
+                    case 3: // front double-bicep flex with a pump: upper arms out level, forearms turned up (external rotation)
+                        gL = gR = Lp(gR, 1, k);
+                        aL = aR = Lp((aL + aR) / 2, 0.15, k);
+                        eL = eR = Lp((eL + eR) / 2, 1.75 + Math.Sin(e * 12) * 0.18, k);
+                        hL = Lp(hL, -1.45, k);
+                        hR = Lp(hR, -1.45, k);
+                        sz = Lp(sz, 1.45, k);
+                        zL = Lp(zl, 1.45, k);
+                        ln = Lp(ln, -0.14, k);
+                        cr = Lp(cr, 0.15, k);
+                        break;
+                    case 4: // both arms up, three fingers to the crowd, pumping
+                        gL = gR = Lp(gR, 0.4, k);
+                        HEADX = -0.35 * k;
+                        aL = Lp(aL, 2.7 + Math.Sin(e * 10) * 0.15, k);
+                        aR = Lp(aR, 2.7 + Math.Sin(e * 10 + 1) * 0.15, k);
+                        eL = Lp(eL, 0.35, k);
+                        eR = Lp(eR, 0.35, k);
+                        sz = Lp(sz, 0.35, k);
+                        zL = Lp(zl, 0.35, k);
+                        ln = Lp(ln, -0.16, k);
+                        break;
+                    case 5: // chest thump, chin up
+                        gR = Lp(gR, 1, k);
+                        aR = Lp(aR, 1.25, k);
+                        eR = Lp(eR, 2.25 + Math.Max(0, Math.Sin(e * 15)) * 0.35, k);
+                        sz = Lp(sz, -0.45, k);
+                        aL = Lp(aL, 0.35, k);
+                        zL = Lp(zl, 0.6, k);
+                        ln = Lp(ln, -0.16, k);
+                        break;
+                    case 6: // power roar: crouched, arms flexed down and out
+                        gL = gR = Lp(gR, 1, k);
+                        aL = Lp(aL, 0.45, k);
+                        aR = Lp(aR, 0.45, k);
+                        eL = Lp(eL, 1.0, k);
+                        eR = Lp(eR, 1.0, k);
+                        sz = Lp(sz, 0.95, k);
+                        zL = Lp(zl, 0.95, k);
+                        ln = Lp(ln, 0.28, k);
+                        cr = Lp(cr, 0.35, k);
+                        break;
+                    case 7: // shh: finger to the lips, looking around the arena
+                        aR = Lp(aR, 2.2, k);
+                        eR = Lp(eR, 2.55, k);
+                        sz = Lp(sz, -0.3, k);
+                        aL = Lp(aL, 0.2, k);
+                        eL = Lp(eL, 0.35, k);
+                        ty += Math.Sin(e * 2.2) * 0.35 * k;
+                        break;
+                    case 11: // missed an open look: hands on the head
+                        aL = Lp(aL, 2.55, k);
+                        aR = Lp(aR, 2.55, k);
+                        eL = Lp(eL, 2.2, k);
+                        eR = Lp(eR, 2.2, k);
+                        sz = Lp(sz, 0.75, k);
+                        zL = Lp(zl, 0.75, k);
+                        HEADX = -0.25 * k;
+                        break;
+                    case 12:
+                        {
+                            // arguing the call: arms out, palms up, shrug
+                            double sh = Math.Sin(e * 7) * 0.15;
+                            aL = Lp(aL, 0.9 + sh, k);
+                            aR = Lp(aR, 0.9 - sh, k);
+                            eL = Lp(eL, 0.9, k);
+                            eR = Lp(eR, 0.9, k);
+                            sz = Lp(sz, 0.55, k);
+                            zL = Lp(zl, 0.55, k);
+                            oL = Lp(oL, 1.3, k);
+                            oR = Lp(oR, -1.3, k);
+                            gL = gR = Lp(gR, 0.05, k);
+                            break;
+                        }
+                    case 13:
+                        {
+                            // hyping a teammate: clapping in front of the chest
+                            double cl = Math.Abs(Math.Sin(e * 9));
+                            aL = Lp(aL, 1.35, k);
+                            aR = Lp(aR, 1.35, k);
+                            eL = Lp(eL, 0.9, k);
+                            eR = Lp(eR, 0.9, k);
+                            sz = Lp(sz, -0.15 + 0.5 * cl, k);
+                            zL = Lp(zl, -0.15 + 0.5 * cl, k);
+                            break;
+                        }
+                    case 15:
+                        // dead-ball fidget: left hand tugs the jersey at the chest, eyes down
+                        aL = Lp(aL, 0.55, k);
+                        eL = Lp(eL, 1.95, k);
+                        zL = Lp(zl, -0.45, k);
+                        gL = Lp(gL, 0.8, k);
+                        HEADX = 0.2 * k;
+                        break;
+                    case 16:
+                        {
+                            // helping a teammate up: reach down and pull
+                            var f2 = p.helpP;
+                            if (f2 != null)
+                            {
+                                double pull = e > 0.45 ? (e - 0.45) * 0.6 : 0;
+                                var k16 = armIK(p, cr, f2.x, f2.y, 18 + pull * 40, 1, 0.95);
+                                aR = Lp(aR, k16.a, k);
+                                eR = Lp(eR, k16.e, k);
+                                sz = Lp(sz, k16.ab, k);
+                                gR = Lp(gR, 0.7, k);
+                                ln = Lp(ln, 0.45 - pull, k);
+                                cr = Lp(cr, 0.35, k);
+                                LOOK.x = f2.x;
+                                LOOK.y = f2.y;
+                                LOOK.z = 10;
+                                LOOK.on = 1;
+                            }
+                            break;
+                        }
+                    case 14:
+                        // swat hold: the blocking arm stays up, staring him down
+                        aR = Lp(aR, 2.85, k);
+                        eR = Lp(eR, 0.2, k);
+                        wR = Lp(wR, -0.5, k);
+                        gR = Lp(gR, 0.05, k);
+                        ln = Lp(ln, -0.12, k);
+                        break;
+                    case 10:
+                        {
+                            // held follow-through (gooseneck) after a green, released after ~1 s
+                            double h = e < 1.3 ? 1 : Math.Max(0, 1 - (e - 1.3) / 0.3);
+                            aR = Lp(aR, aR + (2.75 - aR) * h, k);
+                            eR = Lp(eR, eR + (0.15 - eR) * h, k);
+                            wR = 1.15 * h;
+                            gR = Lp(gR, 0.2, k);
+                            break;
+                        }
+                    case 9:
+                        {
+                            // dap / low five with the nearest teammate (after a made free throw)
+                            Player mate = null;
+                            double bd2 = 1e9;
+                            for (int i = 0; i < P.Count; i++)
+                            {
+                                var o2 = P[i];
+                                if (o2 != p && o2.tm == p.tm)
+                                {
+                                    double d = Hypot(o2.x - p.x, o2.y - p.y);
+                                    if (d < bd2) { bd2 = d; mate = o2; }
+                                }
+                            }
+                            double reach = e < 0.7 ? Math.Sin((e / 0.7) * Math.PI) : 0;
+                            aR = Lp(aR, 0.5 + reach * 0.9, k);
+                            eR = Lp(eR, 0.9 - reach * 0.6, k);
+                            sz = Lp(sz, -0.15, k);
+                            gR = Lp(gR, 0.1, k);
+                            if (mate != null) { LOOK.x = mate.x; LOOK.y = mate.y; LOOK.z = mate.z + mate.ht * 9; LOOK.on = 1; }
+                            break;
+                        }
+                    case 8: // point to the sky
+                        aR = Lp(aR, 2.95, k);
+                        eR = Lp(eR, 0.12, k);
+                        aL = Lp(aL, e > 0.6 ? 2.7 : 0.3, k);
+                        eL = Lp(eL, e > 0.6 ? 0.2 : 0.8, k);
+                        sz = Lp(sz, 0.15, k);
+                        zL = Lp(zl, 0.15, k);
+                        ln = Lp(ln, -0.22, k);
+                        gL = gR = Lp(gR, 0.8, k);
+                        HEADX = -0.5 * k; // eyes to the sky
+                        break;
+                }
+            }
+            // ---- box-outs and post battles: bodies lean into each other ----
+            if (md == "i" && !air && !has && !(p.setT > 0) && !(p.celT > 0))
+            {
+                Player ob = null;
+                double od = 1e9;
+                for (int i = 0; i < P.Count; i++)
+                {
+                    var q = P[i];
+                    if (q.tm != p.tm)
+                    {
+                        double d = Hypot(q.x - p.x, q.y - p.y);
+                        if (d < od) { od = d; ob = q; }
+                    }
+                }
+                bool shotUp = B.owner == null && (B.mode == "air" || Util.T(B.sh)) && B.z > 20;
+                if (ob != null && od < 22 && shotUp && Hypot(hoop(1 - p.tm) - p.x, HY - p.y) < 130)
+                {
+                    // box-out (defense of that basket): sit low and wide, arms out to feel the man behind
+                    st = ST.post;
+                    cr = Math.Max(cr, 0.38);
+                    hz = Math.Max(hz, 0.3);
+                    aL = aR = 0.85;
+                    eL = eR = 1.05;
+                    sz = 0.9;
+                    zL = 0.9;
+                    ln = 0.12;
+                    gL = gR = 0.1;
+                }
+                else if (ob != null && od < 22 && Util.T(ob.postA) && B.owner == ob)
+                {
+                    // fronting the post: forearm in his back, leaning into him
+                    st = ST.post;
+                    ln += 0.22;
+                    cr = Math.Max(cr, 0.3);
+                    aL = 1.0;
+                    eL = 1.45;
+                    zL = 0.1;
+                }
+            }
 //@@CONTINUE@@
         }
     }
