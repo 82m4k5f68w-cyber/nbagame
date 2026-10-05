@@ -2,6 +2,7 @@ Library/
 Temp/
 Logs/
 Build/
+Data/Plugins/lib_burst_generated.*
 obj/
 UserSettings/
 *.csproj
