@@ -308,6 +308,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - The claude.ai artifact publish check misread a build as a "PR review page" (refused: "too large for a review
   page") because of one minified function (avoidBodies: a nested array-literal table + array destructuring). Bisect
   by commit / by disabling functions and publishing variants; rewriting it with typed arrays fixed it.
+- Rare freezes (unseeded invariants games) are found by state, not by repro: invariants.ts now fails "game clock stuck
+  60 s" with the dead-ball / ftq / ball state - that is how the FT-catch and lodged-ball freezes were found.
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 
