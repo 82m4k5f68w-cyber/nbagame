@@ -6,3 +6,6 @@ obj/
 UserSettings/
 *.csproj
 *.sln
+
+# compiled core tests
+CoreTests/bin/
