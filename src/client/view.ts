@@ -12,6 +12,7 @@ export const V = {
   GPU: 0, // renderer: 0 WebGL, 1 WebGPU (beta; takes effect on the next start)
   backend: "", // what is actually drawing (shown in settings)
   stick: null as null | number[], // virtual joystick (mobile)
+  stk: null as null | { cx: number; cy: number; ox: number; oy: number; sp: number }, // its drawn state (HUD px)
   perf: null as null | { fps: number; lvl: number; scale: number },
   onResize: null as null | (() => void),
   shake: null as null | ((a: number) => void),

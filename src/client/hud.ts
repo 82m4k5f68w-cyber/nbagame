@@ -2,7 +2,7 @@
 import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, gameLike, type Player } from "../core/sim";
 import { V, pr, fmt, MN } from "./view";
 import { isLaySv } from "../core/data";
-import { K, tempoOf, TX } from "./input";
+import { K, tempoOf, TX, STK_R } from "./input";
 let X: CanvasRenderingContext2D = null as any;
 export const setHudCtx = (x: CanvasRenderingContext2D) => (X = x);
 const fp = () => V.focusP();
@@ -234,7 +234,7 @@ export function hud2() {
   }
 }
 export function hud() {
-  if (!gameLike()) return hudTexts();
+  if (!gameLike()) return hudTexts(), stickHud();
   X.fillStyle = "rgba(8,10,24,.88)";
   X.beginPath();
   X.rect(230, 6, 500, 62);
@@ -259,6 +259,25 @@ export function hud() {
   X.font = "700 16px system-ui";
   X.fillText(cfg.SCLK ? String(Math.ceil(Math.max(0, shot))) : "—", 480, 58);
   hudTexts();
+  stickHud();
+}
+/** The touch stick: ring where the thumb landed, knob under the thumb (orange when sprinting). */
+function stickHud() {
+  const s = V.stk;
+  if (!s) return;
+  const m = Math.hypot(s.ox, s.oy),
+    k = m > STK_R ? STK_R / m : 1;
+  X.globalAlpha = 0.55;
+  X.strokeStyle = "#fff";
+  X.lineWidth = 3;
+  X.beginPath();
+  X.arc(s.cx, s.cy, STK_R, 0, 7);
+  X.stroke();
+  X.fillStyle = s.sp ? "#ff8a2a" : "#ffffff";
+  X.beginPath();
+  X.arc(s.cx + s.ox * k, s.cy + s.oy * k, 24, 0, 7);
+  X.fill();
+  X.globalAlpha = 1;
 }
 function hudTexts() {
   X.textAlign = "center";

@@ -68,7 +68,7 @@ export function hum(): Input {
     mv: ev.cc ? 1 : ev.x ? 2 : ev.vv ? 3 : 0,
     post: held("post") || GP.post || K.TouchPost,
     lob: ev.r,
-    sp: held("sp") || GP.sp,
+    sp: held("sp") || GP.sp || !!V.stk?.sp,
     sw: ev.q,
     pf: ev.g,
     to: ev.to,
@@ -201,6 +201,64 @@ export function ku(c: string) {
   if (actOf(c) === "sd") ev.su = 1;
   if (c === "Enter") ev2.su = 1;
 }
+/** Floating analog stick for touch screens: a finger on the left side of the court view drops the stick where it
+ *  lands (drag to move, push to the rim of the ring to sprint); a finger on the right side is the shoot / jump
+ *  button (hold, release on green). Mice keep the old behaviour (nothing). */
+export const STK_R = 62;
+function touchStick() {
+  const C = document.getElementById("c");
+  if (!C) return;
+  let sid = -1,
+    bid = -1;
+  const at = (e: PointerEvent) => {
+    const r = C.getBoundingClientRect();
+    return [((e.clientX - r.left) / (r.width || 1)) * 960, ((e.clientY - r.top) / (r.height || 1)) * 540];
+  };
+  const upd = (e: PointerEvent) => {
+    const s = V.stk!,
+      [x, y] = at(e);
+    let ox = x - s.cx,
+      oy = y - s.cy;
+    const d = Math.hypot(ox, oy);
+    // the ring follows a finger that slides past it (no dead stick after a long drag)
+    if (d > STK_R * 1.35) (s.cx += (ox / d) * (d - STK_R * 1.35)), (s.cy += (oy / d) * (d - STK_R * 1.35)), (ox = x - s.cx), (oy = y - s.cy);
+    const m = Math.min(1, Math.hypot(ox, oy) / STK_R);
+    s.ox = ox;
+    s.oy = oy;
+    s.sp = m > 0.92 ? 1 : 0;
+    const a = Math.atan2(oy, ox),
+      v = m < 0.14 ? 0 : (m - 0.14) / 0.86;
+    V.stick = [Math.cos(a) * v, Math.sin(a) * v];
+  };
+  C.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return;
+    const ov = document.getElementById("ov");
+    if (ov && ov.style.display !== "none" && !ov.hidden && getComputedStyle(ov).display !== "none") return;
+    const [x, y] = at(e);
+    try {
+      C.setPointerCapture(e.pointerId);
+    } catch (er) {}
+    if (x < 480 && sid < 0) {
+      sid = e.pointerId;
+      V.stk = { cx: Math.max(STK_R + 8, Math.min(472 - STK_R, x)), cy: Math.max(STK_R + 8, Math.min(532 - STK_R, y)), ox: 0, oy: 0, sp: 0 };
+      upd(e);
+    } else if (x >= 480 && bid < 0) {
+      bid = e.pointerId;
+      kd(KMAP.sd);
+    }
+  });
+  C.addEventListener("pointermove", (e) => {
+    if (e.pointerId === sid && V.stk) upd(e);
+  });
+  const end = (e: PointerEvent) => {
+    if (e.pointerId === sid) (sid = -1), (V.stk = null), (V.stick = null);
+    if (e.pointerId === bid) {
+      bid = -1;
+      if (K[KMAP.sd]) ku(KMAP.sd);
+    }
+  };
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => C.addEventListener(t, end as any));
+}
 let bound = 0;
 export function bindInput() {
   if (bound) return;
@@ -211,6 +269,7 @@ export function bindInput() {
     kd(e.code);
   });
   addEventListener("keyup", (e) => ku(e.code));
+  touchStick();
   document.querySelectorAll<HTMLElement>("#tc button").forEach((b) => {
     const code = () => (b.dataset.a ? KMAP[b.dataset.a] : b.dataset.k!);
     b.addEventListener("pointerdown", (e) => {
