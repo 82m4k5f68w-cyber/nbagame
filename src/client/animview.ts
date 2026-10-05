@@ -330,6 +330,30 @@ export const ANIMS: [string, Setup][] = [
   ["Crossover", (p, t, dt) => (stand(p), moveEvery(p, t, 1, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
   ["Behind the back", (p, t, dt) => (stand(p), moveEvery(p, t, 3, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
   ["Spin move", (p, t, dt) => (stand(p), moveEvery(p, t, 2, 1.3), dribble(p, dt))],
+  [
+    "Hedge the pick-and-roll",
+    (p, t, dt) => {
+      stand(p);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      G.setScalars({ pos: o.tm });
+      B.owner = o;
+      p.hdgT = 0.25;
+      move(p, dt, 60, Math.sin(t * 2) > 0 ? Math.PI / 2 : -Math.PI / 2);
+    },
+  ],
+  [
+    "Chinned rebound",
+    (p, t) => {
+      stand(p);
+      B.owner = p;
+      B.mode = "held";
+      p.chinT = 0.4;
+      // (the studio doesn't run bstep: put the ball under his chin by hand)
+      B.x = p.x + Math.cos(p.f) * 5;
+      B.y = p.y + Math.sin(p.f) * 5;
+      B.z = p.ht * 7.3;
+    },
+  ],
   ["Post back-down", (p, t, dt) => (stand(p), (p.postA = 1), move(p, dt, 45, Math.PI), dribble(p, dt))],
   [
     "Jump shot",

@@ -753,6 +753,18 @@ export function pose3(p: Player) {
       gL = gR = 0.2;
     }
   }
+  // ---- hedge: the screener's defender jumps out wide, arms spread, to stop the handler turning the corner ----
+  if (PRO && (p.hdgT || 0) > 0 && !has && !air && md === "i") {
+    const w = Math.min(1, p.hdgT * 6);
+    aL += (0.85 - aL) * w;
+    aR += (0.85 - aR) * w;
+    sz += (1.15 - sz) * w;
+    zL = (zL ?? sz) + (1.15 - (zL ?? sz)) * w;
+    eL += (0.35 - eL) * w;
+    eR += (0.35 - eR) * w;
+    cr = Math.max(cr, 0.28 * w);
+    gL = gR = 0.05;
+  }
   // ---- chop steps: a handler sizing up a close defender keeps his feet alive ----
   if (PRO && has && md === "i" && !hold && sp < 45 && !(p.mvT > 0) && !p.postA && !air) {
     let near = 1e9;

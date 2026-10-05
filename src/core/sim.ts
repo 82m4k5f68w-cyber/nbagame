@@ -399,6 +399,7 @@ export const TS = {
   trT: [-99, -99], // when each team last got the ball live (defensive rebound, loose ball): transition window
   tr: [0, 0], // pushing in transition right now (handler attacks, wings run the lanes)
   cov: [0, 0], // CPU pick-and-roll coverage: 0 drop (big sits in the paint), 1 hedge (big steps out at the handler)
+  dbl: [-1, -1], // CPU double-teams this opponent (P index) when he has the ball: the hottest scorer on the floor
 };
 function scoutNew() {
   return { a: [0, 0, 0], m: [0, 0, 0], c: [0, 0, 0] };
@@ -428,6 +429,7 @@ function resetRules() {
   TS.trT = [-99, -99];
   TS.tr = [0, 0];
   TS.cov = [0, 0];
+  TS.dbl = [-1, -1];
   for (let t = 0; t < 2; t++) if (!CT.some((c) => c.tm === t)) TS.mu[t] = autoMatch(t);
 }
 /** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
@@ -530,6 +532,21 @@ export function gamePlan(t: number) {
     if (cov !== TS.cov[t]) {
       TS.cov[t] = cov;
       txt(cl[t].toUpperCase() + (cov ? " HEDGE THE PICK-AND-ROLL" : " DROP ON THE PICK-AND-ROLL"), 480, 150, "#9fe7ff");
+    }
+  }
+  // a scorer who is on fire gets doubled when he catches it (and the double comes off when he cools down)
+  {
+    let hi = -1,
+      hv = 0;
+    for (let j = 0; j < cfg.NP; j++) {
+      const q = P[(1 - t) * cfg.NP + j],
+        v = (q.heat || 0) >= 3 ? 10 + q.stt.pts / 4 : 0;
+      if (v > hv) (hv = v), (hi = (1 - t) * cfg.NP + j);
+    }
+    if (cfg.NP < 3 || cfg.ASTAR) hi = -1;
+    if (hi !== TS.dbl[t]) {
+      TS.dbl[t] = hi;
+      if (hi >= 0) ban("DOUBLE TEAM", cl[t].toUpperCase() + " SEND TWO AT " + P[hi].n.toUpperCase(), PC[t]), cm("double", cl[t], P[hi].n);
     }
   }
   // somebody on the other side is cooking: the best defender takes the assignment
@@ -1381,6 +1398,19 @@ export function step(p: Player, dt: number) {
   if (p.actT > 0) p.actT = Math.max(0, p.actT - dt);
   if (p.ttT > 0) p.ttT = Math.max(0, p.ttT - dt);
   if (p.chinT > 0) p.chinT = Math.max(0, p.chinT - dt);
+  if (p.hdgT > 0) p.hdgT = Math.max(0, p.hdgT - dt);
+  // scouting the drive: which way does this handler go when he attacks the basket? (+ = his right, decays slowly)
+  if (B.owner === p && p.mode === "i" && !PREDICT) {
+    const hx = hoop(p.tm),
+      dx = hx - p.x,
+      dy = HY - p.y,
+      dd = Math.hypot(dx, dy),
+      sv = Math.hypot(p.vx, p.vy);
+    if (dd < 320 && dd > 60 && sv > 140 && (p.vx * dx + p.vy * dy) / (dd * sv) > 0.5) {
+      const side = (p.vx * dy - p.vy * dx) / (dd * sv); // + = drifting to the right of the line to the rim
+      p.drv = clamp((p.drv || 0) * (1 - dt * 0.08) + Math.sign(side) * dt * (Math.abs(side) > 0.15 ? 1 : 0), -3, 3);
+    }
+  }
   if (p.upu > 0) p.upu -= dt;
   if (ftq && ftq.s === p && has && p.mode === "i") p.ftT = (p.ftT || 0) + dt;
   else p.ftT = 0;
@@ -1832,6 +1862,14 @@ export function ai(p: Player, dt: number) {
         el = 24 - shot;
       if (p.cd <= 0 && D0 > 150 && Math.hypot(dn.x - p.x, dn.y - p.y) < 38 && (el > 3 + 8 * pf || shot < 8) && Math.random() < dt * 4 * tendOf(p)[5]) i.sb = 1;
     }
+    // the clock is about to run out (quarter or shot clock): get it up from wherever he is - a heave if he must
+    if (!isH(p) && p.cd <= 0 && gameLike() && !cfg.HALF && Math.min(clock, shot) < 1.25 && (D0 < 520 || clock < 1.25)) {
+      if (D0 > 420) txtW("HEAVE!", p.x, p.y, 90, "#ffd23f");
+      i.sd = 1;
+      a.rel = 0.42;
+      a.r = 0;
+      return;
+    }
     if (p.sbw > 0 && D0 > 120) {
       i.sd = 1;
       a.rel = (p.st === 1 ? 0.45 : 0.6) + (Math.random() - 0.5) * 0.16;
@@ -1879,6 +1917,34 @@ export function ai(p: Player, dt: number) {
       }
       if (T - TS.trT[t] > 1.5) TS.tr[t] = 0; // the defense got back: run the half-court offense
     } else TS.tr[t] = 0;
+    // dribble handoff: a big with the ball out top holds it for a shooter running off him, hands it over at the hip
+    // and stays planted as the screen (the defender trailing the shooter runs into him)
+    if (NP >= 3 && !isH(p) && !cfg.HALF && !TS.tr[t] && D > 185 && D < 300 && shot > 7) {
+      if (!a.dho && (p.c < 74 || p.ht >= 6.85) && Math.random() < dt * 0.7) {
+        let best: Player | null = null,
+          bv = 0;
+        for (const q of P)
+          if (q.tm === t && q !== p && !q.off && q.c >= 74 && !isH(q)) {
+            const v = q.c - Math.hypot(q.x - p.x, q.y - p.y) * 0.08;
+            if (v > bv) (bv = v), (best = q);
+          }
+        if (best) (a.dho = best), (a.dhoT = T), (best.ai.dhoBy = p);
+      }
+      if (a.dho) {
+        const g = a.dho as Player;
+        if (T - a.dhoT > 3.5 || g.tm !== t || g.off) (a.dho = null), (g.ai.dhoBy = null);
+        else {
+          if (Math.hypot(g.x - p.x, g.y - p.y) < 22) {
+            i.pass = g;
+            g.ai.dhoBy = null;
+            a.dho = null;
+            a.holdT = T + 0.7; // stay planted: he is the screen now
+            STAT.dho = (STAT.dho || 0) + 1;
+          }
+          return; // (holds the ball, pivoting, until the shooter arrives)
+        }
+      }
+    }
     // catch-and-shoot: just caught a pass with space - shoot it in rhythm (a shooter from deep, anyone from mid-range)
     if (B.pp && B.pp.p !== p && B.pp.p.tm === t && T - B.pp.t < 0.7 && !a.cs && p.cd <= 0 && !CT.some((c) => c.tm === t && c.idx === P.indexOf(p))) {
       a.cs = 1;
@@ -2061,6 +2127,22 @@ export function ai(p: Player, dt: number) {
           }
         }
       const prs = Math.hypot(dn.x - p.x, dn.y - p.y) < 40;
+      // doubled: two defenders on him -> somebody is open, find him (the pass out of the trap)
+      let on2 = 0;
+      for (const q of P) if (q.tm !== t && !q.off && Math.hypot(q.x - p.x, q.y - p.y) < 45) on2++;
+      if (on2 >= 2 && !isH(p) && T - LASTP[t] > 0.4) {
+        let ob: Player | null = null,
+          ov = 0;
+        for (const r of P)
+          if (r.tm === t && r !== p && !r.off) {
+            const v = val(r);
+            if (v > ov) (ov = v), (ob = r);
+          }
+        if (ob && Math.random() < 0.7) {
+          i.pass = ob;
+          return;
+        }
+      }
       if (
         bo &&
         PCNT[t] < 3 + Math.round(3 * pf2) &&
@@ -2074,6 +2156,20 @@ export function ai(p: Player, dt: number) {
     if (p.cd <= 0 && p.s >= 72 && Math.hypot(dn.x - p.x, dn.y - p.y) < 55 && Math.random() < dt * 1.4) i.mv = 1 + ((Math.random() * 3) | 0);
   } else if (pos === t && B.mode !== "held" && B.to === p) mv(p, B.x + B.vx * 0.2, B.y + B.vy * 0.2, 1);
   else if (pos === t && B.owner) {
+    // the handoff man just gave it up: he is the screen - planted for a beat
+    if ((p.ai.holdT || 0) > T) {
+      p.setT = 0.1;
+      return;
+    }
+    // running off a handoff: come at the big from the wing and brush his hip on the way to the top / the middle
+    if (p.ai.dhoBy && B.owner === p.ai.dhoBy) {
+      const h = p.ai.dhoBy as Player,
+        sd = p.y < h.y ? -1 : 1,
+        dir = oh > 470 ? -1 : 1;
+      mv(p, h.x + dir * 4, h.y + sd * 9, 1.2);
+      i.sp = 1;
+      return;
+    }
     // transition: fill the lanes - the closest man runs to the rim, two wide to the corners, the last one trails
     if (TS.tr[t] && B.owner.tm === t && NP > 1 && !cfg.HALF) {
       const dir = oh > 470 ? -1 : 1;
@@ -2138,12 +2234,30 @@ export function ai(p: Player, dt: number) {
       opl = PLAY[1 - t],
       // guarding the screener in a pick-and-roll (CPU teams; a switch already handed him the ball handler instead)
       pnrBig = cpu && !zone && opl && opl.kind === "pnr" && opl.scr === o && opl.use === hb && (opl.ph === "set" || (opl.ph === "out" && T - opl.setAt < 1.6)) && ds !== 3;
-    if (pnrBig) {
+    // doubling the hot hand: the nearest helper (not his own man) traps him as soon as he has it inside 32 ft
+    let trap = false;
+    if (cpu && !zone && TS.dbl[t] >= 0 && P[TS.dbl[t]] === hb && hh < 320 && o !== hb) {
+      let best: Player | null = null,
+        bd = 1e9;
+      for (const q of P)
+        if (q.tm === t && !q.off && manOf(hb) !== q) {
+          const d = Math.hypot(q.x - hb.x, q.y - hb.y);
+          if (d < bd) (bd = d), (best = q);
+        }
+      trap = best === p && bd < 220;
+    }
+    if (trap) {
+      const lx = hb.y < HY ? 1 : -1; // from the side away from the middle: force him toward the sideline
+      mv(p, hb.x + (dh - hb.x) * 0.06, hb.y + lx * 15, 1.2);
+      i.sp = 1;
+      p.hdgT = 0.25; // (arms wide, like a hedge)
+    } else if (pnrBig) {
       const dir = dh > 470 ? -1 : 1;
       if (TS.cov[t] === 1 && (opl.ph === "set" || T - opl.setAt < 0.55)) {
         // hedge: jump out above the screen into the handler's path, then get back to the roller
         mv(p, hb.x + (dh - hb.x) * 0.12 + (hb.y - HY) * -0.05, hb.y + (HY - hb.y) * 0.12, 1.2);
         i.sp = 1;
+        p.hdgT = 0.25; // (pose: big and wide, arms out to show the handler a wall)
       } else if (TS.cov[t] === 1) mv(p, o.x + (dh - o.x) * 0.35, o.y + (HY - o.y) * 0.35, 1.15); // recover
       else mv(p, dh + dir * 85, HY + (hb.y - HY) * 0.35, 1); // drop: sit at the free-throw line, wall off the drive and the roll
     } else if (hh < 140 && p.k !== hb.k && nearest(t, hb.x, hb.y, t * NP + hb.k) === t * NP + p.k)
@@ -2164,6 +2278,14 @@ export function ai(p: Player, dt: number) {
     } else {
       let tx = o.x + ((dh - o.x) / l) * ou,
         ty = o.y + ((HY - o.y) / l) * ou;
+      // shade the ball handler's favourite drive: a step over to the side he keeps going to (CPU defenders)
+      if (cpu && B.owner === o && Math.abs(o.drv || 0) > 0.8 && od < 330) {
+        const sh = clamp((o.drv || 0) / 3, -1, 1) * 7,
+          ux = (dh - o.x) / l,
+          uy = (HY - o.y) / l;
+        tx += -uy * sh * -1;
+        ty += ux * sh * -1;
+      }
       if (dh > 470 ? B.x < 470 : B.x > 470) tx = dh > 470 ? Math.max(tx, 455) : Math.min(tx, 485);
       mv(p, tx, ty, 0.92);
     }
@@ -2288,7 +2410,7 @@ function heldZ(o: Player) {
     B.a += 0.25; // spins it in his hands
     return o.z + o.ht * 7.4;
   }
-  if (h === 4) return o.z + o.ht * 8.1; // chinned
+  if (h === 4) return o.z + o.ht * 7.3; // chinned (under the chin, at the top of the chest)
 
   return hip;
 }

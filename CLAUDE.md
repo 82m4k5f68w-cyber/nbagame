@@ -246,6 +246,22 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Pause -> Scouting report (game.ts `scouting()`): both teams' recent shot records, the CPU plan/defense, HOT/COLD/
   SMOTHERED tags. Spacers avoid spots the ball handler is driving toward (offBall pick, 0.5 s ahead).
 
+## Team play (v4.6)
+- Transition (sim): a live-ball change of possession stamps `TS.trT[t]` (setup clears it). For 4.5 s the CPU handler
+  checks for numbers (defenders level with or ahead of him `back`, an open man ahead): pushes (`TS.tr[t]`, sprint),
+  hits the man ahead (lob at the rim), finishes at the rim; teammates fill lanes (rim runner, corners, trailer).
+  Transition defense: all sprint back, the deepest man protects the rim and stops the ball (`STAT.fb`).
+- Pick-and-roll coverage `TS.cov` (CPU, from gamePlan): 1 hedge vs a pull-up shooting star (c >= 86 or mid-range
+  falling), else 0 drop (screener's man sits at the FT line); `p.hdgT` = arms-wide pose (host-side flag).
+- Double team `TS.dbl[t]` (P index; a scorer with heat >= 3): the nearest helper traps him inside 32 ft; a doubled CPU
+  handler passes out to the best `val()` option. Banner + commentary.
+- Dribble handoff (CPU): a big (c < 74 or 6'10"+) with the ball 18-30 ft out holds it for the best shooter
+  (`a.dho`, `q.ai.dhoBy`), hands off within 22 px, then stays planted as the screen (`a.holdT`, `setT`).
+- Buzzer: a CPU handler with < 1.25 s on the game or shot clock gets it up from anywhere (HEAVE! from 42 ft+).
+- Contact: the receiver's hands reach to where a pass will be caught (post-blend contact pass, 0.3 s ahead) and
+  the catch waits until the ball reaches a palm (`p.skel`) once he is close; rebounds in traffic are chinned
+  (`p.chinT`, heldBall 4) before the outlet.
+
 ## Lessons learned (do not repeat)
 - A solid background on `#h` hid the whole 3D view (black screen). `#h` must be transparent.
 - `getGamepads()` throws in sandboxed iframes -> it killed the game via `window.onerror`. Keep it in try/catch; the error handler ignores gamepad/permission errors.
