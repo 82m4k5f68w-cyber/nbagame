@@ -11,9 +11,10 @@ namespace Hoops.Core
 {
     public partial class Player
     {
-        public double scr, setT, manT, frT, ttT, chinT, hdgT, drv, upu, ftT, landT, plantT, fsT, hupT, helpT, swT, rotT, engT;
+        public double scr, setT, manT, ttT, chinT, hdgT, drv, upu, ftT, landT, plantT, fsT, hupT, helpT, swT, rotT, engT;
         public double acc, pvx, pvy, mvT, mvE, mvS, mvk, postA, combo, jabX, jabY, bdT, lateJ, react, dcl, brk;
         public double? fsv;
+        // (also needs p.frT: double, declared by Pose.Rest.cs)
         public double[] li; // last non-zero stick direction (null = never moved)
         public string br; // debug tag: the off-ball branch that moved him
     }
