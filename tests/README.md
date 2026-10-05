@@ -46,5 +46,7 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - contact.ts — contact QA on a seeded 5v5 stretch: the dribble hand meets the ball at the top of the bounce (p50 < 6,
   p90 < 22 px), a ball held in both hands sits between the palms (p90 < 6 px, one tick behind), toes never sink more
   than 4 px into the floor (lying after a dive included).
+- limits.ts — joint-limit audit on a seeded 5v5 stretch: knees/elbows bending backwards, grounded ankles past ~0.7 rad
+  of dorsiflexion, the neck out of range; must stay under 0.2% of player-ticks.
 - stats.ts (not in npm test) — realism report vs NBA averages over N full CPU games (`N=4 QL=180 SEED=1 npx tsx
   tests/stats.ts`): assist rate, FT rate, FG/3P%, shot mix and contest by range, shot clock at FGA, ORB%, ORtg.
