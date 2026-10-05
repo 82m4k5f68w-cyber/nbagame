@@ -1,6 +1,6 @@
 // Full games in every mode with a random human: invariants that must always hold.
 //  - team score == sum of its players' points   - games always reach the final buzzer
-//  - no possession stalls (ball dead with nobody acting) for > 30 s   - ball and players stay in bounds
+//  - no possession stalls (ball dead with nobody acting) for > 30 s, game clock never stuck 60 s   - ball and players stay in bounds
 //  - fgm <= fga, tpm <= tpa, tpm <= fgm         - shot clock never runs away negative
 import * as G from "../src/core/sim";
 import { rapInit } from "../src/core/physics";
@@ -29,7 +29,7 @@ for (const [np, mym, mp2] of [
   const tag = `np${np} my${mym} mp${mp2}`;
   if (mym && np === 1 && G.cl[1] !== G.RO(12)[2]) fails.push(`${tag}: My Player 1v1 opponent ignored (got ${G.cl[1]}, wanted ${G.RO(12)[2]})`);
   void j;
-  let t = 0, still = 0, lastHash = "";
+  let t = 0, still = 0, lastHash = "", lastClk = -1, clkT = 0;
   while (G.S !== "over" && t < 60 * 60 * 6) {
     if (t % 11 === 0) { K.R = Math.random() < 0.6; K.L = Math.random() < 0.3; K.U = Math.random() < 0.4; K.D = Math.random() < 0.4; }
     const r = Math.random();
@@ -41,6 +41,9 @@ for (const [np, mym, mp2] of [
     still = h === lastHash ? still + 1 : 0;
     lastHash = h;
     if (still === 60 * 30) fails.push(`${tag}: ball frozen 30 s (S=${G.S} inb=${G.inb.toFixed(2)} rs=${G.rs.toFixed(2)} ftq=${!!G.ftq} owner=${G.B.owner && G.B.owner.n} mode=${G.B.owner && G.B.owner.mode} ball=${JSON.stringify({ m: G.B.mode, sh: G.B.sh, sc: G.B.sc, z: G.B.z | 0, x: G.B.x | 0, y: G.B.y | 0, gt: G.B.gt, rpl: !!G.RPL, jb: !!G.JB, to: G.B.to && G.B.to.n })})`);
+    // the game clock must keep moving (dead balls are short): 60 s of play without it is a stuck sequence
+    if (G.clock !== lastClk || G.S !== "play") (lastClk = G.clock), (clkT = t);
+    if (t - clkT === 60 * 60) fails.push(`${tag}: game clock stuck 60 s (q=${G.q} clock=${G.clock.toFixed(1)} inb=${G.inb.toFixed(2)} rs=${G.rs.toFixed(2)} ftq=${JSON.stringify(G.ftq && { i: G.ftq.i, n: G.ftq.n, fired: G.ftq.fired, next: G.ftq.next })} owner=${G.B.owner && G.B.owner.n} ball=${JSON.stringify({ m: G.B.mode, sh: G.B.sh, sc: G.B.sc, age: G.B.age })})`);
     if (G.shot < -2) fails.push(`${tag}: shot clock ran away ${G.shot.toFixed(1)}`);
     if (G.B.x < -20 || G.B.x > 960 || G.B.y < -20 || G.B.y > 520 || G.B.z < -10 || G.B.z > 800) { fails.push(`${tag}: ball out of world ${[G.B.x, G.B.y, G.B.z].map((v) => v.toFixed(0))}`); break; }
     if (fails.length > 12) break;
