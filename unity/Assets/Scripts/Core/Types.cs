@@ -31,7 +31,7 @@ namespace Hoops.Core
     }
 
     /// <summary>Box score line.</summary>
-    public sealed class Stats { public double pts, reb, ast, fgm, fga, tpm, tpa, blk, orb, chg, dv, sa, min; }
+    public sealed class Stats { public double pts, reb, ast, fgm, fga, tpm, tpa, blk, orb, chg, dv, sa, min, tov; }
 
     /// <summary>Scouting record per range [rim, mid, three]: decayed attempts, makes, contest.</summary>
     public sealed class Scout { public double[] a = new double[3], m = new double[3], c = new double[3]; }
