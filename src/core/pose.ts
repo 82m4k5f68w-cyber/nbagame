@@ -735,8 +735,10 @@ export function pose3(p: Player) {
   }
   // ---- shot block attempt: the leaper's hand goes for the ball ----
   if (PRO && air && !has && md !== "c" && md !== "s" && B.owner && B.owner.tm !== p.tm && (B.owner.mode === "c" || B.owner.mode === "s") && Math.hypot(B.x - p.x, B.y - p.y) < 40) {
-    const k6 = armIK(p, cr, B.x, B.y, B.z + 4, 1, 0.8);
-    aR = k6.a;
+    // (aimed a little in front of him and never past straight up: a ball right overhead used to flip the arm over the
+    // top and back as it wobbled in front of / behind the shoulder)
+    const k6 = armIK(p, cr, B.x + Math.cos(fv(p)) * 8, B.y + Math.sin(fv(p)) * 8, B.z + 4, 1, 0.8);
+    aR = Math.min(armN(k6.a), 3.25);
     eR = k6.e;
     sz = k6.ab;
     aL = 2.6;
@@ -1455,7 +1457,8 @@ export function pose3(p: Player) {
   const I =
     p.inz ||
     (p.inz = { b: new Float64Array(NQ), x: new Float64Array(NQ), v: new Float64Array(NQ), t: new Float64Array(NQ).fill(9), tf: new Float64Array(NQ).fill(0.1), pt: new Float64Array(NQ), pv: new Float64Array(NQ), last: new Float64Array(NQ), lv: new Float64Array(NQ), ok: 0 });
-  const trans = st !== p.anS && sm && I.ok;
+  const trans = st !== p.anS && sm && I.ok,
+    fromReach = p.anS === ST.cat || p.anS === ST.air; // (hands out for a catch / up for a rebound, then straight into a shot)
   if (!sm || !I.ok) for (let j = 0; j < NQ; j++) (I.b[j] = VALS[j]), (I.pt[j] = VALS[j]), (I.pv[j] = 0), (I.x[j] = 0), (I.v[j] = 0), (I.t[j] = 9);
   p.anS = st;
   I.ok = 1;
@@ -1490,7 +1493,8 @@ export function pose3(p: Player) {
         // longer so the catch-up never whips, except during shots and moves where timing is everything)
         const quick = (st === ST.shot || st === ST.move) && !hd, // (the head never snaps: a tip-in's look from the ball to the rim)
           big = Math.min(quick ? 0.1 : 0.32, 0.08 + Math.abs(I.x[j]) * (hd ? 0.12 : 0.1));
-        I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? 0 : big * 0.75) : big;
+        // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
+        I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? (fromReach ? Math.min(0.1, 0.02 + Math.abs(I.x[j]) * 0.05) : 0) : big * 0.75) : big;
         I.b[j] = v;
       }
       I.pv[j] = jump ? 0 : W(v - I.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
@@ -1576,8 +1580,12 @@ export function pose3(p: Player) {
         if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
         (K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
       }
-      const da = drib || cat ? wrapPi(K[0] - o.aR) : K[0] - o.aR, // (fades / contests: the plain difference is continuous - no +-pi wrap to pop at)
-        w = p.ctR * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : 1); // (an IK branch flip is not a correction)
+      const da = drib || cat ? wrapPi(K[0] - o.aR) : K[0] - o.aR; // (fades / contests: the plain difference is continuous - no +-pi wrap to pop at)
+      // (an IK branch flip is not a correction; a fade keeps the last live guard, so a solution that was never shown
+      // does not appear while fading out)
+      if (drib || cat) p.ctRg = clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
+      else if (con) p.ctRg = 1;
+      const w = p.ctR * (p.ctRg ?? 1);
       (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
     if (p.ctL > 0.01) {
@@ -1587,8 +1595,10 @@ export function pose3(p: Player) {
         (K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
       }
       const z0 = o.zL ?? o.sz,
-        da = drib || cat ? wrapPi(K[3] - o.aL) : K[3] - o.aL,
-        w = p.ctL * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : 1);
+        da = drib || cat ? wrapPi(K[3] - o.aL) : K[3] - o.aL;
+      if (drib || cat) p.ctLg = clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
+      else if (con) p.ctLg = 1;
+      const w = p.ctL * (p.ctLg ?? 1);
       (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
   }

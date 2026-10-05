@@ -1,0 +1,42 @@
+// Touch controls: a touch on the left half of the court view drops the analog stick (drag right -> the player runs
+// right, edge = sprint), a touch on the right half holds shoot (the shot starts charging); lifting both clears them.
+import { chromium } from "playwright";
+import path from "node:path";
+const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+const errs = [];
+const pg = await b.newPage({ viewport: { width: 960, height: 700 }, hasTouch: true });
+pg.on("pageerror", (e) => errs.push(String(e)));
+await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro");
+await pg.waitForTimeout(300);
+await pg.evaluate(() => document.querySelector('button[data-g="1v1-2d"][data-my="0"][data-mp="0"]').click());
+await pg.waitForFunction(() => document.getElementById("tip"));
+await pg.evaluate(() => document.getElementById("tip").click());
+await pg.evaluate(() => {
+  const G = window.H2K.G;
+  for (let i = 0; i < 400 && G.JB; i++) G.upd(1 / 60);
+  for (let i = 0; i < 240; i++) (G.upd(1 / 60), G.RPL && G.skipReplay());
+});
+const r = await pg.evaluate(() => { const c = document.getElementById("c").getBoundingClientRect(); return [c.left, c.top, c.width, c.height]; });
+const X = (u) => r[0] + (u / 960) * r[2], Y = (v) => r[1] + (v / 540) * r[3];
+const ev = (t, u, v, id, pt = "touch") => pg.evaluate(([t, x, y, id, pt]) => document.getElementById("c").dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: pt, clientX: x, clientY: y, bubbles: true })), [t, X(u), Y(v), id, pt]);
+const fails = [];
+const ok = (c, m) => (console.log((c ? "ok   " : "FAIL ") + m), c || fails.push(m));
+await ev("pointerdown", 300, 300, 9, "mouse");
+ok(!(await pg.evaluate(() => window.H2K.V.stk)), "a mouse click does not drop the stick");
+const x0 = await pg.evaluate(() => window.H2K.V.focusP().x);
+await ev("pointerdown", 200, 380, 1);
+await ev("pointermove", 270, 380, 1);
+const st = await pg.evaluate(() => [window.H2K.V.stick, window.H2K.V.stk?.sp]);
+ok(st[0] && st[0][0] > 0.95 && Math.abs(st[0][1]) < 0.05 && st[1] === 1, "drag to the edge = full stick right + sprint " + JSON.stringify(st));
+await pg.evaluate(() => { const G = window.H2K.G; for (let i = 0; i < 30; i++) G.upd(1 / 60); });
+const x1 = await pg.evaluate(() => window.H2K.V.focusP().x);
+ok(x1 > x0 + 20, "the player runs right (" + Math.round(x0) + " -> " + Math.round(x1) + ")");
+await ev("pointerdown", 800, 300, 2);
+await pg.evaluate(() => { const G = window.H2K.G; for (let i = 0; i < 3; i++) G.upd(1 / 60); });
+ok((await pg.evaluate(() => window.H2K.V.focusP().mode)) === "c", "a touch on the right half starts the shot");
+await ev("pointerup", 800, 300, 2);
+await ev("pointerup", 270, 380, 1);
+ok(!(await pg.evaluate(() => window.H2K.V.stick || window.H2K.V.stk)), "lifting the thumb clears the stick");
+ok(!errs.length, "no page errors " + errs.join(" | "));
+await b.close();
+process.exit(fails.length ? 1 : 0);

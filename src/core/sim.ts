@@ -2532,7 +2532,9 @@ export function bstep(dt: number) {
       const hold = heldBall(o),
         [lat, fwd] = hold ? HOLDP[hold] : o.mode === "i" && !o.postA ? dribHand(o, dt) : [0, 8],
         off = lat,
-        fw = fwd,
+        // (a pump fake carries the ball up AND out in front of the forehead: straight up put the hands behind his
+        // head, and the arms whipped back over when the real shot followed)
+        fw = fwd + (hold === 2 && o.act === 1 ? 7 * Math.sin(Math.min(1, 1 - o.actT / 0.42) * Math.PI) : 0),
         tx = o.x + Math.cos(o.f) * fw - Math.sin(o.f) * off,
         ty = o.y + Math.sin(o.f) * fw + Math.cos(o.f) * off;
       if (cfg.PRO && o.mode === "i" && B.hold === o && !PREDICT) {

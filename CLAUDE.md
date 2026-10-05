@@ -311,6 +311,18 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 
+## Touch & reads (v4.8)
+- Touch (input.ts `touchStick`, touch/pen pointers on `#c` only; mice ignored): a finger on the left half drops a
+  floating stick (`V.stk` drawn state, `V.stick` = the analog vector hum() adds; radius `STK_R` 62 HUD px, dead zone
+  .14, > .92 = sprint, the ring follows a finger that slides past it); a finger on the right half holds `KMAP.sd`
+  (shoot / jump). Each finger is tracked by pointerId; `hud.ts stickHud` draws it. The #tc buttons stay.
+- Joint limits (pose.ts end of pose3): elbows -0.05 .. 2.75, head pitch -0.85 .. 0.8; `tests/limits.ts` audits all
+  channels over a game. Dribble style in `dribTop` (fast/small guards -2.5 px, 6'11"+ bigs +3). tendOf reads the
+  defense (zone / sag -> threes, tight -> drives).
+- Blend fixes (tests/blend.ts max jerk): pump-fake ball rises AND moves 7 px forward (bstep fw), a shot that starts
+  from ST.cat / ST.air blends its arms over min(.1, .02 + .05 |offset|) s (`fromReach`; layups from idle stay crisp),
+  block reach aims 8 px in front and caps aR at 3.25, contact fades keep the last live branch-flip guard (`p.ctRg/ctLg`).
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), substitutions and
-badge windows online (rosters are fixed there), commentary is text templates + browser speech, mobile joystick, Classic has no new features.
+badge windows online (rosters are fixed there), commentary is text templates + browser speech, Classic has no new features.
