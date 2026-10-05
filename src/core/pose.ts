@@ -266,6 +266,13 @@ export function pose3(p: Player) {
       ln += clamp(fwv / 650, -0.3, 0.25);
       rz += clamp(sdv / 700, -0.3, 0.3);
     }
+    if (kind === "fade" && p.z > 2 && (p.olf || (p.ht >= 6.75 && p.c >= 80))) {
+      // signature one-legged fadeaway (tall mid-range scorers): the off knee drives up and kicks out for space
+      const w = clamp(p.z / 12, 0, 1);
+      tL += 0.75 * w;
+      kL += 0.95 * w;
+      rz -= 0.08 * w;
+    }
     if (kind === "hang") {
       // swinging under the rim, gripping the iron
       const sw = Math.sin(T * 5.5 + p.k);
@@ -2140,67 +2147,95 @@ const mm = (a: M3, b: M3, o: M3) => {
 const rot = (ax: 0 | 1 | 2, t: number, o: M3) => {
   const c = Math.cos(t),
     s = Math.sin(t);
-  o.fill(0);
-  if (ax === 0) o.set([1, 0, 0, 0, c, -s, 0, s, c]);
-  else if (ax === 1) o.set([c, 0, s, 0, 1, 0, -s, 0, c]);
-  else o.set([c, -s, 0, s, c, 0, 0, 0, 1]);
+  if (ax === 0) (o[0] = 1), (o[1] = 0), (o[2] = 0), (o[3] = 0), (o[4] = c), (o[5] = -s), (o[6] = 0), (o[7] = s), (o[8] = c);
+  else if (ax === 1) (o[0] = c), (o[1] = 0), (o[2] = s), (o[3] = 0), (o[4] = 1), (o[5] = 0), (o[6] = -s), (o[7] = 0), (o[8] = c);
+  else (o[0] = c), (o[1] = -s), (o[2] = 0), (o[3] = s), (o[4] = c), (o[5] = 0), (o[6] = 0), (o[7] = 0), (o[8] = 1);
   return o;
 };
+// (allocation-free: skeleton() runs several times per player per tick - stepping, avoidance, held ball, catches -
+// so its matrices and frames come from pools that are rewound at the start of every call)
+const MPN = 160,
+  MP = Array.from({ length: MPN }, () => new Float64Array(9));
+let mpi = 0;
+const M = () => MP[mpi++ % MPN];
 const euler = (x: number, y: number, z: number, order: "XYZ" | "YXZ" | "XZY", o: M3) => {
-  const A = rot(0, x, new Float64Array(9)),
-    Bm = rot(1, y, new Float64Array(9)),
-    Cm = rot(2, z, new Float64Array(9)),
-    t = new Float64Array(9);
+  const A = rot(0, x, M()),
+    Bm = rot(1, y, M()),
+    Cm = rot(2, z, M()),
+    t = M();
   return order === "XYZ" ? mm(mm(A, Bm, t), Cm, o) : order === "XZY" ? mm(mm(A, Cm, t), Bm, o) : mm(mm(Bm, A, t), Cm, o);
 };
 interface Fr {
   R: M3;
   t: number[];
 }
-const child = (f: Fr, off: number[], R: M3 | null): Fr => {
-  const t = [0, 1, 2].map((r) => f.R[r * 3] * off[0] + f.R[r * 3 + 1] * off[1] + f.R[r * 3 + 2] * off[2] + f.t[r]);
-  return { R: R ? mm(f.R, R, new Float64Array(9)) : f.R, t };
+const FPN = 48,
+  FP: Fr[] = Array.from({ length: FPN }, () => ({ R: new Float64Array(9), t: [0, 0, 0] }));
+let fpi = 0;
+const child = (f: Fr, ox: number, oy: number, oz: number, R: M3 | null): Fr => {
+  const o = FP[fpi++ % FPN],
+    fr = f.R;
+  for (let r = 0; r < 3; r++) o.t[r] = fr[r * 3] * ox + fr[r * 3 + 1] * oy + fr[r * 3 + 2] * oz + f.t[r];
+  if (R) mm(fr, R, o.R);
+  else o.R.set(fr);
+  return o;
 };
-const pt = (f: Fr, off: number[]) => child(f, off, null).t;
+const pt = (f: Fr, ox: number, oy: number, oz: number) => child(f, ox, oy, oz, null).t;
+const SKF: Fr = { R: new Float64Array(9), t: [0, 0, 0] };
 /** Joint positions in game coords (x, y, z up), written into out[0..59]. */
 export function skeleton(p: Player, out: Float32Array) {
+  mpi = fpi = 0;
   const q = p.q || {},
     s = p.ht / 6.4,
     k = p.bk,
     w = W3(p.x, p.y, p.z);
-  const RG = rot(1, Math.PI / 2 - fv(p), new Float64Array(9));
+  const RG = rot(1, Math.PI / 2 - fv(p), SKF.R);
   for (let i = 0; i < 9; i++) RG[i] *= s;
-  const G: Fr = { R: RG, t: [w[0], w[1] - (q.cr || 0) * 0.4, w[2]] };
-  const bd = child(G, [0, RIG.hip, 0], euler(q.ln || 0, q.ty || 0, q.rz || 0, "YXZ", new Float64Array(9))),
-    ch = child(bd, [0, RIG.chest, 0], euler(q.cx || 0, q.cy || 0, 0, "YXZ", new Float64Array(9))),
-    nk = child(ch, [0, RIG.neck, 0], rot(0, q.nk || 0, new Float64Array(9))),
-    hd = child(nk, [0, RIG.head, 0], euler(q.hp || 0, q.hy || 0, 0, "YXZ", new Float64Array(9)));
-  const J: number[][] = [pt(bd, [0, 0, 0]), pt(ch, [0, 0.5, 0]), nk.t, pt(hd, [0, 0.44, 0])];
-  for (const sd of [-1, 1]) {
-    const tq = sd < 0 ? q.tL || 0 : q.tR || 0,
+  const G = SKF;
+  (G.t[0] = w[0]), (G.t[1] = w[1] - (q.cr || 0) * 0.4), (G.t[2] = w[2]);
+  const put = (i: number, v: number[]) => {
+    out[i * 3] = v[0] * 10 + 470;
+    out[i * 3 + 1] = v[2] * 10 + 250;
+    out[i * 3 + 2] = v[1] * 10;
+  };
+  const bd = child(G, 0, RIG.hip, 0, euler(q.ln || 0, q.ty || 0, q.rz || 0, "YXZ", M())),
+    ch = child(bd, 0, RIG.chest, 0, euler(q.cx || 0, q.cy || 0, 0, "YXZ", M())),
+    nk = child(ch, 0, RIG.neck, 0, rot(0, q.nk || 0, M())),
+    hd = child(nk, 0, RIG.head, 0, euler(q.hp || 0, q.hy || 0, 0, "YXZ", M()));
+  put(0, pt(bd, 0, 0, 0));
+  put(1, pt(ch, 0, 0.5, 0));
+  put(2, nk.t);
+  put(3, pt(hd, 0, 0.44, 0));
+  for (let si = 0; si < 2; si++) {
+    const sd = si ? 1 : -1,
+      tq = sd < 0 ? q.tL || 0 : q.tR || 0,
       kq = sd < 0 ? q.kL || 0 : q.kR || 0,
       fq = sd < 0 ? q.fL || 0 : q.fR || 0,
-      th = child(G, [sd * RIG.hipX, RIG.hip, 0], euler(-tq, 0, hipAb(q, sd), "XYZ", new Float64Array(9))),
-      kn = child(th, [0, -RIG.L1, 0], rot(0, kq, new Float64Array(9))),
-      an = child(kn, [0, -RIG.L2, 0], rot(0, fq, new Float64Array(9)));
-    J.push(th.t, kn.t, an.t, pt(an, [0, -0.06, 0.52]));
+      th = child(G, sd * RIG.hipX, RIG.hip, 0, euler(-tq, 0, hipAb(q, sd), "XYZ", M())),
+      kn = child(th, 0, -RIG.L1, 0, rot(0, kq, M())),
+      an = child(kn, 0, -RIG.L2, 0, rot(0, fq, M())),
+      j = 4 + si * 4;
+    put(j, th.t);
+    put(j + 1, kn.t);
+    put(j + 2, an.t);
+    put(j + 3, pt(an, 0, -0.06, 0.52));
   }
-  for (const sd of [-1, 1]) {
-    const a = sd < 0 ? q.aL || 0 : q.aR || 0,
+  for (let si = 0; si < 2; si++) {
+    const sd = si ? 1 : -1,
+      a = sd < 0 ? q.aL || 0 : q.aR || 0,
       e = sd < 0 ? q.eL || 0 : q.eR || 0,
       wq = sd < 0 ? q.wL || 0 : q.wR || 0,
       oq = sd < 0 ? q.oL || 0 : q.oR || 0,
       zz = sd < 0 ? -(q.zL == null ? q.sz || 0 : q.zL) : q.sz || 0,
       tw = sd < 0 ? q.hL || 0 : -(q.hR || 0), // humeral twist about the upper-arm bone, applied first (XZY)
-      sh = child(ch, [sd * RIG.shX * k, RIG.sh, 0], euler(-a, tw, zz, "XZY", new Float64Array(9))),
-      el = child(sh, [0, -RIG.ua, 0], rot(0, -e, new Float64Array(9))),
-      wr = child(el, [0, -RIG.fa, 0], mm(rot(1, oq, new Float64Array(9)), rot(0, -wq, new Float64Array(9)), new Float64Array(9)));
-    J.push(sh.t, el.t, wr.t, pt(wr, [0, -0.32, 0.05]));
+      sh = child(ch, sd * RIG.shX * k, RIG.sh, 0, euler(-a, tw, zz, "XZY", M())),
+      el = child(sh, 0, -RIG.ua, 0, rot(0, -e, M())),
+      wr = child(el, 0, -RIG.fa, 0, mm(rot(1, oq, M()), rot(0, -wq, M()), M())),
+      j = 12 + si * 4;
+    put(j, sh.t);
+    put(j + 1, el.t);
+    put(j + 2, wr.t);
+    put(j + 3, pt(wr, 0, -0.32, 0.05));
   }
-  J.forEach((v, i) => {
-    out[i * 3] = v[0] * 10 + 470;
-    out[i * 3 + 1] = v[2] * 10 + 250;
-    out[i * 3 + 2] = v[1] * 10;
-  });
   return out;
 }

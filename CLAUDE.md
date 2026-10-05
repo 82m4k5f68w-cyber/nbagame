@@ -268,6 +268,10 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   Used for hands on the hips (gassed walk at a dead ball). Replays/online replay poses carry all 31 channels.
 - Contact pass guards: dribble/catch ignore IK branch flips (> .8 rad); fades and contests fade out before the
   +-pi wrap of their offset; stored solutions are wrapped (no 2 pi drift).
+- `skeleton()` is allocation-free (matrix / frame pools rewound per call; it runs several times per player per
+  tick): sim tick 2.1 -> 1.2 ms in Node. Don't hold a skeleton frame/matrix across calls.
+- One-legged fadeaway (fade clip, tall mid-range scorers `ht >= 6.75 && c >= 80`, or `p.olf`): off knee up and out.
+- Twist poses: screener folds forearms across the stomach, arm-bar forearm turns in, CEL 3 = front double-biceps.
 - Signature free-throw routines (`ftStyle` from the name): classic, quick dribbles, long dribble routine, spin only.
 - Contact: the receiver's hands reach to where a pass will be caught (post-blend contact pass, 0.3 s ahead) and
   the catch waits until the ball reaches a palm (`p.skel`) once he is close; rebounds in traffic are chinned

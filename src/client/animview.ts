@@ -30,6 +30,7 @@ const stand = (p: any) => {
   p.act = 0;
   p.actT = 0;
   p.ttT = 0;
+  p.olf = 0;
   p.ftT = 0;
   G.setInb(0);
   G.setScalars({ rs: 0, ftq: null, pos: p.tm });
@@ -367,6 +368,20 @@ export const ANIMS: [string, Setup][] = [
       p.mode = k < 0.12 ? "c" : k < 0.95 ? "s" : "i";
       p.t = k < 0.12 ? k : k - 0.12;
       p.st = 1;
+      p.z = p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.6) * Math.PI) * 24) : 0;
+    },
+  ],
+  [
+    "One-legged fadeaway",
+    (p, t) => {
+      stand(p);
+      const k = t % 1.4;
+      B.owner = p;
+      B.mode = "held";
+      p.mode = k < 0.12 ? "c" : k < 0.95 ? "s" : "i";
+      p.t = k < 0.12 ? k : k - 0.12;
+      p.sv = 2;
+      p.olf = 1;
       p.z = p.mode === "s" ? Math.max(0, Math.sin(Math.min(1, p.t / 0.6) * Math.PI) * 24) : 0;
     },
   ],
