@@ -471,6 +471,7 @@ export function winMul(p: Player, D0: number, note?: string[]) {
 function zoneRes(p: Player, D0: number, made: boolean) {
   if (!p || !p.hzm || D0 == null) return;
   scout(p, D0, made, B.cx ?? 0);
+  if (B.kk) (STAT.kA = (STAT.kA || 0) + 1), made && (STAT.kM = (STAT.kM || 0) + 1);
   const z = zoneOf(p, D0);
   if (made) {
     p.hzm[z] = Math.min(4, (p.hzm[z] || 0) + 1);
@@ -1024,6 +1025,7 @@ const tempoOf = (p: Player) => {
 
 export function pass(p: Player, r: Player, ty?: number) {
   const sk = clamp((p.s + p.c) / 200, 0.4, 0.95);
+  B.kick = HPL.h && T - HPL.at < 0.1 && HPL.t !== p.tm ? 1 : 0; // a pass out of the help: drive-and-kick
   let near = 0;
   const ddx = r.x - B.x,
     ddy = r.y - B.y,
@@ -1145,6 +1147,7 @@ export function launch(p: Player) {
   B.fb = !isFT && TS.tr[p.tm] ? 1 : 0; // (broadcast stats: a fast-break shot)
   B.sc2 = !isFT && TS.orbP[p.tm] ? 1 : 0; // (second-chance shot: this possession had an offensive rebound)
   B.cx = cx;
+  B.kk = !isFT && p.kickT > 0 ? 1 : 0; // a shot off a kick-out
   // play-by-play: the call as he rises ("Curry pulls up..."); the result line follows on the make / miss
   if (!isFT && !lay && !PREDICT)
     cm("rise", p.n, D0 > 300 ? "deep" : three ? "three" : p.sbw > 0 ? "step" : p.sv === 2 ? "fade" : p.sv === 21 || p.sv === 20 ? "float" : Math.hypot(p.vx, p.vy) > 60 || (p.mvEnd != null && T - p.mvEnd < 0.6) ? "pull" : "mid");
@@ -1441,6 +1444,9 @@ export function step(p: Player, dt: number) {
   if (p.plantT > 0) p.plantT -= dt;
   if (p.fsT > 0) p.fsT -= dt;
   if (p.hupT > 0) p.hupT -= dt;
+  if (p.helpT > 0) p.helpT -= dt;
+  if (p.rotT > 0) p.rotT -= dt;
+  if (p.kickT > 0) p.kickT -= dt;
   if (p.engT > 0) p.engT -= dt;
   {
     // smoothed acceleration along the facing direction (body leans into it)
@@ -2120,6 +2126,8 @@ export function ai(p: Player, dt: number) {
       else mv(p, oh + (oh > 470 ? -90 : 90), HY + (p.y < HY ? -40 : 40), 1.15);
       i.sp = 1;
     }
+    // the help just committed to him: read it now (kick it to whoever the rotation gave up), not on the next half-second
+    if (HPL.h && HPL.t !== t && a.hr !== HPL.h && Math.hypot(HPL.h.x - p.x, HPL.h.y - p.y) < 55 && !isH(p)) (a.hr = HPL.h), (a.pt = Math.min(a.pt, 0.12 - p.s / 2000));
     a.pt -= dt;
     if (a.pt < 0) {
       a.pt = 0.5;
@@ -2255,6 +2263,9 @@ export function ai(p: Player, dt: number) {
       }
     }
     const l = od || 1;
+    helpPlan(t, dh);
+    // closeout: my man just caught it and I'm a step (or a rotation) away - sprint at him, then chop the feet
+    if (B.owner === o && !zone && Math.hypot(o.x - p.x, o.y - p.y) > 45 && od < 300 && HPL.h !== p && HPL.r !== p) i.sp = 1;
     const hb = B.owner,
       hh = Math.hypot(dh - hb.x, HY - hb.y),
       opl = PLAY[1 - t],
@@ -2286,8 +2297,17 @@ export function ai(p: Player, dt: number) {
         p.hdgT = 0.25; // (pose: big and wide, arms out to show the handler a wall)
       } else if (TS.cov[t] === 1) mv(p, o.x + (dh - o.x) * 0.35, o.y + (HY - o.y) * 0.35, 1.15); // recover
       else mv(p, dh + dir * 85, HY + (hb.y - HY) * 0.35, 1); // drop: sit at the free-throw line, wall off the drive and the roll
-    } else if (hh < 140 && p.k !== hb.k && nearest(t, hb.x, hb.y, t * NP + hb.k) === t * NP + p.k)
-      mv(p, hb.x + (dh - hb.x) * 0.35, hb.y + (HY - hb.y) * 0.35, 1.1);
+    } else if (HPL.h === p && !zone) {
+      // help: the driver beat his man - step into his path between him and the rim
+      mv(p, hb.x + (dh - hb.x) * 0.38, hb.y + (HY - hb.y) * 0.38, 1.2);
+      i.sp = 1;
+    } else if (HPL.r === p && !zone && HPL.m) {
+      // help the helper: sink onto the man the helper left (the one nearest the rim), give up the least dangerous one
+      const m = HPL.m,
+        lm = Math.hypot(dh - m.x, HY - m.y) || 1;
+      mv(p, m.x + ((dh - m.x) / lm) * 18, m.y + ((HY - m.y) / lm) * 18, 1.1);
+      i.sp = 1;
+    } else if (zone && hh < 140 && nearest(t, hb.x, hb.y) === t * NP + p.k) mv(p, hb.x + (dh - hb.x) * 0.35, hb.y + (HY - hb.y) * 0.35, 1.1);
     else if (zone) {
       // zone: guard whoever is in your area, but never leave it (the spot leans toward the ball)
       let tx = ZS.x,
@@ -2327,6 +2347,59 @@ export function ai(p: Player, dt: number) {
   }
 }
 
+/** Help defense, solved once per tick for the defending team (man defense, 3+ a side): when the ball handler has
+ *  beaten his man on a drive (he is inside 20 ft and level with or past his defender, or 34+ px clear of him), the
+ *  defender nearest the driving lane steps up (`h`); the defender nearest the man he left rotates onto him (`r`, `m`),
+ *  which leaves whoever the rotator had - the drive-and-kick the offense is looking for. Recovery is the normal
+ *  man-to-man (with a sprint closeout when the kick-out arrives). */
+export const HPL = { t: -1, at: -1, h: null as Player | null, r: null as Player | null, m: null as Player | null };
+function helpPlan(t: number, dh: number) {
+  if (HPL.t === t && HPL.at === T) return;
+  HPL.t = t;
+  HPL.at = T;
+  HPL.h = HPL.r = HPL.m = null;
+  const hb = B.owner;
+  if (!hb || hb.tm === t || cfg.NP < 3 || hb.mode !== "i" || cfg.ASTAR || inb > 0 || ftq) return;
+  const hh = Math.hypot(dh - hb.x, HY - hb.y);
+  if (hh > 200) return;
+  const on = manOf(hb),
+    od = Math.hypot(dh - on.x, HY - on.y),
+    gap = Math.hypot(on.x - hb.x, on.y - hb.y),
+    sp = Math.hypot(hb.vx, hb.vy),
+    toward = ((dh - hb.x) * hb.vx + (HY - hb.y) * hb.vy) / (hh || 1);
+  if (!((od > hh - 6 || gap > 34) && (toward > 50 || (hh < 120 && sp < 60)))) return;
+  const lx = hb.x + (dh - hb.x) * 0.38,
+    ly = hb.y + (HY - hb.y) * 0.38;
+  let h: Player | null = null,
+    hd = 170;
+  for (const q of P)
+    if (q.tm === t && !q.off && q !== on && !isH(q) && q.z <= 0) {
+      const d = Math.hypot(q.x - lx, q.y - ly);
+      if (d < hd) (hd = d), (h = q);
+    }
+  if (!h) return;
+  HPL.h = h;
+  if (!(h.helpT > 0)) STAT.help = (STAT.help || 0) + 1;
+  h.helpT = 0.6;
+  const m = h.manT > 0 && h.man != null ? P[h.man] : guardOf(h);
+  if (!m || m === hb || Math.hypot(dh - m.x, HY - m.y) > 300) return;
+  let r: Player | null = null,
+    rd = 1e9;
+  for (const q of P)
+    if (q.tm === t && !q.off && q !== on && q !== h && !isH(q)) {
+      const own = q.manT > 0 && q.man != null ? P[q.man] : guardOf(q),
+        // cost: distance to the open man + how dangerous the man I would leave is (a shooter far out is less so)
+        thr = own ? (own.c / 100) * (Math.hypot(dh - own.x, HY - own.y) < 245 ? 60 : 25) : 0,
+        d = Math.hypot(q.x - m.x, q.y - m.y) + thr;
+      if (d < rd) (rd = d), (r = q);
+    }
+  if (r && rd < 260) {
+    HPL.r = r;
+    HPL.m = m;
+    if (!(r.rotT > 0)) STAT.rot = (STAT.rot || 0) + 1;
+    r.rotT = 0.6;
+  }
+}
 /** 2-3 zone: the two smallest guard the top, the next two the blocks, the tallest the middle. Each defender's spot
  *  (ZS) shifts toward the ball; he takes the opponent nearest his spot inside his area (the ball handler first), or
  *  nobody (he holds his spot). */
@@ -2932,6 +3005,7 @@ export function bstep(dt: number) {
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);
       // a rebound in traffic is chinned: both hands, ball under the chin, elbows out, until he lands and looks up
       if (B.sh && !B.ft && !PREDICT && p.mode === "i") p.chinT = p.z > 6 ? 0.45 + p.z / 200 : 0.35;
+      if (B.mode === "pass" && B.kick && p === B.to && !PREDICT) (p.kickT = 2.5), (STAT.kick = (STAT.kick || 0) + 1);
       B.owner = p;
       B.mode = "held";
       B.sh = 0;

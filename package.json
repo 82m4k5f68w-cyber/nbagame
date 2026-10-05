@@ -9,7 +9,7 @@
     "test:fk": "tsx tests/fk.ts",
     "test:fuzz": "tsx tests/fuzz.ts",
     "test:browser": "node tests/browser.mjs",
-    "test": "npm run typecheck && tsx tests/fk.ts && tsx tests/fuzz.ts && tsx tests/greens.ts && tsx tests/curry_greens.ts && tsx tests/passes.ts && tsx tests/dribble_moves.ts && tsx tests/invariants.ts && tsx tests/net_swish.ts && tsx tests/rules.ts && tsx tests/modes_sim.ts && tsx tests/faces.ts && tsx tests/lefty.ts && tsx tests/blend.ts && tsx tests/rim_wedge.ts && tsx tests/footslide.ts && tsx tests/overlap.ts && tsx tests/adapt.ts && tsx tests/contact.ts && tsx tests/limits.ts",
+    "test": "npm run typecheck && tsx tests/fk.ts && tsx tests/fuzz.ts && tsx tests/greens.ts && tsx tests/curry_greens.ts && tsx tests/passes.ts && tsx tests/dribble_moves.ts && tsx tests/invariants.ts && tsx tests/net_swish.ts && tsx tests/rules.ts && tsx tests/modes_sim.ts && tsx tests/faces.ts && tsx tests/lefty.ts && tsx tests/blend.ts && tsx tests/rim_wedge.ts && tsx tests/footslide.ts && tsx tests/overlap.ts && tsx tests/adapt.ts && tsx tests/contact.ts && tsx tests/limits.ts && tsx tests/help.ts",
     "serve": "npx serve dist",
     "server": "tsx server/relay.ts",
     "host:dedicated": "tsx server/headless-host.ts",
