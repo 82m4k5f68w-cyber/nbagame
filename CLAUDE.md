@@ -117,6 +117,15 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   contests use positions rewound by their latency (`ctrl.lag`, `LAGBUF`); release time clamped to the host's view.
 - Lobby: a guest starts undecided (`side=-2`); `HostSession.canStart()` waits until every connected guest is seated+ready or chose Watch.
 - Reconnect: seats keep their `tok`; a returning token re-attaches (AI plays the seat meanwhile). Host leaving ends the game.
+- Reliability (v5.1): `RoomTransport` (client/net/room.ts) paces presence (one call in flight, >= 33 ms apart, sent
+  at once when due - never only on a timer: background tabs throttle timers to ~1/s), merges pending patches, resends
+  the WHOLE merged state after a failure (backoff 60 ms .. 3 s), re-asserts it when idle 3 s, and rejoins the room
+  after 5 s disconnected (listeners carried over). `WsTransport`: ping every 2 s, a socket silent for 6 s is closed
+  and replaced, reconnect backoff .5 .. 5 s, garbled frames ignored; relay answers pings and terminates sockets that
+  miss a protocol pong (15 s). Host: lobby re-published every 2 s; a guest who drops out of the lobby keeps his seat
+  15 s (`Slot.gone`, shown OFFLINE); in a game a guest silent for 6 s is handed to the AI (`staleCheck`, every 30
+  ticks; reset at start) until heard from again. Guests see "CONNECTION LOST — RECONNECTING…". `NET.rel()` = test
+  readout. tests: browser_room_faults.mjs, ws_reconnect.ts.
 - A hidden host tab keeps simulating via a timer (rAF stops when hidden). `npm run server` serves dist + relay;
   "Create on dedicated server" spawns `server/headless-host.ts` for that room code.
 

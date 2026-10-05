@@ -27,6 +27,11 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - browser_link.mjs — a highlight becomes a #reel= share link; opening it plays the clip in the same mode.
 - browser_touch.mjs — touch controls: left-half thumb = analog stick (player runs that way, edge = sprint), right-half
   hold = shot charge, mice never drop the stick, lifting clears it.
+- browser_room_faults.mjs — online reliability on the published-page path with a FAULTY room stand-in: 35% of presence
+  updates fail, mid-game the guest's room dies for 8.5 s (only a rejoin recovers). Lobby forms, the host hands the
+  silent seat to the AI, the guest rejoins, gets snapshots again and his seat back. The host runs as a background tab.
+- ws_reconnect.ts — WebSocket transport vs the real relay: dropped socket reconnects and re-asserts its state, a
+  silent (half-open) socket is caught by the heartbeat, garbled frames are ignored.
 - browser_tour.mjs — relay: a three-player 1v1 tournament (bye + final, champion) and a 3v3 online game.
 - faces.ts — facial expressions (pose.ts `face()`): yell / grin / grimace / frustration drive the right channels,
   every player blinks, and a whole game keeps every face value finite and in range.

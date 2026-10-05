@@ -61,6 +61,10 @@ function broadcast(from: Conn) {
 wss.on("connection", (ws, req) => {
   const q = new URL(req.url || "/", "http://x").searchParams;
   let c: Conn | null = null;
+  // keep-alive: a protocol ping every 15 s; a socket that didn't pong since the last one is dead - drop it, so its
+  // peer leaves the room (otherwise the host keeps a ghost seat)
+  (ws as any).alive = true;
+  ws.on("pong", () => ((ws as any).alive = true));
   ws.on("message", (raw) => {
     let m: any;
     try {
@@ -90,7 +94,8 @@ wss.on("connection", (ws, req) => {
         const cc = c;
         c.timer = setTimeout(() => broadcast(cc), wait);
       }
-    } else if (m.t === "host" && c) spawnHost(String(m.code || ""), c.room);
+    } else if (m.t === "ping") out(c || ({ ws, lag: 0, jitter: 0 } as any), { t: "pong" });
+    else if (m.t === "host" && c) spawnHost(String(m.code || ""), c.room);
   });
   ws.on("close", () => {
     if (!c) return;
@@ -109,6 +114,18 @@ function spawnHost(code: string, room: string) {
   hosts.set(room, ch);
   ch.on("exit", () => hosts.delete(room));
 }
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!(ws as any).alive) {
+      ws.terminate();
+      continue;
+    }
+    (ws as any).alive = false;
+    try {
+      ws.ping();
+    } catch {}
+  }
+}, 15000).unref();
 const bye = () => {
   for (const ch of hosts.values()) ch.kill();
   process.exit(0);

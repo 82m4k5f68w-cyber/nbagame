@@ -15,6 +15,9 @@ export class WsTransport implements Transport {
   private open = false;
   private closed = false;
   private list: Peer[] = [];
+  private lastMsg = 0;
+  private hb: any = null;
+  private tries = 0;
   constructor(
     private url: string,
     private room: string,
@@ -23,12 +26,23 @@ export class WsTransport implements Transport {
     return new Promise((res, rej) => {
       const ws = (this.ws = new WebSocket(this.url));
       let first = true;
-      ws.onopen = () => ws.send(JSON.stringify({ t: "join", room: this.room, id: this.me || undefined }));
+      ws.onopen = () => {
+        this.lastMsg = Date.now();
+        ws.send(JSON.stringify({ t: "join", room: this.room, id: this.me || undefined }));
+      };
       ws.onmessage = (m) => {
-        const d = JSON.parse(String(m.data));
+        this.lastMsg = Date.now();
+        let d: any;
+        try {
+          d = JSON.parse(String(m.data));
+        } catch {
+          return; // (a garbled frame never takes the client down)
+        }
         if (d.t === "hello") {
           this.me = d.me;
           this.open = true;
+          this.tries = 0;
+          this.beat();
           this.st.clear();
           for (const p of d.peers) this.st.set(p.id, p.state);
           if (Object.keys(this.mine).length) this.send({ ...this.mine }); // re-assert after reconnect
@@ -47,11 +61,36 @@ export class WsTransport implements Transport {
       };
       ws.onerror = () => first && rej(new Error("relay unreachable"));
       ws.onclose = () => {
+        if (ws !== this.ws) return; // (an old socket the watchdog already replaced)
         this.open = false;
         this.emit();
-        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1000);
+        // reconnect with backoff: 0.5 s, 1, 2, 4 ... capped at 5 s; the relay keeps our peer id when it can
+        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), Math.min(5000, 500 * 2 ** this.tries++));
       };
     });
+  }
+  /** Heartbeat: a ping every 2 s; a socket that has heard nothing for 6 s is dead (half-open TCP, a sleeping laptop,
+   *  a captive Wi-Fi) - close it and reconnect instead of waiting minutes for the OS to notice. */
+  private beat() {
+    if (this.hb) return;
+    this.hb = setInterval(() => {
+      if (this.closed) return clearInterval(this.hb);
+      const ws = this.ws;
+      if (!ws || ws.readyState !== 1) return;
+      if (Date.now() - this.lastMsg > 6000) {
+        this.open = false;
+        this.emit();
+        try {
+          ws.close();
+        } catch {}
+        this.ws = null;
+        this.connect().catch(() => {});
+        return;
+      }
+      try {
+        ws.send('{"t":"ping"}');
+      } catch {}
+    }, 2000);
   }
   private emit() {
     const a: Peer[] = [{ id: this.me, me: true, state: this.mine }];
@@ -87,7 +126,10 @@ export class WsTransport implements Transport {
     this.lastSend = Date.now();
   }
   private send(patch: any) {
-    if (this.ws && this.open) this.ws.send(JSON.stringify({ t: "p", patch }));
+    if (this.ws && this.open)
+      try {
+        this.ws.send(JSON.stringify({ t: "p", patch }));
+      } catch {} // (closing socket: the reconnect re-asserts everything)
   }
   connected() {
     return this.open;
@@ -98,6 +140,7 @@ export class WsTransport implements Transport {
   }
   leave() {
     this.closed = true;
+    clearInterval(this.hb);
     this.ws && this.ws.close();
   }
 }

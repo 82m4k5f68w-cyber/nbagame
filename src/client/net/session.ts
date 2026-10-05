@@ -57,6 +57,18 @@ export const NET = {
   role: null as null | "host" | "guest",
   code: "",
   chats: 0, // quick-chat messages seen (tests)
+  sizes() {
+    return t ? [...t.peers().map((p) => [p.me, JSON.stringify(p.state || {}).length] as any[]), ...(guest ? [["stats", JSON.stringify(guest.stats)], ["nf", guest.nf], ["gid", guest.gid]] : [])] : [];
+  },
+  /** Test / debug readout: transport up, newest snapshot tick (guest), seats (host). */
+  rel() {
+    return {
+      up: !!(t && t.connected()),
+      snap: guest && guest.snaps.length ? guest.snaps[guest.snaps.length - 1][0] : -1,
+      seats: host ? host.L.slots.map((s) => [s.n, s.on]) : guest && guest.L ? guest.L.slots.map((s) => [s.n, s.on]) : [],
+      remote: G.CT.filter((c: any) => c.remote).length,
+    };
+  },
   setMenu(f: () => void) {
     menuBack = f;
   },
@@ -325,7 +337,16 @@ export const NET = {
       }
       X.globalAlpha = 1;
     }
-    if (guest && (guest.stall || guest.hostGoneAt)) {
+    if (!t.connected()) {
+      // our own link dropped: the transport reconnects by itself (relay backoff / room rejoin); the seat is kept
+      X.textAlign = "center";
+      X.font = "900 22px system-ui";
+      X.fillStyle = "#ff9966";
+      X.fillText("CONNECTION LOST — RECONNECTING…", 480, 250);
+      X.font = "700 13px system-ui";
+      X.fillStyle = "#e9eefc";
+      X.fillText(host ? "Your friends see the game paused; it carries on as soon as you're back" : "The AI plays your seat until you're back", 480, 272);
+    } else if (guest && (guest.stall || guest.hostGoneAt)) {
       X.textAlign = "center";
       X.font = "900 22px system-ui";
       X.fillStyle = "#ffd23f";

@@ -12,6 +12,7 @@ export interface Slot {
   tm: number;
   rdy: number;
   on: number; // currently connected
+  gone?: number; // when a lobby seat lost its connection (kept 15 s for a reconnect)
   elo?: number; // ranked rating (each client keeps its own; shown in the lobby)
 }
 export interface Lobby {
@@ -38,6 +39,8 @@ interface GuestRec {
   ping: number;
   D: number;
   q: number; // last quick-chat sequence consumed
+  seen: number; // when this guest's presence last changed
+  stale?: boolean;
 }
 /** Quick chat / emotes (keys 1-6). */
 export const CHAT = ["Nice shot!", "Pass it!", "My bad", "Good game", "🔥 On fire!", "😂"];
@@ -71,6 +74,18 @@ export class HostSession {
     };
     this.unsub = t.onPeers((ps) => this.peers(ps));
     this.pub(true);
+    // lobby heartbeat: re-publish the lobby every 2 s (a dropped update heals) and let go of seats whose owner has
+    // been gone 15 s
+    this.hb = setInterval(() => this.heartbeat(), 2000);
+    if (this.hb && this.hb.unref) this.hb.unref();
+  }
+  private hb: any = null;
+  heartbeat(now = Date.now()) {
+    if (this.L.st === "game") return;
+    const n = this.L.slots.length;
+    this.L.slots = this.L.slots.filter((s) => s.on || !s.gone || now - s.gone < 15000);
+    this.pub(true);
+    if (n !== this.L.slots.length && this.onChange) this.onChange();
   }
   /** Humans per side: 1 in 1v1, everyone in 2v2/3v3, two in 5v5 (the AI fills the rest). */
   cap() {
@@ -89,10 +104,11 @@ export class HostSession {
       seen.add(p.id);
       let g = this.guests.get(p.id);
       if (!g) {
-        g = { id: p.id, st: p.state, w: null, last: null, pend: [], ack: -1, acks: [], ping: 0, D: 6, q: p.state.q ? p.state.q[0] : 0 };
+        g = { id: p.id, st: p.state, w: null, last: null, pend: [], ack: -1, acks: [], ping: 0, D: 6, q: p.state.q ? p.state.q[0] : 0, seen: Date.now() };
         this.guests.set(p.id, g);
         changed = true;
       }
+      if (g.st !== p.state || g.st.t !== p.state.t) g.seen = Date.now();
       g.st = p.state;
       g.ping = +p.state.rt || 0;
       g.D = +p.state.D || 6;
@@ -106,8 +122,10 @@ export class HostSession {
         s.id = p.id;
         changed = true;
       }
-      if (s && !s.on) {
+      if (s && !s.on && !(g.stale && Date.now() - g.seen > 6000)) {
         s.on = 1;
+        g.stale = false;
+        delete s.gone;
         changed = true;
         if (this.L.st === "game") this.rebuildCtrls();
       }
@@ -170,7 +188,7 @@ export class HostSession {
         this.guests.delete(id);
         const s = this.L.slots.find((s) => s.id === id);
         if (s) {
-          if (this.L.st === "lobby") this.L.slots = this.L.slots.filter((x) => x !== s);
+          if (this.L.st === "lobby") (s.on = 0), (s.gone = Date.now()); // (a blip: keep the seat for 15 s)
           else {
             s.on = 0; // keep the seat for a reconnect; the AI plays it meanwhile
             this.rebuildCtrls();
@@ -270,6 +288,8 @@ export class HostSession {
       g.last = null;
       g.pend = [];
       g.acks = [];
+      g.seen = Date.now(); // (a guest idle in the lobby isn't stale: give him time to load the game)
+      g.stale = false;
     }
     this.hist.clear();
     G.start(this.L.teams[0], { j: this.L.teams[1] });
@@ -340,9 +360,28 @@ export class HostSession {
     g.pend = keep;
     return i;
   }
+  /** In a game a guest's presence changes many times a second; 6 s of silence means his link is gone even if the room
+   *  hasn't said so yet - the AI takes his seat (no frozen player for everyone else) until he's heard from again. */
+  staleCheck(now = Date.now()) {
+    if (this.L.st !== "game") return;
+    let ch = false;
+    for (const g of this.guests.values()) {
+      const s = this.L.slots.find((s) => s.id === g.id);
+      if (!s) continue;
+      const stale = now - g.seen > 6000;
+      if (stale && s.on) (s.on = 0), (g.stale = true), (ch = true);
+      else if (!stale && !s.on && g.stale) (s.on = 1), (g.stale = false), (ch = true);
+    }
+    if (ch) {
+      this.rebuildCtrls();
+      this.pub(true);
+      this.onChange && this.onChange();
+    }
+  }
   /** After every sim tick: publish a snapshot every 2nd tick (30 Hz). */
   tick() {
     this.k++;
+    if (this.k % 30 === 0) this.staleCheck();
     if (this.k % 2) return;
     this.pub(false);
   }
@@ -399,6 +438,7 @@ export class HostSession {
   }
   close() {
     this.unsub();
+    clearInterval(this.hb);
   }
 }
 export const clean = (s: any) =>
