@@ -806,7 +806,63 @@ function violation(t: number, s: string, p?: Player) {
   ban(s, (p ? p.n.toUpperCase() + " · " : "") + "TURNOVER", "#ff6b4a");
   cm("viol", p ? p.n : cl[t], s);
   snd(700, 0.3, "square", 0.08);
-  setup(1 - t);
+  setupAt(1 - t, B.x, B.y);
+}
+/** Inbound at the spot (violations): in the offense's frontcourt the ball comes in from the nearest line where it
+ *  happened - a baseline out-of-bounds play (box set under the rim) or a sideline one (spread on the wings) - with
+ *  the defense man-to-man goal-side and one defender up on the inbounder. Backcourt spots use the normal setup. */
+export function setupAt(off: number, x: number, y: number) {
+  setup(off);
+  const NP = cfg.NP,
+    ah = hoop(off);
+  if (cfg.HALF || NP < 2 || !((x - 470) * (ah - 470) > 0)) return;
+  const dir = ah > 470 ? -1 : 1, // from the hoop toward mid-court
+    endX = ah > 470 ? 934 : 6,
+    base = Math.abs(x - endX) < Math.min(y, 500 - y),
+    ib = B.owner as Player;
+  let ix: number, iy: number;
+  if (base) (ix = endX), (iy = clamp(y, 40, 460)), Math.abs(iy - HY) < 45 && (iy = HY + (iy < HY ? -45 : 45));
+  else (ix = clamp(x, Math.min(ah + dir * 60, 470), Math.max(ah + dir * 60, 470))), (iy = y < HY ? 4 : 496);
+  const side = iy < HY ? -1 : 1,
+    spots: number[][] = base
+      ? [
+          [ah + dir * 48, HY - 55],
+          [ah + dir * 48, HY + 55],
+          [ah + dir * 150, HY - 70],
+          [ah + dir * 150, HY + 70],
+        ]
+      : [
+          [ix + dir * 30, HY + side * 150],
+          [ah + dir * 250, HY],
+          [ah + dir * 70, HY + side * 60],
+          [ah + dir * 20, HY - side * 210],
+        ];
+  (ib.x = ix), (ib.y = iy), (ib.f = Math.atan2(HY - iy, (base ? ah + dir * 120 : ix) - ix));
+  let j = 0;
+  for (const o of P)
+    if (o.tm === off && o !== ib && !o.off) {
+      const s = spots[j++ % spots.length];
+      (o.x = s[0]), (o.y = s[1]), (o.f = Math.atan2(iy - o.y, ix - o.x));
+    }
+  for (const o of P)
+    if (o.tm === off && !o.off) {
+      const d = manOf(o);
+      if (!d || d.off) continue;
+      if (o === ib) {
+        // up on the inbounder, a step inside the line, arms up
+        const l = Math.hypot(ah + dir * 120 - ix, HY - iy) || 1;
+        (d.x = ix + ((ah + dir * 120 - ix) / l) * 16), (d.y = iy + ((HY - iy) / l) * 16);
+        d.hupT = 1.2;
+      } else {
+        const l = Math.hypot(ah - o.x, HY - o.y) || 1;
+        (d.x = o.x + ((ah - o.x) / l) * 22), (d.y = o.y + ((HY - o.y) / l) * 22);
+      }
+      d.f = Math.atan2(o.y - d.y, o.x - d.x);
+    }
+  for (const p of P) (p.x = clamp(p.x, 4, CW - 4)), (p.y = clamp(p.y, 4, CH - 4));
+  B.x = ib.x;
+  B.y = ib.y;
+  STAT.spotInb = (STAT.spotInb || 0) + 1;
 }
 /** Star tendencies (CPU): how often a player looks for a deep three, a mid-range pull-up, a drive or a post-up, how
  *  willing he is to pass, and how much he loves the step-back. Stars have their own; everyone else is derived. */
@@ -2874,7 +2930,7 @@ export function bstep(dt: number) {
   } else B.stk = 0;
   // Out of bounds: a loose ball (a long rebound, a deflection, a block, a dead pass) that reaches the lines is out -
   // the other team than the last one to touch it gets it (CPU-vs-CPU and human games alike; rules: VIOL)
-  if (cfg.VIOL && !PREDICT && !B.owner && (B.mode === "air" || B.mode === "pass") && (B.x < 6 || B.x > CW - 6 || B.y < 6 || B.y > CH - 6) && B.last && !ftq && !JB && rs <= 0 && inb <= 0 && S === "play" && gameLike() && !B.sc) {
+  if (cfg.VIOL && !PREDICT && !B.owner && (B.mode === "air" || B.mode === "pass") && (B.x < 6 || B.x > CW - 6 || B.y < 6 || B.y > CH - 6) && !(B.mode === "pass" && B.age < 0.3) && B.last && !ftq && !JB && rs <= 0 && inb <= 0 && S === "play" && gameLike() && !B.sc) {
     STAT.oob = (STAT.oob || 0) + 1;
     const L = B.last;
     if (L.stt) L.stt.tov = (L.stt.tov || 0) + 1;

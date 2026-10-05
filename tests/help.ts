@@ -78,6 +78,28 @@ import { rapInit } from "../src/core/physics";
   const S = G.STAT;
   console.log("game: help", S.help, "rotations", S.rot, "kick-outs", S.kick, "shots off kick-outs", S.kA);
   ok(S.help > 10 && S.rot > 5 && S.kick > 3, "help, rotations and kick-outs in a CPU game");
+  // spot inbounds: a frontcourt violation comes in from the nearest line at the spot (baseline / sideline), a
+  // backcourt one from the baseline as usual; the inbound pass is caught by a teammate and is never called out
+  G.setQtrLen(120);
+  for (const [x, y, nm, ex, ey] of [
+    [900, 380, "baseline", 934, null],
+    [700, 495, "sideline", 700, 496],
+    [300, 10, "backcourt", 6, 250],
+  ] as any) {
+    G.start(0, { j: 1 });
+    G.setupAt(0, x, y);
+    const ib = G.B.owner,
+      o0 = G.STAT.oob || 0,
+      ix = Math.round(ib.x),
+      iy = Math.round(ib.y);
+    let got: any = null;
+    for (let i = 0; i < 200 && !got; i++) {
+      G.upd(1 / 60);
+      G.FX.length = 0;
+      if (G.B.owner && G.B.owner !== ib) got = G.B.owner;
+    }
+    ok(ix === ex && (ey == null || iy === ey) && !!got && got.tm === 0 && (G.STAT.oob || 0) === o0, nm + " inbound from " + ix + "," + iy + " caught by " + (got && got.n));
+  }
   if (fails) process.exit(1);
   console.log("HELP OK");
 })();

@@ -334,6 +334,12 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   straight up) when he leaves his feet. Charges: none in the restricted area (< 40 px from the rim), a set helper .62.
 - Contact pass: a contact that starts from zero weight seeds its stored solution from the drawn arm (blend max 0.97).
 - FT lineup (`ftLay`): per side defense low block, offense, defense (bigs first); the rest behind the arc.
+- Spot inbounds (`setupAt(off, x, y)`, from `violation()`): frontcourt -> nearest line at the spot (baseline: box
+  set; sideline: spread), defense goal-side + one up on the inbounder (hupT); backcourt -> normal `setup`. A pass
+  younger than .3 s is never out of bounds (thrown from the line).
+- Help-side pistols (pose3, man D, ball 150+ px away, eased in by distance): ball-side hand at the ball, other at his
+  man (`guardOf`, exported), low and soft (aim 40 px out between facing and target). Catch/rebound reach fades for a
+  ball behind him. Timing card shows the contest at release (`tg.c`, WIDE OPEN .. SMOTHERED; relayed in "q").
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 
