@@ -1490,9 +1490,21 @@ export function pose3(p: Player) {
       cl = (B.vx * (p.x - B.x) + B.vy * (p.y - B.y)) / (bd || 1), // closing speed of the pass
       tta = cl > 30 ? (bd - 24) / cl : 9, // seconds until it reaches the hands
       cat = PRO && !has && B.mode === "pass" && B.to === p && tta < 0.3 && B.z < p.z + 125 && md !== "s";
+    // contest: a defender close to a shooter in his gather/shot gets the ball-side hand up at the ball (late, fast)
+    const sh = B.owner || (B.sh && B.age < 0.3 && !B.ft ? B.last : null), // (and just after the release: the hand stays up)
+      con = PRO && !has && !air && !p.postA && sh && sh.tm !== p.tm && (sh.mode === "c" || sh.mode === "s" || !B.owner) && Math.hypot(sh.x - p.x, sh.y - p.y) < 48 && md !== "s" && md !== "c";
     let wR = 0,
       wL = 0;
-    if (drib) {
+    if (con) {
+      // (aim at the shooter's ball while he has it; after the release the hand stays where the ball left, not chasing it)
+      const bx = B.owner ? B.x : K[6] || B.x,
+        by = B.owner ? B.y : K[7] || B.y,
+        bz = Math.max((B.owner ? B.z : sh.z + sh.ht * 9) + 10, p.z + p.ht * 10.6),
+        w = clamp((48 - Math.hypot(sh.x - p.x, sh.y - p.y)) / 14, 0, 1),
+        right = armIK(p, o.cr, bx, by, bz, 0, 0.6).right;
+      if (right) (wR = w), (K[6] = bx), (K[7] = by), (K[8] = bz);
+      else (wL = w), (K[9] = bx), (K[10] = by), (K[11] = bz);
+    } else if (drib) {
       const bz = Math.max(B.z, B.dtop - 8),
         // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
         wt = clamp((B.z - (B.dtop - 16)) / 8, 0, 1) * clamp((B.dtop + 12 - B.z) / 6, 0, 1);
@@ -1512,26 +1524,39 @@ export function pose3(p: Player) {
       (K[6] = fx + uy * 3.5), (K[7] = fy - ux * 3.5), (K[8] = fz);
       (K[9] = fx - uy * 3.5), (K[10] = fy + ux * 3.5), (K[11] = fz);
     }
-    const r = Math.min(1, DT * (cat ? 24 : 16));
-    p.ctR = (p.ctR || 0) + (wR - (p.ctR || 0)) * r;
-    p.ctL = (p.ctL || 0) + (wL - (p.ctL || 0)) * r;
+    const r = Math.min(1, DT * (cat || con ? 24 : 16)),
+      mode = con ? 3 : drib ? 1 : cat ? 2 : 0;
+    // a switch of contact kind (the catch becomes a dribble) eases the solution over instead of jumping to it
+    if (mode && mode !== p.ctM) p.ctB = T;
+    p.ctM = mode;
+    const ks = T - (p.ctB ?? -9) < 0.18 ? 0.25 : 1;
+    // (weights ride a critically damped spring: they start and stop with zero velocity, so contact never pops)
+    {
+      const om = cat || con ? 22 : 18;
+      p.ctRv = (p.ctRv || 0) + (om * om * (wR - (p.ctR || 0)) - 2 * om * (p.ctRv || 0)) * DT;
+      p.ctLv = (p.ctLv || 0) + (om * om * (wL - (p.ctL || 0)) - 2 * om * (p.ctLv || 0)) * DT;
+      p.ctR = clamp((p.ctR || 0) + p.ctRv * DT, 0, 1);
+      p.ctL = clamp((p.ctL || 0) + p.ctLv * DT, 0, 1);
+    }
     if (p.ctR > 0.01) {
       if (wR > 0) {
         const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
-        (K[0] = k.a), (K[1] = k.e), (K[2] = k.ab);
+        if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
+        (K[0] += wrapPi(k.a - K[0]) * ks), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
       }
       const da = wrapPi(K[0] - o.aR),
-        w = p.ctR * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
+        w = p.ctR * (con ? 1 : clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1)); // (an IK branch flip is not a correction; a contest may swing far)
       (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
     if (p.ctL > 0.01) {
       if (wL > 0) {
         const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
-        (K[3] = k.a), (K[4] = k.e), (K[5] = k.ab);
+        if (con) o.gL = 0.05;
+        (K[3] += wrapPi(k.a - K[3]) * ks), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
       }
       const z0 = o.zL ?? o.sz,
         da = wrapPi(K[3] - o.aL),
-        w = p.ctL * clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
+        w = p.ctL * (con ? 1 : clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1));
       (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
   }
