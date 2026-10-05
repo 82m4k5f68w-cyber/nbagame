@@ -100,6 +100,21 @@ import { rapInit } from "../src/core/physics";
     }
     ok(ix === ex && (ey == null || iy === ey) && !!got && got.tm === 0 && (G.STAT.oob || 0) === o0, nm + " inbound from " + ix + "," + iy + " caught by " + (got && got.n));
   }
+  // a missed free throw that caroms back into the shooter's hands is still dead: the next one comes (it used to hold
+  // the sequence - and the game clock - forever)
+  {
+    G.setCtrls([]);
+    G.start(0, { j: 1 });
+    G.foul(G.P[6], G.P[1], "SHOOTING", 1, 0);
+    const s = G.ftq && G.ftq.s;
+    let fired = false;
+    for (let i = 0; i < 600 && !fired; i++) G.upd(1 / 60), (fired = !!(G.ftq && G.ftq.fired)), G.FX.length = 0;
+    for (let i = 0; i < 30; i++) G.upd(1 / 60);
+    if (G.ftq && G.ftq.i === 0 && !G.B.sc) (G.B.owner = s), (G.B.mode = "held");
+    let i2 = false;
+    for (let i = 0; i < 240 && !i2; i++) G.upd(1 / 60), (i2 = !G.ftq || G.ftq.i === 1), G.FX.length = 0;
+    ok(!!s && fired && i2, "a missed free throw caught by the shooter still moves on to the next one");
+  }
   if (fails) process.exit(1);
   console.log("HELP OK");
 })();

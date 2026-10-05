@@ -353,6 +353,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Closeout contest (`contestRaw`): a defender within 95 px flying at the shooter (approach > 90 px/s) counts as a
   partial contest (x .8) before he arrives - calibrated kick-out threes ~39% (were 56%). Seals: 2.5 s per possession
   (`p.ai.sealT`), only while the ball is at the arc.
+- Free throws: a missed (non-final) FT moves on even when the miss caroms back into somebody's hands (`ftTick`:
+  `B.owner && B.age > .3`); the shooter catching his own miss used to hold ftq - and the game clock - forever.
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 

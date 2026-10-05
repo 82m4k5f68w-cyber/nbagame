@@ -3526,7 +3526,9 @@ function ftTick(dt: number) {
     }
     return;
   }
-  if (f.fired && !B.sc && B.age > 1.3 && !B.owner) f.next = 0.3;
+  // a missed free throw (not the last) is dead: line up for the next one - also when the miss caroms straight back into
+  // somebody's hands (a shooter who caught his own miss held the sequence forever: the clock never ran again)
+  if (f.fired && !B.sc && (B.age > 1.3 || (B.owner && B.age > 0.3))) f.next = 0.3;
 }
 function ftIn(dt: number) {
   const f = ftq;
