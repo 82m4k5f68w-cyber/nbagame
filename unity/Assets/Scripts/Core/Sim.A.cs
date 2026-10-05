@@ -157,8 +157,8 @@ namespace Hoops.Core
 
     public partial class Player
     {
-        public double heat, off, fo, inAt, cel, celT, hupT;
-        public double? mvEnd;
+        // also used here, declared by other parts: heat, off, cel, celT (double), hupT (double), mvEnd (double?)
+        public double fo, inAt;
         public Player sub;
     }
 
