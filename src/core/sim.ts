@@ -1021,6 +1021,7 @@ export function nearest(t: number, x: number, y: number, ex = -1, skip?: (k: num
 }
 export function setup(off: number) {
   INB.on = 0;
+  TS.hud = 0;
   if (cfg.HALF) return setupHalf(off);
   if (S === "play" && P.length) subs(), gamePlan(1 - off), gamePlan(off);
   TS.bc = 0;
@@ -3303,6 +3304,7 @@ export function upd(dt: number) {
   if (HOOK.post && HOOK.post(dt)) return;
   if (rs > 0) {
     rs -= dt;
+    if (TS.hud > 0) TS.hud = Math.max(0, TS.hud - dt); // (always: deadBall only runs with Pro Play on)
     if (rs <= 0) {
       if (RQ && recN > 80) {
         startReplay();
@@ -3342,7 +3344,6 @@ export function upd(dt: number) {
  *  tug their jerseys; a man on the floor gets helped up by the nearest teammate (also during inbounds). */
 function deadBall(dt: number) {
   const NP = cfg.NP;
-  if ((TS.hud || 0) > 0) TS.hud = rs > 0 ? TS.hud - dt : 0;
   for (const p of P) {
     if (p.off || (ftq && ftq.i >= 0)) continue;
     // help a teammate up

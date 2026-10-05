@@ -115,6 +115,23 @@ import { rapInit } from "../src/core/physics";
     for (let i = 0; i < 240 && !i2; i++) G.upd(1 / 60), (i2 = !G.ftq || G.ftq.i === 1), G.FX.length = 0;
     ok(!!s && fired && i2, "a missed free throw caught by the shooter still moves on to the next one");
   }
+  // timeout huddle: the huddle clock runs out with Pro Play on and off (the camera / coach follow it)
+  for (const pro of [1, 0]) {
+    G.cfg.PRO = pro;
+    G.setCtrls([]);
+    G.start(0, { j: 1 });
+    let ok1 = false;
+    for (let i = 0; i < 3000 && !ok1; i++) {
+      G.upd(1 / 60);
+      G.FX.length = 0;
+      if (G.RPL) G.skipReplay();
+      if (G.B.owner && G.S === "play" && !G.ftq && G.inb <= 0 && G.rs <= 0) ok1 = G.callTO(G.B.owner.tm);
+    }
+    let h0 = G.TS.hud;
+    for (let i = 0; i < 300; i++) G.upd(1 / 60), (G.FX.length = 0);
+    ok(ok1 && h0 > 3 && G.TS.hud === 0, "timeout huddle clock runs out (Pro Play " + (pro ? "on" : "off") + ")");
+  }
+  G.cfg.PRO = 1;
   if (fails) process.exit(1);
   console.log("HELP OK");
 })();
