@@ -437,8 +437,9 @@ export function applyPose(m: Rig, p: any) {
   m.hd.rotation.set(q.hp || 0, q.hy || 0, 0, "YXZ");
   m.gL.rotation.x = -(q.gL ?? 0.25) * 1.4;
   m.gR.rotation.x = -(q.gR ?? 0.25) * 1.4;
-  m.sL.rotation.set(-q.aL, 0, -(q.zL == null ? q.sz : q.zL));
-  m.sR.rotation.set(-q.aR, 0, q.sz);
+  // shoulders: XZY so the humeral twist (hL/hR, + = internal rotation) turns about the upper-arm bone itself
+  m.sL.rotation.set(-q.aL, q.hL || 0, -(q.zL == null ? q.sz : q.zL), "XZY");
+  m.sR.rotation.set(-q.aR, -(q.hR || 0), q.sz, "XZY");
   m.eL.rotation.x = -q.eL;
   m.eR.rotation.x = -q.eR;
   m.wL.rotation.set(-(q.wL || 0), q.oL || 0, 0, "YXZ"); // forearm twist then wrist flex (matches pose.ts FK)

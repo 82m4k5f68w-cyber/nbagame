@@ -124,6 +124,8 @@ export function pose3(p: Player) {
     legF = (3.18 * p.ht) / 6.4,
     A = Math.asin(Math.min(0.9, (stepLen(sp) / 10 / (2 * legF)) * 0.92)) * Math.min(1, sp / 30),
     ksw = 0.45 + 0.95 * spd; // swing-knee flex: heel kick grows with speed
+  let hL = 0, // humeral twist (+ = internal rotation), applied about the upper-arm bone
+    hR = 0;
   let tL = s * A,
     tR = -s * A,
     kL = 0.07 + Math.pow(Math.max(0, c), 1.5) * ksw * Math.min(1, sp / 30),
@@ -743,7 +745,8 @@ export function pose3(p: Player) {
         k3 = armIK(p, cr, tx, ty, Math.max(18, B.z + 6), 0, 0.9);
       if (k3.right) (aR += (k3.a - aR) * w), (eR += (k3.e - eR) * w), (sz += (k3.ab - sz) * w);
       else (aL += (k3.a - aL) * w), (eL += (k3.e - eL) * w), (zL = (zL ?? sz) + (k3.ab - (zL ?? sz)) * w);
-    } else if (!has && !B.owner && (B.mode === "air" || B.mode === "pass") && bd < 45 && B.z > p.z + 30 && B.z < p.z + 150 && (air || B.to === p)) {
+    } else if (!has && !B.owner && (B.mode === "air" || B.mode === "pass") && bd < 45 && B.z > p.z + 30 && B.z < p.z + 150 && (air || B.to === p) && !(B.sh && B.age < 0.5)) {
+      // (not a shot that just left the hand: it flies by too fast to track - the swat was the block layer's job)
       // rebounds, tips and catches: both hands go to where the ball actually is
       const w = clamp((45 - bd) / 20, 0, 1);
       const r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0);
@@ -1034,13 +1037,13 @@ export function pose3(p: Player) {
     // gassed, walking at a dead ball: arms hang heavy, shoulders slump, a big breath (arms and chest only - the legs
     // keep walking)
     const br = Math.sin(T * 2.4 + p.k) * 0.06;
-    aL = aL * 0.3 - 0.05;
-    aR = aR * 0.3 - 0.05;
-    sz = zL = 0.16;
-    eL = eR = 0.3;
-    cx = 0.2 + br;
-    ln += 0.08;
-    gL = gR = 0.15;
+    // hands on the hips: elbows out, forearms turned in to the hip bones, chest heaving
+    aL = aR = -0.15;
+    sz = zL = 0.62;
+    eL = eR = 1.55;
+    hL = hR = 1.25;
+    cx = -0.05 + br;
+    gL = gR = 0.35;
   }
   if (p.celT > 0 && p.cel && md === "i" && !has && !air && !p.postA && !(p.setT > 0)) {
     st = ST.cel;
@@ -1391,7 +1394,7 @@ export function pose3(p: Player) {
     (aL = aR), (aR = t), (t = eL), (eL = eR), (eR = t);
     t = zL == null ? sz : zL;
     (zL = sz), (sz = t);
-    (t = wL), (wL = wR), (wR = t), (t = oL), (oL = -oR), (oR = -t), (t = gL), (gL = gR), (gR = t);
+    (t = wL), (wL = wR), (wR = t), (t = oL), (oL = -oR), (oR = -t), (t = gL), (gL = gR), (gR = t), (t = hL), (hL = hR), (hR = t);
     (t = tL), (tL = tR), (tR = t), (t = kL), (kL = kR), (kR = t), (t = fL), (fL = fR), (fR = t);
     (hs = -hs), (ty = -ty), (rz = -rz), (cy = -cy), (hy = -hy), (hyT = -hyT);
   }
@@ -1433,6 +1436,8 @@ export function pose3(p: Player) {
   VALS[26] = hs;
   VALS[27] = oL;
   VALS[28] = oR;
+  VALS[29] = hL;
+  VALS[30] = hR;
   // per joint: x/v = offset and its velocity at the last restart, t/tf = time since and blend length, b = filtered
   // target, pt/pv = last target and its velocity (to spot a target that jumps), last/lv = last output and velocity
   const I =
@@ -1506,15 +1511,19 @@ export function pose3(p: Player) {
       con = PRO && !has && !air && !p.postA && sh && sh.tm !== p.tm && (sh.mode === "c" || sh.mode === "s" || !B.owner) && Math.hypot(sh.x - p.x, sh.y - p.y) < 48 && md !== "s" && md !== "c";
     let wR = 0,
       wL = 0;
+    if (!con) p.ctPo = 0;
     if (con) {
-      // (aim at the shooter's ball while he has it; after the release the hand stays where the ball left, not chasing it)
-      const bx = B.owner ? B.x : K[6] || B.x,
-        by = B.owner ? B.y : K[7] || B.y,
-        bz = Math.max((B.owner ? B.z : sh.z + sh.ht * 9) + 10, p.z + p.ht * 10.6),
-        w = clamp((48 - Math.hypot(sh.x - p.x, sh.y - p.y)) / 14, 0, 1),
-        right = armIK(p, o.cr, bx, by, bz, 0, 0.6).right;
-      if (right) (wR = w), (K[6] = bx), (K[7] = by), (K[8] = bz);
-      else (wL = w), (K[9] = bx), (K[10] = by), (K[11] = bz);
+      // (aim at the shooter's ball while he has it; after the release the hand stays where the ball left - same spot,
+      // same arm - not chasing it)
+      const P0 = p.ctP || (p.ctP = [0, 0, 0, 1]);
+      if (B.owner || !p.ctPo) {
+        (P0[0] = B.x), (P0[1] = B.y), (P0[2] = Math.max(B.z + 10, p.z + p.ht * 10.6));
+        P0[3] = armIK(p, o.cr, P0[0], P0[1], P0[2], 0, 0.6).right ? 1 : 0;
+      }
+      p.ctPo = 1;
+      const w = clamp((48 - Math.hypot(sh.x - p.x, sh.y - p.y)) / 14, 0, 1);
+      if (P0[3]) (wR = w), (K[6] = P0[0]), (K[7] = P0[1]), (K[8] = P0[2]);
+      else (wL = w), (K[9] = P0[0]), (K[10] = P0[1]), (K[11] = P0[2]);
     } else if (drib) {
       const bz = Math.max(B.z, B.dtop - 8),
         // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
@@ -1553,21 +1562,21 @@ export function pose3(p: Player) {
       if (wR > 0) {
         const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
         if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
-        (K[0] += wrapPi(k.a - K[0]) * ks), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
+        (K[0] = wrapPi(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
       }
       const da = wrapPi(K[0] - o.aR),
-        w = p.ctR * (con ? 1 : clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1)); // (an IK branch flip is not a correction; a contest may swing far)
+        w = p.ctR * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : clamp((2.9 - Math.abs(da)) / 0.6, 0, 1)); // (an IK branch flip is not a correction; others fade out before the +-pi wrap of the offset)
       (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
     if (p.ctL > 0.01) {
       if (wL > 0) {
         const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
         if (con) o.gL = 0.05;
-        (K[3] += wrapPi(k.a - K[3]) * ks), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
+        (K[3] = wrapPi(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
       }
       const z0 = o.zL ?? o.sz,
         da = wrapPi(K[3] - o.aL),
-        w = p.ctL * (con ? 1 : clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1));
+        w = p.ctL * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : clamp((2.9 - Math.abs(da)) / 0.6, 0, 1));
       (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
   }
@@ -2032,7 +2041,7 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
 }
 /** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */
 const RELK: Record<string, number> = { jump: 0.7, mshot: 0.7, upunder: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
-const NQ = 29,
+const NQ = 31,
   VALS = new Float64Array(NQ),
   LOOK = { x: 0, y: 0, z: 0, on: 0 };
 let HEADX = 0,
@@ -2045,7 +2054,7 @@ const ST = { idle: 0, run: 1, def: 2, drib: 3, shot: 4, air: 5, move: 6, post: 7
 
 // ---- forward kinematics (mirrors the three.js rig hierarchy exactly; rig3d builds its bones from RIG) ----
 // G: pos(w0, w1 - cr*0.4, w2), rotY(PI/2 - f), scale ht/6.4 -> pelvis bd: pos(0,3.2,0) Euler(ln,ty,rz,'YXZ')
-// -> chest: pos(0,1,0) Euler(cx,cy,0,'YXZ') -> R shoulder: pos(0.88*0.95*bk, 0.9, 0) Euler(-aR, 0, sz,'XYZ')
+// -> chest: pos(0,1,0) Euler(cx,cy,0,'YXZ') -> R shoulder: pos(0.88*0.95*bk, 0.9, 0) Euler(-aR, -hR, sz,'XZY')
 // -> elbow: pos(0,-1.02,0) rotX(-eR) -> wrist: pos(0,-1,0) rotX(-wR) -> palm point (0,-0.62,0.1).
 // chest -> neck pos(0,1.02,0) rotX(nk) -> head pos(0,0.28,0) Euler(hp,hy,0,'YXZ'). hips pos(+-0.32,3.2,0)
 // Euler(-t,0,+-(hz+-hs)) -> knee pos(0,-1.58,0) rotX(k) -> ankle pos(0,-1.6,0) rotX(f). wrist -> fingers pos(0,-0.22,0) rotX(-g*1.4).
@@ -2098,8 +2107,8 @@ export function handPos(p: Player, pt: V = [0, -0.62, 0.1]): number[] | null {
   v = add(v, [0, -RIG.fa, 0]);
   v = rx(v, -(L ? q.eL : q.eR));
   v = add(v, [0, -RIG.ua, 0]);
-  // XYZ Euler: R = Rx * Ry * Rz (applied to the vector right-to-left)
-  v = L ? rx(rz(v, -(q.zL ?? q.sz)), -q.aL) : rx(rz(v, q.sz), -q.aR);
+  // shoulder XZY Euler: R = Rx * Rz * Ry (applied right-to-left: the humeral twist about the bone first)
+  v = L ? rx(rz(ry(v, q.hL || 0), -(q.zL ?? q.sz)), -q.aL) : rx(rz(ry(v, -(q.hR || 0)), q.sz), -q.aR);
   v = add(v, [(L ? -1 : 1) * RIG.shX * p.bk, RIG.sh, 0]);
   // YXZ Euler: R = Ry * Rx * Rz
   v = ry(rx(v, q.cx || 0), q.cy || 0);
@@ -2132,12 +2141,12 @@ const rot = (ax: 0 | 1 | 2, t: number, o: M3) => {
   else o.set([c, -s, 0, s, c, 0, 0, 0, 1]);
   return o;
 };
-const euler = (x: number, y: number, z: number, order: "XYZ" | "YXZ", o: M3) => {
+const euler = (x: number, y: number, z: number, order: "XYZ" | "YXZ" | "XZY", o: M3) => {
   const A = rot(0, x, new Float64Array(9)),
     Bm = rot(1, y, new Float64Array(9)),
     Cm = rot(2, z, new Float64Array(9)),
     t = new Float64Array(9);
-  return order === "XYZ" ? mm(mm(A, Bm, t), Cm, o) : mm(mm(Bm, A, t), Cm, o);
+  return order === "XYZ" ? mm(mm(A, Bm, t), Cm, o) : order === "XZY" ? mm(mm(A, Cm, t), Bm, o) : mm(mm(Bm, A, t), Cm, o);
 };
 interface Fr {
   R: M3;
@@ -2177,7 +2186,8 @@ export function skeleton(p: Player, out: Float32Array) {
       wq = sd < 0 ? q.wL || 0 : q.wR || 0,
       oq = sd < 0 ? q.oL || 0 : q.oR || 0,
       zz = sd < 0 ? -(q.zL == null ? q.sz || 0 : q.zL) : q.sz || 0,
-      sh = child(ch, [sd * RIG.shX * k, RIG.sh, 0], euler(-a, 0, zz, "XYZ", new Float64Array(9))),
+      tw = sd < 0 ? q.hL || 0 : -(q.hR || 0), // humeral twist about the upper-arm bone, applied first (XZY)
+      sh = child(ch, [sd * RIG.shX * k, RIG.sh, 0], euler(-a, tw, zz, "XZY", new Float64Array(9))),
       el = child(sh, [0, -RIG.ua, 0], rot(0, -e, new Float64Array(9))),
       wr = child(el, [0, -RIG.fa, 0], mm(rot(1, oq, new Float64Array(9)), rot(0, -wq, new Float64Array(9)), new Float64Array(9)));
     J.push(sh.t, el.t, wr.t, pt(wr, [0, -0.32, 0.05]));

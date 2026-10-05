@@ -263,7 +263,12 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Contest hands: the closest defender (< 48 px) to a shooter in c/s (or just after the release) gets the ball-side
   hand up at the ball, post-blend; contact weights ride a critically damped spring (`p.ctRv/ctLv`).
 - Online PROTO 7: proFlags also carry chinT (chinned rebound) and hdgT (hedge / trap arms) as bits.
-- Gassed walk: tired players walking at a dead ball let the arms hang heavy, shoulders slump, breathing.
+- Shoulder twist: QK gained `hL`/`hR` (humeral rotation, + = internal), shoulders are Euler XZY so the twist turns
+  about the upper-arm bone (twist 0 = the old XYZ pose exactly); skeleton/handPos/rig3d agree (fk.ts randomizes it).
+  Used for hands on the hips (gassed walk at a dead ball). Replays/online replay poses carry all 31 channels.
+- Contact pass guards: dribble/catch ignore IK branch flips (> .8 rad); fades and contests fade out before the
+  +-pi wrap of their offset; stored solutions are wrapped (no 2 pi drift).
+- Signature free-throw routines (`ftStyle` from the name): classic, quick dribbles, long dribble routine, spin only.
 - Contact: the receiver's hands reach to where a pass will be caught (post-blend contact pass, 0.3 s ahead) and
   the catch waits until the ball reaches a palm (`p.skel`) once he is close; rebounds in traffic are chinned
   (`p.chinT`, heldBall 4) before the outlet.

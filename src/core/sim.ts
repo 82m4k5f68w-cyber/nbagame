@@ -1161,7 +1161,7 @@ export function launch(p: Player) {
   else {
     // CPU jumpers, calibrated to NBA shooting splits: an open three goes in ~30% (poor shooter) .. ~46% (elite),
     // mid-range ~36-50%, and a full contest takes about a third off (league: open 38% vs tight 33% from three)
-    const base = three ? 0.34 + (0.16 * (rat - 60)) / 40 : 0.38 + (0.14 * (rat - 60)) / 40,
+    const base = three ? 0.365 + (0.16 * (rat - 60)) / 40 : 0.33 + (0.14 * (rat - 60)) / 40,
       pm = clamp(base * (1 - 0.25 * cx) * (p.sbw > 0 ? 0.95 : 1) * cpuK(p, [0.85, 0.94, 1, 1.06]) * Math.sqrt(wm0), 0.04, 0.6);
     gr = Math.random() < pm / (0.98 - cx * 0.25); // (the make roll below keeps its contest factor)
   }
@@ -2381,13 +2381,21 @@ function dz(o: Player, dt: number) {
   }
   return B.dh;
 }
+/** Signature free-throw routine (from the name): how long he dribbles before he settles and spins it -
+ *  0 the classic (half and half), 1 a few quick ones, 2 a long dribble routine, 3 no dribble at all, just the spin. */
+const FTCUT = [1.7, 1.0, 2.5, 0.15];
+export const ftStyle = (o: Player) => {
+  let h = 7;
+  for (let k = 0; k < (o.n || "").length; k++) h = (h * 31 + o.n.charCodeAt(k)) >>> 0;
+  return h % 4;
+};
 /** Ball held (not dribbled): 1 triple threat at the right hip, 2 pump fake / jab rising toward the forehead,
  *  3 free-throw routine (holding and spinning it before the shot). */
 export function heldBall(o: Player): number {
   if (o.mode !== "i" || o.postA || inb > 0) return 0;
   if (o.chinT > 0) return 4;
   if (o.actT > 0 && (o.act === 1 || o.act === 2)) return 2;
-  if (ftq && ftq.s === o && (o.ftT || 0) % 3.4 > 1.7) return 3;
+  if (ftq && ftq.s === o && (o.ftT || 0) % 3.4 > FTCUT[ftStyle(o)]) return 3;
   if (o.ttT > 0 && Math.hypot(o.vx, o.vy) < 70 && !ftq) return 1;
   return 0;
 }
@@ -2813,7 +2821,8 @@ export function bstep(dt: number) {
   SORTP.length = 0;
   for (const p of P) {
     SORTP.push(p);
-    p._ks = p.j + p.d * 0.3 + (p.z > 5 ? 25 : 0) + Math.random() * 40 + (hasB(p, "GC") ? 18 : 0);
+    // (+ the defense has inside position on a missed shot, more so when it boxed out: NBA ORB% ~24)
+    p._ks = p.j + p.d * 0.3 + (p.z > 5 ? 25 : 0) + Math.random() * 40 + (hasB(p, "GC") ? 18 : 0) + (B.sh && B.last && p.tm !== B.last.tm ? 9 + ((p.boxT || 0) > 0 ? 8 : 0) : 0);
   }
   SORTP.sort((a, b) => b._ks - a._ks);
   for (const p of SORTP) {
@@ -3892,7 +3901,7 @@ export const inNet = () => {
 };
 
 // ---- instant replays: allocation-free ring buffer of positions + poses ----
-export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz", "cx", "cy", "nk", "hy", "hp", "fL", "fR", "gL", "gR", "hs", "oL", "oR"];
+export const QK = ["tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz", "cx", "cy", "nk", "hy", "hp", "fL", "fR", "gL", "gR", "hs", "oL", "oR", "hL", "hR"];
 const RCAP = 331,
   PST = 4 + QK.length,
   FST = 4 + 10 * PST + 1;
