@@ -1425,8 +1425,8 @@ export function pose3(p: Player) {
   VALS[3] = kR;
   VALS[4] = aL;
   VALS[5] = aR;
-  VALS[6] = eL;
-  VALS[7] = eR;
+  VALS[6] = clamp(eL, -0.05, 2.75); // (elbows never bend backwards)
+  VALS[7] = clamp(eR, -0.05, 2.75);
   VALS[8] = sz;
   VALS[9] = cr;
   VALS[10] = ln;
@@ -1440,7 +1440,7 @@ export function pose3(p: Player) {
   VALS[18] = cy;
   VALS[19] = nk;
   VALS[20] = hy;
-  VALS[21] = hp;
+  VALS[21] = clamp(hp, -0.85, 0.8); // (the neck has limits: looking far down at a low ball is the chest's job too)
   VALS[22] = fL;
   VALS[23] = fR;
   VALS[24] = gL;
@@ -1814,6 +1814,9 @@ function stepSolve(p: Player, o: any, sp: number) {
           const am = Math.max(Math.abs(al), Math.abs(al - trv)),
             lm = Math.sqrt(Math.max(0, R * R - am * am));
           lt = clamp(lt, -lm, lm);
+          // (a step never lands across the body's midline: the legs don't cross in slides and cuts)
+          const mid = RIG.hipX * s * 10;
+          lt = k ? Math.max(lt, -mid + 1) : Math.min(lt, mid - 1);
           nx = hX + ux * al - uy * lt;
           ny = hY + uy * al + ux * lt;
         }
@@ -1914,7 +1917,8 @@ function stepSolve(p: Player, o: any, sp: number) {
       F.pst = F.st;
       fz = tI - kI + add;
     }
-    o[fk] += (fz - o[fk]) * W;
+    // (an ankle only dorsiflexes so far: past it the heel comes up and he is on the ball of the foot)
+    o[fk] += (Math.max(fz, -0.6) - o[fk]) * W;
     if (k) abR = ab;
     else abL = ab;
   }
