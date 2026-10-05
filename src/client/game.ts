@@ -7,7 +7,7 @@ import { rapInit } from "../core/physics";
 import { V, CAMN, MN, pr } from "./view";
 import { glInit } from "./render3d";
 import { court2d, hoop2d, net2d, player2d, ball2d, scene3c, segs3c, paint3c, ball3c, pj, CP, setCanvasCtx } from "./canvas";
-import { setHudCtx, hud, hud2, contestFx, meter, openMark, passMark, replayHud } from "./hud";
+import { setHudCtx, hud, hud2, contestFx, meter, openMark, assignMark, passMark, replayHud } from "./hud";
 import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
 import { audio } from "./audio";
 import { music } from "./music";
@@ -1176,6 +1176,7 @@ function overlay() {
     meter(p0);
   }
   openMark();
+  assignMark();
   passMark();
   replayHud();
   if (!NET.role)

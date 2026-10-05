@@ -1,5 +1,5 @@
 // Heads-up display: score bug, player strip, shot meters, contest ring, pass/open markers, floating texts.
-import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, gameLike, type Player } from "../core/sim";
+import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, gameLike, guardOf, type Player } from "../core/sim";
 import { V, pr, fmt, MN } from "./view";
 import { isLaySv } from "../core/data";
 import { K, tempoOf, TX, STK_R } from "./input";
@@ -29,6 +29,25 @@ export function openMark() {
   X.font = "800 12px system-ui";
   X.textAlign = "center";
   X.fillText("▼ OPEN", q[0], q[1]);
+}
+/** On defense: a faint ring under the man you're assigned to (it follows switches). */
+export function assignMark() {
+  const me = fp();
+  if (!me || RPL || !B.owner || B.owner.tm === me.tm || !gameLike() || cfg.NP < 2) return;
+  const m = me.manT > 0 && me.man != null ? P[me.man] : guardOf(me);
+  if (!m || m.off) return;
+  X.save();
+  X.strokeStyle = "rgba(255,90,90,.75)";
+  X.lineWidth = 2;
+  X.setLineDash([5, 4]);
+  X.beginPath();
+  for (let k = 0; k <= 16; k++) {
+    const a = (k / 16) * Math.PI * 2,
+      q = pr(m.x + Math.cos(a) * 13, m.y + Math.sin(a) * 13, 0);
+    k ? X.lineTo(q[0], q[1]) : X.moveTo(q[0], q[1]);
+  }
+  X.stroke();
+  X.restore();
 }
 export function replayHud() {
   if (!RPL) return;
