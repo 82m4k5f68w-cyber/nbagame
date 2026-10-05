@@ -346,6 +346,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Mismatches: `val()` (CPU passing) +.3 for a post scorer (i >= 76) with a defender .4 ft+ shorter near the rim, +.12
   for a quick player (s +15) on a slow man; that post scorer seals on the ball-side block off the ball and calls for it
   (`STAT.seal` ticks). Commentary keys `kick` (made three off a kick-out) and `slip`.
+- Timeout huddle: `callTO` gives a 3.2 s dead ball and `TS.hud`; deadBall walks each team into a circle in front of its
+  bench (far sideline, x 470 -+ 130, y 34), facing in; the last .75 s `p.hudT` = hands in (pose3, two-arm IK to
+  `p.hcx/hcy`). Studio: "Timeout huddle: hands in".
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 

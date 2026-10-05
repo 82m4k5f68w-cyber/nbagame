@@ -781,6 +781,17 @@ export function pose3(p: Player) {
     cr = Math.max(cr, 0.28 * w);
     gL = gR = 0.05;
   }
+  // ---- timeout huddle: hands in the middle ("1-2-3 ...!") ----
+  if (PRO && (p.hudT || 0) > 0 && !has && !air && p.hcx != null) {
+    const zc = p.z + p.ht * 7.6;
+    for (const sd of [1, -1]) {
+      const k = armIK(p, cr, p.hcx + Math.sin(fv(p)) * 2 * sd, p.hcy - Math.cos(fv(p)) * 2 * sd, zc, sd, 0.6);
+      if (sd > 0) (aR = k.a), (eR = k.e), (sz = k.ab);
+      else (aL = k.a), (eL = k.e), (zL = k.ab);
+    }
+    gL = gR = 0.1;
+    ln += 0.12;
+  }
   // ---- help defender meeting the drive: brace for the charge (forearms across the chest), or go straight up with
   //      both arms (verticality) once the driver leaves his feet ----
   if (PRO && (p.helpT || 0) > 0 && !has && md === "i" && B.owner && B.owner.tm !== p.tm) {

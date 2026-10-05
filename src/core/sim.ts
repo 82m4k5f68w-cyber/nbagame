@@ -403,6 +403,7 @@ export const TS = {
   orbP: [0, 0], // this possession had an offensive rebound (second chance)
   cov: [0, 0], // CPU pick-and-roll coverage: 0 drop (big sits in the paint), 1 hedge (big steps out at the handler)
   dbl: [-1, -1], // CPU double-teams this opponent (P index) when he has the ball: the hottest scorer on the floor
+  hud: 0, // timeout huddle time left (players gather in front of their benches)
 };
 function scoutNew() {
   return { a: [0, 0, 0], m: [0, 0, 0], c: [0, 0, 0] };
@@ -425,6 +426,7 @@ function resetRules() {
   TS.gt = 0;
   TS.qs = [];
   TS.adv = -1;
+  TS.hud = 0;
   TS.mu = [null, null];
   TS.sk = [scoutNew(), scoutNew()];
   TS.gp = [0, 0];
@@ -641,7 +643,8 @@ export function callTO(t: number, why = "") {
   TS.mom *= 0.3;
   TS.run = [t, 0];
   if (!dead) pend = t;
-  rs = 2;
+  rs = 3.2;
+  TS.hud = 3.2; // both teams huddle in front of their benches (deadBall)
   RQ = 0;
   if (q >= 4 && bcast() < 120 && pend === t && cfg.NP > 1) {
     TS.adv = t;
@@ -3311,6 +3314,7 @@ export function upd(dt: number) {
  *  tug their jerseys; a man on the floor gets helped up by the nearest teammate (also during inbounds). */
 function deadBall(dt: number) {
   const NP = cfg.NP;
+  if ((TS.hud || 0) > 0) TS.hud = rs > 0 ? TS.hud - dt : 0;
   for (const p of P) {
     if (p.off || (ftq && ftq.i >= 0)) continue;
     // help a teammate up
@@ -3331,6 +3335,24 @@ function deadBall(dt: number) {
       }
     }
     if (rs <= 0) continue; // inbounds: everyone else holds his spot
+    if ((TS.hud || 0) > 0 && !cfg.HALF) {
+      // timeout huddle: a tight circle in front of the bench (far sideline), facing in; hands in at the end
+      const tm = P.filter((o) => o.tm === p.tm && !o.off),
+        j = tm.indexOf(p),
+        cx = 470 + (p.tm ? 1 : -1) * 130,
+        cy = 34,
+        a = (j / tm.length) * Math.PI * 2 + 0.4,
+        r = 15 + tm.length * 2,
+        tx = cx + Math.cos(a) * r,
+        ty = cy + Math.sin(a) * r,
+        d = Math.hypot(tx - p.x, ty - p.y);
+      p.hcx = cx;
+      p.hcy = cy;
+      if (d > 5) (p.in.dx = ((tx - p.x) / d) * Math.min(0.75, d / 40)), (p.in.dy = ((ty - p.y) / d) * Math.min(0.75, d / 40));
+      else (p.in.dx = p.in.dy = 0), (p.f = Math.atan2(cy - p.y, cx - p.x));
+      p.hudT = d < 12 && TS.hud < 0.75 ? 0.2 : 0; // hands in
+      continue;
+    }
     // jog back: the team inbounding toward its backcourt, the other team back on defense
     const off = p.tm === pend,
       tx = off ? hoop(1 - pend) + (hoop(1 - pend) > 470 ? -170 : 170) : hoop(pend) + (hoop(pend) > 470 ? -150 : 150),

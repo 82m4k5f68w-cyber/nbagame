@@ -348,6 +348,13 @@ export const ANIMS: [string, Setup][] = [
     },
   ],
   [
+    "Timeout huddle: hands in",
+    (p: any) => {
+      stand(p);
+      (p.hudT = 0.2), (p.hcx = p.x + Math.cos(p.f) * 16), (p.hcy = p.y + Math.sin(p.f) * 16);
+    },
+  ],
+  [
     "Help side: pistols",
     (p: any) => {
       stand(p);
