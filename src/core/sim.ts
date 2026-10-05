@@ -398,6 +398,7 @@ export const TS = {
   gpT: [0, 0], // possessions since the last adjustment
   trT: [-99, -99], // when each team last got the ball live (defensive rebound, loose ball): transition window
   tr: [0, 0], // pushing in transition right now (handler attacks, wings run the lanes)
+  fbA: [-1, -1], // the transition (trT) last announced
   xs: { paint: [0, 0], fb: [0, 0], sec: [0, 0] }, // broadcast splits per team
   orbP: [0, 0], // this possession had an offensive rebound (second chance)
   cov: [0, 0], // CPU pick-and-roll coverage: 0 drop (big sits in the paint), 1 hedge (big steps out at the handler)
@@ -1905,7 +1906,8 @@ export function ai(p: Player, dt: number) {
       }
       const adv = back <= (NP >= 4 ? 1 : 0) || (back === 2 && NP === 5 && !!ahead && T - TS.trT[t] < 2.5);
       if (adv) {
-        if (!TS.tr[t]) (STAT.fb = (STAT.fb || 0) + 1), txtW(back ? "FAST BREAK" : "OPEN FLOOR", p.x, p.y, 90, "#ffd23f"), exc(0.5), cm("break", p.n, back ? "" : "open");
+        // (announced once per live-ball change of possession, however often the push stops and restarts)
+        if (!TS.tr[t] && TS.fbA[t] !== TS.trT[t]) (TS.fbA[t] = TS.trT[t]), (STAT.fb = (STAT.fb || 0) + 1), txtW(back ? "FAST BREAK" : "OPEN FLOOR", p.x, p.y, 90, "#ffd23f"), exc(0.5), cm("break", p.n, back ? "" : "open");
         TS.tr[t] = 1;
         if (ahead && D > 150 && T - LASTP[t] > 0.5 && Math.random() < dt * 6) {
           i.pass = ahead; // hit the man ahead (a lob if he's at the rim)
