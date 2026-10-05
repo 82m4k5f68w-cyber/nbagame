@@ -1585,7 +1585,7 @@ export function pose3(p: Player) {
   // when contact ends (a pass, a shot), so the correction itself never pops; an IK branch flip is ignored.
   {
     const K = p.ctK || (p.ctK = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), // per arm: a, e, ab of the last solution + target x, y, z
-      drib = PRO && has && md === "i" && !p.postA && !hold && inb <= 0 && B.mode === "held" && B.dtop != null && !(p.pT > 0),
+      drib = PRO && has && md === "i" && !p.postA && !hold && inb <= 0 && B.mode === "held" && B.dtop != null && !(p.pT > 0) && !(p.mvT > 0 && (p.mvk === 2 || p.mvk === 3)), // (spins and behind-the-backs carry the ball on their own hand paths)
       bd = Math.hypot(B.x - p.x, B.y - p.y),
       cl = (B.vx * (p.x - B.x) + B.vy * (p.y - B.y)) / (bd || 1), // closing speed of the pass
       tta = cl > 30 ? (bd - 24) / cl : 9, // seconds until it reaches the hands
@@ -1655,8 +1655,9 @@ export function pose3(p: Player) {
       const da = drib || cat ? wrapPi(K[0] - o.aR) : K[0] - o.aR; // (fades / contests: the plain difference is continuous - no +-pi wrap to pop at)
       // (an IK branch flip is not a correction; a fade keeps the last live guard, so a solution that was never shown
       // does not appear while fading out)
-      if (drib || cat) p.ctRg = clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
-      else if (con) p.ctRg = 1;
+      // (eased, never switched: a guard flickering between 0 and 1 tick to tick was a pop of its own)
+      const gR = drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctRg ?? 1;
+      p.ctRg = (p.ctRg ?? gR) + (gR - (p.ctRg ?? gR)) * Math.min(1, DT * 14);
       const w = p.ctR * (p.ctRg ?? 1);
       (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
@@ -1668,8 +1669,8 @@ export function pose3(p: Player) {
       }
       const z0 = o.zL ?? o.sz,
         da = drib || cat ? wrapPi(K[3] - o.aL) : K[3] - o.aL;
-      if (drib || cat) p.ctLg = clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1);
-      else if (con) p.ctLg = 1;
+      const gL2 = drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctLg ?? 1;
+      p.ctLg = (p.ctLg ?? gL2) + (gL2 - (p.ctLg ?? gL2)) * Math.min(1, DT * 14);
       const w = p.ctL * (p.ctLg ?? 1);
       (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
