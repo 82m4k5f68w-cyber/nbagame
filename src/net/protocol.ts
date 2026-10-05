@@ -203,12 +203,13 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
   }
 }
 /** Pro Play pose flags + the miss face, packed in one int (base-64 digits): hand-up contest, plant step, rim body
- *  english (+ its lean), pass style, double clutch, frustration, released. So guests see the same body language. */
+ *  english (+ its lean), pass style, double clutch, frustration, released, chinned, hedge, help, huddle hands-in (40
+ *  bits: still exact in a double). So guests see the same body language. */
 const q6 = (v: number, s: number) => Math.max(0, Math.min(63, r((v || 0) * s)));
 function proFlags(p: any) {
   return (
     q6(p.hupT, 100) +
-    64 * (q6(p.plantT, 100) + 64 * (q6(p.engT, 100) + 64 * (Math.max(0, Math.min(31, r((p.eng || 0) * 15) + 16)) + 32 * ((p.pk & 3) + 4 * (Math.min(31, q6(p.dcl, 100)) + 32 * (Math.min(31, q6(p.frT, 10)) + 32 * ((p.rl ? 1 : 0) + 2 * ((p.chinT > 0 ? 1 : 0) + 2 * (p.hdgT > 0 ? 1 : 0)))))))))
+    64 * (q6(p.plantT, 100) + 64 * (q6(p.engT, 100) + 64 * (Math.max(0, Math.min(31, r((p.eng || 0) * 15) + 16)) + 32 * ((p.pk & 3) + 4 * (Math.min(31, q6(p.dcl, 100)) + 32 * (Math.min(31, q6(p.frT, 10)) + 32 * ((p.rl ? 1 : 0) + 2 * ((p.chinT > 0 ? 1 : 0) + 2 * ((p.hdgT > 0 ? 1 : 0) + 2 * ((p.helpT > 0 ? 1 : 0) + 2 * (p.hudT > 0 ? 1 : 0)))))))))))
   );
 }
 function proApply(p: any, v: number) {
@@ -227,6 +228,9 @@ function proApply(p: any, v: number) {
   p.rl = d(2);
   p.chinT = d(2) ? 0.2 : 0; // (chinned rebound: heldBall 4 on the guest too)
   p.hdgT = d(2) ? 0.2 : 0; // (hedge / trap: arms wide)
+  p.helpT = d(2) ? 0.2 : 0; // (help defender: brace / verticality)
+  p.hudT = d(2) ? 0.2 : 0; // (timeout huddle: hands in - the circle's centre is fixed per team)
+  if (p.hudT) (p.hcx = 470 + (p.tm ? 1 : -1) * 130), (p.hcy = 34);
 }
 /** Discrete per-player fields (never interpolated). */
 export function applyDiscrete(p: any, a: number[], o: number) {
