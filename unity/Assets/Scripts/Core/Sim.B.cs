@@ -19,8 +19,9 @@ namespace Hoops.Core
 
     public partial class Player
     {
-        public double lc, perf, bmp, heat, kickT, hitX, hitY, oop, hangT, pk, pT; // hk act actT cel celT hitT off: Pose.Rest.cs
+        public double lc, perf, bmp, heat, kickT, hitX, hitY, oop, hangT, pk, pT; // hk, hitT, act, actT, cel, celT, off: Pose.Rest.cs
         public double? cw, mvEnd;
+
         public Tg tg;
     }
 
@@ -139,7 +140,8 @@ namespace Hoops.Core
             return null;
         }
 
-        static Player PAt(int k) => k >= 0 && k < P.Count ? P[k] : null; // (JS P[k] reads undefined out of range)
+        public static Player PAt(int k) => k >= 0 && k < P.Count ? P[k] : null; // (JS P[k] reads undefined out of range)
+        public static Player PAt(double k) => PAt((int)k);
 
         public static bool isH(Player p)
         {
@@ -450,7 +452,7 @@ namespace Hoops.Core
                     Player mate = blk;
                     double md = 1e9;
                     foreach (var qq in P)
-                        if (qq.tm == blk.tm && qq != blk && !T(qq.off))
+                        if (qq.tm == blk.tm && qq != blk && !Util.T(qq.off))
                         {
                             double d = Hypot(qq.x - blk.x, qq.y - blk.y);
                             if (d < md && d < 160) { md = d; mate = qq; }

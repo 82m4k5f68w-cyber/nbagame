@@ -1,0 +1,1166 @@
+// Port of src/core/sim.ts lines 3669-4449: matchups (manOf, starOf, isoNow), half-court plays (Play / PLAY, newPlay,
+// offBall + the joint spacing assignment SPA), loose balls / rebounding (loose), cuts, shot clip choice (pickClip),
+// shooting-foul contact model (FLAG, shootingFoul), contests (contestRaw / contestOf), body collisions + screens
+// (collide), the cloth net (NS, NETS, SEGR, netSim, inNet) and instant replays / highlights (REC ring buffer).
+// Per-tick paths allocate nothing (scratch arrays / lists, no LINQ, no lambdas).
+using System;
+using System.Collections.Generic;
+using static Hoops.Core.Util;
+using static Hoops.Core.Data;
+using static Hoops.Core.Sim;
+using static Hoops.Core.Pose;
+
+namespace Hoops.Core
+{
+    /// <summary>Half-court play (sim.ts Play). kind "pnr" | "pin" | "flare"; ph "go" | "set" | "out".</summary>
+    public sealed class Play
+    {
+        public string kind;
+        public double t0;
+        public Player scr; // screener
+        public Player use; // player using the screen
+        public Player def; // defender being screened
+        public string ph;
+        public double sx, sy, setAt;
+        public double? rd; // pick-and-roll read (CPU screeners): 0 set it, 1 slip it to the rim, 2 ghost it and pop to the arc
+    }
+
+    /// <summary>Spacers' joint spot assignment, once per tick per team (sim.ts SPA).</summary>
+    public sealed class SpaState
+    {
+        public double t = -1, at = -1;
+        public Dictionary<Player, int> m = new Dictionary<Player, int>();
+    }
+
+    /// <summary>A net knot (verlet point). f = fixed to the rim.</summary>
+    public sealed class NetKnot
+    {
+        public double x, y, z, px, py, pz;
+        public bool f;
+    }
+
+    /// <summary>A net constraint [a, b, rest length, stiffness, strand?] - strands are drawn; ring ties only hold the shape.</summary>
+    public sealed class NetCon
+    {
+        public NetKnot a, b;
+        public double rest, k;
+        public bool draw;
+    }
+
+    public sealed class Net
+    {
+        public NetKnot[] p;
+        public NetCon[] c;
+        public double hx, quiet, ring;
+    }
+
+    /// <summary>A saved highlight (copy of the replay buffer): label, frame count, frames, quarter, speed.</summary>
+    public sealed class Highlight
+    {
+        public string s;
+        public double n;
+        public float[] buf;
+        public double? q;
+        public double k;
+    }
+
+    /// <summary>Live state saved while a replay plays (sim.ts LIVE).</summary>
+    public sealed class LiveState
+    {
+        public double[][] p; // [x, y, z, f] per player
+        public Q[] q;        // pose copies (null = none)
+        public double[] b;   // ball [x, y, z, a]
+    }
+
+    public partial class PlayerAi
+    {
+        public double sealT, cutT;
+        public double? spj; // spacing spot index last assigned (SPA stickiness)
+    }
+
+    public static partial class Sim
+    {
+        // (off / act / ... are declared with different types by different parts until integration)
+        static bool G_on(bool v) => v;
+        static bool G_on(double v) => Util.T(v);
+        static bool G_on(double? v) => Util.T(v);
+
+        static Player G_at(int k) => k >= 0 && k < P.Count ? P[k] : null;
+
+        public static Player manOf(Player o)
+        {
+            int t = 1 - (int)o.tm;
+            int oi = P.IndexOf(o);
+            foreach (var d in P) if (d.tm == t && d.manT > 0 && d.man == oi) return d;
+            var mu = TS.mu[t];
+            if (mu != null)
+            {
+                int k = -1;
+                for (int j = 0; j < mu.Length; j++) if (mu[j] == o.k) { k = j; break; }
+                if (k >= 0) return G_at(t * cfg.NP + k);
+            }
+            return G_at(t * cfg.NP + (int)o.k);
+        }
+
+        /// <summary>Isolation: called by the user, or the CPU clears out for its star late in the clock.</summary>
+        public static Player starOf(double t)
+        {
+            // (stable sort by ovr descending, [0] = the first of the best)
+            Player best = null;
+            double bo = 0;
+            foreach (var q in P)
+            {
+                if (q.tm != t) continue;
+                double o = ovr(q);
+                if (best == null || o > bo) { best = q; bo = o; }
+            }
+            return best;
+        }
+
+        public static bool isoNow(double t) => TS.pc[(int)t] == 4 || (!ctHas(t) && shot < 8 && B.owner == starOf(t));
+
+        public static readonly Play[] PLAY = { null, null };
+        static readonly List<Player> G_ms = new List<Player>(10);
+
+        static double G_offOf(Player q) => q.sg != null && Util.T(q.sg.off) ? q.sg.off : 0;
+
+        public static Play newPlay(double t)
+        {
+            var h = B.owner;
+            var ms = G_ms;
+            ms.Clear();
+            foreach (var q in P) if (q.tm == t && q != h) ms.Add(q);
+            if (h == null || ms.Count < 2) return null;
+            double pc = TS.pc[(int)t];
+            // (stable sorts, descending: [0] = the first of the best)
+            Player big = null, sh = null;
+            double bk = 0, sk = 0;
+            foreach (var q in ms)
+            {
+                double v = q.ht * q.bk + q.i / 60;
+                if (big == null || v > bk) { big = q; bk = v; }
+                double w = q.c + 30 * G_offOf(q);
+                if (sh == null || w > sk) { sh = q; sk = w; }
+            }
+            double r = Rng.R();
+            // Curry-style shooters get pindowns/flares; otherwise pick-and-roll is the bread and butter
+            string kind = pc == 1 ? "pnr" : pc == 2 ? "pin" : pc == 3 ? "flare" : sh.c >= 82 && sh != big && r < 0.5 ? (r < 0.3 ? "pin" : "flare") : "pnr";
+            Player scr;
+            if (kind == "pnr") scr = big;
+            else
+            {
+                scr = null;
+                double sv = 0;
+                foreach (var q in ms)
+                {
+                    if (q == sh) continue;
+                    double v = q.ht * q.bk;
+                    if (scr == null || v > sv) { scr = q; sv = v; }
+                }
+            }
+            var use = kind == "pnr" ? h : sh;
+            return new Play { kind = kind, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0 };
+        }
+
+        public static readonly SpaState SPA = new SpaState();
+        static readonly double[] G_spX = new double[5], G_spY = new double[5];
+        static readonly double[,] G_cost = new double[5, 5];
+        static readonly bool[] G_used = new bool[5];
+        static readonly int[] G_cur = new int[5], G_out = new int[5];
+        static double G_best;
+        static int G_n;
+
+        static bool G_nearBusy(double x, double y, Player scr, Player use, Player h, double t)
+        {
+            if (scr != null && scr.tm == t && Hypot(scr.x - x, scr.y - y) < 80) return true;
+            if (use != null && use.tm == t && Hypot(use.x - x, use.y - y) < 80) return true;
+            if (h != null && h.tm == t && Hypot(h.x - x, h.y - y) < 80) return true;
+            return false;
+        }
+
+        static void G_rec(int k, double acc)
+        {
+            if (acc >= G_best) return;
+            if (k == G_n)
+            {
+                G_best = acc;
+                for (int j = 0; j < G_n; j++) G_out[j] = G_cur[j];
+                return;
+            }
+            for (int j = 0; j < 5; j++)
+                if (!G_used[j])
+                {
+                    G_used[j] = true;
+                    G_cur[k] = j;
+                    G_rec(k + 1, acc + G_cost[k, j]);
+                    G_used[j] = false;
+                }
+        }
+
+        public static bool offBall(Player p, double t)
+        {
+            if (cfg.NP < 2) return false;
+            int ti = (int)t;
+            double hx = hoop(t),
+                dir = hx > 470 ? -1 : 1; // from the hoop toward half court
+            var h = B.owner;
+            {
+                // never camp in the lane (3 seconds): step out to the short corner / wing
+                int k = P.IndexOf(p);
+                if (cfg.VIOL != 0 && TS.lane[k] > 2.1)
+                {
+                    mv(p, hx + dir * 205, p.y < HY ? HY - 130 : HY + 130, 1.15);
+                    p.br = "lane";
+                    return true;
+                }
+            }
+            bool iso = isoNow(t);
+            Play pl = iso ? null : PLAY[ti];
+            if (!iso && (pl == null || T - pl.t0 > 5.5 || pl.use.tm != t || (pl.kind == "pnr" && pl.use != h) || pl.scr == h)) pl = PLAY[ti] = newPlay(t);
+            if (iso) PLAY[ti] = null;
+            OFFS[ti] = null;
+            if (pl == null && !iso) return false;
+            Player scr = pl != null ? pl.scr : null,
+                use = pl != null ? pl.use : null,
+                def = pl != null ? (pl.def = manOf(use)) : null;
+            double side = (use ?? p).y < HY ? -1 : 1;
+            if (pl != null)
+            {
+                // screen spot: on the defender's hip, on the side the user will run past
+                if (pl.ph != "set")
+                {
+                    if (pl.kind == "pnr")
+                    {
+                        double mid = HY - use.y > 0 ? 1 : -1; // screen toward the middle of the floor
+                        pl.sx = def.x + dir * 6;
+                        pl.sy = def.y + mid * 13;
+                    }
+                    else if (pl.kind == "pin")
+                    {
+                        pl.sx = hx + dir * 120;
+                        pl.sy = HY + side * 70;
+                    }
+                    else
+                    {
+                        pl.sx = hx + dir * 175;
+                        pl.sy = HY - side * 40;
+                    }
+                }
+                if (p == scr)
+                {
+                    p.br = "scr";
+                    if (pl.ph == "go")
+                    {
+                        if (T - pl.t0 < 0.05 && isH(h) && Util.T(TS.pc[ti])) txtW(PCN[(int)TS.pc[ti]], p.x, p.y, 95, "#9fe7ff");
+                        // read the coverage once: a hedge / trap jumps the handler - slip to the rim before contact; a
+                        // switch-everything defense just swaps - a shooting screener ghosts it (pops before anybody switches)
+                        if (pl.kind == "pnr" && pl.rd == null)
+                        {
+                            double cov = TS.cov[1 - ti],
+                                ds = TS.ds[1 - ti],
+                                r = Rng.R();
+                            pl.rd = (cov == 1 || TS.dbl[1 - ti] == P.IndexOf(use)) && r < 0.45 ? 1 : ds == 3 && p.c >= 78 && r < 0.5 ? 2 : 0;
+                        }
+                        if (Util.T(pl.rd) && Hypot(p.x - pl.sx, p.y - pl.sy) < 26)
+                        {
+                            pl.ph = "out";
+                            pl.setAt = T;
+                            statAdd(pl.rd == 1 ? "slip" : "ghost", 1);
+                            if (pl.rd == 1 && Rng.R() < 0.35) cm("slip", p.n);
+                            return true;
+                        }
+                        mv(p, pl.sx, pl.sy, 1.2);
+                        if (Hypot(p.x - pl.sx, p.y - pl.sy) < 7 || T - pl.t0 > 2.6)
+                        {
+                            pl.ph = "set";
+                            pl.setAt = T;
+                        }
+                    }
+                    else if (pl.ph == "set")
+                    {
+                        p.@in.dx = p.@in.dy = 0; // planted
+                        p.vx *= 0.5;
+                        p.vy *= 0.5;
+                        p.setT = 0.25;
+                        if (T - pl.setAt > (pl.kind == "pnr" ? 1.25 : 1.5)) pl.ph = "out";
+                    }
+                    else
+                    {
+                        // roll hard to the rim, or pop to the arc if he can shoot (read the coverage: a big sitting back
+                        // in drop leaves the arc open for any decent shooter; a hedge leaves the rim open, so everybody
+                        // dives; a ghost always pops)
+                        double cov = TS.cov[1 - ti];
+                        bool pop = pl.rd == 2 || (pl.rd != 1 && (cov == 1 ? false : scr.c >= (cov == 0 && !ctHas(1 - t) ? 74 : 80) && scr.i < 85));
+                        double gx = pop ? hx + dir * 225 : hx + dir * 30,
+                            gy = pop ? HY + side * -60 : HY + side * 14;
+                        mv(p, gx, gy, 1.2);
+                        var mo = manOf(p);
+                        if (!pop && Hypot(p.x - hx, p.y - HY) < 90 && Hypot(mo.x - p.x, mo.y - p.y) > 30) OFFS[ti] = p;
+                        if (pop && Hypot(mo.x - p.x, mo.y - p.y) > 40) OFFS[ti] = p;
+                    }
+                    return true;
+                }
+                if (p == use && pl.kind != "pnr")
+                {
+                    p.br = "use";
+                    if (pl.ph == "go") mv(p, hx + dir * 28, HY + side * 60, 1); // set up low
+                    else
+                    {
+                        // run tight off the screener's shoulder, then up to the wing/top
+                        double gx = pl.kind == "pin" ? hx + dir * 230 : hx + dir * 220,
+                            gy = pl.kind == "pin" ? HY + side * 95 : HY - side * 150;
+                        bool nearS = Hypot(p.x - scr.x, p.y - scr.y) > 22 && pl.ph == "set";
+                        mv(p, nearS ? scr.x + dir * 4 : gx, nearS ? scr.y + side * 9 : gy, 1.25);
+                        if (Hypot(def.x - p.x, def.y - p.y) > 34 && Hypot(p.x - hx, p.y - HY) > 180) OFFS[ti] = p;
+                    }
+                    return true;
+                }
+            }
+            // a post scorer with a small on him (after a switch): seal on the ball-side block and call for it
+            if (p != scr && p != use && cfg.NP > 1 && !G_ctrls(t, p))
+            {
+                var mm = manOf(p);
+                // (a short window per possession, and only while the ball is out at the arc to feed him: no clogged lane)
+                if (mm != null && !G_on(mm.off) && p.i >= 76 && p.ht - mm.ht >= 0.4 && !(TS.lane[P.IndexOf(p)] > 1.6) && p.ai.sealT < 2.5 && Hypot(hx - h.x, HY - h.y) > 200 && Hypot(hx - h.x, HY - h.y) < 300)
+                {
+                    p.ai.sealT = p.ai.sealT + DT;
+                    p.br = "seal";
+                    double bs = h.y < HY ? -1 : 1;
+                    mv(p, hx + dir * 40, HY + bs * 48, 1.1);
+                    if (Hypot(p.x - (hx + dir * 40), p.y - (HY + bs * 48)) < 20)
+                    {
+                        p.callT = Math.Max(p.callT, 0.3);
+                        statAdd("seal", 1);
+                    }
+                    return true;
+                }
+            }
+            // spacing + backdoor cuts for everyone else
+            var ms = G_ms;
+            ms.Clear();
+            foreach (var q in P) if (q.tm == t && q != h && q != scr && q != use) ms.Add(q);
+            G_spX[0] = hx + dir * 15; G_spY[0] = HY - 230;
+            G_spX[1] = hx + dir * 15; G_spY[1] = HY + 230;
+            G_spX[2] = hx + dir * 190; G_spY[2] = HY - 175;
+            G_spX[3] = hx + dir * 190; G_spY[3] = HY + 175;
+            G_spX[4] = hx + dir * 250; G_spY[4] = HY;
+            int kk = ms.IndexOf(p);
+            if (kk < 0) return false;
+            // the spacers' spots are assigned together, once per tick: the assignment with the least total travel (no
+            // one running across the floor through a teammate to the spot nobody else wanted), a spot where the ball is
+            // or where the driver is heading taken last, and a little stickiness so nobody flip-flops between two spots
+            if (SPA.t != t || SPA.at != T)
+            {
+                SPA.t = t;
+                SPA.at = T;
+                SPA.m.Clear();
+                double bx = h != null ? h.x + h.vx * 0.5 : B.x,
+                    by = h != null ? h.y + h.vy * 0.5 : B.y;
+                int n = Math.Min(ms.Count, 5);
+                for (int k = 0; k < n; k++)
+                {
+                    var q = ms[k];
+                    for (int j = 0; j < 5; j++)
+                    {
+                        double sx = G_spX[j], sy = G_spY[j];
+                        G_cost[k, j] =
+                            Hypot(sx - q.x, sy - q.y) +
+                            (Hypot(sx - B.x, sy - B.y) < 90 || Hypot(sx - bx, sy - by) < 120 ? 400 : 0) +
+                            (G_nearBusy(sx, sy, scr, use, h, t) ? 300 : 0) +
+                            (q.ai.spj == j ? -45 : 0);
+                    }
+                }
+                G_best = 1e18;
+                G_n = n;
+                for (int j = 0; j < 5; j++) G_used[j] = false;
+                G_rec(0, 0);
+                for (int k = 0; k < n; k++)
+                {
+                    SPA.m[ms[k]] = G_out[k];
+                    ms[k].ai.spj = G_out[k];
+                }
+            }
+            int si = SPA.m.TryGetValue(p, out var sv) ? sv : 0;
+            double spX = G_spX[si], spY = G_spY[si];
+            var md = manOf(p);
+            bool deny = Hypot(md.x - p.x, md.y - p.y) < 20 && Hypot(md.x - hx, md.y - HY) > Hypot(p.x - hx, p.y - HY) - 5;
+            if (deny && !iso && Rng.R() < 0.02) p.ai.cutT = T;
+            p.br = Util.T(p.ai.cutT) && T - p.ai.cutT < 1.1 ? "cut" : "spot";
+            if (Util.T(p.ai.cutT) && T - p.ai.cutT < 1.1)
+            {
+                mv(p, hx + dir * 25, HY + (p.y < HY ? -18 : 18), 1.25); // backdoor
+                if (Hypot(md.x - p.x, md.y - p.y) > 26) OFFS[ti] = p;
+            }
+            else mv(p, spX + Math.Sin(T * 0.8 + p.k) * 10, spY, 0.95);
+            return true;
+        }
+
+        /// <summary>CT.some(c => c.tm === t && P[c.idx] === p)</summary>
+        static bool G_ctrls(double t, Player p)
+        {
+            for (int k = 0; k < CT.Count; k++) if (CT[k].tm == t && G_at(CT[k].idx) == p) return true;
+            return false;
+        }
+
+        // scratch for loose(): [distance, slot] pairs sorted stably by distance
+        static readonly double[] G_ld = new double[16];
+        static readonly int[] G_lk = new int[16];
+        static void G_sortPairs(int n)
+        {
+            for (int a = 1; a < n; a++)
+            {
+                double v = G_ld[a];
+                int kv = G_lk[a];
+                int b = a - 1;
+                while (b >= 0 && Cmp(G_ld[b] - v) > 0) { G_ld[b + 1] = G_ld[b]; G_lk[b + 1] = G_lk[b]; b--; }
+                G_ld[b + 1] = v;
+                G_lk[b + 1] = kv;
+            }
+        }
+
+        public static void loose(Player p, double t)
+        {
+            int NP = cfg.NP;
+            var i = p.@in;
+            double hx = B.last != null ? hoop(B.last.tm) : hoop(t),
+                dir = hx > 470 ? -1 : 1;
+            int tb = (int)p.tm * NP;
+            for (int k = 0; k < NP; k++)
+            {
+                var q = P[tb + k];
+                G_ld[k] = Hypot(q.x - hx, q.y - HY);
+                G_lk[k] = k;
+            }
+            G_sortPairs(NP);
+            int rk = -1;
+            for (int k = 0; k < NP; k++) if (G_lk[k] == p.k) { rk = k; break; }
+            int K2 = NP > 2 ? 2 : 1;
+            double d = Hypot(B.x - p.x, B.y - p.y);
+            bool sh = B.last != null && B.last.tm == p.tm,
+                fly = Util.T(B.sh) && B.last != null && B.z > 45 && B.age < 1.3 && B.vz > -120 && Hypot(B.x - hx, B.y - HY) > 40;
+            if (fly && !sh && NP > 1 && rk < 3)
+            {
+                // box out: get between your man and the rim, then hold him there
+                var man = guardOf(p);
+                double md = Hypot(man.x - hx, man.y - HY);
+                if (md < 160)
+                {
+                    double mdd = Util.T(md) ? md : 1;
+                    mv(p, man.x + (hx - man.x) * (12 / mdd), man.y + (HY - man.y) * (12 / mdd), 1.15);
+                    if (Hypot(man.x - p.x, man.y - p.y) < 18) p.boxT = 0.3;
+                    return;
+                }
+            }
+            if (fly)
+            {
+                // (modern spacing: the shooting side sends its closest man and a big; the rest get back)
+                if (rk < K2 && !(sh && rk > 0 && p.ht < 6.75 && NP > 2)) mv(p, hx + dir * (26 + rk * 22), HY + (rk != 0 ? 36 : -8) * (Util.T(p.k % 2) ? 1 : -1), 1.1);
+                else if (sh) mv(p, hx + dir * 190, HY + (p.k - 2) * 45, 0.7);
+                else mv(p, hx + dir * 70, HY + (p.k - 2) * 50, 0.8);
+            }
+            else
+            {
+                for (int k = 0; k < NP; k++)
+                {
+                    var q = P[tb + k];
+                    G_ld[k] = Hypot(q.x - B.x, q.y - B.y);
+                    G_lk[k] = k;
+                }
+                G_sortPairs(NP);
+                bool nr = false;
+                for (int k = 0; k < K2 && k < NP; k++) if (G_lk[k] == p.k) { nr = true; break; }
+                if (nr || d < 90)
+                {
+                    mv(p, B.x + B.vx * 0.25, B.y + B.vy * 0.25, 1.15);
+                    // dive on the floor for a loose ball when the other team is closing in on it
+                    if (!Util.T(PREDICT) && !Util.T(B.sh) && B.z < 14 && d > 12 && d < 36 && p.z <= 0 && !(p.actT > 0) && Rng.R() < 0.12)
+                    {
+                        double rival = 1e9;
+                        foreach (var q in P) if (q.tm != p.tm) rival = Math.Min(rival, Hypot(q.x - B.x, q.y - B.y));
+                        if (rival < 45)
+                        {
+                            p.act = 4;
+                            p.actT = 0.75;
+                            p.stt.dv++;
+                            p.vx = ((B.x - p.x) / d) * 300;
+                            p.vy = ((B.y - p.y) / d) * 300;
+                            if (isH(p) || isH(B.last)) txtW("DIVE!", p.x, p.y, 70, "#ffd23f");
+                        }
+                    }
+                    if (B.z > 50 && d < 28 && p.z <= 0) i.sd = true;
+                }
+                else if (sh) mv(p, hx + dir * 190, HY + (p.k - 2) * 45, 0.7);
+                else mv(p, hx + dir * 80, HY + (p.k - 2) * 50, 0.8);
+            }
+        }
+
+        public static bool cut(Player p, double t)
+        {
+            double hx = hoop(t),
+                dir = hx > 470 ? -1 : 1,
+                ph = (T * 0.7 + p.k * 1.3) % 4;
+            if (ph < 0.8)
+            {
+                mv(p, hx + dir * 40, HY + (Util.T(p.k % 2) ? 30 : -30), 1.1);
+                return true;
+            }
+            if (ph < 1.8)
+            {
+                mv(p, hx + dir * 215, HY + (Util.T(p.k % 2) ? 1 : -1) * (80 + p.k * 20), 1);
+                return true;
+            }
+            return false;
+        }
+
+        public static double pickClip(Player p, double D, bool lay)
+        {
+            if (p.fsv != null)
+            {
+                double v = p.fsv.Value;
+                p.fsv = null;
+                return v;
+            }
+            double c = contestOf(p).Item1,
+                dir = hoop(p.tm) > 470 ? 1 : -1,
+                fw = p.vx * dir,
+                sp = Hypot(p.vx, p.vy);
+            if (lay)
+            {
+                // finish package: picked by leaping ability, speed, approach angle and traffic
+                double hx = hoop(p.tm);
+                bool bse = Math.Abs(p.y - HY) > 40 && Math.Abs(p.x - hx) < 45; // driving along the baseline
+                double r = Rng.R();
+                if (D < 50 && p.j >= 55)
+                {
+                    if (c > 0.4) return 11; // two-hand power through traffic
+                    if (bse && r < 0.5) return 14; // reverse slam along the baseline
+                    if (sp > 190 && p.j >= 75) return r < 0.3 ? 15 : r < 0.65 ? 13 : 12; // 360 / windmill / tomahawk
+                    if (p.j >= 70 && r < 0.45) return 12;
+                    return r < 0.55 ? 6 : 11;
+                }
+                if (c > 0.35 && sp > 60) return 7; // euro step around the help
+                if (bse && r < 0.6) return 17; // reverse layup under the rim
+                if (c < 0.2 && sp > 140) return 16; // finger roll in space
+                return 5;
+            }
+            if (p.sg != null && Util.T(p.sg.cl)) return 9;
+            if (p.sbw > 0) return 3;
+            {
+                // runners and leaners: shaped by how the shooter is moving
+                double lat = Math.Abs(-p.vx * Math.Sin(p.f) + p.vy * Math.Cos(p.f));
+                if (fw > 150 && D > 90 && D < 230) return 21;
+                if (lat > 130 && D > 150) return 20;
+            }
+            if (fw > 110 && D > 110) return 8;
+            if (p.st == 4) return 4;
+            if (p.st == 2 || (c > 0.5 && p.st != 1)) return 2;
+            if (p.st == 3) return 3;
+            // standard jumpers use the motion-captured shot (players with a hand-tuned SIG form keep their classic clip)
+            return p.st == 1 ? 1 : SIGK(p) ? 0 : 22;
+        }
+
+        /// <summary>Flagrant flag of the last shooting foul (1 = flagrant 1).</summary>
+        public static double FLAG = 0;
+        public static double LASTP_FOUL = 0.8; // how clear the last shooting foul was (challenge odds)
+
+        /// <summary>Shooting-foul contact model. A foul needs real contact: a hard closeout into the shooter's space, a
+        /// defender flying sideways through him (straight up = verticality, rarely a foul), or bodies already touching.
+        /// Good defenders foul less; drives and strong finishers draw more. Returns the fouling defender or null.</summary>
+        public static Player shootingFoul(Player p, bool lay)
+        {
+            FLAG = 0;
+            if (cfg.FOULS == 0) return null;
+            Player best = null;
+            double bp = 0, fl = 0;
+            foreach (var o in P)
+            {
+                if (o.tm == p.tm) continue;
+                double dx = p.x - o.x,
+                    dy = p.y - o.y,
+                    d = Hypot(dx, dy);
+                if (!Util.T(d)) d = 1;
+                if (d > 28) continue;
+                double close = (o.vx * dx + o.vy * dy) / d, // speed toward the shooter
+                    hs = Hypot(o.vx, o.vy);
+                double c = 0;
+                c += clamp((close - 50) / 220, 0, 1) * 0.32; // late, hard closeout
+                if (o.z > 4) c += hs > 50 ? 0.3 : 0.03; // flying in vs. straight up
+                if (d < 15) c += 0.14; // already chest to chest
+                if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2 + (hasB(p, "PZ") ? 0.08 : 0);
+                c *= (1.2 - o.d / 220) * 0.42; // (x.42: calibrated to NBA free-throw rate, ~0.22 FTA per possession)
+                if (c > bp)
+                {
+                    bp = c;
+                    best = o;
+                    fl = lay && o.z > 4 && hs > 170 && close > 140 ? 1 : 0;
+                }
+            }
+            if (best == null || Rng.R() >= clamp(bp, 0, 0.6)) return null;
+            statAdd("shootFouls", 1);
+            FLAG = Util.T(fl) && Rng.R() < 0.08 ? 1 : 0;
+            LASTP_FOUL = clamp(bp * 1.6, 0.35, 0.95);
+            return best;
+        }
+
+        /// <summary>Raw contest (0..1.5) from the closest defender within 6 ft; airborne defenders count 1.5x.</summary>
+        public static (double, Player) contestRaw(Player p)
+        {
+            var fr = lagFrame(p);
+            double ct = 0;
+            Player o2 = null;
+            for (int k = 0; k < P.Count; k++)
+            {
+                var o = P[k];
+                if (o.tm == p.tm) continue;
+                double ox = fr != null ? fr[k * 3] : o.x,
+                    oy = fr != null ? fr[k * 3 + 1] : o.y,
+                    oz = fr != null ? fr[k * 3 + 2] : o.z,
+                    d = Hypot(ox - p.x, oy - p.y);
+                if (d < 60)
+                {
+                    double c2 = (1 - d / 60) * (oz > 8 ? 1.5 : o.hupT > 0 ? 1.2 : 1) * (hasB(o, "LD") ? 1.15 : 1);
+                    if (c2 > ct)
+                    {
+                        ct = c2;
+                        o2 = o;
+                    }
+                }
+                if (d < 95 && d > 1)
+                {
+                    // a hard closeout bothers the shot before he gets there (the shooter sees him coming, hurries it)
+                    double ap = (o.vx * (p.x - ox) + o.vy * (p.y - oy)) / d,
+                        c3 = clamp((ap - 90) / 160, 0, 1) * (1 - d / 95) * 0.8;
+                    if (c3 > ct)
+                    {
+                        ct = c3;
+                        o2 = o;
+                    }
+                }
+            }
+            return (ct, o2);
+        }
+
+        public static (double, Player) contestOf(Player p)
+        {
+            var (ct, o2) = contestRaw(p);
+            return (Math.Min(1, ct * (p.sbw > 0 ? 0.25 : 1)), o2);
+        }
+
+        public static void collide()
+        {
+            for (int a = 0; a < P.Count; a++)
+                for (int b = a + 1; b < P.Count; b++)
+                {
+                    Player A = P[a],
+                        C = P[b];
+                    if (G_on(A.off) || G_on(C.off)) continue;
+                    double dx = A.x - C.x,
+                        dy = A.y - C.y,
+                        d = Hypot(dx, dy);
+                    // bodies are wider than deep: face to face they stop at 16 px, shoulder to shoulder at up to ~28 (the
+                    // rig's real shoulder width) - how sideways each one stands to the other
+                    double dm = 16;
+                    if (cfg.PRO != 0 && d < 29 && d > 0)
+                    {
+                        double sA = Math.Abs(Math.Sin(Math.Atan2(-dy, -dx) - A.f)),
+                            sC = Math.Abs(Math.Sin(Math.Atan2(dy, dx) - C.f));
+                        dm = 16 + 5 * (sA * Math.Min(1.2, A.bk) + sC * Math.Min(1.2, C.bk));
+                    }
+                    if (d < dm && d > 0 && A.z < 8 && C.z < 8)
+                    {
+                        if (cfg.PRO == 0)
+                        {
+                            double s = (16 - d) / 2 / d;
+                            A.x += dx * s;
+                            A.y += dy * s;
+                            C.x -= dx * s;
+                            C.y -= dy * s;
+                            continue;
+                        }
+                        double nx = dx / d,
+                            ny = dy / d,
+                            mA = A.bk * A.ht * (A.setT > 0 ? 3 : Util.T(A.postA) ? 1.7 : 1),
+                            mC = C.bk * C.ht * (C.setT > 0 ? 3 : Util.T(C.postA) ? 1.7 : 1),
+                            rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny,
+                            ov = dm - d;
+                        for (int w = 0; w < 2; w++)
+                        {
+                            Player sc0 = w == 0 ? A : C,
+                                df = w == 0 ? C : A;
+                            if (sc0.setT > 0 && df.tm != sc0.tm && df != B.owner)
+                            {
+                                if (!(df.scr > 0))
+                                {
+                                    statAdd("screens", 1);
+                                    sc0.stt.sa++;
+                                    df.scr = 0.55; // hits the screen: stopped dead for half a second
+                                    df.hitT = 0.35;
+                                    df.hitX = -nx * (df == A ? -1 : 1);
+                                    df.hitY = -ny * (df == A ? -1 : 1);
+                                    if (isH(B.owner) || isH(df)) txtW("SCREEN", sc0.x, sc0.y, 88, "#9ad");
+                                    var pl = PLAY[(int)sc0.tm];
+                                    // the screener's defender switches onto the ball handler some of the time
+                                    if (pl != null && pl.kind == "pnr" && Rng.R() < (TS.ds[(int)df.tm] == 3 ? 1 : 0.35))
+                                    {
+                                        var sd = manOf(sc0);
+                                        int NP = cfg.NP;
+                                        sd.man = sc0.tm * NP + pl.use.k;
+                                        sd.manT = 3;
+                                        df.man = sc0.tm * NP + sc0.k;
+                                        df.manT = 3;
+                                        // "Switch!": both point at their new man and call it out
+                                        if (!Util.T(PREDICT))
+                                        {
+                                            sd.swT = 0.7;
+                                            df.swT = 0.7;
+                                            sd.callT = 0.5;
+                                            df.callT = 0.5;
+                                        }
+                                        if (isH(B.owner) || isH(df) || isH(sd)) txtW("SWITCH!", sd.x, sd.y, 92, "#9fe7ff");
+                                    }
+                                }
+                            }
+                        }
+                        A.x += (nx * ov * mC) / (mA + mC);
+                        A.y += (ny * ov * mC) / (mA + mC);
+                        C.x -= (nx * ov * mA) / (mA + mC);
+                        C.y -= (ny * ov * mA) / (mA + mC);
+                        if (rv < 0)
+                        {
+                            double j = (-1.05 * rv) / (1 / mA + 1 / mC),
+                                hit = -rv;
+                            A.vx += (j * nx) / mA;
+                            A.vy += (j * ny) / mA;
+                            C.vx -= (j * nx) / mC;
+                            C.vy -= (j * ny) / mC;
+                            if (hit > 150 && fc <= 0 && rs <= 0 && ftq == null && inb <= 0 && cfg.FOULS != 0)
+                            {
+                                Player sx = A.setT > 0 ? A : C.setT > 0 ? C : null;
+                                if (sx != null)
+                                {
+                                    var o = sx == A ? C : A;
+                                    if (o.tm != sx.tm && Hypot(sx.vx, sx.vy) > 110 && Rng.R() < 0.35)
+                                    {
+                                        fc = 2;
+                                        txtW("ILLEGAL SCREEN", sx.x, sx.y, 95, "#ff6b4a");
+                                        tf[(int)sx.tm]++;
+                                        sx.pf++;
+                                        whistle(sx, o, 0.6);
+                                        setup(o.tm);
+                                    }
+                                }
+                            }
+                            if (hit > 60)
+                            {
+                                // both bodies react to the bump, away from each other
+                                A.hitT = C.hitT = Math.Min(0.35, hit / 500);
+                                A.hitX = nx;
+                                A.hitY = ny;
+                                C.hitX = -nx;
+                                C.hitY = -ny;
+                                for (int w = 0; w < 2; w++)
+                                {
+                                    var q = w == 0 ? A : C;
+                                    if (hit > 120) q.slow = Math.Max(q.slow, 0.12);
+                                    if (q.mode == "c" || q.mode == "s") q.bmp = Math.Min(1, q.bmp + hit / 260);
+                                }
+                                var h = B.owner;
+                                if (hit > 170 && fc <= 0 && rs <= 0 && ftq == null && inb <= 0 && h != null && (A == h || C == h) && cfg.FOULS != 0)
+                                {
+                                    var o = A == h ? C : A;
+                                    fc = 2;
+                                    if (o.tm != h.tm)
+                                    {
+                                        bool sh = h.mode == "c" || h.mode == "s";
+                                        // (no charge in the restricted area under the rim; a help defender who got there
+                                        // and set his feet draws it more often)
+                                        bool ra = Hypot(o.x - hoop(h.tm), o.y - HY) < 40;
+                                        if (!ra && Hypot(o.vx, o.vy) < 70 && Hypot(h.vx, h.vy) > 170 && Rng.R() < (o.helpT > 0 ? 0.62 : 0.5))
+                                        {
+                                            txtW("CHARGE!", h.x, h.y, 95, "#ff6b4a");
+                                            o.act = 3; // took the charge: on the floor
+                                            o.actT = 1.2;
+                                            h.cel = 12; // arguing the call
+                                            h.celT = CEL_T;
+                                            tf[(int)h.tm]++;
+                                            h.pf++;
+                                            o.stt.chg++;
+                                            fx(new Fx { k = "whistle", tm = h.tm, hasTm = true });
+                                            cm("charge", o.n, h.n);
+                                            whistle(h, o, 0.55);
+                                            setup(o.tm);
+                                        }
+                                        else if (Rng.R() < (sh ? 0.2 : 0.05) * (hit > 240 ? 1.6 : 1)) foul(o, h, sh ? "SHOOTING" : "BLOCKING", sh ? 1 : 0, 0); // (blocking: calibrated to NBA personal-foul rates)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+
+        // ---- physics net: 16-strand diamond weave, 6 rings, verlet; the ball collides with strands, not just knots ----
+        public const int NS = 16;
+        static readonly double[][] NR =
+        {
+            new[] { 7.5, 100 },
+            new[] { 6.9, 96.4 },
+            new[] { 6.2, 92.8 },
+            new[] { 5.5, 89.4 },
+            new[] { 4.9, 86.2 },
+            new[] { 4.5, 83.2 },
+        };
+        static Net[] G_nets;
+        /// <summary>One net per hoop (built on first use: partial-class static initializer order across files is not
+        /// guaranteed, and this reads HXs).</summary>
+        public static Net[] NETS => G_nets ??= G_mkNets();
+
+        static Net[] G_mkNets()
+        {
+            var r0 = new Net[HXs.Length];
+            for (int hi = 0; hi < HXs.Length; hi++)
+            {
+                double hx = HXs[hi];
+                var p = new List<NetKnot>();
+                var c = new List<NetCon>();
+                var gr = new List<List<NetKnot>>();
+                for (int r = 0; r < NR.Length; r++)
+                {
+                    gr.Add(new List<NetKnot>());
+                    for (int k = 0; k < NS; k++)
+                    {
+                        double a = ((double)k / NS) * 6.283 + (r % 2 != 0 ? 3.1416 / NS : 0);
+                        var q = new NetKnot { x = hx + Math.Cos(a) * NR[r][0], y = HY + Math.Sin(a) * NR[r][0], z = NR[r][1], f = r == 0 };
+                        q.px = q.x;
+                        q.py = q.y;
+                        q.pz = q.z;
+                        p.Add(q);
+                        gr[r].Add(q);
+                    }
+                }
+                void L(NetKnot a, NetKnot b, double k, int draw = 1) => c.Add(new NetCon { a = a, b = b, rest = Hypot(a.x - b.x, a.y - b.y, a.z - b.z), k = k, draw = draw != 0 });
+                for (int r = 1; r < NR.Length; r++)
+                    for (int k = 0; k < NS; k++)
+                    {
+                        int o = r % 2 != 0 ? 0 : -1; // odd rings sit between the knots of the ring above
+                        L(gr[r][k], gr[r - 1][(k + o + NS) % NS], 1);
+                        L(gr[r][k], gr[r - 1][(k + o + 1) % NS], 1);
+                    }
+                for (int k = 0; k < NS; k++) L(gr[NR.Length - 1][k], gr[NR.Length - 1][(k + 1) % NS], 0.6); // bottom hem
+                for (int r = 1; r < NR.Length - 1; r++) for (int k = 0; k < NS; k++) L(gr[r][k], gr[r][(k + 1) % NS], 0.18, 0); // soft hoop ties
+                r0[hi] = new Net { p = p.ToArray(), c = c.ToArray(), hx = hx, quiet = 0, ring = 0 };
+            }
+            return r0;
+        }
+
+        public const double SEGR = BR + 0.45;
+
+        /// <summary>Cloth net: verlet knots on nylon ropes (stretch-resistant, slack in compression), real gravity,
+        /// sub-stepped while the ball is inside so a fast swish can't tunnel. Two-way: the strands the ball pushes push
+        /// back (the net grabs and slows a swish), and a ball ringing off the iron shakes the whole mesh.</summary>
+        public static void netSim(double dt)
+        {
+            foreach (var N in NETS)
+            {
+                double dxy = Hypot(B.x - N.hx, B.y - HY);
+                bool near = dxy < 20 && B.z > 70 && B.z < 112 && B.owner == null;
+                if (!near && N.quiet > 90) continue; // fully settled and nothing touching it
+                N.quiet = near ? 0 : N.quiet + 1;
+                // rim hit: the iron vibrates and jerks the loops hanging off it
+                double rd = Hypot(dxy - RR, B.z - 100),
+                    bs = Hypot(B.vx, B.vy, B.vz);
+                if (near && rd < BR + 1.2 && bs > 60 && N.ring <= 0)
+                {
+                    N.ring = 0.12;
+                    double kick = Math.Min(1.6, bs * 0.004);
+                    foreach (var q in N.p)
+                        if (!q.f && q.z > 93)
+                        {
+                            q.px -= (Rng.R() - 0.5) * kick;
+                            q.py -= (Rng.R() - 0.5) * kick;
+                            q.pz += kick * 0.6;
+                        }
+                }
+                if (N.ring > 0) N.ring -= dt;
+                int SUB = near && bs > 150 ? 2 : 1;
+                double h = dt / SUB;
+                double rx = 0,
+                    ry = 0,
+                    rz = 0;
+                for (int sub = 0; sub < SUB; sub++)
+                {
+                    // ball position at this sub-step (it already moved this tick)
+                    double lag = (SUB - 1 - sub) * h,
+                        bx = B.x - B.vx * lag,
+                        by = B.y - B.vy * lag,
+                        bz = B.z - B.vz * lag;
+                    double damp = Math.Pow(0.965, SUB == 1 ? 1 : 0.5);
+                    foreach (var q in N.p)
+                    {
+                        if (q.f) continue;
+                        double vx = (q.x - q.px) * damp,
+                            vy = (q.y - q.py) * damp,
+                            vz = (q.z - q.pz) * damp;
+                        q.px = q.x;
+                        q.py = q.y;
+                        q.pz = q.z;
+                        q.x += vx;
+                        q.y += vy;
+                        q.z += vz - g * h * h;
+                    }
+                    for (int it = 0; it < 7; it++)
+                    {
+                        foreach (var c in N.c)
+                        {
+                            NetKnot a = c.a,
+                                b = c.b;
+                            double dx = b.x - a.x,
+                                dy = b.y - a.y,
+                                dz = b.z - a.z,
+                                d = Hypot(dx, dy, dz);
+                            if (!Util.T(d)) d = 1;
+                            // strings resist stretching fully but compress freely (rope, not rods)
+                            if (d < c.rest && c.k >= 1) continue;
+                            double f = ((d - c.rest) / d) * 0.5 * c.k;
+                            if (!a.f)
+                            {
+                                a.x += dx * f;
+                                a.y += dy * f;
+                                a.z += dz * f;
+                            }
+                            if (!b.f)
+                            {
+                                b.x -= dx * f;
+                                b.y -= dy * f;
+                                b.z -= dz * f;
+                            }
+                        }
+                        if (near)
+                            foreach (var c in N.c)
+                            {
+                                if (!c.draw) continue;
+                                NetKnot a = c.a,
+                                    b = c.b;
+                                double sx = b.x - a.x,
+                                    sy = b.y - a.y,
+                                    sz = b.z - a.z,
+                                    l2 = sx * sx + sy * sy + sz * sz;
+                                if (!Util.T(l2)) l2 = 1;
+                                double t = clamp(((bx - a.x) * sx + (by - a.y) * sy + (bz - a.z) * sz) / l2, 0, 1),
+                                    cx = a.x + sx * t - bx,
+                                    cy = a.y + sy * t - by,
+                                    cz = a.z + sz * t - bz,
+                                    d = Hypot(cx, cy, cz);
+                                if (d < SEGR && d > 0)
+                                {
+                                    double push = (SEGR - d) / d;
+                                    for (int e = 0; e < 2; e++)
+                                    {
+                                        var q = e == 0 ? a : b;
+                                        double w = e == 0 ? 1 - t : t;
+                                        if (q.f) continue;
+                                        double mx = cx * push * w,
+                                            my = cy * push * w,
+                                            mz = cz * push * w + (B.vz < 0 ? B.vz * h * 0.06 * w : 0); // drag the mesh down with a falling ball
+                                        q.x += mx;
+                                        q.y += my;
+                                        q.z += mz;
+                                        if (it == 6 && bz < 99)
+                                        {
+                                            rx += mx;
+                                            ry += my;
+                                            rz += mz;
+                                        }
+                                    }
+                                }
+                            }
+                    }
+                }
+                // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon)
+                if (near && B.z < 99 && (Util.T(rx) || Util.T(ry) || Util.T(rz)))
+                {
+                    double K = 1.4 / dt,
+                        cap = 60;
+                    B.vx -= clamp(rx * K, -cap, cap);
+                    B.vy -= clamp(ry * K, -cap, cap);
+                    B.vz -= clamp(rz * K, -cap, cap);
+                }
+            }
+        }
+
+        /// <summary>Is the ball inside a net right now (between rim and hem)? Used to slow a swish realistically.</summary>
+        public static bool inNet()
+        {
+            foreach (var hx in HXs) if (Hypot(B.x - hx, B.y - HY) < RR - 0.5 && B.z < 100 && B.z > 82) return true;
+            return false;
+        }
+
+        // ---- instant replays: allocation-free ring buffer of positions + poses (QK: Pose.QK) ----
+        public const int RCAP = 331;
+        public static readonly int PST = 4 + QK.Length,
+            FST = 4 + 10 * PST + 1;
+        public static readonly float[] REC = new float[RCAP * FST];
+        public static int recS = 0;
+        public static int recN = 0;
+        /// <summary>Replay kind: 0 normal director, 1 clutch (buzzer beater / game winner) multi-angle sequence.</summary>
+        public static double RPK = 0;
+        public static double setRPK(double v) => RPK = v;
+        public static void recClear()
+        {
+            recS = recN = 0;
+        }
+        public static void hlClear() => HL.Clear();
+
+        public static void recFrame()
+        {
+            if (!cfg.replays || RPL != null) return;
+            if (recN >= RCAP)
+            {
+                recS = (recS + 1) % RCAP;
+                recN--;
+            }
+            int o = ((recS + recN) % RCAP) * FST;
+            REC[o] = (float)B.x;
+            REC[o + 1] = (float)B.y;
+            REC[o + 2] = (float)B.z;
+            REC[o + 3] = (float)B.a;
+            for (int k = 0; k < P.Count; k++)
+            {
+                var p = P[k];
+                int b = o + 4 + k * PST;
+                REC[b] = (float)p.x;
+                REC[b + 1] = (float)p.y;
+                REC[b + 2] = (float)p.z;
+                REC[b + 3] = (float)p.f;
+                var qq = p.q;
+                for (int j = 0; j < QK.Length; j++) REC[b + 4 + j] = qq != null ? (float)qq[j] : float.NaN;
+            }
+            recN++;
+        }
+
+        static void recApply(int n)
+        {
+            int o = ((recS + n) % RCAP) * FST;
+            B.x = REC[o];
+            B.y = REC[o + 1];
+            B.z = REC[o + 2];
+            B.a = REC[o + 3];
+            for (int k = 0; k < P.Count; k++)
+            {
+                var p = P[k];
+                int b = o + 4 + k * PST;
+                p.x = REC[b];
+                p.y = REC[b + 1];
+                p.z = REC[b + 2];
+                p.f = REC[b + 3];
+                if (!float.IsNaN(REC[b + 4]))
+                {
+                    if (p.q == null) p.q = new Q();
+                    for (int j = 0; j < QK.Length; j++) p.q[j] = REC[b + 4 + j];
+                }
+            }
+        }
+
+        public static LiveState LIVE = null;
+        /// <summary>Replay speed (slow motion by default; [ and ] change it).</summary>
+        public static readonly double[] RSP = { 0.15, 0.25, 0.4, 0.7, 1 };
+        public static double RSPD = 0.4;
+        public static double setRplSpeed(double d) => RSPD = RSP[(int)clamp(Array.IndexOf(RSP, RSPD) + d, 0, RSP.Length - 1)];
+        /// <summary>Game highlights (copies of the replay buffer) for the end-of-game reel and saved reels.</summary>
+        public static readonly List<Highlight> HL = new List<Highlight>();
+        public static string HLN = ""; // label for the next highlight
+        public static string setHLN(string s) => HLN = s;
+        public static int FSTN() => FST;
+
+        static void saveHL()
+        {
+            int n = Math.Min(250, recN);
+            var buf = new float[n * FST];
+            for (int k = 0; k < n; k++)
+            {
+                int o = ((recS + recN - n + k) % RCAP) * FST;
+                Array.Copy(REC, o, buf, k * FST, FST);
+            }
+            HL.Add(new Highlight { s = string.IsNullOrEmpty(HLN) ? "Highlight" : HLN, n = n, buf = buf, q = q });
+            HLN = "";
+            if (HL.Count > 8) HL.RemoveAt(0);
+        }
+
+        static LiveState G_live()
+        {
+            var l = new LiveState { p = new double[P.Count][], q = new Q[P.Count], b = new[] { B.x, B.y, B.z, B.a } };
+            for (int k = 0; k < P.Count; k++)
+            {
+                var p = P[k];
+                l.p[k] = new[] { p.x, p.y, p.z, p.f };
+                if (p.q != null)
+                {
+                    var c = new Q();
+                    c.CopyFrom(p.q);
+                    l.q[k] = c;
+                }
+            }
+            return l;
+        }
+
+        /// <summary>Load a saved clip into the replay buffer and play it (end-of-game reel / saved reel).</summary>
+        public static void playClip(Highlight c)
+        {
+            recS = 0;
+            recN = (int)Math.Min(c.n, RCAP);
+            Array.Copy(c.buf, 0, REC, 0, recN * FST);
+            LIVE = G_live();
+            RPL = new ReplayState { i = 0, reel = 1, rs = rs, k = Util.T(c.k) ? c.k : 1 };
+        }
+
+        public static void startReplay()
+        {
+            LIVE = G_live();
+            RPL = new ReplayState { i = Math.Max(0, recN - 250) };
+            if (cfg.replays && !Util.T(PREDICT)) saveHL();
+        }
+
+        public static void skipReplay()
+        {
+            if (RPL != null) RPL.i = 1e9;
+        }
+
+        public static void rplStep(double dt)
+        {
+            var r = RPL;
+            r.i += dt * 60 * RSPD * (Util.T(r.k) ? r.k : 1);
+            int n = (int)Math.Floor(r.i);
+            if (n >= recN - 1)
+            {
+                if (LIVE != null) // (TS throws without a saved live state; never happens on the host)
+                {
+                    for (int k = 0; k < P.Count; k++)
+                    {
+                        var p = P[k];
+                        var l = LIVE.p[k];
+                        p.x = l[0];
+                        p.y = l[1];
+                        p.z = l[2];
+                        p.f = l[3];
+                        p.q = LIVE.q[k];
+                    }
+                    B.x = LIVE.b[0];
+                    B.y = LIVE.b[1];
+                    B.z = LIVE.b[2];
+                    B.a = LIVE.b[3];
+                }
+                double reel = r.reel;
+                RPL = null;
+                RQ = 0;
+                RPK = 0;
+                recClear();
+                rs = Util.T(reel) ? r.rs : 0.001; // a reel (halftime / final) must not trigger the next inbound
+                return;
+            }
+            recApply(n);
+        }
+
+        /// <summary>Replay state for online guests: host says "replay at frame i".</summary>
+        public static ReplayState setRPL(ReplayState v) => RPL = v;
+    }
+}
