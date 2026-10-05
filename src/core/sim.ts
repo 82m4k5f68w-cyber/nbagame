@@ -398,6 +398,8 @@ export const TS = {
   gpT: [0, 0], // possessions since the last adjustment
   trT: [-99, -99], // when each team last got the ball live (defensive rebound, loose ball): transition window
   tr: [0, 0], // pushing in transition right now (handler attacks, wings run the lanes)
+  xs: { paint: [0, 0], fb: [0, 0], sec: [0, 0] }, // broadcast splits per team
+  orbP: [0, 0], // this possession had an offensive rebound (second chance)
   cov: [0, 0], // CPU pick-and-roll coverage: 0 drop (big sits in the paint), 1 hedge (big steps out at the handler)
   dbl: [-1, -1], // CPU double-teams this opponent (P index) when he has the ball: the hottest scorer on the floor
 };
@@ -430,6 +432,8 @@ function resetRules() {
   TS.tr = [0, 0];
   TS.cov = [0, 0];
   TS.dbl = [-1, -1];
+  TS.xs = { paint: [0, 0], fb: [0, 0], sec: [0, 0] };
+  TS.orbP = [0, 0];
   for (let t = 0; t < 2; t++) if (!CT.some((c) => c.tm === t)) TS.mu[t] = autoMatch(t);
 }
 /** Commentary hook (client turns these into captions + optional voice) and broadcast banners. */
@@ -904,6 +908,7 @@ export function setup(off: number) {
   TS.bc = 0;
   TS.tr[0] = TS.tr[1] = 0;
   TS.trT[0] = TS.trT[1] = -99;
+  TS.orbP[0] = TS.orbP[1] = 0;
   TS.lane.fill(0);
   const NP = cfg.NP,
     ah = hoop(off),
@@ -1122,6 +1127,8 @@ export function launch(p: Player) {
     rT = lay ? 0.28 : p.st === 1 ? 0.3 : 0.4;
   let gr;
   B.d0 = isFT ? null : D0;
+  B.fb = !isFT && TS.tr[p.tm] ? 1 : 0; // (broadcast stats: a fast-break shot)
+  B.sc2 = !isFT && TS.orbP[p.tm] ? 1 : 0; // (second-chance shot: this possession had an offensive rebound)
   B.cx = cx;
   // play-by-play: the call as he rises ("Curry pulls up..."); the result line follows on the make / miss
   if (!isFT && !lay && !PREDICT)
@@ -2640,6 +2647,12 @@ export function bstep(dt: number) {
       sc[t] += pts;
       exc(1);
       runAdd(t, pts);
+      if (!B.ft && B.last && !cfg.HALF) {
+        // broadcast splits: points in the paint, fast-break points, second-chance points
+        if ((B.d0 ?? 999) < 160 && !B.three) TS.xs.paint[t] += pts;
+        if (B.fb) TS.xs.fb[t] += pts;
+        if (B.sc2) TS.xs.sec[t] += pts;
+      }
       if (!B.ft && B.last) {
         zoneRes(B.last, B.d0, true);
         const L = B.last;
@@ -2887,7 +2900,7 @@ export function bstep(dt: number) {
       const oop = B.mode === "pass" && B.ptype === 2 && p === B.to && p.j >= 45 && Math.hypot(hoop(p.tm) - p.x, HY - p.y) < 110 && !ftq && inb <= 0;
       if (B.sh && B.last && !B.sc) {
         p.stt.reb++;
-        if (p.tm === B.last.tm) p.stt.orb++;
+        if (p.tm === B.last.tm) (p.stt.orb++, (TS.orbP[p.tm] = 1));
         if (!B.ft) zoneRes(B.last, B.d0, false);
         if (!B.ft) cm(p.tm === B.last.tm ? "missO" : "miss", B.last.n, p.n);
         if (!B.ft && !PREDICT && B.last.tm != null) B.last.frT = 1.8; // the shooter's face drops
@@ -2906,6 +2919,7 @@ export function bstep(dt: number) {
         shot = 24;
         PCNT[0] = PCNT[1] = 0;
         if (!cfg.HALF && !PREDICT) TS.trT[p.tm] = T; // a live-ball change of possession: a transition chance
+        TS.orbP[0] = TS.orbP[1] = 0;
         // street: a change of possession has to be taken back and checked at the top
         if (cfg.HALF && !PREDICT && rs <= 0) {
           rs = 0.5;

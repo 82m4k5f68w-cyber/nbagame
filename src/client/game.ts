@@ -739,6 +739,8 @@ function halfStats() {
       ["REBOUNDS", sum(0, "reb"), sum(1, "reb")],
       ["ASSISTS", sum(0, "ast"), sum(1, "ast")],
       ["BLOCKS", sum(0, "blk"), sum(1, "blk")],
+      ["PAINT PTS", G.TS.xs.paint[0], G.TS.xs.paint[1]],
+      ["FAST BREAK", G.TS.xs.fb[0], G.TS.xs.fb[1]],
       ["HUSTLE", sum(0, "orb") + sum(0, "chg") + sum(0, "dv"), sum(1, "orb") + sum(1, "chg") + sum(1, "dv")],
     ];
   ov.innerHTML = `<div class="fin ht" style="--c0:${G.PC[0]};--c1:${G.PC[1]}"><div class="logo" style="font-size:40px;animation:none">HALFTIME</div>
@@ -815,6 +817,9 @@ function endGame() {
     ["AST", sum(0, "ast"), sum(1, "ast")],
     ["BLK", sum(0, "blk"), sum(1, "blk")],
     ["OREB", sum(0, "orb"), sum(1, "orb")],
+    ["PAINT PTS", G.TS.xs.paint[0], G.TS.xs.paint[1]],
+    ["FAST BREAK", G.TS.xs.fb[0], G.TS.xs.fb[1]],
+    ["2ND CHANCE", G.TS.xs.sec[0], G.TS.xs.sec[1]],
     ["HUSTLE", sum(0, "chg") + sum(0, "dv") + sum(0, "sa"), sum(1, "chg") + sum(1, "dv") + sum(1, "sa")],
   ];
   const tb = (t: number) =>

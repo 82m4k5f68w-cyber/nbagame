@@ -11,7 +11,7 @@ const r = Math.round;
 const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const TAU100 = 628.3185;
 
-export const HDR = 40; // header ints
+export const HDR = 43; // header ints
 export const PST = 28; // per-player ints (without pose)
 export const QN = QK.length;
 
@@ -62,6 +62,10 @@ export function encodeSnap(k: number): number[] {
       r(G.TS.mom * 100),
       G.TS.ds[0] + G.TS.ds[1] * 8 + G.TS.pc[0] * 64 + G.TS.pc[1] * 512,
       G.TS.clutch,
+      // broadcast splits: points in the paint, fast-break and second-chance points (team 0 + 1024 x team 1)
+      G.TS.xs.paint[0] + G.TS.xs.paint[1] * 1024,
+      G.TS.xs.fb[0] + G.TS.xs.fb[1] * 1024,
+      G.TS.xs.sec[0] + G.TS.xs.sec[1] * 1024,
     ];
   for (const p of P)
     a.push(
@@ -152,6 +156,10 @@ export function applySnap(a: number[], b: number[] | null, u: number, skip?: num
   G.TS.pc[0] = (a[38] >> 6) & 7;
   G.TS.pc[1] = (a[38] >> 9) & 7;
   G.TS.clutch = a[39];
+  const sp = (v: number) => [v % 1024, Math.floor(v / 1024)];
+  G.TS.xs.paint = sp(a[40]);
+  G.TS.xs.fb = sp(a[41]);
+  G.TS.xs.sec = sp(a[42]);
   G.OFFS[0] = at(a[18]);
   G.OFFS[1] = at(a[19]);
   B.owner = at(a[20]);

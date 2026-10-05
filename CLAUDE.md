@@ -272,6 +272,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   tick): sim tick 2.1 -> 1.2 ms in Node. Don't hold a skeleton frame/matrix across calls.
 - One-legged fadeaway (fade clip, tall mid-range scorers `ht >= 6.75 && c >= 80`, or `p.olf`): off knee up and out.
 - Twist poses: screener folds forearms across the stomach, arm-bar forearm turns in, CEL 3 = front double-biceps.
+- Broadcast splits `TS.xs` {paint, fb, sec} (points in the paint < 16 ft, fast-break shots `B.fb`, second-chance
+  shots `B.sc2` after an offensive rebound `TS.orbP`): halftime + final screens, jumbotron; online header ints 40-42
+  (HDR 43, PROTO 8).
 - Signature free-throw routines (`ftStyle` from the name): classic, quick dribbles, long dribble routine, spin only.
 - Contact: the receiver's hands reach to where a pass will be caught (post-blend contact pass, 0.3 s ahead) and
   the catch waits until the ball reaches a palm (`p.skel`) once he is close; rebounds in traffic are chinned

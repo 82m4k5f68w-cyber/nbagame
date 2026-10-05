@@ -1126,7 +1126,11 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         top = (t: number) => R2(t).slice().sort((a: any, b: any) => b.stt.pts - a.stt.pts)[0];
       if (!gameLike()) return ["", "", ""];
       if (TS.run[1] >= 8) return [TS.run[0] ? "" : TS.run[1] + "-0", "RUN", TS.run[0] ? TS.run[1] + "-0" : ""];
-      switch (Math.floor(T / 6) % 5) {
+      switch (Math.floor(T / 6) % 7) {
+        case 5:
+          return [String(TS.xs.paint[0]), "POINTS IN THE PAINT", String(TS.xs.paint[1])];
+        case 6:
+          return [String(TS.xs.fb[0]), "FAST BREAK POINTS", String(TS.xs.fb[1])];
         case 0:
           return [pct(0), "FIELD GOAL %", pct(1)];
         case 1:
