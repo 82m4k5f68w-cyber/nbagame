@@ -9,6 +9,8 @@ for (const m of modes) {
   const pg = await b.newPage({ viewport: { width: 1000, height: 900 } });
   const errs = [];
   pg.on("pageerror", (e) => errs.push(String(e)));
+  // SwiftShader reads as a software GPU (Low by default): screenshot the High tier like a desktop GPU would draw it
+  await pg.addInitScript(() => localStorage.getItem("h2k_set") || localStorage.setItem("h2k_set", JSON.stringify({ q2: 2 })));
   pg.on("console", (msg) => msg.type() === "error" && errs.push("console:" + msg.text()));
   await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro");
   await pg.waitForTimeout(500);

@@ -1198,6 +1198,11 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     // ---------------- effects + quality ----------------
     const fx: Fx = GPU ? makeFxGPU(R, S, cam) : makeFx(R, S, cam, 960, 540);
     let lvl = 6,
+      settle = 0,
+      settleN = 0,
+      paused = false,
+      good = 0,
+      bad = 0,
       lastQ = -1,
       lastFX: any = null;
     // Ladder (top -> bottom): everything; -SSAO; -reflection; -bloom/blur; -shadows; 85% res; 75% res.
@@ -1222,6 +1227,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       }
     };
     V.onResize = fxLevel;
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => (paused = true));
     const cl2 = new THREE.Vector3(0, 0, 3),
       TV = new THREE.Vector3(),
       PV = new THREE.Vector3();
@@ -1420,6 +1426,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           lastFX = V.FX;
           lvl = 6;
           fxLevel();
+          settle = now + 700; // shader compiles after a change: don't judge these frames
         }
         const tot = sc[0] + sc[1];
         if (tot !== lastTot) {
@@ -1432,18 +1439,30 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         if ((nf & 1) === 0 || bodyI.count !== crowdN) crowdUpd(crowdN);
         jumbo();
         shotClockDraw();
-        if (lastR && now - lastR < 250) {
-          ema = ema * 0.95 + (now - lastR) * 0.05;
-          if (++nf > 90) {
+        // Frame-rate guard: judged every 30 frames (~.5 s); very slow frames drop two rungs; at the bottom of the
+        // ladder the graphics level itself steps down (this session only, toast). Climbs back slowly (2 s of fast frames).
+        if (now < settle || settleN > 0) settleN--, (ema = 16.7);
+        else if (lastR && !paused) {
+          // (frames around a hidden tab / pause menu are skipped via settle); a crawling machine is judged every 5 frames
+          ema = ema * 0.9 + Math.min(1000, now - lastR) * 0.1;
+          if (++nf > (ema > 60 ? 5 : 30)) {
             nf = 0;
             const old = lvl;
-            if (ema > 22 && lvl > 0) lvl--;
-            else if (ema < 13 && lvl < 6) lvl++;
-            if (lvl !== old) fxLevel();
+            if (ema > 21) {
+              good = 0;
+              if (lvl > 0) lvl = Math.max(0, lvl - (ema > 34 ? 2 : 1));
+              else if (QL > 0 && ++bad >= 2) {
+                bad = 0;
+                V.QL = QL - 1;
+                V.QAUTO = "Graphics lowered to " + ["Low", "Medium"][V.QL] + " for a smoother game";
+              }
+            } else if (ema < 13 && lvl < 6 && ++good >= 4) (good = 0), lvl++;
+            if (lvl !== old) (fxLevel(), (settle = now + 350), (settleN = 2));
             V.perf = { fps: Math.round(1000 / ema), lvl, scale: R.getPixelRatio() };
           }
         }
-        lastR = now;
+        lastR = paused ? 0 : now;
+        paused = false;
         if (PC.join() + cl.join() !== pcK) {
           pcK = PC.join() + cl.join();
           // per-arena grade: a whisper of the home team's color in the light

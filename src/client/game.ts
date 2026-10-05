@@ -135,6 +135,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
 }
 
 // ---------------- settings (remembered per browser) ----------------
+let QPICK = 0; // the player chose a graphics level (saved; otherwise the GPU-tier default applies)
 function loadSet() {
   try {
     const o = JSON.parse(localStorage.getItem("h2k_set") || "{}");
@@ -142,7 +143,7 @@ function loadSet() {
     if (o.s != null) IN.TEMPO = o.s;
     if (o.p != null) cfg.PRO = o.p;
     if (o.cm != null) V.CAMM = o.cm;
-    if (o.q != null) V.QL = o.q;
+    if (o.q2 != null) (V.QL = o.q2), (QPICK = 1); // only an explicit pick (old saves always carried "q" = the default)
     if (o.fx != null) V.FX = !!o.fx;
     if (o.gp != null) V.GPU = o.gp ? 1 : 0;
     if (o.my != null) MYM = o.my;
@@ -157,7 +158,7 @@ function saveSet() {
     localStorage.setItem(
       "h2k_set",
       JSON.stringify({
-        m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q: V.QL, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN,
+        m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q2: QPICK ? V.QL : undefined, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN,
         ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
         COMM: V.COMM, VOICE: V.VOICE, MUSIC: V.MUSIC, INTRO: V.INTRO, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
       }),
@@ -368,7 +369,7 @@ export function menu() {
   grp("s", (v) => (IN.TEMPO = v));
   grp("p", (v) => (cfg.PRO = v));
   grp("cm", (v) => (V.CAMM = v));
-  grp("q", (v) => (V.QL = v));
+  grp("q", (v) => ((V.QL = v), (QPICK = 1), (V.QAUTO = "")));
   grp("fx", (v) => (V.FX = !!v));
   grp("gp", (v) => {
     // the renderer is created once at start: save, then reload into the menu with the new one
@@ -1223,6 +1224,11 @@ function loop(n: number) {
       if (NET.role === "host") NET.hostTick();
       ACC -= STEP;
       k++;
+    }
+    if (ACC > STEP * 2) ACC = STEP; // a slow machine drops time instead of snowballing catch-up steps
+    if (V.QAUTO) {
+      banner("SMOOTHER", V.QAUTO, "#7fd3ff");
+      V.QAUTO = "";
     }
   } else if (G.S === "intro") {
     introT += dt;

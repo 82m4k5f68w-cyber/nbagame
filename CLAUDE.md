@@ -396,6 +396,15 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 
+## Smooth play (v5.2)
+- Default graphics by GPU (`view.ts gpuTier`, WEBGL_debug_renderer_info): software -> Low; integrated (Intel/UHD/Iris,
+  Mali/Adreno, AMD APU), Chromebooks, <= 4 cores, touch -> Medium; discrete -> High. Saved only when picked (`h2k_set.q2`;
+  the old always-saved `q` is ignored). Frame-rate guard (render3d draw): ema judged every 30 frames (5 when crawling),
+  > 21 ms drops a rung (2 when > 34 ms), at rung 0 two more slow verdicts lower `V.QL` for the session (banner via
+  `V.QAUTO`); climbs back after 2 s of < 13 ms frames; `settle` skips shader-compile frames, a hidden tab skips the gap.
+  game.ts loop drops sim backlog beyond 2 steps (no catch-up snowball). JS is ~1 ms/frame: lag is GPU (High = mirror
+  re-render + SSAO + 4K shadows at 2x DPR). Polygon count is not the bottleneck.
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
 fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

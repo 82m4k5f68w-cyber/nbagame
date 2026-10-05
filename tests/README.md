@@ -24,6 +24,8 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   Accessibility / Controls sections. Modes drive the sim through `H2K.openMode(kind)` + `H2K.MODE`.
 - modes_sim.ts — headless: 3v3 / 2v2 games, Street 21 (1v1 + 3v3, half court), King of the Court, All-Star, Daily
   Challenge all reach a result, no NaN, street play stays in the right half, stopMode restores the team size.
+- browser_perf.mjs — frame-rate guard: High forced on SwiftShader (seconds per frame) with the real rAF loop; the guard
+  must walk the effects ladder and then the graphics level down (High -> Low). Slow (~6 min).
 - browser_link.mjs — a highlight becomes a #reel= share link; opening it plays the clip in the same mode.
 - browser_touch.mjs — touch controls: left-half thumb = analog stick (player runs that way, edge = sprint), right-half
   hold = shot charge, mice never drop the stick, lifting clears it.
