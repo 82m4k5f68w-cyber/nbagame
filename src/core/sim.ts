@@ -896,7 +896,7 @@ export function autoMatch(t: number) {
   mine.forEach((k, j) => (mu[k] = theirs[j]));
   return mu;
 }
-const guardOf = (p: Player) => {
+export const guardOf = (p: Player) => {
   const NP = cfg.NP,
     mu = TS.mu[p.tm];
   return P[(1 - p.tm) * NP + (mu && mu[p.k] != null ? mu[p.k] : p.k)];
@@ -1171,7 +1171,7 @@ export function launch(p: Player) {
         off = tt == null ? 9 : tt - cen,
         rel = Math.abs(off) / Math.max(0.01, wt),
         g = tt == null ? "F" : Math.abs(off) < 0.012 ? "A+" : gr ? (rel < 0.45 ? "A" : rel < 0.8 ? "B+" : "B") : rel < 1.6 ? "C" : rel < 2.6 ? "D" : "F";
-      p.tg = { off: Math.round(off * 1000), win: Math.round(wt * 1000), g, gr: !!gr, z: zoneOf(p, D0) };
+      p.tg = { off: Math.round(off * 1000), win: Math.round(wt * 1000), g, gr: !!gr, z: zoneOf(p, D0), c: Math.round(cx * 100) };
       if (!PREDICT) fx({ k: "tg", ...p.tg, n: p.n });
     }
     if (!gr && !lay) {

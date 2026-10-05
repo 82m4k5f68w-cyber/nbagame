@@ -58,7 +58,7 @@ function mcBlend(a: string, b: string | null, u: number, ph: number, amp: number
     for (let j = 0; j < MO.length; j++) MO[j] += (MT[j] - MO[j]) * u;
   }
 }
-import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, g as GRAV, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, guardOf, g as GRAV, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -758,8 +758,10 @@ export function pose3(p: Player) {
       else (aL += (k3.a - aL) * w), (eL += (k3.e - eL) * w), (zL = (zL ?? sz) + (k3.ab - (zL ?? sz)) * w);
     } else if (!has && !B.owner && (B.mode === "air" || B.mode === "pass") && bd < 45 && B.z > p.z + 30 && B.z < p.z + 150 && (air || B.to === p) && !(B.sh && B.age < 0.5)) {
       // (not a shot that just left the hand: it flies by too fast to track - the swat was the block layer's job)
-      // rebounds, tips and catches: both hands go to where the ball actually is
-      const w = clamp((45 - bd) / 20, 0, 1);
+      // rebounds, tips and catches: both hands go to where the ball actually is (not behind him: a ball that went
+      // past his back is let go, the arms don't swing backwards after it)
+      const fw = (Math.cos(fv(p)) * (B.x - p.x) + Math.sin(fv(p)) * (B.y - p.y)) / (bd || 1),
+        w = clamp((45 - bd) / 20, 0, 1) * clamp((fw + 0.35) / 0.5, 0, 1);
       const r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0);
       (aR += (r1.a - aR) * w), (eR += (r1.e - eR) * w), (sz += (r1.ab - sz) * w);
       const r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0);
@@ -842,15 +844,40 @@ export function pose3(p: Player) {
       eL = eR = 1.7;
       sz = -0.2;
       zL = -0.2;
-    } else if (Math.hypot(B.x - p.x, B.y - p.y) > 220 && Math.sin(T * 0.9 + p.k * 1.7) > 0.85) {
-      // calling out his man: point with the right arm
-      const mk = P[(1 - p.tm) * cfg.NP + p.k];
-      if (mk) {
-        const k9 = armIK(p, cr, mk.x, mk.y, mk.z + mk.ht * 8, 1, 0.9);
-        aR = Math.min(k9.a, 1.7);
-        eR = 0.15;
-        sz = k9.ab;
-        gR = 0.6;
+    } else if (!(p.helpT > 0) && !(p.rotT > 0) && !(p.hdgT > 0) && Math.hypot(o.vx, o.vy) < 260) {
+      // help side "pistols": away from the ball, one hand points at the ball, the other at his man (eased in with the
+      // distance, so it never switches on with a pop)
+      const bd = Math.hypot(B.x - p.x, B.y - p.y),
+        mk = p.manT > 0 && p.man != null ? P[p.man] : guardOf(p),
+        w = clamp((bd - 150) / 70, 0, 1);
+      if (mk && mk !== o && w > 0) {
+        const f = fv(p),
+          bs = Math.sin(f) * (B.x - p.x) - Math.cos(f) * (B.y - p.y) > 0 ? 1 : -1, // ball on his right?
+          zc = p.z + p.ht * 5.2, // (pointing low and soft, not a scarecrow)
+          // aim 40 px out along a direction between his facing and the target
+          pt = (tx: number, ty: number) => {
+            const dx = tx - p.x,
+              dy = ty - p.y,
+              l = Math.hypot(dx, dy) || 1,
+              ux = (dx / l) * 0.55 + Math.cos(f) * 0.45,
+              uy = (dy / l) * 0.55 + Math.sin(f) * 0.45,
+              m = Math.hypot(ux, uy) || 1;
+            return [p.x + (ux / m) * 40, p.y + (uy / m) * 40];
+          },
+          b2 = pt(B.x, B.y),
+          m2 = pt(mk.x, mk.y),
+          kb = armIK(p, cr, b2[0], b2[1], zc, bs, 0.7),
+          km = armIK(p, cr, m2[0], m2[1], zc, -bs, 0.7),
+          ab = Math.min(kb.a, 1.3),
+          am = Math.min(km.a, 1.2);
+        if (bs > 0) {
+          (aR += (ab - aR) * w), (eR += (0.35 - eR) * w), (sz += (kb.ab - sz) * w);
+          (aL += (am - aL) * w), (eL += (0.45 - eL) * w), (zL = (zL ?? sz) + (km.ab - (zL ?? sz)) * w);
+        } else {
+          (aL += (ab - aL) * w), (eL += (0.35 - eL) * w), (zL = (zL ?? sz) + (kb.ab - (zL ?? sz)) * w);
+          (aR += (am - aR) * w), (eR += (0.45 - eR) * w), (sz += (km.ab - sz) * w);
+        }
+        gL = gR = 0.55; // index finger out
       }
     }
   }

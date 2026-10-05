@@ -182,6 +182,14 @@ export function drawTiming() {
   X.fillText(TG.off === 0 ? "dead on" : Math.abs(TG.off) + " ms " + (TG.off > 0 ? "late" : "early"), x0 + w, y0 - 14);
   X.textAlign = "center";
   X.fillText("EARLY · PERFECT · LATE", x0 + w / 2, y0 + 20);
+  if (TG.c != null) {
+    // how good the look was (the contest at the release)
+    const c = TG.c,
+      [lb, col] = c < 15 ? ["WIDE OPEN", "#7CFC7C"] : c < 35 ? ["OPEN", "#c8f07a"] : c < 65 ? ["CONTESTED", "#ffb347"] : ["SMOTHERED", "#ff6b4a"];
+    X.font = "900 12px system-ui";
+    X.fillStyle = col;
+    X.fillText(lb, x0 + w / 2, y0 - 14);
+  }
   X.restore();
 }
 // ---------------- drawing ----------------

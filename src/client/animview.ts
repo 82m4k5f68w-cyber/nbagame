@@ -347,6 +347,25 @@ export const ANIMS: [string, Setup][] = [
       move(p, dt, 60, Math.sin(t * 2) > 0 ? Math.PI / 2 : -Math.PI / 2);
     },
   ],
+  [
+    "Help side: pistols",
+    (p: any) => {
+      stand(p);
+      const os = P.filter((q) => q.tm !== p.tm),
+        hb = os[0],
+        mk = os.find((q) => q !== hb && !q.off);
+      if (!hb || !mk) return; // (needs 2v2 or bigger)
+      G.setScalars({ pos: hb.tm });
+      // ball handler far up the floor to his right-front, his man in the corner to his left-front
+      (hb.x = p.x + Math.cos(p.f - 0.9) * 230), (hb.y = p.y + Math.sin(p.f - 0.9) * 230), (hb.mode = "i"), (hb.vx = hb.vy = 0);
+      (mk.x = p.x + Math.cos(p.f + 1.1) * 90), (mk.y = p.y + Math.sin(p.f + 1.1) * 90);
+      p.manT = 1;
+      p.man = P.indexOf(mk);
+      B.owner = hb;
+      B.mode = "held";
+      (B.x = hb.x), (B.y = hb.y), (B.z = hb.z + 32);
+    },
+  ],
   ...([
     ["Help: take the charge", "i"],
     ["Help: verticality", "s"],
