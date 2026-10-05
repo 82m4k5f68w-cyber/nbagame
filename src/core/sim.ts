@@ -2240,8 +2240,11 @@ export function ai(p: Player, dt: number) {
               if (Math.hypot(p.x + dx * u - e.x, p.y + dy * u - e.y) < 14) return -1;
             }
           const star = !CT.some((c) => c.tm === t) && shot < 9 && r === starOf(t) && p !== r ? 0.5 : 0,
-            kick = D < 130 && dd >= 237 && od > 45 ? 0.25 : 0;
-          return (Math.min(od, 80) / 80) * 0.6 + (ql(r, dd) / 100) * 0.5 + (dd < D ? 0.12 : 0) + (OFFS[t] === r ? 0.45 : 0) + (r.my || isH(r) ? 0.2 : 0) + star + kick;
+            kick = D < 130 && dd >= 237 && od > 45 ? 0.25 : 0,
+            // feed the mismatch (a switch left a small on the post scorer, or a slow big on a quick guard)
+            mm = manOf(r),
+            mis = mm && !mm.off ? (r.i >= 76 && r.ht - mm.ht >= 0.4 && dd < 190 ? 0.3 : 0) + (r.s - mm.s >= 15 && dd < 300 ? 0.12 : 0) : 0;
+          return (Math.min(od, 80) / 80) * 0.6 + (ql(r, dd) / 100) * 0.5 + (dd < D ? 0.12 : 0) + (OFFS[t] === r ? 0.45 : 0) + (r.my || isH(r) ? 0.2 : 0) + star + kick + mis;
         };
       const own = (Math.min(Math.hypot(dn.x - p.x, dn.y - p.y), 80) / 80) * 0.6 + (ql(p, D) / 100) * 0.5;
       const pf2 = clamp((QTRLEN - 30) / 150, 0, 1);
@@ -3666,6 +3669,16 @@ function offBall(p: Player, t: number) {
     }
     return true;
   }
+  }
+  // a post scorer with a small on him (after a switch): seal on the ball-side block and call for it
+  if (p !== scr && p !== use && cfg.NP > 1 && !CT.some((c) => c.tm === t && P[c.idx] === p)) {
+    const mm = manOf(p);
+    if (mm && !mm.off && p.i >= 76 && p.ht - mm.ht >= 0.4 && !(TS.lane[P.indexOf(p)] > 1.6)) {
+      const bs = h.y < HY ? -1 : 1;
+      mv(p, hx + dir * 40, HY + bs * 48, 1.1);
+      if (Math.hypot(p.x - (hx + dir * 40), p.y - (HY + bs * 48)) < 20) (p.callT = Math.max(p.callT || 0, 0.3)), (STAT.seal = (STAT.seal || 0) + 1);
+      return true;
+    }
   }
   // spacing + backdoor cuts for everyone else
   const ms = P.filter((q) => q.tm === t && q !== h && q !== scr && q !== use),
