@@ -330,6 +330,7 @@ export const ANIMS: [string, Setup][] = [
   ["Crossover", (p, t, dt) => (stand(p), moveEvery(p, t, 1, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
   ["Behind the back", (p, t, dt) => (stand(p), moveEvery(p, t, 3, 1.1), move(p, dt, 120, 0), dribble(p, dt))],
   ["Spin move", (p, t, dt) => (stand(p), moveEvery(p, t, 2, 1.3), dribble(p, dt))],
+  ["Set a screen", (p, t) => (stand(p), (p.setT = 0.25))],
   ["Gassed walk (dead ball)", (p, t, dt) => (stand(p), (p.en = 0.4), G.setScalars({ rs: 1 }), move(p, dt, 55, 0))],
   [
     "Hedge the pick-and-roll",

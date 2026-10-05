@@ -488,6 +488,7 @@ export function pose3(p: Player) {
         aL = fa;
         eL = fe;
         zL = fz;
+        hL = bar ? 0.75 : 0; // (the arm-bar's forearm turns in across the body)
         gR = 0.1;
         gL = bar ? 0.15 : 0.3;
       } else {
@@ -497,6 +498,7 @@ export function pose3(p: Player) {
         aR = fa;
         eR = fe;
         sz = fz;
+        hR = bar ? 0.75 : 0;
         gL = 0.1;
         gR = bar ? 0.15 : 0.3;
         wL = wR;
@@ -987,10 +989,11 @@ export function pose3(p: Player) {
     cr = 0.3;
     kL = kR = 0.55;
     tL = tR = 0.25;
-    aL = aR = 0.95;
-    eL = eR = 2.1;
-    sz = -0.25;
-    zL = -0.25;
+    // (forearms folded across the stomach: the upper arms turn in about the bone, elbows tucked)
+    aL = aR = 0.4;
+    eL = eR = 1.85;
+    hL = hR = 1.15;
+    sz = zL = 0.08;
     ln = 0.08;
   }
   // Pro Play contact + weight: bumps rock the torso away from the hit, landings sink into the knees,
@@ -1076,12 +1079,14 @@ export function pose3(p: Player) {
         rz = m(rz, 0.24);
         ty = m(ty, 0.2);
         break;
-      case 3: // double-bicep flex with a pump
+      case 3: // front double-bicep flex with a pump: upper arms out level, forearms turned up (external rotation)
         gL = gR = m(gR, 1);
-        aL = aR = m((aL + aR) / 2, 1.45);
-        eL = eR = m((eL + eR) / 2, 1.95 + Math.sin(e * 12) * 0.18);
-        sz = m(sz, 1.3);
-        zL = m(zl, 1.3);
+        aL = aR = m((aL + aR) / 2, 0.15);
+        eL = eR = m((eL + eR) / 2, 1.75 + Math.sin(e * 12) * 0.18);
+        hL = m(hL, -1.45);
+        hR = m(hR, -1.45);
+        sz = m(sz, 1.45);
+        zL = m(zl, 1.45);
         ln = m(ln, -0.14);
         cr = m(cr, 0.15);
         break;
