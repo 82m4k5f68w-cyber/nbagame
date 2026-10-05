@@ -1543,6 +1543,7 @@ export function step(p: Player, dt: number) {
   if (p.fsT > 0) p.fsT -= dt;
   if (p.hupT > 0) p.hupT -= dt;
   if (p.helpT > 0) p.helpT -= dt;
+  if (p.swT > 0) p.swT -= dt;
   if (p.rotT > 0) p.rotT -= dt;
   if (p.kickT > 0) p.kickT -= dt;
   if (p.engT > 0) p.engT -= dt;
@@ -4034,6 +4035,9 @@ function collide() {
                 sd.manT = 3;
                 df.man = sc0.tm * NP + sc0.k;
                 df.manT = 3;
+                // "Switch!": both point at their new man and call it out
+                if (!PREDICT) (sd.swT = 0.7), (df.swT = 0.7), (sd.callT = 0.5), (df.callT = 0.5);
+                if (isH(B.owner) || isH(df) || isH(sd)) txtW("SWITCH!", sd.x, sd.y, 92, "#9fe7ff");
               }
             }
           }

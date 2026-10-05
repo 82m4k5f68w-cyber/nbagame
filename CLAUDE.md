@@ -362,6 +362,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   dho/hold/lane/SP). Unintended close pairs (no screen/handoff/transition) 12.7% -> 8.6% of half-court ticks.
 - Fronting the post (CPU man D): a man 0.3 ft+ shorter than a big who is sealing (`o.br === "seal"`) gets between him
   and the ball (15 px ball-side); `p.br` is reset at the top of every `ai()` tick. Transition wings split the corners.
+- "Switch!" (collide's forced switch): both defenders point at their new man (`p.swT` .7 s, pose3 armIK) and shout
+  (`callT`). Contact fades: wrapped difference + an immediate guard (lets go before +-pi), except a contest's fade,
+  which keeps the contest's plain difference (`p.ctPl`); tests/blend.ts max bound = max(old x .5, 1.3).
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 

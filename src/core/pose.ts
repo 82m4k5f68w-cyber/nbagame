@@ -781,6 +781,17 @@ export function pose3(p: Player) {
     cr = Math.max(cr, 0.28 * w);
     gL = gR = 0.05;
   }
+  // ---- "Switch!": the defenders point at the man they just picked up ----
+  if (PRO && (p.swT || 0) > 0 && !has && !air && md === "i" && p.man != null && P[p.man]) {
+    const m = P[p.man],
+      w = Math.min(1, p.swT * 4) * Math.min(1, (0.7 - p.swT) * 8 + 0.2),
+      f = fv(p),
+      sd = Math.sin(f) * (m.x - p.x) - Math.cos(f) * (m.y - p.y) > 0 ? 1 : -1,
+      k = armIK(p, cr, m.x, m.y, p.z + p.ht * 7.4, sd, 0.9),
+      a = Math.min(k.a, 1.7);
+    if (sd > 0) (aR += (a - aR) * w), (eR += (0.1 - eR) * w), (sz += (k.ab - sz) * w), (gR = 0.6);
+    else (aL += (a - aL) * w), (eL += (0.1 - eL) * w), (zL = (zL ?? sz) + (k.ab - (zL ?? sz)) * w), (gL = 0.6);
+  }
   // ---- timeout huddle: hands in the middle ("1-2-3 ...!") ----
   if (PRO && (p.hudT || 0) > 0 && !has && !air && p.hcx != null) {
     const zc = p.z + p.ht * 7.6;
@@ -1665,13 +1676,18 @@ export function pose3(p: Player) {
         if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
         (K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
       }
-      const da = drib || cat ? wrapPi(K[0] - o.aR) : K[0] - o.aR; // (fades / contests: the plain difference is continuous - no +-pi wrap to pop at)
+      // (contests: the plain difference; fades: wrapped, with an immediate guard below that lets go well before +-pi -
+      // a stored catch solution that crossed the wrap made the plain difference swing the arm the long way round)
+      if (con) p.ctPl = 1;
+      else if (drib || cat) p.ctPl = 0;
+      const fade = !drib && !cat && !con && !p.ctPl, // (a contest's fade keeps the contest's plain difference)
+        da = drib || cat || fade ? wrapPi(K[0] - o.aR) : K[0] - o.aR;
       // (an IK branch flip is not a correction; a fade keeps the last live guard, so a solution that was never shown
       // does not appear while fading out)
       // (eased, never switched: a guard flickering between 0 and 1 tick to tick was a pop of its own)
       const gR = drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctRg ?? 1;
       p.ctRg = (p.ctRg ?? gR) + (gR - (p.ctRg ?? gR)) * Math.min(1, DT * 14);
-      const w = p.ctR * (p.ctRg ?? 1);
+      const w = p.ctR * (fade ? Math.min(p.ctRg ?? 1, clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1)) : p.ctRg ?? 1);
       (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
     if (p.ctL > 0.01) {
@@ -1681,10 +1697,11 @@ export function pose3(p: Player) {
         (K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
       }
       const z0 = o.zL ?? o.sz,
-        da = drib || cat ? wrapPi(K[3] - o.aL) : K[3] - o.aL;
+        fadeL = !drib && !cat && !con && !p.ctPl,
+        da = drib || cat || fadeL ? wrapPi(K[3] - o.aL) : K[3] - o.aL;
       const gL2 = drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctLg ?? 1;
       p.ctLg = (p.ctLg ?? gL2) + (gL2 - (p.ctLg ?? gL2)) * Math.min(1, DT * 14);
-      const w = p.ctL * (p.ctLg ?? 1);
+      const w = p.ctL * (fadeL ? Math.min(p.ctLg ?? 1, clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1)) : p.ctLg ?? 1);
       (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
   }
