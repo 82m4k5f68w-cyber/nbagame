@@ -3335,16 +3335,45 @@ function ftLay() {
     hx = hoop(s.tm),
     d = hx > 470 ? -1 : 1,
     fc0 = hx > 470 ? 0 : Math.PI;
-  let m = 0;
+  // NBA lane: on each side the defense has the low block, then the offense, then the defense (bigs first); everybody
+  // else waits behind the arc (the shooter's team up top for the long rebound, the rest on the wings)
   P.forEach((p) => {
     p.vx = p.vy = p.z = p.vz = 0;
     p.mode = "i";
-    if (p !== s) {
-      p.x = hx + d * (70 + (m >> 1) * 28);
-      p.y = 250 + (m & 1 ? 46 : -46);
-      p.f = fc0;
-      m++;
-    }
+  });
+  const byHt = (t: number) => P.filter((p) => p.tm === t && p !== s && !p.off).sort((a, b) => b.ht - a.ht),
+    df = byHt(1 - s.tm),
+    of = byHt(s.tm),
+    lane: [Player[], number][] = [
+      [df, 0],
+      [df, 0],
+      [of, 1],
+      [of, 1],
+      [df, 2],
+      [df, 2],
+    ];
+  let side = 0;
+  for (const [arr, k] of lane) {
+    const p = arr.shift();
+    if (!p) continue;
+    p.x = hx + d * (70 + k * 28);
+    p.y = 250 + (side++ & 1 ? 46 : -46);
+    p.f = p.y < 250 ? Math.PI / 2 : -Math.PI / 2; // facing across the lane, at the rim side
+    p.f += d * 0.35 * (p.y < 250 ? 1 : -1);
+  }
+  const rest = [...of, ...df],
+    spots: [number, number][] = [
+      [262, 0],
+      [215, -165],
+      [215, 165],
+      [262, -60],
+      [262, 60],
+    ];
+  rest.forEach((p, j) => {
+    const sp = spots[j % spots.length];
+    p.x = hx + d * sp[0];
+    p.y = 250 + sp[1];
+    p.f = fc0;
   });
   s.x = hx + d * 137;
   s.y = 250;
