@@ -48,6 +48,9 @@ const move = (p: any, dt: number, v: number, rel: number) => {
   p.ph += ((v * dt) / stepLen(v)) * Math.PI;
 };
 const dribble = (p: any, dt: number) => {
+  // (stand() parks the ball away from him: bring it back to his side first - the first dribble from the hands
+  // doesn't snap the ball over any more, it would swing in from across the floor)
+  if (B.owner !== p || Math.hypot(B.x - p.x, B.y - p.y) > 25) (B.x = p.x + Math.cos(p.f) * 6 - Math.sin(p.f) * 6), (B.y = p.y + Math.sin(p.f) * 6 + Math.cos(p.f) * 6), (B.dvx = B.dvy = 0);
   B.owner = p;
   B.mode = "held";
   G.bstep(dt / 2);
