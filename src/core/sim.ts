@@ -3622,7 +3622,7 @@ function shootingFoul(p: Player, lay: boolean): Player | null {
     if (o.z > 4) c += hs > 50 ? 0.3 : 0.03; // flying in vs. straight up
     if (d < 15) c += 0.14; // already chest to chest
     if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2 + (hasB(p, "PZ") ? 0.08 : 0);
-    c *= (1.2 - o.d / 220) * 0.55; // (x.55: calibrated to NBA free-throw rate, ~0.22 FTA per possession)
+    c *= (1.2 - o.d / 220) * 0.42; // (x.42: calibrated to NBA free-throw rate, ~0.22 FTA per possession)
     if (c > bp) (bp = c), (best = o), (fl = lay && o.z > 4 && hs > 170 && close > 140 ? 1 : 0);
   }
   if (!best || Math.random() >= clamp(bp, 0, 0.6)) return null;

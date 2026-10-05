@@ -1574,21 +1574,21 @@ export function pose3(p: Player) {
       if (wR > 0) {
         const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
         if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
-        (K[0] = wrapPi(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
+        (K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
       }
-      const da = wrapPi(K[0] - o.aR),
-        w = p.ctR * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : clamp((2.9 - Math.abs(da)) / 0.6, 0, 1)); // (an IK branch flip is not a correction; others fade out before the +-pi wrap of the offset)
+      const da = drib || cat ? wrapPi(K[0] - o.aR) : K[0] - o.aR, // (fades / contests: the plain difference is continuous - no +-pi wrap to pop at)
+        w = p.ctR * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : 1); // (an IK branch flip is not a correction)
       (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
     }
     if (p.ctL > 0.01) {
       if (wL > 0) {
         const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
         if (con) o.gL = 0.05;
-        (K[3] = wrapPi(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
+        (K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
       }
       const z0 = o.zL ?? o.sz,
-        da = wrapPi(K[3] - o.aL),
-        w = p.ctL * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : clamp((2.9 - Math.abs(da)) / 0.6, 0, 1));
+        da = drib || cat ? wrapPi(K[3] - o.aL) : K[3] - o.aL,
+        w = p.ctL * (drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : 1);
       (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
     }
   }
@@ -2051,6 +2051,8 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
   IK.over = raw - (L1 + L2);
   return IK;
 }
+/** A shoulder angle in armIK's range (-2.6 .. 2 pi - 2.6): over the top stays over the top, never drifts by 2 pi. */
+const armN = (a: number) => (a < -2.6 ? a + 2 * Math.PI : a > 2 * Math.PI - 2.6 ? a - 2 * Math.PI : a);
 /** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */
 const RELK: Record<string, number> = { jump: 0.7, mshot: 0.7, upunder: 0.7, quick: 0.46, fade: 0.7, step: 0.7, float: 0.6, hop: 0.58, curry: 0.78, hook: 0.95, lay: 0.7, euro: 0.7, roll: 0.72, revlay: 0.6, contact: 0.6, leaner: 0.68, runner: 0.66, dunk: 0.7, dunk2: 0.72, tomahawk: 0.76, windmill: 0.76, reverse: 0.78, d360: 0.68, hang: 1 };
 const NQ = 31,
