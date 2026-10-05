@@ -489,6 +489,7 @@ export function scene3c() {
   hoop3c(0);
   hoop3c(1);
 }
+const SKC = new Float32Array(60);
 export function segs3c(p: any, out: any[]) {
   const q = p.q,
     S = p.ht / 6.4,
@@ -525,78 +526,31 @@ export function segs3c(p: any, out: any[]) {
   const dk = "#0b0b12",
     hc = p.skin === "#e8b88f" ? "#4a3320" : "#141414",
     back = Math.cos(p.f) * (CP[0] - w[0]) + Math.sin(p.f) * (CP[2] - w[2]) < 0;
-  for (const sd of [-1, 1]) {
-    const tl = sd < 0 ? q.tL : q.tR,
-      kl = sd < 0 ? q.kL : q.kR,
-      hj = [sd * 0.3, 3.2, 0],
-      kn = [hj[0], hj[1] - 1.6 * Math.cos(tl), hj[2] + 1.6 * Math.sin(tl)],
-      a2 = tl - kl,
-      an = [kn[0], kn[1] - 1.6 * Math.cos(a2), kn[2] + 1.6 * Math.sin(a2)];
-    add(hj, kn, 0.44, p.skin);
-    add(kn, an, 0.34, p.skin);
-    add(an, [an[0], an[1] - 0.12, an[2] + 0.55], 0.32, "#f2f2f2");
-    add(
-      hj,
-      [(hj[0] + kn[0]) / 2, (hj[1] + kn[1]) / 2, (hj[2] + kn[2]) / 2],
-      0.62 * k,
-      p.col,
-    );
-    const sh = [sd * 0.9 * k, 1.95, 0],
-      aF = sd < 0 ? q.aL : q.aR,
-      eF = sd < 0 ? q.eL : q.eR,
-      sa = sd < 0 ? q.zL : q.sz,
-      wF = sd < 0 ? q.wL : q.wR,
-      sp = Math.sin(sa) * sd,
-      c2 = Math.cos(sa),
-      el = [
-        sh[0] + sp * 1.05,
-        sh[1] - Math.cos(aF) * c2 * 1.05,
-        sh[2] + Math.sin(aF) * 1.05,
-      ],
-      a3 = aF + eF,
-      wr = [el[0] + sp * 0.5, el[1] - Math.cos(a3) * c2, el[2] + Math.sin(a3)],
-      bs = bp(sh),
-      be = bp(el),
-      bw = bp(wr);
-    out.push(0);
-    out.pop();
-    const A1 = pj(...W(bs)),
-      A2 = pj(...W(be)),
-      A3 = pj(...W(bw)),
-      A4 = pj(
-        ...W(
-          bp([
-            wr[0] + sp * 0.1,
-            wr[1] - Math.cos(a3 + wF) * 0.38,
-            wr[2] + Math.sin(a3 + wF) * 0.38,
-          ]),
-        ),
-      );
-    [
-      [A1, A2, 0.34 * k, p.skin],
-      [
-        A1,
-        [
-          A1[0] + (A2[0] - A1[0]) * 0.3,
-          A1[1] + (A2[1] - A1[1]) * 0.3,
-          A1[2],
-          A1[3],
-        ],
-        0.48 * k,
-        p.col,
-      ],
-      [A2, A3, 0.28, p.skin],
-      [A3, A4, 0.3, p.skin],
-    ].forEach((o) => {
-      const B2 = [o[1][0] + 0.01, o[1][1], o[1][2], o[1][3]];
-      out.push({
-        z: (o[0][3] + B2[3]) / 2,
-        A: o[0],
-        B: B2,
-        w: o[2] * S,
-        c: o[3],
-      });
-    });
+  // limbs from the shared FK skeleton (the same joints the 2D view, the server and the 3D rig use - so twisted upper
+  // arms, the stepping legs and the root yaw of a spin all show here too)
+  skeleton(p, SKC);
+  const J = (j) => pj(...W3(SKC[j * 3], SKC[j * 3 + 1], SKC[j * 3 + 2])),
+    seg = (A, B2, wd, col) => {
+      B2 = [B2[0] + 0.01, B2[1], B2[2], B2[3]];
+      out.push({ z: (A[3] + B2[3]) / 2, A, B: B2, w: wd * S, c: col });
+    };
+  for (let si = 0; si < 2; si++) {
+    const h = J(4 + si * 4),
+      kn = J(5 + si * 4),
+      an = J(6 + si * 4),
+      to = J(7 + si * 4);
+    seg(h, kn, 0.44, p.skin);
+    seg(kn, an, 0.34, p.skin);
+    seg(an, to, 0.32, "#f2f2f2");
+    seg(h, [(h[0] + kn[0]) / 2, (h[1] + kn[1]) / 2, (h[2] + kn[2]) / 2, (h[3] + kn[3]) / 2], 0.62 * k, p.col);
+    const A1 = J(12 + si * 4),
+      A2 = J(13 + si * 4),
+      A3 = J(14 + si * 4),
+      A4 = J(15 + si * 4);
+    seg(A1, A2, 0.34 * k, p.skin);
+    seg(A1, [A1[0] + (A2[0] - A1[0]) * 0.3, A1[1] + (A2[1] - A1[1]) * 0.3, A1[2], A1[3]], 0.48 * k, p.col);
+    seg(A2, A3, 0.28, p.skin);
+    seg(A3, A4, 0.3, p.skin);
   }
   const t = (a, b, wd, col, n) => add(bp(a), bp(b), wd, col, n);
   t([0, 0, 0], [0, 0.7, 0], 1.15 * k, p.col);
