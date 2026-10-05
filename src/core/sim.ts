@@ -3369,7 +3369,7 @@ export function foul(d: Player, o: Player, k: string, sh: number, th: any, flag 
   else {
     B.owner = o;
     B.mode = "held";
-    setup(o.tm);
+    setupAt(o.tm, o.x, o.y); // (side out at the spot of the foul)
   }
 }
 function tech(d: Player, ret: number) {
