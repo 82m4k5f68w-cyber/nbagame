@@ -3716,6 +3716,11 @@ function offBall(p: Player, t: number) {
     k = ms.indexOf(p);
   if (k < 0) return false;
   const used = new Set<number>();
+  // (and away from the teammates who are not spacing: the screener, the man using the screen, the handler)
+  const nearBusy = (x: number, y: number) => {
+    for (const o of [scr, use, h]) if (o && o.tm === t && Math.hypot(o.x - x, o.y - y) < 80) return true;
+    return false;
+  };
   const pick = (q: Player) => {
     let b = 0,
       bd = 1e9;
@@ -3724,7 +3729,7 @@ function offBall(p: Player, t: number) {
       // (stay out of the driver's way: a spot where the ball handler is heading is taken last - drift on the drive)
       const bx = h ? h.x + h.vx * 0.5 : B.x,
         by = h ? h.y + h.vy * 0.5 : B.y,
-        d = Math.hypot(sp[0] - q.x, sp[1] - q.y) + (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 || Math.hypot(sp[0] - bx, sp[1] - by) < 120 ? 400 : 0);
+        d = Math.hypot(sp[0] - q.x, sp[1] - q.y) + (Math.hypot(sp[0] - B.x, sp[1] - B.y) < 90 || Math.hypot(sp[0] - bx, sp[1] - by) < 120 ? 400 : 0) + (nearBusy(sp[0], sp[1]) ? 300 : 0);
       if (d < bd) (bd = d), (b = j);
     });
     used.add(b);
