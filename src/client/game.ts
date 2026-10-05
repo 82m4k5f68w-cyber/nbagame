@@ -722,6 +722,68 @@ function halftime() {
     playReel(clips, halfStats);
   } else halfStats();
 }
+/** Shot chart for one team: its half court with the rim at the top, makes as dots in the team colour, misses as x's. */
+function shotChart(t: number, maxQ = 99): string {
+  const shots = G.SHOTS.filter((s) => s.t === t && s.q <= maxQ);
+  if (!shots.length) return "";
+  const W = 220,
+    H = 196,
+    k = 0.42,
+    cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const x = cv.getContext("2d");
+  if (!x) return "";
+  const hx = G.hoop(t),
+    rx = W / 2,
+    ry = 16,
+    P2 = (gx: number, gy: number) => [rx + (gy - 250) * k, ry + Math.abs(gx - hx) * k];
+  x.fillStyle = "#1b1f36";
+  x.fillRect(0, 0, W, H);
+  x.strokeStyle = "rgba(255,255,255,.35)";
+  x.lineWidth = 1.2;
+  x.strokeRect(rx - 80 * k, 0, 160 * k, 190 * k); // the lane
+  x.beginPath();
+  x.arc(rx, ry + 190 * k - 16 * k, 60 * k, 0, Math.PI);
+  x.stroke(); // free-throw circle
+  x.beginPath();
+  x.moveTo(rx - 220 * k, 0);
+  x.lineTo(rx - 220 * k, ry + 140 * k);
+  x.arc(rx, ry, 237.5 * k, Math.PI - Math.acos(220 / 237.5), Math.acos(220 / 237.5), true);
+  x.lineTo(rx + 220 * k, 0);
+  x.stroke(); // three-point line
+  x.strokeStyle = "#ff8a3a";
+  x.beginPath();
+  x.arc(rx, ry, 7.5 * k + 1, 0, 7);
+  x.stroke(); // rim
+  for (const s of shots) {
+    const [px, py] = P2(s.x, s.y);
+    if (s.m) {
+      x.fillStyle = G.PC[t] || "#ffd23f";
+      x.strokeStyle = "#fff";
+      x.lineWidth = 1;
+      x.beginPath();
+      x.arc(px, py, 3.6, 0, 7);
+      x.fill();
+      x.stroke();
+    } else {
+      x.strokeStyle = "rgba(255,255,255,.55)";
+      x.lineWidth = 1.4;
+      x.beginPath();
+      x.moveTo(px - 2.8, py - 2.8);
+      x.lineTo(px + 2.8, py + 2.8);
+      x.moveTo(px + 2.8, py - 2.8);
+      x.lineTo(px - 2.8, py + 2.8);
+      x.stroke();
+    }
+  }
+  const m = shots.filter((s) => s.m).length;
+  return `<figure class="chart"><img alt="${esc(G.cl[t])} shot chart" src="${cv.toDataURL()}"><figcaption style="color:${G.PC[t]}">${esc(G.cl[t])} · ${m}/${shots.length}</figcaption></figure>`;
+}
+const charts = (maxQ = 99) => {
+  const a = shotChart(0, maxQ) + shotChart(1, maxQ);
+  return a ? `<div class="charts">${a}</div>` : "";
+};
 function halfStats() {
   if (G.S !== "half") return;
   ov.style.display = "flex";
@@ -752,7 +814,7 @@ function halfStats() {
        return `<div><em>${a2}${u || ""}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em>${b2}${u || ""}</em><small>${k}</small></div>`;
      })
      .join("")}</div>
-   <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}</table>
+   <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}</table>${charts(2)}
    <p class="hint">${esc(halfNote())}</p>${G.halftimeAdjust().map((s) => `<p class="hint" style="opacity:.8">📋 ${esc(s)}</p>`).join("")}<div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button>${G.HL.length ? `<button class="ghost" id="h3">▶ Highlights again</button>` : ""}</div></div>`;
   const go = () => {
     clearTimeout(ht);
@@ -841,7 +903,7 @@ function endGame() {
        return `<div><em>${a2}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em>${b2}</em><small>${k}</small></div>`;
      })
      .join("")}</div>
-   <details class="bxw"><summary>Box score</summary>${tb(0)}${tb(1)}</details>
+   ${charts()}<details class="bxw"><summary>Box score</summary>${tb(0)}${tb(1)}</details>
    ${G.HL.length && !NET.role ? `<div class="row"><button class="ghost" id="hlp">▶ Highlights (${G.HL.length})</button><button class="ghost" id="hls">💾 Save reel</button><button class="ghost" id="hll" title="Works when the game page is opened directly (downloaded or self-hosted); on claude.ai use Save reel">🔗 Copy replay link</button></div>` : ""}
    <div class="row">${NET.role ? NET.finalButtons() : inSeason ? `<button class="big" id="ssn">🏆 SEASON ▶</button><button id="pa" class="ghost">Menu</button>` : `<button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button>`}</div></div>`;
   const hlp = document.getElementById("hlp");

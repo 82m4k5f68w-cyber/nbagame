@@ -366,6 +366,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - "Switch!" (collide's forced switch): both defenders point at their new man (`p.swT` .7 s, pose3 armIK) and shout
   (`callT`). Contact fades: wrapped difference + an immediate guard (lets go before +-pi), except a contest's fade,
   which keeps the contest's plain difference (`p.ctPl`); tests/blend.ts max bound = max(old x .5, 1.3).
+- Shot charts: sim `SHOTS` (every FGA from `zoneRes`: team, launch spot `B.lx/ly`, made, three, quarter; reset in
+  `start`), game.ts `shotChart(t, maxQ)` draws each team's half court (makes = team-colour dots, misses = x) on the
+  halftime (Q1-2) and final screens (`.charts`). Not online guests (no local sim). browser_menu checks a chart renders.
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 

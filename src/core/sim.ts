@@ -205,8 +205,11 @@ function RS(ti: number, t: number): [string, Tuple[], string] {
 }
 export const ovr = (p: Player) => OV[p.n] || Math.round(68 + (Math.max(p.c, p.i) - 75) * 0.4);
 
+/** Shot chart: every field-goal attempt (team, where it went up, made, three, quarter) - final / halftime screens. */
+export const SHOTS: { t: number; x: number; y: number; m: number; th: number; q: number }[] = [];
 export function start(i: number, o: { j?: number; sel?: number } = {}) {
   const NP = cfg.NP;
+  SHOTS.length = 0;
   SEL = o.j ?? o.sel ?? i; // My Player 1v1 faces the chosen opponent, else the selected card
   let j = o.j;
   if (j == null)
@@ -474,6 +477,7 @@ function zoneRes(p: Player, D0: number, made: boolean) {
   if (!p || !p.hzm || D0 == null) return;
   scout(p, D0, made, B.cx ?? 0);
   if (B.kk) (STAT.kA = (STAT.kA || 0) + 1), made && (STAT.kM = (STAT.kM || 0) + 1);
+  if (B.lx != null && !PREDICT && SHOTS.length < 400) SHOTS.push({ t: p.tm, x: B.lx, y: B.ly, m: made ? 1 : 0, th: D0 >= 237 ? 1 : 0, q });
   if (B.kk && made && D0 >= 237 && Math.random() < 0.5) cm("kick", p.n);
   const z = zoneOf(p, D0);
   if (made) {
@@ -1245,6 +1249,8 @@ export function launch(p: Player) {
   B.fb = !isFT && TS.tr[p.tm] ? 1 : 0; // (broadcast stats: a fast-break shot)
   B.sc2 = !isFT && TS.orbP[p.tm] ? 1 : 0; // (second-chance shot: this possession had an offensive rebound)
   B.cx = cx;
+  B.lx = p.x; // (where it went up: shot chart)
+  B.ly = p.y;
   B.kk = !isFT && p.kickT > 0 ? 1 : 0; // a shot off a kick-out
   // play-by-play: the call as he rises ("Curry pulls up..."); the result line follows on the make / miss
   if (!isFT && !lay && !PREDICT)
