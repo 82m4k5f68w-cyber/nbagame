@@ -1316,8 +1316,18 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           const s = Math.sin(b.ph);
           Object.assign(q, { tL: s * 0.35, tR: -s * 0.35, kL: Math.max(0, -s) * 0.5, kR: Math.max(0, s) * 0.5, cr: 0, ln: 0.04, ty: 0, rz: 0, cx: 0, cy: 0 });
           b.f += (Math.atan2(0, dir) - b.f) * Math.min(1, dt * 6);
-          const g2 = coachG[b.tm] > 0 ? coachK[b.tm] : 0;
-          if (g2) {
+          const g2 = coachG[b.tm] > 0 ? coachK[b.tm] : 0,
+            hud = (TS.hud || 0) > 0 && (TS.hud || 0) < 2.6; // (the T signal first, then into the huddle)
+          if (hud) {
+            // timeout: he walks to the back of his team's huddle and draws up the play
+            b.tx = (b.tm ? 1 : -1) * 13;
+            if (Math.abs(b.tx - b.x) < 0.3) {
+              b.x = b.tx;
+              const d = Math.sin(T * 5) * 0.25;
+              Object.assign(q, { tL: 0, tR: 0, kL: 0, kR: 0, ln: 0.25, aL: 0.95, eL: 1.7, zL: -0.1, aR: 1.15 + d, eR: 1.35 - d, sz: 0.05 });
+              b.f = Math.PI / 2;
+            }
+          } else if (g2) {
             b.tx = b.x; // stop and coach
             if (g2 === 1) Object.assign(q, { aR: 2.7, eR: 0.2, sz: 0.2, aL: 1.0, eL: 1.9, zL: -0.3 }); // play call: arm up, fingers
             else if (g2 === 2) Object.assign(q, { aR: 1.55, eR: 0.05, sz: 0.0, aL: 2.9, eL: 0.05, zL: 0.4 }); // T for timeout
@@ -1540,6 +1550,12 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
             dr = hoop(p0.tm) > 470 ? 1 : -1;
           tp = [pw[0] - dr * 13, 8.5, pw[2] + (pw[2] > 0 ? -4 : 4) + 10];
           tl = [pw[0] + dr * 9, 3, pw[2] * 0.6];
+        }
+        if (!RPL && (TS.hud || 0) > 0 && TS.hud < 2.5 && p0 && !SCFG.HALF) {
+          // timeout: the broadcast cuts to your team's huddle in front of its bench
+          const hx2 = (p0.tm ? 1 : -1) * 13;
+          tp = [hx2 + 4, 8, -8];
+          tl = [hx2, 3.2, -21.6];
         }
         // Replay director: a tracking close-up on the player nearest the ball (low and looking up when the play is at
         // the rim: dunks, layups), slowly orbiting, with depth of field focused on him.

@@ -3695,7 +3695,9 @@ function offBall(p: Player, t: number) {
   // a post scorer with a small on him (after a switch): seal on the ball-side block and call for it
   if (p !== scr && p !== use && cfg.NP > 1 && !CT.some((c) => c.tm === t && P[c.idx] === p)) {
     const mm = manOf(p);
-    if (mm && !mm.off && p.i >= 76 && p.ht - mm.ht >= 0.4 && !(TS.lane[P.indexOf(p)] > 1.6)) {
+    // (a short window per possession, and only while the ball is out at the arc to feed him: no clogged lane)
+    if (mm && !mm.off && p.i >= 76 && p.ht - mm.ht >= 0.4 && !(TS.lane[P.indexOf(p)] > 1.6) && (p.ai.sealT || 0) < 2.5 && Math.hypot(hx - h.x, HY - h.y) > 200 && Math.hypot(hx - h.x, HY - h.y) < 300) {
+      p.ai.sealT = (p.ai.sealT || 0) + DT;
       const bs = h.y < HY ? -1 : 1;
       mv(p, hx + dir * 40, HY + bs * 48, 1.1);
       if (Math.hypot(p.x - (hx + dir * 40), p.y - (HY + bs * 48)) < 20) (p.callT = Math.max(p.callT || 0, 0.3)), (STAT.seal = (STAT.seal || 0) + 1);
@@ -3908,6 +3910,12 @@ function contestRaw(p: Player): [number, Player | null] {
         ct = c2;
         o2 = o;
       }
+    }
+    if (d < 95 && d > 1) {
+      // a hard closeout bothers the shot before he gets there (the shooter sees him coming, hurries it)
+      const ap = (o.vx * (p.x - ox) + o.vy * (p.y - oy)) / d,
+        c3 = clamp((ap - 90) / 160, 0, 1) * (1 - d / 95) * 0.8;
+      if (c3 > ct) (ct = c3), (o2 = o);
     }
   }
   return [ct, o2];

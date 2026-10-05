@@ -348,7 +348,11 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   (`STAT.seal` ticks). Commentary keys `kick` (made three off a kick-out) and `slip`.
 - Timeout huddle: `callTO` gives a 3.2 s dead ball and `TS.hud`; deadBall walks each team into a circle in front of its
   bench (far sideline, x 470 -+ 130, y 34), facing in; the last .75 s `p.hudT` = hands in (pose3, two-arm IK to
-  `p.hcx/hcy`). Studio: "Timeout huddle: hands in".
+  `p.hcx/hcy`). Studio: "Timeout huddle: hands in". The head coach walks to the back of the huddle and draws up the
+  play (render3d benchUpd); the broadcast camera cuts to your team's huddle (TS.hud < 2.5).
+- Closeout contest (`contestRaw`): a defender within 95 px flying at the shooter (approach > 90 px/s) counts as a
+  partial contest (x .8) before he arrives - calibrated kick-out threes ~39% (were 56%). Seals: 2.5 s per possession
+  (`p.ai.sealT`), only while the ball is at the arc.
 - Pick-and-roll reads (`Play.rd`, decided once): vs a hedge / trap the screener slips (45%), vs switch-all a shooting
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 
