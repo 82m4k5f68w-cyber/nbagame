@@ -32,9 +32,11 @@ import { skeleton } from "../src/core/pose";
     if (G.S !== "play") continue;
     const B = G.B,
       o = B.owner;
-    if (o && o === pto && G.inb <= 0) cat.push(Math.min(Math.hypot(PS[45] - pb[0], PS[46] - pb[1], PS[47] - pb[2]), Math.hypot(PS[57] - pb[0], PS[58] - pb[1], PS[59] - pb[2])));
+    // (minus the ball's own travel in that tick: a fast pass is a tick's worth of flight short of the hands by
+    // construction - what matters is that the hands were on its path)
+    if (o && o === pto && G.inb <= 0) cat.push(Math.max(0, Math.min(Math.hypot(PS[45] - pb[0], PS[46] - pb[1], PS[47] - pb[2]), Math.hypot(PS[57] - pb[0], PS[58] - pb[1], PS[59] - pb[2])) - pb[3] / 60));
     pto = B.mode === "pass" ? B.to : null;
-    if (pto) skeleton(pto, PS), (pb = [B.x, B.y, B.z]);
+    if (pto) skeleton(pto, PS), (pb = [B.x, B.y, B.z, Math.hypot(B.vx, B.vy, B.vz)]);
     if (o && o.mode === "i" && B.mode === "held" && !o.postA) {
       skeleton(o, SK);
       if (G.heldBall(o) || G.inb > 0) held.push(Math.hypot((SK[45] + SK[57]) / 2 - B.x, (SK[46] + SK[58]) / 2 - B.y, (SK[47] + SK[59]) / 2 - B.z));

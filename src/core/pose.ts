@@ -1683,7 +1683,8 @@ export function pose3(p: Player) {
     if (wL > 0 && (p.ctL || 0) < 0.01) (K[3] = o.aL), (K[4] = o.eL), (K[5] = o.zL ?? o.sz);
     // (weights ride a critically damped spring: they start and stop with zero velocity, so contact never pops)
     {
-      const om = cat || con ? 22 : 18;
+      // (a spin / behind-the-back carries the ball on its own hand path: a leftover catch or dribble fade dies off faster)
+      const om = cat || con ? 22 : p.mvT > 0 && (p.mvk === 2 || p.mvk === 3) ? 30 : 18;
       p.ctRv = (p.ctRv || 0) + (om * om * (wR - (p.ctR || 0)) - 2 * om * (p.ctRv || 0)) * DT;
       p.ctLv = (p.ctLv || 0) + (om * om * (wL - (p.ctL || 0)) - 2 * om * (p.ctLv || 0)) * DT;
       p.ctR = clamp((p.ctR || 0) + p.ctRv * DT, 0, 1);
