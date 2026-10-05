@@ -753,6 +753,17 @@ function rulesTick(dt: number) {
         return;
       }
     }
+    // up three in the last seconds: foul before he can get a tying three off (two free throws can't tie it)
+    if (o && cfg.FOULS && !ftq && inb <= 0 && rs <= 0 && q >= 4 && bcast() < 7 && fc <= 0 && !CT.some((c) => c.tm === dt2) && sc[dt2] - sc[o.tm] === 3 && o.mode === "i" && Math.hypot(hoop(o.tm) - o.x, HY - o.y) > 200) {
+      const d = P.find((p) => p.tm === dt2 && Math.hypot(p.x - o.x, p.y - o.y) < 28);
+      if (d && Math.random() < dt * 4) {
+        fc = 2;
+        tf[dt2] = Math.max(tf[dt2], 4);
+        cm("foulup3", d.n, o.n);
+        foul(d, o, "INTENTIONAL", 0, 0);
+        return;
+      }
+    }
   }
   if (!cfg.VIOL || cfg.HALF || ftq || inb > 0 || !B.owner || rs > 0) {
     TS.lane.fill(0); // a shot / loose ball / dead ball resets the count
@@ -1998,6 +2009,8 @@ export function ai(p: Player, dt: number) {
       return;
     }
     if (!a.r && md && p.s - md.s >= 12 && Math.random() < 0.5) (a.r = 45 + Math.random() * 30), (a.w = 0), (a.pt = 0.8); // attack the slower man
+    // down three late: it has to be a three
+    if (!a.r && !isH(p) && q >= 4 && bcast() < 24 && sc[1 - t] - sc[t] === 3 && !cfg.HALF) (a.r = 248 + Math.random() * 18), (a.w = 0), (a.pt = 0.8), (a.adj = 1);
     if (!a.r) {
       // where does he want his shot? from his tendencies (Curry deep, SGA mid-range, Edwards downhill, Jokic post)
       const td = tendOf(p),
