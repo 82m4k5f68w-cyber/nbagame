@@ -1030,6 +1030,17 @@ export function pose3(p: Player) {
     zL = 0.22;
     hz = 0.14;
     gL = gR = 0.35;
+  } else if (md === "i" && !has && !air && sp >= 15 && sp < 110 && (p.en ?? 1) < 0.6 && (rs > 0.3 || ftq) && !(p.celT > 0) && !(p.setT > 0)) {
+    // gassed, walking at a dead ball: arms hang heavy, shoulders slump, a big breath (arms and chest only - the legs
+    // keep walking)
+    const br = Math.sin(T * 2.4 + p.k) * 0.06;
+    aL = aL * 0.3 - 0.05;
+    aR = aR * 0.3 - 0.05;
+    sz = zL = 0.16;
+    eL = eR = 0.3;
+    cx = 0.2 + br;
+    ln += 0.08;
+    gL = gR = 0.15;
   }
   if (p.celT > 0 && p.cel && md === "i" && !has && !air && !p.postA && !(p.setT > 0)) {
     st = ST.cel;

@@ -569,7 +569,7 @@ function scouting() {
       const k = G.TS.sk[t],
         cpu = !CT.some((c) => c.tm === t);
       return `<h3 style="margin:10px 0 4px;color:${G.PC[t]}">${esc(G.cl[t])}${cpu ? " (CPU)" : ""}</h3>
-      <p class="hint" style="margin:2px 0">${cpu ? `Game plan: <b>${G.GPN[G.TS.gp[t]]}</b> · ` : ""}Play: <b>${G.PCN[G.TS.pc[t]]}</b> · Defense: <b>${G.DSN[G.TS.ds[t]]}</b><br>Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
+      <p class="hint" style="margin:2px 0">${cpu ? `Game plan: <b>${G.GPN[G.TS.gp[t]]}</b> · ` : ""}Play: <b>${G.PCN[G.TS.pc[t]]}</b> · Defense: <b>${G.DSN[G.TS.ds[t]]}</b>${cpu ? ` · Pick-and-roll: <b>${G.TS.cov[t] ? "HEDGE" : "DROP"}</b>${G.TS.dbl[t] >= 0 && P[G.TS.dbl[t]] ? ` · Doubling <b>${esc(P[G.TS.dbl[t]].n)}</b>` : ""}` : ""}<br>Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
       <table class="bx" style="max-width:640px">${[...Array(NP).keys()]
         .map((j) => {
           const p = P[t * NP + j];

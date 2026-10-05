@@ -1245,6 +1245,7 @@ export function launch(p: Player) {
     B.vy = (Math.random() - 0.5) * 120;
     B.vz = 60;
     B.sh = 0;
+    B.last = blk; // (he touched it last: swatted out of bounds, the shooting team keeps it)
     blk.stt.blk++;
     exc(0.9);
     txtW("BLOCKED!", blk.x, blk.y, 80, "#ff6b4a");
@@ -2755,6 +2756,15 @@ export function bstep(dt: number) {
       B.x += court * 2; // off the glass
     }
   } else B.stk = 0;
+  // Out of bounds: a loose ball (a long rebound, a deflection, a block, a dead pass) that reaches the lines is out -
+  // the other team than the last one to touch it gets it (CPU-vs-CPU and human games alike; rules: VIOL)
+  if (cfg.VIOL && !PREDICT && !B.owner && (B.mode === "air" || B.mode === "pass") && (B.x < 6 || B.x > CW - 6 || B.y < 6 || B.y > CH - 6) && B.last && !ftq && !JB && rs <= 0 && inb <= 0 && S === "play" && gameLike() && !B.sc) {
+    STAT.oob = (STAT.oob || 0) + 1;
+    const L = B.last;
+    if (L.stt) L.stt.tov = (L.stt.tov || 0) + 1;
+    violation(L.tm, "OUT OF BOUNDS", L);
+    return;
+  }
   // World bounds for both engines (a fast Rapier ball could tunnel past or fly over the thin arena walls).
   {
     if (B.x < 6 || B.x > CW - 6) {

@@ -200,7 +200,7 @@ const q6 = (v: number, s: number) => Math.max(0, Math.min(63, r((v || 0) * s)));
 function proFlags(p: any) {
   return (
     q6(p.hupT, 100) +
-    64 * (q6(p.plantT, 100) + 64 * (q6(p.engT, 100) + 64 * (Math.max(0, Math.min(31, r((p.eng || 0) * 15) + 16)) + 32 * ((p.pk & 3) + 4 * (Math.min(31, q6(p.dcl, 100)) + 32 * (Math.min(31, q6(p.frT, 10)) + 32 * (p.rl ? 1 : 0)))))))
+    64 * (q6(p.plantT, 100) + 64 * (q6(p.engT, 100) + 64 * (Math.max(0, Math.min(31, r((p.eng || 0) * 15) + 16)) + 32 * ((p.pk & 3) + 4 * (Math.min(31, q6(p.dcl, 100)) + 32 * (Math.min(31, q6(p.frT, 10)) + 32 * ((p.rl ? 1 : 0) + 2 * ((p.chinT > 0 ? 1 : 0) + 2 * (p.hdgT > 0 ? 1 : 0)))))))))
   );
 }
 function proApply(p: any, v: number) {
@@ -217,6 +217,8 @@ function proApply(p: any, v: number) {
   p.dcl = d(32) / 100;
   p.frT = d(32) / 10;
   p.rl = d(2);
+  p.chinT = d(2) ? 0.2 : 0; // (chinned rebound: heldBall 4 on the guest too)
+  p.hdgT = d(2) ? 0.2 : 0; // (hedge / trap: arms wide)
 }
 /** Discrete per-player fields (never interpolated). */
 export function applyDiscrete(p: any, a: number[], o: number) {

@@ -258,6 +258,12 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Dribble handoff (CPU): a big (c < 74 or 6'10"+) with the ball 18-30 ft out holds it for the best shooter
   (`a.dho`, `q.ai.dhoBy`), hands off within 22 px, then stays planted as the screen (`a.holdT`, `setT`).
 - Buzzer: a CPU handler with < 1.25 s on the game or shot clock gets it up from anywhere (HEAVE! from 42 ft+).
+- Out of bounds (bstep, cfg.VIOL, game-like modes): a loose ball / pass that reaches the lines is a turnover by
+  `B.last` (a block sets `B.last` = the blocker) -> `violation()`; ~2-3 per game (`STAT.oob`). Players stay clamped.
+- Contest hands: the closest defender (< 48 px) to a shooter in c/s (or just after the release) gets the ball-side
+  hand up at the ball, post-blend; contact weights ride a critically damped spring (`p.ctRv/ctLv`).
+- Online PROTO 7: proFlags also carry chinT (chinned rebound) and hdgT (hedge / trap arms) as bits.
+- Gassed walk: tired players walking at a dead ball let the arms hang heavy, shoulders slump, breathing.
 - Contact: the receiver's hands reach to where a pass will be caught (post-blend contact pass, 0.3 s ahead) and
   the catch waits until the ball reaches a palm (`p.skel`) once he is close; rebounds in traffic are chinned
   (`p.chinT`, heldBall 4) before the outlet.
