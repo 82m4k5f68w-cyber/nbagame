@@ -1789,7 +1789,12 @@ export function step(p: Player, dt: number) {
     }
     if (has && (i.pass || i.e || i.lob)) {
       const r = i.pass || pick(p, i);
-      const lobIt = !i.lob && !isH(p) && r && r.j >= (cfg.ASTAR ? 45 : 55) && Math.hypot(hoop(r.tm) - r.x, HY - r.y) < (cfg.ASTAR ? 140 : 100) && Math.random() < (cfg.ASTAR ? 0.92 : 0.6);
+      // (a fronted post man - his defender between him and the ball - gets it over the top)
+      const fronted = !!r && !isH(p) && r.br === "seal" && (() => {
+          const d = manOf(r);
+          return !!d && Math.hypot(d.x - r.x, d.y - r.y) < 24 && Math.hypot(d.x - p.x, d.y - p.y) < Math.hypot(r.x - p.x, r.y - p.y);
+        })(),
+        lobIt = !i.lob && !isH(p) && r && (fronted || (r.j >= (cfg.ASTAR ? 45 : 55) && Math.hypot(hoop(r.tm) - r.x, HY - r.y) < (cfg.ASTAR ? 140 : 100) && Math.random() < (cfg.ASTAR ? 0.92 : 0.6)));
       if (r && !PREDICT) pass(p, r, i.lob || lobIt ? 2 : undefined);
     } else if (i.e && p.cd <= 0) {
       p.cd = 0.8; // steals are OFF by design (user request): reach-ins do nothing
