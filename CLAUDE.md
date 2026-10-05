@@ -327,6 +327,11 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   by commit / by disabling functions and publishing variants; rewriting it with typed arrays fixed it.
 - Rare freezes (unseeded invariants games) are found by state, not by repro: invariants.ts now fails "game clock stuck
   60 s" with the dead-ball / ftq / ball state - that is how the FT-catch and lodged-ball freezes were found.
+- Rapier 0.21 tried and reverted (Oct 2026): +2.3 MB wasm (build 4.1 -> 6.4 MB), sim tick no faster (0.66 vs 0.61 ms).
+  If you upgrade again: set `world.lengthUnit = 32.8` (game units per meter) - at the default 1 it scales a hidden
+  speed cap (~400 units/s) and deep threes fell 3 ft short (greens 98% -> 89%).
+- Engine choice: three.js stays (Babylon/PlayCanvas = same class, bigger; Unity/Unreal/Godot can't ship as one
+  small HTML file and run worse on Chromebooks).
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 
