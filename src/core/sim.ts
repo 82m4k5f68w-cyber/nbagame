@@ -472,6 +472,7 @@ function zoneRes(p: Player, D0: number, made: boolean) {
   if (!p || !p.hzm || D0 == null) return;
   scout(p, D0, made, B.cx ?? 0);
   if (B.kk) (STAT.kA = (STAT.kA || 0) + 1), made && (STAT.kM = (STAT.kM || 0) + 1);
+  if (B.kk && made && D0 >= 237 && Math.random() < 0.5) cm("kick", p.n);
   const z = zoneOf(p, D0);
   if (made) {
     p.hzm[z] = Math.min(4, (p.hzm[z] || 0) + 1);
@@ -3628,6 +3629,7 @@ function offBall(p: Player, t: number) {
         pl.ph = "out";
         pl.setAt = T;
         STAT[pl.rd === 1 ? "slip" : "ghost"] = (STAT[pl.rd === 1 ? "slip" : "ghost"] || 0) + 1;
+        if (pl.rd === 1 && Math.random() < 0.35) cm("slip", p.n);
         return true;
       }
       mv(p, pl.sx, pl.sy, 1.2);

@@ -32,6 +32,8 @@ const LINES: Record<string, ((n: string, n2: string) => string)[]> = {
   flagrant: [(n, n2) => `Flagrant foul on ${n}! That was a dangerous play on ${n2}.`],
   goaltend: [(n) => `Goaltending on ${n} — the basket counts!`],
   charge: [(n, n2) => `${n} plants and takes the charge from ${n2}!`],
+  kick: [(n) => `Drive, kick, and ${n} knocks it down! The defense couldn't recover.`, (n) => `Great ball movement — the help came and ${n} made them pay.`, (n) => `Inside-out, and ${n} buries it.`],
+  slip: [(n) => `${n} slips the screen and they're scrambling!`, (n) => `Nice read by ${n} — he slips it before the hedge gets there.`],
   tech: [(n) => `Technical foul on ${n}. He did not like that call.`],
   cold: [(n) => `${n} has gone ice cold.`, (n) => `${n} can't buy one right now.`],
   assign: [(n, n2) => `${n} gets the call — he'll check ${n2} now.`, (n, n2) => `Defensive switch: ${n} picks up the hot hand, ${n2}.`],
