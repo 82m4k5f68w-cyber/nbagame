@@ -1372,14 +1372,43 @@ export function launch(p: Player) {
     return;
   }
   if (!fd && blk && blk.z > 10 && Math.hypot(blk.x - p.x, blk.y - p.y) < 24 && Math.random() < 0.025 + (ct * 0.13 * blk.d) / 100) {
-    B.vx = (p.x - blk.x) * 8 + (Math.random() - 0.5) * 80;
-    B.vy = (Math.random() - 0.5) * 120;
-    B.vz = 60;
+    // three kinds of block: a control block tipped to himself or a teammate (good defenders keep it - it starts the
+    // break), a volleyball swat into the stands, or the plain swat that pops it loose
+    const r = Math.random(),
+      ctl = r < 0.15 + (blk.d - 60) / 160,
+      swat = !ctl && r < 0.5;
+    if (ctl) {
+      let mate = blk,
+        md = 1e9;
+      for (const q of P)
+        if (q.tm === blk.tm && q !== blk && !q.off) {
+          const d = Math.hypot(q.x - blk.x, q.y - blk.y);
+          if (d < md && d < 160) (md = d), (mate = q);
+        }
+      const tx = mate === blk ? blk.x + (470 - blk.x) * 0.06 : mate.x,
+        ty = mate === blk ? blk.y : mate.y,
+        tt = 0.75;
+      B.vx = (tx - B.x) / tt;
+      B.vy = (ty - B.y) / tt;
+      B.vz = (40 - B.z) / tt + (g * tt) / 2; // (lands about chest high at the target)
+      STAT.ctlBlk = (STAT.ctlBlk || 0) + 1;
+      B.ctl = blk.tm;
+    } else if (swat) {
+      // sent away: hard, flat, out toward the nearest sideline
+      const sl = B.y < HY ? -1 : 1;
+      B.vx = (p.x - blk.x) * 6 + (Math.random() - 0.5) * 60;
+      B.vy = sl * (260 + Math.random() * 120);
+      B.vz = 30;
+    } else {
+      B.vx = (p.x - blk.x) * 8 + (Math.random() - 0.5) * 80;
+      B.vy = (Math.random() - 0.5) * 120;
+      B.vz = 60;
+    }
     B.sh = 0;
     B.last = blk; // (he touched it last: swatted out of bounds, the shooting team keeps it)
     blk.stt.blk++;
-    exc(0.9);
-    txtW("BLOCKED!", blk.x, blk.y, 80, "#ff6b4a");
+    exc(swat ? 1 : 0.9);
+    txtW(ctl ? "BLOCKED - AND KEPT!" : swat ? "SENT AWAY!" : "BLOCKED!", blk.x, blk.y, 80, "#ff6b4a");
     cm("block", blk.n);
     p.act = 6; // the shooting arm gets knocked back
     p.actT = 0.45;
@@ -3151,6 +3180,7 @@ export function bstep(dt: number) {
       // a rebound in traffic is chinned: both hands, ball under the chin, elbows out, until he lands and looks up
       if (B.sh && !B.ft && !PREDICT && p.mode === "i") p.chinT = p.z > 6 ? 0.45 + p.z / 200 : 0.35;
       if (B.mode === "pass" && B.kick && p === B.to && !PREDICT) (p.kickT = 2.5), (STAT.kick = (STAT.kick || 0) + 1);
+      if (B.ctl != null && !PREDICT) (p.tm === B.ctl && (STAT.ctlKeep = (STAT.ctlKeep || 0) + 1)), (B.ctl = null);
       B.owner = p;
       B.mode = "held";
       B.sh = 0;

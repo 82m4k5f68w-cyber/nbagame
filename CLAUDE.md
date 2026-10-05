@@ -195,6 +195,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Blend offsets are circular (`wrapPi`): 2 pi apart is the same pose (spin moves accumulate ty; arm IK flips across
   +-pi); `armIK` keeps the shoulder in -2.6 .. 3.7 (over the top for targets overhead). Shot/move states cap in-state
   blend times at .1 s (releases stay crisp; blend.ts checks the layup arm against the old blend).
+- Blocks (launch): control block (p .15 + (d-60)/160) tipped to the nearest teammate within 160 px or himself, landing
+  chest high in .75 s (`B.ctl` -> `STAT.ctlKeep` when his team catches it); swat (to .5) hard toward the nearest
+  sideline ("SENT AWAY!"); else the old pop.
 - Lodged ball (bstep): resting on the iron / wedged against the glass for 1.2 s -> rolls out toward mid-court, never
   into the board (tests/rim_wedge.ts). Open shooters call for the ball (`p.callT` shout face); on-ball defenders ride
   the driver's hip (armIK) under 34 px.
