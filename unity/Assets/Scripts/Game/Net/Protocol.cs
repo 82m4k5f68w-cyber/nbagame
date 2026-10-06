@@ -132,7 +132,7 @@ namespace Hoops.Game.Net
 
         // reused guest-side objects (applySnap runs every rendered frame: no allocations)
         static readonly ReplayState rplNet = new ReplayState();
-        static readonly JumpBall jbNet = new JumpBall { c = new Player[0], jt = new double[] { -1, -1 }, ai = new double[] { 0, 0 } };
+        static readonly JumpBall jbNet = new JumpBall { c = new Player[2], jt = new double[] { -1, -1 }, ai = new double[] { 0, 0 } };
         static FtQueue ftqNet;
 
         static double[] sa, sb;
