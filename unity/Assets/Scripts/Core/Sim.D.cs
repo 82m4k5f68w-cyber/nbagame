@@ -845,10 +845,11 @@ namespace Hoops.Core
             {
                 // the first push starts from the hands (a catch at the chest, a triple threat), not from a ball teleported to the hip
                 // (TS distinguishes B.dho === null (cleared by bstep) from never set; C# null covers both)
-                B.dh = B.dho == null && B.hold == o ? clamp(B.z, top, top + 22) : top;
+                B.dh = B.dhoNull && B.hold == o ? clamp(B.z, top, top + 22) : top;
                 B.dvv = 0;
                 B.dhd = 0.08;
                 B.dho = o;
+                B.dhoNull = false;
                 B.fr0 = T;
             }
             B.dtop = top;

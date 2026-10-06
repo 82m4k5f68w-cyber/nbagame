@@ -87,7 +87,7 @@ namespace Hoops.Core
                                 : Util.T((double)heldBall(o))
                                     ? heldZ(o)
                                     : dz(o, dt);
-                if (Util.T((double)heldBall(o))) B.dho = null; // the dribble starts fresh from the hand when he puts it on the floor
+                if (Util.T((double)heldBall(o))) { B.dho = null; B.dhoNull = true; } // the dribble starts fresh from the hand when he puts it on the floor
                 // gather and shot: the ball sits in the shooting hand's palm (the same FK the release uses)
                 if ((o.mode == "c" || o.mode == "s") && cfg.hand && cfg.PRO != 0 && o.q != null && o.posed)
                 {

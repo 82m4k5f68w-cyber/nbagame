@@ -31,5 +31,6 @@ for (let t = 0; t < N && G.S !== "over"; t++) {
   if (G.RPL) G.skipReplay();
   G.FX.length = 0;
   if (G.S === "half") G.setS("play");
+  if (process.env.DBG && t >= 178 && t <= 181) { const o: any = G.B.owner; console.error(t, o && o.n, o && o.mode, o && G.heldBall(o), G.inb, o && o.q && o.q.wR, o && o.act, o && o.actT, G.B.z, G.B.tgz); }
   console.log(t + " " + G.P.map((p) => f(p.x) + "," + f(p.y) + "," + f(p.z)).join(" ") + " | " + f(G.B.x) + "," + f(G.B.y) + "," + f(G.B.z) + " " + G.B.mode + " " + G.sc.join("-"));
 }
