@@ -61,7 +61,8 @@ public static class Build
     {
         ConfigurePerformance();
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-        new GameObject("Game").AddComponent<HoopsTest>();
+        var game = new GameObject("Game").AddComponent<HoopsTest>();
+        game.baseMat = GraphicsSettings.defaultRenderPipeline.defaultMaterial; // URP Lit, kept in the build via the scene
         EditorSceneManager.SaveScene(scene, "Assets/Main.unity");
         var r = BuildPipeline.BuildPlayer(new BuildPlayerOptions
         {

@@ -9,6 +9,18 @@ public class HoopsTest : MonoBehaviour
     static readonly Vector3 RimC = new Vector3(0f, 10f * FT, 41.75f * FT); // rim center (feet -> meters)
     const float RimR = 0.75f * FT, BallR = 0.39f * FT;
 
+    // URP Lit material, set by Build.WebGL: the scene must reference it or the player build strips its shader
+    // (CreatePrimitive's built-in default is not in the build -> magenta).
+    public Material baseMat;
+    static Material sBase;
+
+    static GameObject Prim(PrimitiveType t)
+    {
+        var g = GameObject.CreatePrimitive(t);
+        if (sBase) g.GetComponent<Renderer>().sharedMaterial = sBase;
+        return g;
+    }
+
     Transform player, cam;
     Rigidbody ball;
     bool held = true, charging;
@@ -22,6 +34,7 @@ public class HoopsTest : MonoBehaviour
         Application.targetFrameRate = 60;
         QualitySettings.vSyncCount = 0;
         Physics.gravity = new Vector3(0, -9.81f, 0);
+        sBase = baseMat;
         BuildCourt();
         BuildHoop();
         BuildPlayer();
@@ -41,7 +54,7 @@ public class HoopsTest : MonoBehaviour
 
     static GameObject Box(string n, Vector3 pos, Vector3 size, Color col, bool collider = true)
     {
-        var g = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        var g = Prim(PrimitiveType.Cube);
         g.name = n;
         g.transform.position = pos;
         g.transform.localScale = size;
@@ -74,7 +87,7 @@ public class HoopsTest : MonoBehaviour
         {
             float a0 = k / 24f * Mathf.PI * 2, a1 = (k + 1) / 24f * Mathf.PI * 2;
             Vector3 p0 = RimC + new Vector3(Mathf.Cos(a0), 0, Mathf.Sin(a0)) * RimR, p1 = RimC + new Vector3(Mathf.Cos(a1), 0, Mathf.Sin(a1)) * RimR;
-            var g = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            var g = Prim(PrimitiveType.Capsule);
             g.name = "Rim";
             g.transform.position = (p0 + p1) / 2;
             g.transform.rotation = Quaternion.FromToRotation(Vector3.up, (p1 - p0).normalized);
@@ -86,13 +99,13 @@ public class HoopsTest : MonoBehaviour
 
     void BuildPlayer()
     {
-        var g = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        var g = Prim(PrimitiveType.Capsule);
         g.name = "Player";
         g.transform.localScale = new Vector3(0.55f, 1f, 0.45f); // ~6'6"
         g.transform.position = new Vector3(0, 1f, 20 * FT);
         g.GetComponent<Renderer>().material.color = new Color(0.33f, 0.15f, 0.55f);
         Destroy(g.GetComponent<Collider>());
-        var head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        var head = Prim(PrimitiveType.Sphere);
         head.transform.SetParent(g.transform, false);
         head.transform.localPosition = new Vector3(0, 1.05f, 0);
         head.transform.localScale = new Vector3(0.45f, 0.24f, 0.55f);
@@ -103,7 +116,7 @@ public class HoopsTest : MonoBehaviour
 
     void BuildBall()
     {
-        var g = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        var g = Prim(PrimitiveType.Sphere);
         g.name = "Ball";
         g.transform.localScale = Vector3.one * BallR * 2;
         g.GetComponent<Renderer>().material.color = new Color(0.85f, 0.4f, 0.12f);
