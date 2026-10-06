@@ -15,7 +15,8 @@ namespace Hoops.Game
         Camera cam;
         RigDraw draw; // skinned players + ball (Rig.cs)
         GameAudio sfx;
-        Vector3 camLook;
+        Arena arena; // stands, crowd, lights, jumbotron, net, post + quality ladder (Arena.cs)
+        CameraDirector camDir; // broadcast / 2K / baseline / player lock (K), replay director
         float fps = 60;
         // edge events captured per frame, consumed by the first sim tick that reads them (like input.ts `ev`)
         bool eSd, eSu, eE, eR, eF, eQ, eG, eTo, eCh, eDs;
@@ -42,12 +43,13 @@ namespace Hoops.Game
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.03f, 0.035f, 0.05f);
             cg.tag = "MainCamera";
+            arena = new Arena(cam);
+            camDir = new CameraDirector(cam);
             cfg.input = ReadInput;
             setCtrls(new List<Ctrl> { mkCtrl("p1", 0) });
             setQtrLen(180);
             gameObject.AddComponent<Menus>(); // title / matchup screen starts the game
             sfx = gameObject.AddComponent<GameAudio>();
-            camLook = PhysXBall.U(470, 250, 0);
         }
 
         Hoops.Core.Input ReadInput(Ctrl c)
@@ -103,22 +105,25 @@ namespace Hoops.Game
             if (Down(KeyCode.V)) eMv = 3;
             // (rematch / menu: Menus final screen)
 
-            if (S == "play" || RPL != null)
+            if (Net.NetHooks.GuestFrame(dt, ReadInput)) { } // online guest: prediction + interpolation instead of the sim
+            else if (S == "play" || RPL != null)
             {
                 acc += dt;
                 int k = 0;
-                while (acc >= STEP && k < 6) { upd(STEP); acc -= STEP; k++; }
+                while (acc >= STEP && k < 6) { upd(STEP); Net.NetHooks.AfterTick(); acc -= STEP; k++; }
                 if (acc > STEP * 2) acc = STEP; // a slow frame drops time instead of snowballing
             }
             else if (S == "half") setS("play");
-            else if (S == "over") postGame(System.Math.Min(dt, 0.05));
+            else if (S == "over") { postGame(System.Math.Min(dt, 0.05)); Net.NetHooks.AfterTick(); }
             DrainFx(dt);
             draw.Draw(dt);
-            UpdateCamera(dt);
+            camDir.Tick(dt);
+            arena.Tick(dt);
         }
 
         void DrainFx(float dt)
         {
+            arena.OnFx(FX);
             foreach (var f in FX)
             {
                 sfx.OnFx(f);
@@ -134,17 +139,6 @@ namespace Hoops.Game
                 if (t.t <= 0) texts.RemoveAt(i); else texts[i] = t;
             }
             if (texts.Count > 8) texts.RemoveRange(0, texts.Count - 8);
-        }
-
-        void UpdateCamera(float dt)
-        {
-            // broadcast camera: high on the near sideline, following the ball (a little ahead toward the hoop it attacks)
-            var o = B.owner;
-            double ax = B.x + (o != null ? (hoop(o.tm) - B.x) * 0.25 : 0);
-            var look = PhysXBall.U(Util.Clamp(ax, 180, 760), 250 + (B.y - 250) * 0.3, 0);
-            camLook = Vector3.Lerp(camLook, look, 1 - Mathf.Exp(-3f * dt));
-            cam.transform.position = camLook + new Vector3(0, 30f, -68f);
-            cam.transform.LookAt(camLook + new Vector3(0, 2f, 0));
         }
 
         Player Focus()

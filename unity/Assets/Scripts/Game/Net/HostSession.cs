@@ -142,6 +142,10 @@ namespace Hoops.Game.Net
             public double q; // last quick-chat sequence consumed
             public double seen; // when this guest's presence last changed
             public bool stale;
+            // NetOpts.InputRedundancy: input ticks received in order, played one per sim tick
+            public readonly List<WireInput> iq = new List<WireInput>();
+            public double lastQd = -1; // newest input tick queued
+            public bool redund; // this guest sends "Ir"
         }
 
         /// <summary>Quick chat / emotes (keys 1-6).</summary>
@@ -163,7 +167,7 @@ namespace Hoops.Game.Net
         readonly Action unsub;
         readonly HashSet<string> remote = new HashSet<string>();
         readonly Func<double> now;
-        double hbAt;
+        double hbAt, rmAt = -1, tempoP1;
         // events of the sim, kept here (the shell drains Sim.FX every frame)
         readonly List<Fx> fxRing = new List<Fx>();
         int fxSeen;
@@ -180,10 +184,61 @@ namespace Hoops.Game.Net
             hbAt = this.now();
         }
 
+        HostSession(ITransport t, HostMe me, Lobby l, int k, Func<double> now)
+        {
+            this.t = t;
+            this.me = me;
+            this.now = now ?? NetClock.Wall;
+            L = l;
+            this.k = k;
+            hbAt = this.now();
+            fxSeen = FX.Count > 0 ? FX[FX.Count - 1].id : 0;
+            unsub = t.OnPeers(Peers);
+        }
+
+        /// <summary>Host migration lite: the old host left mid-game and this guest takes over. Its local sim is put on
+        /// the newest snapshot (state transfer), its own seat becomes "host" (controller p1), the game id and the tick
+        /// counter carry on, so the other guests keep following without a restart. Not carried (not in the snapshot):
+        /// AI memory, a running replay, the opening tip, free-throw timers (restart with their defaults).</summary>
+        public static HostSession TakeOver(GuestSession g, HostMe me, Func<double> now = null)
+        {
+            var t = g.t;
+            var old = g.L;
+            var latest = g.Latest;
+            string myId = t.Me;
+            g.Close();
+            var L = Lobby.From(old.ToJson());
+            L.slots.RemoveAll(x => x.id == "host");
+            L.ded = 0;
+            foreach (var x in L.slots)
+                if (x.id == myId) { x.id = "host"; x.rdy = 1; x.on = 1; me.tm = x.tm; }
+            setPredict(0);
+            Protocol.ApplySnap(latest, null, 0);
+            RPL = null;
+            JB = null;
+            if (ftq != null) ftq = new FtQueue { s = ftq.s, n = ftq.n, i = ftq.i, tech = ftq.tech };
+            if (S != "over") S = "play";
+            foreach (var c in CT) if (c.id == myId) c.id = "p1";
+            var h = new HostSession(t, me, L, (int)latest[0], now);
+            h.RebuildCtrls();
+            h.Pub(true);
+            return h;
+        }
+
         /// <summary>Per frame: the lobby heartbeat (re-publish every 2 s; let go of seats gone 15 s).</summary>
         public void Poll()
         {
             double n = now();
+            if (NetOpts.AutoRematch && L.st == "over" && L.tour == null)
+            {
+                var (v, m) = RematchVotes();
+                if (m > 0 && v >= m)
+                {
+                    if (rmAt < 0) rmAt = n + 2000;
+                    else if (n >= rmAt) { rmAt = -1; Rematch(tempoP1); }
+                }
+                else rmAt = -1;
+            }
             if (n - hbAt >= 2000)
             {
                 hbAt = n;
@@ -316,7 +371,31 @@ namespace Hoops.Game.Net
                 }
                 // Inputs: edge counters -> pending one-shot events.
                 var I = Json.Nums(st.Get("I"));
-                if (I != null && s != null)
+                var Ir = NetOpts.InputRedundancy ? st.Arr("Ir") : null;
+                if (Ir != null && s != null)
+                {
+                    // redundant inputs: queue every tick we haven't seen (a dropped packet loses nothing); the edges are
+                    // taken when the tick is played (RemoteInput), so the host replays exactly what the guest predicted
+                    if (st.Num("gid", double.NaN) != L.gid) { g.iq.Clear(); g.lastQd = -1; g.last = null; }
+                    g.redund = true;
+                    foreach (var io in Ir)
+                    {
+                        var a = Json.Nums(io);
+                        if (a == null || a.Length < 4 || a[0] <= g.lastQd) continue;
+                        if (g.lastQd >= 0 && a[0] < g.lastQd - 600) g.lastQd = -1; // (guest restarted its counter)
+                        g.iq.Add(Protocol.UnpackInput(a));
+                        g.lastQd = a[0];
+                    }
+                    if (g.iq.Count > 8) g.iq.RemoveRange(0, g.iq.Count - 8);
+                    foreach (var c in CT)
+                        if (c.id == p.id)
+                        {
+                            c.tempo = Json.Truthy(st.Get("tmp")) ? 1 : 0;
+                            c.lag = LagOf(g);
+                            break;
+                        }
+                }
+                else if (I != null && s != null)
                 {
                     var w = Protocol.UnpackInput(I);
                     if (g.last == null || st.Num("gid", double.NaN) != L.gid) g.last = (double[])w.c.Clone();
@@ -332,7 +411,7 @@ namespace Hoops.Game.Net
                         if (c.id == p.id)
                         {
                             c.tempo = Json.Truthy(st.Get("tmp")) ? 1 : 0;
-                            c.lag = Math.Min(0.3, g.ping / 2000 + g.D / 60);
+                            c.lag = LagOf(g);
                             break;
                         }
                 }
@@ -361,6 +440,13 @@ namespace Hoops.Game.Net
                 onChange?.Invoke();
             }
         }
+
+        /// <summary>Lag compensation rewind: what the guest saw when he acted = one-way latency + his interpolation
+        /// delay (others are drawn D ticks in the past). Capped at 150 ms (NetOpts.LagCap150) or the old 300 ms.</summary>
+        static double LagOf(GuestRec g) => Math.Min(NetOpts.LagCap150 ? 0.15 : 0.3, g.ping / 2000 + g.D / 60);
+
+        /// <summary>A guest's own link report: [snapshot loss %, jitter ms, late %] (null for browser guests).</summary>
+        public double[] GuestQuality(string id) => guests.TryGetValue(id, out var g) ? Json.Nums(g.st?.Get("nq")) : null;
 
         public void SetSide(int tm)
         {
@@ -477,6 +563,7 @@ namespace Hoops.Game.Net
             setCtrls(new List<Ctrl>());
             RebuildCtrls();
             foreach (var c in CT) if (c.id == "p1") c.tempo = tempo;
+            tempoP1 = tempo;
             L.st = "game";
             L.gid++;
             double n = now();
@@ -487,6 +574,8 @@ namespace Hoops.Game.Net
                 g.acks.Clear();
                 g.seen = n; // (a guest idle in the lobby isn't stale: give him time to load the game)
                 g.stale = false;
+                g.iq.Clear();
+                g.lastQd = -1;
             }
             hist.Clear();
             start(L.teams[0], new StartOpts { j = L.teams[1] });
@@ -536,7 +625,24 @@ namespace Hoops.Game.Net
         public Hoops.Core.Input RemoteInput(Ctrl c)
         {
             var i = new Hoops.Core.Input();
-            if (!guests.TryGetValue(c.id, out var g) || g.w == null) return i;
+            if (!guests.TryGetValue(c.id, out var g)) return i;
+            if (g.redund && g.iq.Count > 0)
+            {
+                // play the next queued tick; keep at most ~3 ticks of buffer (latency) - later counters carry the edges
+                while (g.iq.Count > 3) g.iq.RemoveAt(0);
+                var nw = g.iq[0];
+                g.iq.RemoveAt(0);
+                if (g.last == null) g.last = (double[])nw.c.Clone();
+                else
+                    for (int j = 0; j < Protocol.EDGES.Length; j++)
+                        if (nw.c[j] > g.last[j])
+                        {
+                            g.pend.Add(Protocol.EDGES[j]);
+                            g.last[j] = nw.c[j];
+                        }
+                g.w = nw;
+            }
+            if (g.w == null) return i;
             var w = g.w;
             i.dx = w.dx;
             i.dy = w.dy;
@@ -610,7 +716,7 @@ namespace Hoops.Game.Net
             CollectFx();
             k++;
             if (k % 30 == 0) StaleCheck(now());
-            if (k % 2 != 0) return;
+            if (k % 2 != 0 && !(NetOpts.Fast60 && t is ILinkInfo li && li.AllDirect())) return;
             Pub(false);
         }
 

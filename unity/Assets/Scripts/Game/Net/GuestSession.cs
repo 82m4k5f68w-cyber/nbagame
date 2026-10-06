@@ -273,6 +273,8 @@ namespace Hoops.Game.Net
                 off = null;
                 snaps.Clear();
                 stats.resync++;
+                needN = 0; // (the stall says nothing about the link from here on)
+                if (NetOpts.AdaptiveDelay) D = 6;
             }
             stats.bytes += (f != null ? 8 + 4 * f.Length : 8 + 4 * Json.Nums(Z.Get("d")).Length); // (approximate JSON size)
             snaps.Add(a);
@@ -285,35 +287,28 @@ namespace Hoops.Game.Net
             if (sample > off) off = sample;
             lateRing[lateN++ % lateRing.Length] = late;
             tickRing[tickN++ % tickRing.Length] = a[0];
-            if (NetOpts.AdaptiveDelay) D = AdaptiveD();
-            else D = Math.Max(4, Math.Min(15, 3 + jit * 2));
+            if (!NetOpts.AdaptiveDelay) D = Math.Max(4, Math.Min(15, 3 + jit * 2));
+            else if (lateN < 60) D = Math.Max(4, Math.Min(15, 3 + jit * 2)); // (until there is enough history)
             lastSnapAt = now();
             Reconcile(a);
         }
 
-        /// <summary>Smallest interpolation delay (ticks) that keeps late snapshots under ~2%: the 98th percentile of
-        /// recent arrival lateness + the host's send interval (the next snapshot must be in hand) + a small margin.</summary>
+        /// <summary>Smallest interpolation delay (ticks) that keeps late frames under ~2%. Every rendered frame records
+        /// the delay it would have needed (live host clock minus the newest snapshot in hand: arrival jitter AND gaps
+        /// from dropped snapshots); D = the 98th percentile of the last ~5 s + a small margin, eased (fast up, slow down).</summary>
         double AdaptiveD()
         {
-            int n = Math.Min(lateN, lateRing.Length);
-            if (n < 20) return 6;
-            var tmp = sortBuf ??= new double[lateRing.Length];
-            Array.Copy(lateRing, tmp, n);
+            int n = Math.Min(needN, needRing.Length);
+            if (n < 60) return D;
+            var tmp = sortBuf ??= new double[needRing.Length];
+            Array.Copy(needRing, tmp, n);
             Array.Sort(tmp, 0, n);
             double p98 = tmp[Math.Min(n - 1, (int)Math.Ceiling(n * 0.98) - 1)];
-            // host send interval: smallest gap between recent snapshot ticks (1 on the 60 Hz direct path, 2 on the relay)
-            double gap = 2, prev = double.NaN;
-            int m = Math.Min(tickN, tickRing.Length);
-            for (int i = tickN - m; i < tickN; i++)
-            {
-                double v = tickRing[i % tickRing.Length];
-                if (!double.IsNaN(prev) && v > prev) gap = Math.Min(gap, v - prev);
-                prev = v;
-            }
-            double target = p98 + gap + 0.75;
-            // ease toward it (fast up, slow down) so one late burst doesn't jerk the timeline
-            return Math.Max(1.5, Math.Min(15, target > D ? D + (target - D) * 0.5 : D + (target - D) * 0.02));
+            double target = Math.Max(1.5, Math.Min(15, p98 + 1));
+            return target > D ? D + (target - D) * 0.5 : D + (target - D) * 0.1;
         }
+        readonly double[] needRing = new double[300];
+        int needN;
         double[] sortBuf;
 
         /// <summary>Host's live controller map [[id, team, playerIdx]...]: which player I predict.</summary>
@@ -422,6 +417,11 @@ namespace Hoops.Game.Net
             {
                 off -= dt * 0.25; // slow decay so the max filter can follow clock drift
                 double rt = lt + off.Value - D;
+                if (NetOpts.AdaptiveDelay && L != null && L.st == "game" && hostGoneAt == 0)
+                {
+                    needRing[needN++ % needRing.Length] = lt + off.Value - snaps[snaps.Count - 1][0];
+                    if (needN % 15 == 0 && lateN >= 60) D = AdaptiveD();
+                }
                 int i = snaps.Count - 1;
                 while (i > 0 && snaps[i - 1][0] > rt) i--;
                 double[] s1 = snaps[i], s0 = i > 0 ? snaps[i - 1] : s1;
@@ -533,7 +533,11 @@ namespace Hoops.Game.Net
         /// <summary>Same dead-ball rules as the host: no control during inbounds, others' free throws and after scores.</summary>
         bool Frozen(Player p) => inb > 0 || rs > 0 || JB != null || (ftq != null && ftq.s != p);
 
-        public void Close() => unsub();
+        public void Close()
+        {
+            Unrender();
+            unsub();
+        }
 
         // ---------------- host migration lite ----------------
         /// <summary>The newest snapshot (the state a new host continues from).</summary>
