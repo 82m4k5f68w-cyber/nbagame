@@ -65,3 +65,16 @@ free of UnityEngine so it compiles there (put the Unity/jslib glue in separate f
 Matchup screen (teams, lineups, difficulty, quarter length), settings (graphics tier, camera, meter style, rules
 toggles), pause (resume, replay, matchups, quit), final screen (box score, player of the game, rematch), mode select
 (Modes.*). uGUI built from code or IMGUI with a clean skin.
+
+## B — broadcast, HUD & music (Game/Broadcast.cs, Game/Hud.cs, Game/Music.cs, Assets/Plugins/WebGL/HoopsSpeech.jslib)
+Port the browser presentation: src/client/broadcast.ts (banners with slide-in animation, two-part commentary captions
+from Fx "cm" + optional voice via the browser's speechSynthesis through a tiny .jslib (no-op outside WebGL), player
+intro card at tip-off (S == "intro" is browser-shell state: emulate with a short timer before play starts), momentum
+bug, timing card from Fx "tg" (Fx.o fields), rumble), src/client/hud.ts (all 4 meter styles with green at the TOP,
+assignMark ring under the focused human's man, stick HUD can be skipped), src/client/music.ts (procedural arena
+music: pregame / organ / hype / clutch / calm modes chosen like game.ts loop, riffs, rendered with OnAudioFilterRead
+or pre-rendered AudioClips - no assets), halftime: Sim S == "half" -> show halftime stats (TS.qs, TS.xs splits) for a
+few seconds then continue (GameMain currently skips "half" immediately; replace that with a hook into Broadcast),
+floating world-space texts (Fx "t" with x/y/z) projected with the camera. Move the scoreboard/HUD drawing out of
+GameMain.OnGUI into Hud.cs (keep GameMain edits to hook lines). IMGUI or uGUI built from code; scale with
+Screen.height (design at 1080p). Coordinate with Menus.cs (S == "menu"/"pause"/"over" screens are Menus').
