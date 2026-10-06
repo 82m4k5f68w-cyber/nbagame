@@ -13,7 +13,7 @@ namespace Hoops.Game
         const double STEP = 1 / 60.0;
         double acc;
         Camera cam;
-        PlayerDraw draw;
+        RigDraw draw; // skinned players + ball (Rig.cs)
         Vector3 camLook;
         float fps = 60;
         // edge events captured per frame, consumed by the first sim tick that reads them (like input.ts `ev`)
@@ -32,7 +32,7 @@ namespace Hoops.Game
             cfg.replays = true;
             Phys.RAP = new PhysXBall();
             CourtBuilder.Build();
-            draw = new PlayerDraw();
+            draw = new RigDraw();
             var cg = new GameObject("Camera");
             cam = cg.AddComponent<Camera>();
             cam.fieldOfView = 38;
@@ -51,14 +51,18 @@ namespace Hoops.Game
         Hoops.Core.Input ReadInput(Ctrl c)
         {
             var i = new Hoops.Core.Input();
-            i.dx = (Key(KeyCode.D) || Key(KeyCode.RightArrow) ? 1 : 0) - (Key(KeyCode.A) || Key(KeyCode.LeftArrow) ? 1 : 0);
-            i.dy = (Key(KeyCode.S) || Key(KeyCode.DownArrow) ? 1 : 0) - (Key(KeyCode.W) || Key(KeyCode.UpArrow) ? 1 : 0);
+            // the default Input Manager axes carry WASD, the arrows AND the gamepad's left stick
+            float ax = UnityEngine.Input.GetAxisRaw("Horizontal"), ay = UnityEngine.Input.GetAxisRaw("Vertical");
+            if (Mathf.Abs(ax) < 0.14f) ax = 0;
+            if (Mathf.Abs(ay) < 0.14f) ay = 0;
+            i.dx = ax;
+            i.dy = -ay; // game y grows toward the camera; stick / W = up = away
             double m = System.Math.Sqrt(i.dx * i.dx + i.dy * i.dy);
             if (m > 1) { i.dx /= m; i.dy /= m; }
             i.sd = eSd; i.su = eSu; i.e = eE; i.lob = eR; i.sb = eF; i.sw = eQ; i.pf = eG; i.to = eTo; i.ch = eCh; i.ds = eDs;
             i.mv = eMv;
-            i.post = Key(KeyCode.B);
-            i.sp = Key(KeyCode.LeftShift) || Key(KeyCode.RightShift);
+            i.post = Key(KeyCode.B) || Key(KeyCode.JoystickButton6);
+            i.sp = Key(KeyCode.LeftShift) || Key(KeyCode.RightShift) || Key(KeyCode.JoystickButton7);
             eSd = eSu = eE = eR = eF = eQ = eG = eTo = eCh = eDs = false;
             eMv = 0;
             return i;
@@ -70,8 +74,20 @@ namespace Hoops.Game
         {
             float dt = Mathf.Min(0.1f, Time.unscaledDeltaTime);
             fps = Mathf.Lerp(fps, 1f / Mathf.Max(0.001f, dt), 0.05f);
-            if (Down(KeyCode.Space)) eSd = true;
-            if (UnityEngine.Input.GetKeyUp(KeyCode.Space)) eSu = true;
+            if (Down(KeyCode.Space) || Down(KeyCode.JoystickButton0)) eSd = true;
+            if (UnityEngine.Input.GetKeyUp(KeyCode.Space) || UnityEngine.Input.GetKeyUp(KeyCode.JoystickButton0)) eSu = true;
+            // gamepad, standard layout (same as the browser build): B lob, X pass, Y step-back, LB hesitation, RB spin,
+            // L3 pump fake, R3 defense / play call, d-pad up timeout, d-pad down challenge (LT post, RT sprint: held)
+            if (Down(KeyCode.JoystickButton2)) eE = true;
+            if (Down(KeyCode.JoystickButton1)) eR = true;
+            if (Down(KeyCode.JoystickButton3)) eF = true;
+            if (Down(KeyCode.JoystickButton4)) eMv = 1;
+            if (Down(KeyCode.JoystickButton5)) eMv = 2;
+            if (Down(KeyCode.JoystickButton10)) eG = true;
+            if (Down(KeyCode.JoystickButton11)) eDs = true;
+            if (Down(KeyCode.JoystickButton12)) eTo = true;
+            if (Down(KeyCode.JoystickButton13)) eCh = true;
+            if (Down(KeyCode.JoystickButton8)) eQ = true;
             if (Down(KeyCode.E)) eE = true;
             if (Down(KeyCode.R)) eR = true;
             if (Down(KeyCode.F)) eF = true;
@@ -95,7 +111,7 @@ namespace Hoops.Game
             else if (S == "half") setS("play");
             else if (S == "over") postGame(System.Math.Min(dt, 0.05));
             DrainFx(dt);
-            draw.Draw();
+            draw.Draw(dt);
             UpdateCamera(dt);
         }
 
