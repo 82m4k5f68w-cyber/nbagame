@@ -10,3 +10,7 @@ UserSettings/
 
 # compiled core tests
 CoreTests/bin/
+
+# written during a player build and deleted after it (performance testing package)
+Assets/Resources/PerformanceTestRun*
+Assets/Resources.meta
