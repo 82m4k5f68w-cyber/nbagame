@@ -1057,6 +1057,7 @@ namespace Hoops.Core
                 {
                     if (p.q == null) p.q = new Q();
                     for (int j = 0; j < QK.Length; j++) p.q[j] = REC[b + 4 + j];
+                    p.posed = true;
                 }
             }
         }
