@@ -28,7 +28,7 @@ static class Trace
             sb.Clear();
             sb.Append(t);
             foreach (var p in P) sb.Append(' ').Append(F(p.x)).Append(',').Append(F(p.y)).Append(',').Append(F(p.z));
-            sb.Append(" | ").Append(F(B.x)).Append(',').Append(F(B.y)).Append(',').Append(F(B.z)).Append(' ').Append(B.mode).Append(' ').Append(sc[0]).Append('-').Append(sc[1]);
+            sb.Append(" | ").Append(F(B.x)).Append(',').Append(F(B.y)).Append(',').Append(F(B.z)).Append(' ').Append(B.mode).Append(' ').Append(sc[0]).Append('-').Append(sc[1]).Append(" r").Append(Rng.N);
             Console.WriteLine(sb.ToString());
         }
     }

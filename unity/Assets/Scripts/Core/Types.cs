@@ -60,8 +60,10 @@ namespace Hoops.Core
             for (int i = 0; i < 8; i++) R();
         }
         /// <summary>Math.random() replacement.</summary>
+        public static long N; // calls so far (parity traces)
         public static double R()
         {
+            N++;
             ulong x = s0, y = s1;
             s0 = y;
             x ^= x << 23;
