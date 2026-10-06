@@ -14,6 +14,7 @@ namespace Hoops.Game
         double acc;
         Camera cam;
         RigDraw draw; // skinned players + ball (Rig.cs)
+        GameAudio sfx;
         Vector3 camLook;
         float fps = 60;
         // edge events captured per frame, consumed by the first sim tick that reads them (like input.ts `ev`)
@@ -45,6 +46,7 @@ namespace Hoops.Game
             setCtrls(new List<Ctrl> { mkCtrl("p1", 0) });
             setQtrLen(180);
             gameObject.AddComponent<Menus>(); // title / matchup screen starts the game
+            sfx = gameObject.AddComponent<GameAudio>();
             camLook = PhysXBall.U(470, 250, 0);
         }
 
@@ -119,6 +121,7 @@ namespace Hoops.Game
         {
             foreach (var f in FX)
             {
+                sfx.OnFx(f);
                 if (f.k == "t" && f.s != null) texts.Add((f.s, f.c ?? "#ffffff", 1.6f, false, null));
                 else if (f.k == "ban") texts.Add((f.s, f.c ?? "#ffd23f", 2.6f, true, f.sub));
                 else if (f.k == "end") texts.Add(("FINAL", "#ffd23f", 99f, true, "ENTER for a rematch"));
