@@ -44,7 +44,7 @@ namespace Hoops.Game
             cfg.input = ReadInput;
             setCtrls(new List<Ctrl> { mkCtrl("p1", 0) });
             setQtrLen(180);
-            start(team, new StartOpts { j = opp });
+            gameObject.AddComponent<Menus>(); // title / matchup screen starts the game
             camLook = PhysXBall.U(470, 250, 0);
         }
 
@@ -83,7 +83,7 @@ namespace Hoops.Game
             if (Down(KeyCode.C)) eMv = 1;
             if (Down(KeyCode.X)) eMv = 2;
             if (Down(KeyCode.V)) eMv = 3;
-            if (Down(KeyCode.Return) && S == "over") start(team, new StartOpts { j = opp });
+            // (rematch / menu: Menus final screen)
 
             if (S == "play" || RPL != null)
             {
@@ -139,6 +139,7 @@ namespace Hoops.Game
 
         void OnGUI()
         {
+            if (S == "menu") return; // the title / matchup screen (Menus) owns the screen
             if (big == null)
             {
                 big = new GUIStyle(GUI.skin.label) { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
