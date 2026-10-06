@@ -61,6 +61,45 @@ namespace Hoops.Game.Net
         public readonly WireInput wire = new WireInput();
         readonly PSave mine = new PSave();
         readonly Hoops.Core.Input frozenIn = new Hoops.Core.Input();
+        // ---- NetOpts additions ----
+        readonly double[] lateRing = new double[240]; // arrival lateness of recent snapshots (ticks behind the best arrival)
+        int lateN;
+        readonly double[] tickRing = new double[120]; // ticks of recently received snapshots (loss estimate)
+        int tickN;
+        int frames, lateFrames; // rendered frames, frames that ran past the newest snapshot
+        readonly List<double[]> redund = new List<double[]>(); // last 3 packed input ticks ("Ir")
+        /// <summary>Visual offset of my predicted player (px): a correction is shown over ~120 ms instead of a jump.</summary>
+        public double rox, roy;
+        bool roOn;
+        double roAx, roAy;
+        public int snaps40; // corrections above 40 px (visible snaps)
+        public double maxCorr; // largest reconciliation error seen (px)
+
+        /// <summary>Snapshots that arrived too late to be interpolated, % of rendered frames (recent).</summary>
+        public double LatePct => frames > 0 ? 100.0 * lateFrames / frames : 0;
+        /// <summary>Arrival jitter in ms.</summary>
+        public double JitterMs => jit * 1000 / 60;
+        /// <summary>Snapshot loss in % over the last ~120 snapshots (gaps beyond the host's send interval).</summary>
+        public double LossPct
+        {
+            get
+            {
+                int n = Math.Min(tickN, tickRing.Length);
+                if (n < 10) return 0;
+                double first = double.MaxValue, last = double.MinValue, gap = double.MaxValue, prev = double.NaN;
+                for (int i = tickN - n; i < tickN; i++)
+                {
+                    double v = tickRing[i % tickRing.Length];
+                    first = Math.Min(first, v);
+                    last = Math.Max(last, v);
+                    if (!double.IsNaN(prev) && v > prev) gap = Math.Min(gap, v - prev);
+                    prev = v;
+                }
+                if (gap == double.MaxValue || last <= first) return 0;
+                double expect = (last - first) / gap + 1;
+                return Math.Max(0, 100 * (1 - n / expect));
+            }
+        }
 
         public GuestSession(ITransport t, GuestMe me, Func<double> now = null)
         {
@@ -241,12 +280,41 @@ namespace Hoops.Game.Net
             // Clock: host tick ~= local tick + off (max filter = least-delayed arrival), jitter tracks spread.
             double lt = now() / 1000 * 60, sample = a[0] - lt;
             if (off == null) off = sample;
-            jit = jit * 0.95 + Math.Max(0, off.Value - sample) * 0.05;
+            double late = Math.Max(0, off.Value - sample);
+            jit = jit * 0.95 + late * 0.05;
             if (sample > off) off = sample;
-            D = Math.Max(4, Math.Min(15, 3 + jit * 2));
+            lateRing[lateN++ % lateRing.Length] = late;
+            tickRing[tickN++ % tickRing.Length] = a[0];
+            if (NetOpts.AdaptiveDelay) D = AdaptiveD();
+            else D = Math.Max(4, Math.Min(15, 3 + jit * 2));
             lastSnapAt = now();
             Reconcile(a);
         }
+
+        /// <summary>Smallest interpolation delay (ticks) that keeps late snapshots under ~2%: the 98th percentile of
+        /// recent arrival lateness + the host's send interval (the next snapshot must be in hand) + a small margin.</summary>
+        double AdaptiveD()
+        {
+            int n = Math.Min(lateN, lateRing.Length);
+            if (n < 20) return 6;
+            var tmp = sortBuf ??= new double[lateRing.Length];
+            Array.Copy(lateRing, tmp, n);
+            Array.Sort(tmp, 0, n);
+            double p98 = tmp[Math.Min(n - 1, (int)Math.Ceiling(n * 0.98) - 1)];
+            // host send interval: smallest gap between recent snapshot ticks (1 on the 60 Hz direct path, 2 on the relay)
+            double gap = 2, prev = double.NaN;
+            int m = Math.Min(tickN, tickRing.Length);
+            for (int i = tickN - m; i < tickN; i++)
+            {
+                double v = tickRing[i % tickRing.Length];
+                if (!double.IsNaN(prev) && v > prev) gap = Math.Min(gap, v - prev);
+                prev = v;
+            }
+            double target = p98 + gap + 0.75;
+            // ease toward it (fast up, slow down) so one late burst doesn't jerk the timeline
+            return Math.Max(1.5, Math.Min(15, target > D ? D + (target - D) * 0.5 : D + (target - D) * 0.02));
+        }
+        double[] sortBuf;
 
         /// <summary>Host's live controller map [[id, team, playerIdx]...]: which player I predict.</summary>
         void ApplyCtrls(List<object> C)
@@ -271,6 +339,7 @@ namespace Hoops.Game.Net
         {
             int k = myIdx;
             if (k < 0 || k >= P.Count || Protocol.HDR + (k + 1) * Protocol.PST > a.Length) return;
+            Unrender();
             var p = P[k];
             double ox = p.x, oy = p.y;
             Protocol.ApplyPlayer(p, a, k);
@@ -287,12 +356,44 @@ namespace Hoops.Game.Net
             double ex = ox - p.x, ey = oy - p.y, err = Math.Sqrt(ex * ex + ey * ey);
             stats.recon++;
             if (err > 0.5) stats.corr++;
-            if (err < 40)
+            maxCorr = Math.Max(maxCorr, err);
+            if (NetOpts.SmoothCorrection)
+            {
+                // the sim state takes the corrected position at once (the next prediction starts from the truth); what is
+                // DRAWN keeps the old position as an offset that decays over ~120 ms - never a visible snap under 40 px
+                rox += ex;
+                roy += ey;
+                if (Math.Sqrt(rox * rox + roy * roy) > 40) { rox = roy = 0; snaps40++; }
+            }
+            else if (err < 40)
             {
                 // smooth small corrections instead of snapping
                 p.x += ex * 0.6;
                 p.y += ey * 0.6;
             }
+            else snaps40++;
+        }
+
+        /// <summary>Remove the render offset from my player (the sim works on true positions).</summary>
+        void Unrender()
+        {
+            if (!roOn) return;
+            roOn = false;
+            if (myIdx >= 0 && myIdx < P.Count) { P[myIdx].x -= roAx; P[myIdx].y -= roAy; }
+        }
+        /// <summary>Add the decayed render offset to my player for drawing (until the next Frame / snapshot).</summary>
+        void Render(double dt)
+        {
+            if (!NetOpts.SmoothCorrection || myIdx < 0 || myIdx >= P.Count) return;
+            double k = Math.Exp(-dt / 0.04); // tau 40 ms: 95% gone after ~120 ms
+            rox *= k;
+            roy *= k;
+            if (Math.Abs(rox) < 0.05 && Math.Abs(roy) < 0.05) { rox = roy = 0; return; }
+            roAx = rox;
+            roAy = roy;
+            P[myIdx].x += roAx;
+            P[myIdx].y += roAy;
+            roOn = true;
         }
 
         Hoops.Core.Input Zero()
@@ -305,6 +406,7 @@ namespace Hoops.Game.Net
         public void Frame(double dt, Func<Hoops.Core.Input> sample)
         {
             if (gid < 0 || P.Count == 0) return;
+            Unrender();
             // 1) local input ticks + prediction
             acc += dt;
             int nn = 0;
@@ -327,6 +429,9 @@ namespace Hoops.Game.Net
                 u = Math.Max(0, Math.Min(1, u));
                 var latest = snaps[snaps.Count - 1];
                 stall = rt > latest[0] + 15 ? 1 : 0;
+                frames++;
+                if (rt > latest[0]) lateFrames++;
+                if (frames >= 600) { frames /= 2; lateFrames /= 2; } // (recent: halve now and then)
                 int skip = myIdx >= 0 && myIdx < P.Count && RPL == null ? myIdx : -1;
                 if (skip >= 0) mine.Save(P[skip]);
                 Protocol.ApplySnap(s0, ReferenceEquals(s1, s0) || s1.Length != s0.Length ? null : s1, u, skip);
@@ -355,7 +460,11 @@ namespace Hoops.Game.Net
             if (B.owner != null) bstep(dt); // held-ball placement (dribble bounce) follows the rendered owner
             netSim(dt);
             if (RPL == null) foreach (var p in P) Pose.pose3(p);
-            Pub(new Dictionary<string, object> { { "I", Protocol.PackInput(wire) } });
+            var ex2 = new Dictionary<string, object> { { "I", Protocol.PackInput(wire) } };
+            if (NetOpts.InputRedundancy && redund.Count > 0) ex2["Ir"] = new List<object>(redund);
+            ex2["nq"] = new List<object> { Math.Round(LossPct, 1), Math.Round(JitterMs), Math.Round(LatePct, 1) };
+            Pub(ex2);
+            Render(dt);
         }
 
         void InputTick(Hoops.Core.Input i)
@@ -389,6 +498,11 @@ namespace Hoops.Game.Net
             if (i.ch) Bump("ch");
             if (i.ds) Bump("ds");
             if (Skip) { Bump("skip"); Skip = false; }
+            if (NetOpts.InputRedundancy)
+            {
+                redund.Add(Protocol.PackInput(w));
+                if (redund.Count > 3) redund.RemoveAt(0);
+            }
             if (p != null && RPL == null && S == "play")
             {
                 var c = inPool.Count > 0 ? inPool.Pop() : new Hoops.Core.Input();
@@ -420,6 +534,27 @@ namespace Hoops.Game.Net
         bool Frozen(Player p) => inb > 0 || rs > 0 || JB != null || (ftq != null && ftq.s != p);
 
         public void Close() => unsub();
+
+        // ---------------- host migration lite ----------------
+        /// <summary>The newest snapshot (the state a new host continues from).</summary>
+        public double[] Latest => snaps.Count > 0 ? snaps[snaps.Count - 1] : null;
+        /// <summary>Should I take over? The host has been gone MigrateAfter s mid-game and I am the longest-seated guest
+        /// still in the room (first slot in the host's join order).</summary>
+        public bool ShouldMigrate()
+        {
+            if (!NetOpts.Migration || hostGoneAt == 0 || L == null || L.st != "game" || Latest == null) return false;
+            if (now() - hostGoneAt < NetOpts.MigrateAfter * 1000) return false;
+            var here = new HashSet<string>();
+            foreach (var p in t.Peers()) here.Add(p.id);
+            foreach (var s in L.slots)
+            {
+                if (s.id == "host" || !here.Contains(s.id)) continue;
+                return s.id == t.Me;
+            }
+            return false;
+        }
+        /// <summary>The host this guest follows (a new one after a migration).</summary>
+        public string HostId => host?.id;
 
         /// <summary>The predicted player's fields kept out of the snapshot interpolation (guest.ts PFIELDS).</summary>
         sealed class PSave
