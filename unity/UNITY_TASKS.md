@@ -78,3 +78,18 @@ few seconds then continue (GameMain currently skips "half" immediately; replace 
 floating world-space texts (Fx "t" with x/y/z) projected with the camera. Move the scoreboard/HUD drawing out of
 GameMain.OnGUI into Hud.cs (keep GameMain edits to hook lines). IMGUI or uGUI built from code; scale with
 Screen.height (design at 1080p). Coordinate with Menus.cs (S == "menu"/"pause"/"over" screens are Menus').
+
+## N+ — online rework (after the faithful port of part N works; NetLoop test passing)
+Each behind a clear flag, with NetLoop.cs tests where possible:
+1. Direct P2P: WebRTC DataChannel (unordered, maxRetransmits 0) via the jslib, signaled through presence (temporary
+   `rtc` field: compact SDP, non-trickle ICE, STUN stun:stun.l.google.com:19302); while open, send every presence update
+   over it too with a sequence number (receivers keep the newest of room/RTC copies); automatic fallback to room/relay,
+   retry every 5 s. Must keep working on Wi-Fi with client isolation (fallback). HUD shows DIRECT / RELAY.
+2. Latency: adaptive interpolation delay from measured jitter (smallest delay with <2% late snapshots), input
+   redundancy (each guest input packet carries the last 3 inputs), snapshots up to 60 Hz on direct (30 Hz relay).
+3. Reconciliation: mispredict corrected over 100-150 ms via a decaying render offset; snap only if error > 40 px.
+4. Lag compensation for guest shot contests and pass interceptions (host rewinds by RTT/2, max 150 ms; ctrl.lag/LAGBUF).
+5. Connection HUD: ping, jitter, loss %, link type; warning icon when bad.
+6. Quick rematch + host migration lite: if the host leaves mid-game, the longest-connected guest takes over from the
+   last full snapshot instead of the game ending.
+Keep it UnityEngine-free where testable.
