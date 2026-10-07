@@ -15,7 +15,7 @@
 //    only below z 99, so makes are still decided by the iron
 //  - backboard: glass is lively, the frame strip around its edge duller, the padding under it dead
 //  - rim: back iron by the hook (and the bracket to the glass) is deader than the front iron; RimFlex spring per hoop
-//    (hard hits, dunks, a player hanging); shooter's touch softens rim contacts when UP != 0 (higher rating = softer)
+//    (hard hits, dunks, a player hanging); shooter's touch softens rim contacts with cfg.UP (higher rating = softer)
 //  - spin: extra spin decay on the floor (wood grabs the ball), spin <-> velocity transfer on every contact
 //  - bodies: torso capsules lean with the pose (p.skel pelvis -> neck), forearm / hand capsules (p.skel 13-15, 17-19)
 //    for LOOSE balls above the catch zone (rebound tips), never a shot in flight or inside the cylinder
@@ -31,8 +31,8 @@ namespace Hoops.Core
 
         /// <summary>Extras on (net, board regions, rim regions, lean, arms, floor spin decay). False = plain Rapier world.</summary>
         public bool Extras = true;
-        /// <summary>Shooter's touch on the rim (behind the Pro Play flag; GameMain sets it from cfg.UP).</summary>
-        public int UP;
+        /// <summary>Shooter's touch on the rim: -1 = follow Sim.cfg.UP (the Unity Pro Play flag), 0 off, 1 on.</summary>
+        public int UP = -1;
 
         /// <summary>Rim flex per hoop in game px (+ = bent down), a damped spring; for the renderer (hoop / net offset).</summary>
         public static readonly double[] RimFlex = new double[2];
@@ -45,6 +45,7 @@ namespace Hoops.Core
         const double SUBLEN = 1.0; // max path length (px) between contact samples
         const double REST_THR = 12; // px/s: slower normal impacts don't bounce (lets the ball settle)
         const double CRR = 42; // rolling resistance deceleration on the floor (px/s^2)
+        const double NET_DRAG = 18; // 1/s at full grab
         const double FLEX_W = 2 * Math.PI * 6, FLEX_Z = 0.22, FLEX_K = 0.05;
 
         // ---- debug counters (tests / stats dumps) ----
@@ -137,7 +138,7 @@ namespace Hoops.Core
                 dunkKick = false;
                 give = 0;
                 var L = B.last;
-                if (UP != 0 && Extras && B.sh != 0 && L != null)
+                if ((UP >= 0 ? UP : Sim.cfg.UP) != 0 && Extras && B.sh != 0 && L != null)
                 {
                     double touch = B.three != 0 ? L.c : (L.c + L.i) / 2; // shooter's touch
                     give = Math.Max(0, Math.Min(1, (touch - 60) / 35)) * 0.3;
@@ -440,12 +441,9 @@ namespace Hoops.Core
                 if (pen <= 0) continue;
                 NetSteps++;
                 double ux = d > 1e-6 ? dx / d : 0, uy = d > 1e-6 ? dy / d : 0, vo = B.vx * ux + B.vy * uy;
-                if (vo > 0) { B.vx -= 1.2 * vo * ux; B.vy -= 1.2 * vo * uy; } // soft nylon wall
-                double ac = Math.Min(pen, 3) * 260 * dt; // pushed back toward the middle
-                B.vx -= ux * ac;
-                B.vy -= uy * ac;
+                if (vo > 0) { B.vx -= 1.2 * vo * ux; B.vy -= 1.2 * vo * uy; } // soft nylon wall: steered back in
                 double grab = Math.Min(1, pen / 2.5);
-                if (B.vz < 0) B.vz /= 1 + dt * 5 * grab; // the snap: the drop slows as the nylon stretches
+                if (B.vz < 0) B.vz /= 1 + dt * NET_DRAG * grab; // the snap: the drop slows as the nylon stretches
                 NetSnap[h] = Math.Max(NetSnap[h], grab * Math.Min(1, -B.vz / 200));
             }
         }

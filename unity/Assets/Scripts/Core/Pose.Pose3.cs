@@ -1779,7 +1779,10 @@ namespace Hoops.Core
                         bool quick = (st == ST.shot || st == ST.move) && !hd; // (the head never snaps)
                         double big = Math.Min(quick ? 0.1 : 0.32, 0.08 + Math.Abs(iz.x[j]) * (hd ? 0.12 : 0.1));
                         // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
-                        iz.tf[j] = trans ? Math.Max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : 0) : big * 0.75) : big;
+                        double qk = quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : 0) : big * 0.75;
+                        // (UP: a gather / move out of a sprint carries the arms a few ticks instead of snapping a big swing over)
+                        if (cfg.UP != 0 && quick && trans && (md == "c" || st == ST.move)) qk = Math.Max(qk, Math.Min(0.12, 0.02 + Math.Abs(iz.x[j]) * 0.04));
+                        iz.tf[j] = trans ? Math.Max(BLEND[st] * (hd ? 0.4 : 0.65), qk) : big;
                         iz.b[j] = v;
                     }
                     iz.pv[j] = jump ? 0 : Wq(j, v - iz.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick

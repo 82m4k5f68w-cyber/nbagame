@@ -21,13 +21,16 @@ public static class UH
     public static void Game(ulong seed, int up, int teamA = 0, int teamB = 1, double ql = 180)
     {
         Rng.Seed(seed);
+        T = 0; // (reproducible: AI / poses read Sim.T)
         cfg.NP = 5; cfg.physics = "legacy"; cfg.hand = true; cfg.MYM = 0; cfg.PRO = 1; cfg.UP = up;
         cfg.input = c => new Input();
         setQtrLen(ql);
         setCtrls(new List<Ctrl>());
         start(teamA, new StartOpts { j = teamB });
         UPC.Clear();
+        T0 = T;
     }
+    public static double T0; // game start (Sim.T keeps running across start())
     /// <summary>One tick with replays skipped and halftime resumed. False when the game is over.</summary>
     public static bool Tick()
     {
@@ -101,7 +104,7 @@ public sealed class Jerk
             }
             string k = tag;
             if (!WorstAt.ContainsKey(k) || worst > double.Parse(WorstAt[k].Split(' ')[0], CultureInfo.InvariantCulture))
-                WorstAt[k] = UH.F(worst) + " " + (wj >= 0 ? Pose.QK[wj] : "?") + " t" + UH.F(Sim.T, 2) + " " + p.n + " md " + p.mode + " sv " + p.sv;
+                WorstAt[k] = UH.F(worst) + " " + (wj >= 0 ? Pose.QK[wj] : "?") + " t" + UH.F(Sim.T - UH.T0, 2) + " " + p.n + " md " + p.mode + " sv " + p.sv;
         }
         var nq = pq ?? new double[65];
         for (int j = 0; j < 31; j++) { nq[31 + j] = pq != null && !tp ? nq[j] : q[j]; nq[j] = q[j]; }

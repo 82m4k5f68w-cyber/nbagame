@@ -31,6 +31,11 @@ static class Blend
                 {
                     if (p.off != 0) continue;
                     jk.Track(p, upTag(p));
+                    if (DUMP != null && inz == 1 && p.n == DUMP[0] && T - UH.T0 >= double.Parse(DUMP[1]) && T - UH.T0 <= double.Parse(DUMP[2]))
+                    {
+                        int c = Q.Idx(DUMP[3]);
+                        Console.WriteLine($"{UH.F(T - UH.T0)} md {p.mode} t {UH.F(p.t)} sv {p.sv} gath {p.gath} gT {UH.F(p.gathT)} st {p.anS} q {UH.F(p.q[c])} tgt {UH.F(p.inz.pt[c])} has {B.owner == p} z {UH.F(p.z, 1)} mvT {UH.F(p.mvT)} mvk {p.mvk} tag {upTag(p)} hold {heldBall(p)} ctR {UH.F(p.ctR)} ctL {UH.F(p.ctL)} sp {UH.F(Math.Sqrt(p.vx*p.vx+p.vy*p.vy),0)}");
+                    }
                     if (p.inz != null) for (int j = 0; j < 31; j++) if (j != 13) { lag += Math.Abs(p.q[j] - p.inz.pt[j]); ln++; }
                 }
             }
@@ -59,8 +64,10 @@ static class Blend
         return o;
     }
 
+    static string[] DUMP;
     static void Main(string[] a)
     {
+        var dm = UH.Arg(a, "dump", ""); if (dm != "") DUMP = dm.Split(':');
         int up = UH.ArgI(a, "UP", 0), secs = UH.ArgI(a, "secs", 150);
         var la0 = LayArm(0, up); var la1 = LayArm(1, up);
         double shotLag = 0;

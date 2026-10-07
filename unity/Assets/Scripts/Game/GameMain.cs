@@ -11,6 +11,7 @@ namespace Hoops.Game
     public sealed class GameMain : MonoBehaviour
     {
         const double STEP = 1 / 60.0;
+        const bool USE_PHYSX = false; // true = the PhysX ball (PhysXBall.cs) instead of Core/BallSim
         double acc;
         Camera cam;
         RigDraw draw; // skinned players + ball (Rig.cs)
@@ -31,7 +32,7 @@ namespace Hoops.Game
             cfg.physics = "rapier"; // = "the engine": PhysX here
             cfg.hand = true;
             cfg.replays = true;
-            Phys.RAP = new PhysXBall();
+            Phys.RAP = USE_PHYSX ? new PhysXBall() : new BallSim(); // ball engine: Core/BallSim (deterministic, pure C#) or PhysX
             CourtBuilder.Build();
             draw = new RigDraw();
             var cg = new GameObject("Camera");
