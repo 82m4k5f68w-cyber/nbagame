@@ -225,7 +225,7 @@ namespace Hoops.Core
                 // Clip time is scaled so each clip's wrist-snap keyframe lands exactly on the sim's release (launch) moment:
                 // the ball leaves the fingertips as the wrist flicks, not after the follow-through.
                 string kind0 = CKof(p.sv);
-                double rT = IsLaySv(I(p.sv)) || kind0 == "hook" ? 0.28 : p.st == 1 ? 0.3 : 0.4,
+                double rT = IsLaySv(I(p.sv)) || kind0 == "hook" || kind0 == "sky" ? 0.28 : p.st == 1 ? 0.3 : 0.4,
                     k = Math.Min(1, (p.t / rT) * (kind0 != null && RELK.TryGetValue(kind0, out var rk) ? rk : 0.7));
                 var o = clip(p, k);
                 aR = o.aR;
@@ -1585,6 +1585,16 @@ namespace Hoops.Core
                     tR += p.sf * 0.5;
                 }
             }
+            // ---- Unity Pro Play upgrades (cfg.UP, Pose.UP.cs): shots, moves, gathers, defense, off-ball ----
+            if (cfg.UP != 0 && PRO)
+            {
+                var U = UQ;
+                U.tL = tL; U.tR = tR; U.kL = kL; U.kR = kR; U.aL = aL; U.aR = aR; U.eL = eL; U.eR = eR; U.sz = sz; U.cr = cr; U.ln = ln; U.rz = rz; U.ty = ty; U.wR = wR; U.wL = wL; U.hz = hz; U.cx = cx; U.cy = cy; U.hs = hs; U.gL = gL; U.gR = gR; U.oL = oL; U.oR = oR; U.hL = hL; U.hR = hR; U.toe = toe; U.st = st;
+                U.zL = zL ?? sz; U.zSet = false;
+                upPose(p, U, md, has, air, sp, hold);
+                tL = U.tL; tR = U.tR; kL = U.kL; kR = U.kR; aL = U.aL; aR = U.aR; eL = U.eL; eR = U.eR; sz = U.sz; cr = U.cr; ln = U.ln; rz = U.rz; ty = U.ty; wR = U.wR; wL = U.wL; hz = U.hz; cx = U.cx; cy = U.cy; hs = U.hs; gL = U.gL; gR = U.gR; oL = U.oL; oR = U.oR; hL = U.hL; hR = U.hR; toe = U.toe; st = U.st;
+                if (U.zSet) zL = U.zL;
+            }
             // ---- additive layer: breathing (deeper when tired) ----
             {
                 double tired = 1 - p.en; // (TS p.en ?? 1: en starts at 1)
@@ -1675,7 +1685,7 @@ namespace Hoops.Core
             // ---- left-handed shooters: the whole shot is mirrored across the body (shooting arm, guide hand, legs, twist).
             // Everything above was solved for a right-hander (guide-hand IK included); mirroring is exact, and handPos follows
             // the left hand while q.mir is set, so the release point and the 3D ball stay in the shooting hand.
-            bool mirr = p.sg != null && Util.T(p.sg.lh) && (md == "s" || (md == "c" && has));
+            bool mirr = (p.sg != null && Util.T(p.sg.lh)) != (cfg.UP != 0 && Util.T(p.offH) && md == "s") && (md == "s" || (md == "c" && has)); // (UP: an off-hand finish mirrors the shot)
             if (mirr)
             {
                 double t = aL;

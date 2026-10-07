@@ -1,6 +1,6 @@
 // Plays N seeded CPU-vs-CPU 5v5 games in the C# core (legacy ball physics: no engine outside Unity) and prints a
 // per-team box-score summary + invariant checks. Compare with scripts/unity/gamerun.ts (same games in the TS build).
-//   scripts/unity/cs.sh unity/CoreTests/GameRun.cs [N] [QL]
+//   scripts/unity/cs.sh unity/CoreTests/GameRun.cs [N] [QL] [legacy|ball]   (ball = Core/BallSim, the Unity engine)
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,6 +15,7 @@ static class GameRun
         double QL = a.Length > 1 ? double.Parse(a[1]) : 180;
         Rng.Seed(2024);
         cfg.NP = 5; cfg.physics = "legacy"; cfg.MYM = 0; cfg.DIFF = 2;
+        if (a.Length > 2 && a[2] == "ball") { cfg.physics = "rapier"; Phys.RAP = new BallSim(); }
         cfg.input = c => new Input();
         double pts = 0, fga = 0, fgm = 0, tpa = 0, tpm = 0, reb = 0, ast = 0, blk = 0;
         int bad = 0, teams = 0;

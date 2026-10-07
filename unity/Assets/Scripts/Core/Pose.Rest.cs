@@ -246,7 +246,7 @@ namespace Hoops.Core
         }
         public static readonly Q CO = new Q();
         static readonly Form NOFORM = new Form();
-        static string CKof(double sv) { int i = (int)sv; return sv == i && i >= 0 && i < CK.Length ? CK[i] : null; }
+        static string CKof(double sv) { int i = (int)sv; return sv == i && i >= 0 && i < CK.Length ? CK[i] : cfg.UP != 0 && sv == i ? upCK(i) : null; }
 
         /// <summary>Sample the player's shot clip at phase k (0..1), with signature tweaks. Returns a shared object.</summary>
         public static Q clip(Player p, double k)
@@ -394,7 +394,7 @@ namespace Hoops.Core
             string md = p.mode;
             double st = p.anS;
             // (+ the gather of a jumper: the feet stay planted - or take the hop into the clip's stance - while the hips dip)
-            bool gat = md == "c" && st == ST.shot && !Util.T(p.hk) && !IsLaySv(I(Or0(p.sv))) && !IsDunkSv(I(Or0(p.sv))),
+            bool gat = md == "c" && st == ST.shot && (!Util.T(p.hk) && !IsLaySv(I(Or0(p.sv))) && !IsDunkSv(I(Or0(p.sv))) || cfg.UP != 0 && p.gath != 0), // (UP: drive gathers step too)
                 ok = p.z < 1 && (md == "i" || gat) && !(p.actT > 0 && (p.act == 3 || p.act == 4 || p.act == 5)) && (st == ST.idle || st == ST.run || st == ST.def || st == ST.drib || st == ST.scr || st == ST.cat || st == ST.rest || st == ST.post || st == ST.move || gat || (st == ST.air && md == "i") || (st == ST.cel && sp > 25));
             var S = p.stp ?? (p.stp = new StepState());
             S.w += ((ok ? 1 : 0) - S.w) * Math.Min(1, DT * (ok ? 8 : 14));

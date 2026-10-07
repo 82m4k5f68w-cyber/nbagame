@@ -260,6 +260,7 @@ namespace Hoops.Core
             {
                 double sx = B.vx * dt * rem, sy = B.vy * dt * rem, sz = B.vz * dt * rem,
                     len = Math.Sqrt(sx * sx + sy * sy + sz * sz);
+                if (guard > 0) Gather(x0, y0, z0, sx, sy, sz); // (a bounce changed the path: its own neighbourhood)
                 int n = Math.Max(1, (int)Math.Ceiling(len / SUBLEN));
                 double fPrev = 0, fHit = -1;
                 for (int i = 1; i <= n; i++)
@@ -302,21 +303,14 @@ namespace Hoops.Core
                 rem *= 1 - fHit;
                 x0 = B.x; y0 = B.y; z0 = B.z;
                 if (rem < 1e-9) return floor;
-                if (guard >= 6 || !any && fHit == 0)
+                if (guard >= 24 || !any && fHit == 0)
                 {
-                    // (stuck in a corner of shapes: move the rest of the way and push out)
-                    B.x += B.vx * dt * rem;
-                    B.y += B.vy * dt * rem;
-                    B.z += B.vz * dt * rem;
+                    // (wedged between shapes: stop at the contact this step rather than push through anything)
                     for (int c = 0; c < nc; c++)
                     {
                         ref var s = ref S[cand[c]];
                         double g = Gap(ref s, B.x, B.y, B.z, out double nx, out double ny, out double nz);
-                        if (g < 0)
-                        {
-                            B.x -= nx * g; B.y -= ny * g; B.z -= nz * g;
-                            if (Respond(ref s, B, W, nx, ny, nz) && s.flag == F_FLOOR) floor = true;
-                        }
+                        if (g < 0) { B.x -= nx * g; B.y -= ny * g; B.z -= nz * g; }
                     }
                     return floor;
                 }

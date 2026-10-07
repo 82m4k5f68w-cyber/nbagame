@@ -78,20 +78,21 @@ static class Bounce
             Check(Math.Abs(b.z - BR) < 0.1, "rolls on the floor (no hop)");
         }
 
-        // 4. spin -> velocity: a ball spinning in place, dropped, ends up rolling at ~2/7 R w0 (rolling without slipping)
+        // 4. spin -> velocity: a ball spinning in place, dropped, leaves the first bounce rolling at 2/7 R w (rolling
+        //    without slipping; angular momentum about the contact point is conserved)
         {
-            double w0 = 60;
-            var b = Ball(300, 250, 20, 0, 0, 0, 0, w0, 0);
-            double vRoll = 0;
+            var b = Ball(300, 250, 20, 0, 0, 0, 0, 60, 0);
+            double vRoll = double.NaN, wHit = 0, slip = 0;
             for (int i = 0; i < 240; i++)
             {
+                double vzIn = b.vz, wIn = b.wv[1];
                 sim.Step(H, b);
-                double slip = b.vx - b.wv[1] * BR;
-                if (b.z < BR + 0.05 && Math.Abs(b.vz) < 3 && Math.Abs(slip) < 1) { vRoll = b.vx; break; }
+                if (vzIn < 0 && b.vz > 0) { vRoll = b.vx; wHit = wIn; slip = b.vx - b.wv[1] * BR; break; }
             }
-            double expect = 2.0 / 7 * BR * w0;
-            Console.WriteLine($"spinning drop (w {w0}): rolls off at {vRoll:F1} px/s (2/7 R w0 = {expect:F1}, less a little damping/rolling resistance)");
-            Check(vRoll > expect * 0.8 && vRoll <= expect * 1.02, "spin turns into rolling speed ~ 2/7 R w0");
+            double expect = 2.0 / 7 * BR * wHit;
+            Console.WriteLine($"spinning drop: leaves the floor at {vRoll:F1} px/s (2/7 R w = {expect:F1}), slip after {slip:F2} px/s");
+            Check(Math.Abs(vRoll - expect) < expect * 0.03, "spin turns into rolling speed 2/7 R w");
+            Check(Math.Abs(slip) < 1, "rolling without slipping after the bounce");
         }
 
         // 5. a fast ball never passes through the iron or the glass
@@ -135,14 +136,19 @@ static class Bounce
             Check(through == 0, "no ball passes through the iron");
             Check(minClear > -0.05, "never ends a step inside the iron");
             int glassThrough = 0;
-            for (int s = 0; s < 200; s++)
+            for (int s = 0; s < 400; s++)
             {
-                double sp = 1000 + s * 20, zz = 100 + (s % 30);
-                var b = Ball(860, 250 + (s % 40) - 20, zz, sp, 0, 0);
-                for (int i = 0; i < 20; i++) sim.Step(H, b);
-                if (b.x > 900 - BR + 0.05) glassThrough++;
+                // straight at the glass above the rim (z 108..134 clears the iron), 1000..5000 px/s, both boards
+                int hp = s & 1;
+                double sp = 1000 + (s >> 1) * 20, zz = 108 + (s % 27), dir = hp == 1 ? 1 : -1, gx = hp == 1 ? 900 : 40;
+                var b = Ball(gx - dir * 40, 250 + (s % 41) - 20, zz, dir * sp, 0, (s % 7 - 3) * 60);
+                for (int i = 0; i < 20; i++)
+                {
+                    sim.Step(H, b);
+                    if ((gx - b.x) * dir < BR - 0.05 && Math.Abs(b.y - HY) < 30 && b.z > 96 && b.z < 136) { glassThrough++; break; }
+                }
             }
-            Check(glassThrough == 0, $"200 balls at 1000..5000 px/s never get through the glass ({glassThrough})");
+            Check(glassThrough == 0, $"400 balls at 1000..5000 px/s never get into / through the glass ({glassThrough})");
         }
 
         Console.WriteLine(fails == 0 ? "PASS" : $"FAIL ({fails})");
