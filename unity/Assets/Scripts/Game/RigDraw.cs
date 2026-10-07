@@ -32,7 +32,7 @@ namespace Hoops.Game
             var bt = BallTex();
             ballMat.mainTexture = bt;
             if (ballMat.HasProperty("_BaseMap")) ballMat.SetTexture("_BaseMap", bt);
-            ballRp = new RenderParams(ballMat) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true };
+            ballRp = new RenderParams(ballMat) { worldBounds = new Bounds(Vector3.zero, new Vector3(2000f, 2000f, 2000f)), shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true };
         }
 
         /// <summary>Pebbled orange leather with black channels (equirectangular on Unity's sphere UVs).</summary>

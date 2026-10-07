@@ -27,6 +27,12 @@ namespace Hoops.Game
             Physics.defaultContactOffset = 0.004f;
             Physics.bounceThreshold = 0.05f;
             Physics.defaultMaxAngularSpeed = 200f;
+            // rim rattles: the iron is a ring of thin capsules and the ball hits it fast, so give the solver more
+            // passes (PhysX default 6/1 let the ball sink into the iron and pop out with extra speed)
+            Physics.defaultSolverIterations = 12;
+            Physics.defaultSolverVelocityIterations = 4;
+            Physics.defaultMaxDepenetrationVelocity = 6f; // ft/s: an overlap is resolved gently, never a launch
+            Physics.queriesHitBackfaces = false;
             scene = Physics.defaultPhysicsScene;
             root = new GameObject("PhysX").transform;
             // Rapier's default combine rule is Average for both friction and restitution: same in PhysX.
@@ -74,7 +80,10 @@ namespace Hoops.Game
             ball.angularDamping = 0.3f;
             ball.maxAngularVelocity = 200f;
             ball.sleepThreshold = 0;
-            ball.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            ball.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic; // a fast shot can't tunnel through the iron
+            ball.solverIterations = 16;
+            ball.solverVelocityIterations = 8;
+            ball.maxDepenetrationVelocity = 6f;
             ball.interpolation = RigidbodyInterpolation.None;
         }
 
@@ -89,7 +98,11 @@ namespace Hoops.Game
             ball.position = U(B.x, B.y, B.z);
             ball.linearVelocity = Uv(B.vx, B.vy, B.vz);
             ball.angularVelocity = Uv(W[0], W[1], W[2]) / S; // axial vector: same rotation, no length scale
-            scene.Simulate((float)dt);
+            // a fast ball near the iron or the glass gets two sub-steps (the browser's net also sub-steps fast balls)
+            double sp = System.Math.Sqrt(B.vx * B.vx + B.vy * B.vy + B.vz * B.vz);
+            bool nearHoop = B.z > 70 && B.z < 160 && (Util.Hypot(B.x - Sim.HXs[0], B.y - Sim.HY) < 40 || Util.Hypot(B.x - Sim.HXs[1], B.y - Sim.HY) < 40);
+            if (nearHoop && sp > 240) { scene.Simulate((float)dt * 0.5f); scene.Simulate((float)dt * 0.5f); }
+            else scene.Simulate((float)dt);
             Vector3 t = ball.position, v = ball.linearVelocity, a = ball.angularVelocity;
             B.x = t.x / S + 470;
             B.y = -t.z / S + 250;

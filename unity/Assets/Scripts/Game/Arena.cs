@@ -602,7 +602,7 @@ namespace Hoops.Game
                 }
             g.Upload();
             glintM = Gfx.Additive(new Color(4, 4, 4, 1), g.tex);
-            glintRP = new RenderParams(glintM) { shadowCastingMode = ShadowCastingMode.Off, receiveShadows = false };
+            glintRP = new RenderParams(glintM) { worldBounds = new Bounds(Vector3.zero, new Vector3(2000f, 2000f, 2000f)), shadowCastingMode = ShadowCastingMode.Off, receiveShadows = false };
             for (int b = 0, i = 0; b < 2; b++)
             {
                 float hx = (float)(HXs[b] - 470) * 0.1f, sg = b == 1 ? 1 : -1;
@@ -621,7 +621,7 @@ namespace Hoops.Game
                 }
             f.Upload();
             fireM = Gfx.Additive(new Color(1.6f, 1.6f, 1.6f, 1), f.tex);
-            fireRP = new RenderParams(fireM) { shadowCastingMode = ShadowCastingMode.Off, receiveShadows = false };
+            fireRP = new RenderParams(fireM) { worldBounds = new Bounds(Vector3.zero, new Vector3(2000f, 2000f, 2000f)), shadowCastingMode = ShadowCastingMode.Off, receiveShadows = false };
             cfB = new Batch[3];
             for (int k = 0; k < 3; k++) cfB[k] = new Batch(quad, Gfx.TwoSided(Gfx.Lit(Color.white, 0.4f, 0.2f)), CFN, false, true);
         }
@@ -1531,6 +1531,7 @@ namespace Hoops.Game
         }
         public void Draw()
         {
+            if (!SystemInfo.supportsInstancing) { for (int i = 0; i < n; i++) Graphics.RenderMesh(rp, mesh, 0, mx[i]); return; } // (no instancing: one call each, never invisible)
             for (int s = 0; s < n; s += 1023) Graphics.RenderMeshInstanced(rp, mesh, 0, mx, Mathf.Min(1023, n - s), s);
         }
     }

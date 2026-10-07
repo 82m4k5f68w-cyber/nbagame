@@ -76,6 +76,11 @@ public static class Build
             inc.GetArrayElementAtIndex(inc.arraySize - 1).objectReferenceValue = sh;
             gs.ApplyModifiedProperties();
         }
+        // every material is made at runtime (none in the build uses instancing), so the default "strip unused
+        // instancing variants" removed URP Lit's instanced variant and Graphics.RenderMeshInstanced drew nothing
+        // (invisible players / crowd). Keep them all.
+        var istrip = gs.FindProperty("m_InstancingStripping");
+        if (istrip != null && istrip.intValue != 2) { istrip.intValue = 2; gs.ApplyModifiedProperties(); } // 2 = KeepAll
         // keyboard via the built-in Input Manager (UnityEngine.Input)
         var ps = new SerializedObject(AssetDatabase.LoadAssetAtPath<Object>("ProjectSettings/ProjectSettings.asset"));
         var ih = ps.FindProperty("activeInputHandler");
