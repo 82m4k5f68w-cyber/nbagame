@@ -98,3 +98,25 @@ Status (Oct 2026): N and N+ done. All six items are flags in `NetOpts` (Transpor
 scenarios faithful / improved / improved+rtc / +isolation / +flap (direct dies, relay, retry) / +migration / improved+rematch.
 Not testable here: the real WebRTC / room in a browser (HoopsNet.jslib), and a hidden WebGL host tab stops ticking (Unity's
 loop is rAF-driven; the browser build keeps a timer).
+
+## U — the browser's menus on top of the Unity game (WebGL template + bridge)
+Goal: the Unity WebGL build looks like the current HTML game outside of play: the same hub page, mode cards, patch
+notes, matchup screen (team arrows, lineup cards with drawn avatar portraits, team ratings, difficulty, quarter
+length, settings drawer), pause menu and final screen (record, player of the game, stat bars, shot charts if cheap,
+rematch). Unity renders the game + in-game HUD underneath (Hud.cs / Broadcast.cs stay).
+- Unity WebGL template: unity/Assets/WebGLTemplates/Hoops/index.html (+ TemplateData/). Reuse the real markup/CSS from
+  index.html and src/client/main.ts (hub) and src/client/game.ts (menu(), settings drawer #sd, pause, final screen):
+  copy the CSS and port the DOM-building code to a small plain-JS (or TS compiled by a script in scripts/unity/) file
+  in TemplateData — no dependency on the TS sim. Roster data: generate TemplateData/roster.js from src/core/data.ts
+  (TM, OV, formOf avatars need name/skin/hair/number/height) with a script in scripts/unity/.
+- Bridge: page -> Unity via unityInstance.SendMessage("Hoops2K27", "FromPage", json) ({cmd:"start", mode, sel, opp,
+  diff, ql, np, settings...}, {cmd:"resume"}, {cmd:"quit"}, {cmd:"setting", k, v}); Unity -> page via a new
+  Assets/Plugins/WebGL/HoopsUi.jslib (e.g. HoopsUi_Show(screen, json) for "pause"/"final"/"menu", HoopsUi_Has()).
+  Add a public `FromPage(string json)` handler (GameMain or a new PageBridge.cs MonoBehaviour on the "Hoops2K27"
+  object) that maps to the same calls Menus.Go()/settings use. Esc in game -> page pause overlay.
+- Menus.cs: when HoopsUi_Has() returns true (WebGL with this template), don't draw the IMGUI screens; otherwise keep
+  them (editor / other platforms).
+- Editor/Build.cs: PlayerSettings.WebGL.template = "PROJECT:Hoops". The canvas fills the window under the overlays.
+- Keep the page light (no frameworks). Test the template page's JS in Node/Playwright with a stub unityInstance
+  (no Unity build here): hub renders, clicking a mode opens the matchup screen, Play sends the right JSON, a
+  HoopsUi_Show("final", ...) call renders the final screen. Put that test in tests/unity_page.mjs.
