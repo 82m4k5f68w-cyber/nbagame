@@ -147,3 +147,15 @@ pose/clip data, blending that passes the jerk/limits/foot-slide budgets. Port th
 unity/CoreTests (Blend.cs jerk budget like tests/blend.ts, Limits.cs joint limits, FootSlide.cs) and run them with
 UP=0 and UP=1. Do not change behaviour when cfg.UP == 0 (the Trace.cs lockstep test vs TS must stay identical for the
 first 3000 ticks). Report the moves added, keys, and test numbers.
+
+## Wave 2 (start when PH / AP / U are merged)
+- PH2 physics: ball-vs-player full-body contact for loose balls (all skeleton bones as capsules), rebound physics with
+  box-out pushes (bodies as kinematic movers that shove each other via Core collide), shot blocks resolved physically
+  (hand capsule vs ball, still gated by the block roll), ball-in-hand dribble with real floor contact + spin (dribble
+  sound/feel), tunable "arcade vs sim" physics slider.
+- AP2 animation: more motion-capture (CMU) clips retargeted with scripts/mocap/retarget.ts for layups, dunks, defensive
+  slides, celebrations; foot-locking / ground-contact solver for every state; look-at + eye-dart improvements;
+  full-body IK for rebounds and loose-ball dives; secondary motion (jersey, shorts, hair).
+- U2 menus: MyPlayer builder (face/hair/body/ratings, saved), Season / King ladder progress screens, online lobby in
+  the same HTML style (create/join, seats, ready, DIRECT/RELAY quality), replay theater (saved highlights), stats
+  history, achievements.
