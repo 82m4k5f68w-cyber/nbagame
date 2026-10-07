@@ -296,6 +296,7 @@ namespace Hoops.Core
                     // two-for-one: ~35 s left in the quarter, get a quick shot up so you get the last possession too
                     if (clock > shot + 4 && clock < shot + 14 && QTRLEN >= 60) a.w = 0.3;
                 }
+                if (cfg.UP != 0 && upCpuGather(p, D)) return; // (UP: attack the rim with a gather from 9-14 ft)
                 if (D > a.r) mv(p, oh, HY + Math.Sin(T * 1.5 + p.k) * 90, 1);
                 else
                 {
@@ -320,7 +321,7 @@ namespace Hoops.Core
                         {
                             a.w = 0;
                             bool slow = md != null && p.s - md.s >= 4;
-                            if (slow || p.i > p.c + 4 || Rng.R() < 0.4) { a.r = 40 + Rng.R() * 40; i.mv = Rng.R() < 0.5 ? 1 : 0; }
+                            if (slow || p.i > p.c + 4 || Rng.R() < 0.4) { a.r = 40 + Rng.R() * 40; i.mv = Rng.R() < 0.5 ? (cfg.UP != 0 ? 5 : 1) : 0; } // (UP: in-and-out)
                             else { a.r = 150 + Rng.R() * 60; i.mv = 1; } // hesitation into the elbow pull-up
                             return;
                         }
@@ -465,7 +466,11 @@ namespace Hoops.Core
                     )
                         i.pass = bo;
                 }
-                if (p.cd <= 0 && p.s >= 72 && Hypot(dn.x - p.x, dn.y - p.y) < 55 && Rng.R() < dt * 1.4) i.mv = 1 + I(Rng.R() * 3);
+                if (p.cd <= 0 && p.s >= 72 && Hypot(dn.x - p.x, dn.y - p.y) < 55 && Rng.R() < dt * 1.4)
+                {
+                    double r = Rng.R();
+                    i.mv = cfg.UP != 0 ? upCpuMove(p, dn, r) : 1 + I(r * 3);
+                }
             }
             else if (pos == t && B.mode != "held" && B.to == p) mv(p, B.x + B.vx * 0.2, B.y + B.vy * 0.2, 1);
             else if (pos == t && B.owner != null)
@@ -963,6 +968,7 @@ namespace Hoops.Core
                 {
                     if (o.mvk == 3) dhSw(3, 0.26);
                     else if (o.mvk == 2) dhSw(2, 0.34);
+                    else if (cfg.UP != 0 && o.mvk >= 5) upDribMove(o);
                     else if (o.mvk != 1 && o.mvk != 4) dhSw(1, 0.2);
                 }
                 B.dmv = o.mvT;
@@ -985,6 +991,7 @@ namespace Hoops.Core
                         double rs2 = (d.x - o.x) * Math.Sin(o.f) - (d.y - o.y) * Math.Cos(o.f),
                             sp = Hypot(o.vx, o.vy);
                         if (Sign(rs2) == B.dhn && Math.Abs(rs2) > 7) dhSw(1, 0.22); // protect: cross away from the defender
+                        else if (cfg.UP != 0 && sp < 25 && dd < 60) upSizeUp(o);
                         else if (sp < 25 && dd < 60)
                         {
                             // size-up, by signature package: 0 btb + cross, 1 rapid-fire between-the-legs combos (Curry),
@@ -1011,6 +1018,7 @@ namespace Hoops.Core
                 lat = from + (dhBase() - from) * u;
                 if (B.dswk == 3) fwd = 6 - 10 * arc; // through the legs / behind the back
                 else if (B.dswk == 2) { fwd = 6 * Math.Cos(Math.PI * u0); lat += 5 * arc * B.dhn; } // swung around the hip
+                else if (B.dswk >= 5) upDribPath(u0, arc, ref lat, ref fwd, from);
                 else fwd = 6 - 1.5 * arc; // crossover: low and tight across the front
             }
             B.dlat = lat;

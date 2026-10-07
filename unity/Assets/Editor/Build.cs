@@ -30,6 +30,8 @@ public static class Build
         PlayerSettings.WebGL.dataCaching = true;
         PlayerSettings.WebGL.memoryGrowthMode = WebGLMemoryGrowthMode.Geometric;
         PlayerSettings.WebGL.powerPreference = WebGLPowerPreference.HighPerformance;
+        // the HTML game's hub / menus over the canvas (Assets/WebGLTemplates/Hoops, PageBridge.cs, HoopsUi.jslib)
+        PlayerSettings.WebGL.template = "PROJECT:Hoops";
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.WebGL, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.WebGL, new[] { GraphicsDeviceType.WebGPU, GraphicsDeviceType.OpenGLES3 });
         PlayerSettings.runInBackground = true; // a hosting tab keeps simulating online

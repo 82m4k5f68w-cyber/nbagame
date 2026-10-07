@@ -148,6 +148,7 @@ namespace Hoops.Core
             if ((rs > 0 || inb > 0) && !Util.T(PREDICT) && F_on(cfg.PRO)) deadBall(dt);
             if (HOOK.pre != null) HOOK.pre(dt);
             foreach (var p in P) if (!F_on(p.off)) step(p, dt);
+            if (cfg.UP != 0) upTick(dt);
             // body english: the shooter leans and waves at a ball rolling around the rim
             if (Util.T(B.sh) && !Util.T(B.sc) && B.owner == null && B.last != null && !F_on(B.last.off))
             {

@@ -550,6 +550,7 @@ namespace Hoops.Core
                         p.hk = 1;
                         txtW(p.sv == 11 ? "PUTBACK SLAM!" : "TIP-IN", p.x, p.y, 115, "#ffd23f");
                     }
+                    if (cfg.UP != 0 && !oop && p.mode == "i") upPutback(p, wasShot, shooter);
                     if (oop)
                     {
                         // ALLEY-OOP: catch it in the air and throw it down

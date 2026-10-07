@@ -391,6 +391,7 @@ namespace Hoops.Core
                 mv(p, hx + dir * 25, HY + (p.y < HY ? -18 : 18), 1.25); // backdoor
                 if (Hypot(md.x - p.x, md.y - p.y) > 26) OFFS[ti] = p;
             }
+            else if (cfg.UP != 0 && upVcut(p, spX, spY, hx, md)) { }
             else mv(p, spX + Math.Sin(T * 0.8 + p.k) * 10, spY, 0.95);
             return true;
         }

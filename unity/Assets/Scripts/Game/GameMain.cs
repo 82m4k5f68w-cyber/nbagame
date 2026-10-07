@@ -47,6 +47,7 @@ namespace Hoops.Game
             cfg.input = ReadInput;
             setCtrls(new List<Ctrl> { mkCtrl("p1", 0) });
             setQtrLen(180);
+            gameObject.AddComponent<PageBridge>(); // WebGL template menus (TemplateData/ui.js) when present
             gameObject.AddComponent<Menus>(); // title / matchup screen starts the game
             sfx = gameObject.AddComponent<GameAudio>();
             gameObject.AddComponent<Broadcast>(); // banners, commentary, intros, halftime + Hud (OnGUI) + Music
