@@ -137,14 +137,13 @@ namespace Hoops.Game
             {
                 GUILayout.Label("SETTINGS", h2);
                 GUILayout.Space(8);
-                int q = QualitySettings.GetQualityLevel();
-                var names = QualitySettings.names;
-                if (names.Length > 0)
-                {
-                    GUILayout.Label("GRAPHICS", txt);
-                    int nq = GUILayout.Toolbar(q, names, GUILayout.Height(30));
-                    if (nq != q) QualitySettings.SetQualityLevel(nq, true);
-                }
+                GUILayout.Label("GRAPHICS", txt);
+                int q = Mathf.Clamp(Arena.QL, 0, 2);
+                int nq = GUILayout.Toolbar(q, new[] { "LOW", "MEDIUM", "HIGH" }, GUILayout.Height(30));
+                if (nq != q) Arena.SetQuality(nq);
+                Arena.FxOn = GUILayout.Toggle(Arena.FxOn, " Post-processing effects (bloom, color grade, depth of field)");
+                GUILayout.Label("CAMERA  (K in game)", txt);
+                CameraDirector.Mode = GUILayout.Toolbar(CameraDirector.Mode, new[] { "BROADCAST", "2K", "BASELINE", "PLAYER LOCK" }, GUILayout.Height(30));
                 GUILayout.Space(6);
                 cfg.FOULS = GUILayout.Toggle(cfg.FOULS != 0, " Fouls") ? 1 : 0;
                 cfg.SCLK = GUILayout.Toggle(cfg.SCLK != 0, " Shot clock") ? 1 : 0;
