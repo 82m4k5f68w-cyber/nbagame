@@ -1899,10 +1899,15 @@ namespace Hoops.Core
                     double cgR = drib || cat ? clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctRg ?? 1;
                     p.ctRg = (p.ctRg ?? cgR) + (cgR - (p.ctRg ?? cgR)) * Math.Min(1, DT * 14);
                     double w = p.ctR * (fade ? Math.Min(p.ctRg ?? 1, clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1)) : p.ctRg ?? 1);
-                    oq.aR += da * w;
-                    oq.eR += (K[1] - oq.eR) * w;
-                    oq.sz += (K[2] - oq.sz) * w;
+                    if (cfg.UP != 0) { oq.aR += upCt(p, 0, da * w); oq.eR += upCt(p, 1, (K[1] - oq.eR) * w); oq.sz += upCt(p, 2, (K[2] - oq.sz) * w); }
+                    else
+                    {
+                        oq.aR += da * w;
+                        oq.eR += (K[1] - oq.eR) * w;
+                        oq.sz += (K[2] - oq.sz) * w;
+                    }
                 }
+                else if (cfg.UP != 0) { oq.aR += upCt(p, 0, 0); oq.eR += upCt(p, 1, 0); oq.sz += upCt(p, 2, 0); }
                 if (p.ctL > 0.01)
                 {
                     if (cwL > 0)
@@ -1919,10 +1924,15 @@ namespace Hoops.Core
                     double gL2 = drib || cat ? clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctLg ?? 1;
                     p.ctLg = (p.ctLg ?? gL2) + (gL2 - (p.ctLg ?? gL2)) * Math.Min(1, DT * 14);
                     double w = p.ctL * (fadeL ? Math.Min(p.ctLg ?? 1, clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1)) : p.ctLg ?? 1);
-                    oq.aL += da * w;
-                    oq.eL += (K[4] - oq.eL) * w;
-                    oq.zL = z0 + (K[5] - z0) * w;
+                    if (cfg.UP != 0) { oq.aL += upCt(p, 3, da * w); oq.eL += upCt(p, 4, (K[4] - oq.eL) * w); oq.zL = z0 + upCt(p, 5, (K[5] - z0) * w); }
+                    else
+                    {
+                        oq.aL += da * w;
+                        oq.eL += (K[4] - oq.eL) * w;
+                        oq.zL = z0 + (K[5] - z0) * w;
+                    }
                 }
+                else if (cfg.UP != 0) { oq.aL += upCt(p, 3, 0); oq.eL += upCt(p, 4, 0); oq.zL += upCt(p, 5, 0); }
             }
             if (PRO && cfg.PLANT != 0) plantFeet(p, oq, sp);
             if (PRO && cfg.AVOID != 0) avoidBodies(p, oq);

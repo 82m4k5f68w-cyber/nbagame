@@ -315,3 +315,21 @@ namespace Hoops.Core
         }
     }
 }
+
+namespace Hoops.Core
+{
+    public partial class Player { public double[] upCs; }
+    public static partial class Pose
+    {
+        /// <summary>UP: the post-blend contact correction (dribble / catch / contest arm IK) rides a critically damped
+        /// spring, so an IK branch flip or a contact switching on can't pop the arm (it lands ~2-3 ticks later).</summary>
+        public static double upCt(Player p, int i, double target)
+        {
+            var c = p.upCs ?? (p.upCs = new double[12]);
+            const double om = 38;
+            c[6 + i] += (om * om * (target - c[i]) - 2 * om * c[6 + i]) * DT;
+            c[i] += c[6 + i] * DT;
+            return c[i];
+        }
+    }
+}

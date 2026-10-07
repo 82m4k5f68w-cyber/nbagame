@@ -626,6 +626,7 @@ namespace Hoops.Game
             for (int k = 0; k < 3; k++) cfB[k] = new Batch(quad, Gfx.TwoSided(Gfx.Lit(Color.white, 0.4f, 0.2f)), CFN, false, true);
         }
 
+        readonly bool[] flexOn = new bool[2];
         void Polish(float dt)
         {
             // rim shake: a dunk yanks the rim down, the whole stanchion head rings and settles
@@ -634,9 +635,17 @@ namespace Hoops.Game
             wasDk = dk;
             for (int b = 0; b < 2; b++)
             {
-                if (hoopShake[b] <= 0) continue;
-                float t = hoopShake[b] += dt, a = Mathf.Exp(-t * 4.5f), off = -0.22f * a * Mathf.Cos(t * 24) - 0.12f * Mathf.Exp(-t * 9);
-                if (a < 0.01f) { hoopShake[b] = 0; off = 0; }
+                // the physical rim flex from the ball engine (px, + = bent down) rides on top of the dunk shake
+                float flex = Phys.RAP is BallSim ? (float)BallSim.RimFlex[b] * 0.1f : 0f;
+                if (hoopShake[b] <= 0 && Mathf.Abs(flex) < 1e-4f && !flexOn[b]) continue;
+                flexOn[b] = Mathf.Abs(flex) >= 1e-4f;
+                float off = -flex;
+                if (hoopShake[b] > 0)
+                {
+                    float t = hoopShake[b] += dt, a = Mathf.Exp(-t * 4.5f);
+                    off += -0.22f * a * Mathf.Cos(t * 24) - 0.12f * Mathf.Exp(-t * 9);
+                    if (a < 0.01f) hoopShake[b] = 0;
+                }
                 foreach (var h in CourtBuilder.HoopParts[b])
                 {
                     var lp = h.t.localPosition;

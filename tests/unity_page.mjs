@@ -85,7 +85,7 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok((await st(pg)).SEL === 0, "Q: previous team");
   await pg.focus("#tip");
   await pg.keyboard.press("ArrowDown");
-  const f1 = await pg.evaluate(() => document.activeElement.id || document.activeElement.className);
+  const f1 = await pg.evaluate(() => { const a = document.activeElement; return a === document.body ? "" : a.id || a.textContent.trim(); });
   ok(f1 !== "tip" && f1 !== "", "arrow moves focus off TIP OFF (" + f1 + ")");
   await pg.keyboard.press("Escape");
   ok((await st(pg)).scr === "hub" && (await pg.locator("#hub").isVisible()), "Esc on matchup -> hub");
@@ -129,8 +129,9 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok(await pg.locator("#sd").isVisible(), "pause -> settings");
   await pg.keyboard.press("Escape");
   ok((await st(pg)).scr === "pause" && (await pg.locator("#pz").isVisible()), "settings Esc -> back to pause");
+  ok(await pg.evaluate(() => document.activeElement.id === "pse"), "focus returns to Settings");
   await pg.keyboard.press("ArrowDown");
-  ok(await pg.evaluate(() => document.activeElement.id === "prp"), "pause: arrow navigation");
+  ok(await pg.evaluate(() => document.activeElement.id === "pc"), "pause: arrow navigation");
   await pg.keyboard.press("Escape");
   ok((await sent(pg)).some((x) => x.cmd === "resume") && (await st(pg)).scr === "play", "Esc resumes");
   // final screen from Unity
@@ -153,7 +154,7 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   const cc = (await sent(pg)).filter((x) => x.cmd === "start").pop();
   ok(cc.mode === "clutch" && cc.arg === 2, "clutch scenario start");
   ok(!errs.length, "no page errors " + (errs.length ? errs.join(" | ") : ""));
-  await pg.screenshot({ path: "docs/unity-page-final.png" }).catch(() => {});
+  if (process.env.SHOTS) await pg.screenshot({ path: process.env.SHOTS + "/unity-page-final.png" });
   await pg.close();
 }
 
@@ -221,7 +222,7 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   await pg.tap("#set");
   const sd = await pg.evaluate(() => document.getElementById("sd").getBoundingClientRect().width);
   ok(sd >= 380, "phone: settings full width");
-  await pg.screenshot({ path: "docs/unity-page-phone.png" }).catch(() => {});
+  if (process.env.SHOTS) await pg.screenshot({ path: process.env.SHOTS + "/unity-page-phone.png" });
   ok(!errs.length, "no page errors " + (errs.length ? errs.join(" | ") : ""));
   await pg.close();
 }
