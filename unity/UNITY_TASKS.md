@@ -120,3 +120,30 @@ rematch). Unity renders the game + in-game HUD underneath (Hud.cs / Broadcast.cs
 - Keep the page light (no frameworks). Test the template page's JS in Node/Playwright with a stub unityInstance
   (no Unity build here): hub renders, clicking a mode opens the matchup screen, Play sends the right JSON, a
   HoopsUi_Show("final", ...) call renders the final screen. Put that test in tests/unity_page.mjs.
+
+## PH — custom deterministic ball physics (Core/BallSim.cs implementing IBallPhysics; Unity uses it instead of PhysX)
+Pure C# (no UnityEngine) so it runs in Unity AND in the scripts/unity/cs.sh harness. Mirror the browser Rapier world
+(src/core/physics.ts): floor, 4 walls, two glass boards, 24-capsule rims (radius .55 px), kinematic player torso
+capsules (same enable rule as rapSyncPlayers), ball radius BR, restitution/friction values and the Average combine
+rule. Integrate exactly like the aim pre-simulation in launch() (Sim.B.cs: h = 1/120, symplectic Euler, drag + Magnus
+from B.wv, spin decaying with angular damping .3) so free flight is bit-identical to what launch predicts; contacts:
+sphere vs capsule/box with restitution on the normal, Coulomb friction coupling linear and angular velocity (spin
+grabs the floor/rim/glass: backspin bites on bounce passes, rim english), rolling resistance on the floor, swept-sphere
+CCD (sub-steps or conservative advancement) so nothing tunnels, a little rim flex (spring) on dunks/hard hits exposed
+for the renderer (BallSim.RimFlex[2]), kinematic forearm/hand capsules from the last skeleton (p.skel joints 13-15,
+17-19) that only touch a LOOSE ball (rebound tips), never a shot in flight (cylinder/blocks stay rule-based).
+Hook: Sim/upd keep calling Phys.RAP.Step/SyncPlayers; GameMain sets Phys.RAP = new BallSim() (keep PhysXBall.cs as
+an option, `cfg` flag or constant). Tests (unity/CoreTests): Greens.cs (port tests/greens.ts: 400 perfect releases
+from random spots, expect >= 95% made with BallSim), Bounce.cs (drop test energy loss per bounce vs e, a backspin
+bounce pass slows/reverses, a rolling ball stops within a few seconds, a fast ball never passes through the iron),
+and GameRun with BallSim (no NaN / stuck clock). Report greens % and before/after numbers.
+
+## AP — Pro Play + animation upgrades (Core, behind `cfg.UP` = 1 in Unity, 0 by default so the TS parity tests hold)
+Review Core (Sim.C step / Sim.D ai / Pose.Pose3) against NBA 2K-style move sets and add the biggest gaps, e.g.:
+in-and-out dribble, double crossover / combo chains, snatch-back, sky hook and floater variants, contest reactions
+(shooter leans away / adjusts release vs a late contest), stronger landings and gathers. Each new move: input mapping
+(keep the existing keys; reuse mv codes with new values or modifier keys, document them), CPU usage where it fits,
+pose/clip data, blending that passes the jerk/limits/foot-slide budgets. Port the needed TS tests to C# in
+unity/CoreTests (Blend.cs jerk budget like tests/blend.ts, Limits.cs joint limits, FootSlide.cs) and run them with
+UP=0 and UP=1. Do not change behaviour when cfg.UP == 0 (the Trace.cs lockstep test vs TS must stay identical for the
+first 3000 ticks). Report the moves added, keys, and test numbers.
