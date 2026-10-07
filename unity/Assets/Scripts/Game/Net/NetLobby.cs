@@ -28,6 +28,9 @@ namespace Hoops.Game.Net
         }
         /// <summary>Host: after every sim tick (publish snapshots, collect events).</summary>
         public static void AfterTick() => L?.host?.Tick();
+        /// <summary>WebGL template menus (PageBridge): open the lobby / is it open.</summary>
+        public static void OpenLobby() { if (L != null && L.role == null) L.Screen = "menu"; }
+        public static bool LobbyOpen => L != null && L.Screen != null;
     }
 
     public sealed class NetLobby : MonoBehaviour
@@ -37,6 +40,7 @@ namespace Hoops.Game.Net
         GuestSession guest;
         ITransport t;
         string screen; // null (closed) | "menu" | "lobby"
+        internal string Screen { get => screen; set => screen = value; }
         string code = "", joinCode = "", name, err = "", wsUrl = "ws://localhost:8787/ws", kind;
         Func<Ctrl, Hoops.Core.Input> prevInput;
         GUIStyle h1, h2, txt, btn, small;

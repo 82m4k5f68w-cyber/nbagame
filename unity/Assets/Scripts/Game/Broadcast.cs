@@ -20,6 +20,7 @@ namespace Hoops.Game
     {
         // settings (view.ts V.*), saved in PlayerPrefs
         public static bool VOICE = true, COMM = true, RUMBLE = true, INTRO = true;
+        public static float VoiceVol = 1f; // commentary voice level (page Audio settings, PageBridge)
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] static extern int HoopsSpeak(string s, float rate, float pitch, float vol, int now);
@@ -137,7 +138,7 @@ namespace Hoops.Game
         static void Say(string s, bool now, float hype = 0)
         {
             if (!VOICE) return;
-            try { HoopsSpeak(s, 1.1f + hype * 0.15f, 0.92f + hype * 0.22f, 0.85f + hype * 0.15f, now ? 1 : 0); } catch { }
+            try { HoopsSpeak(s, 1.1f + hype * 0.15f, 0.92f + hype * 0.22f, (0.85f + hype * 0.15f) * VoiceVol, now ? 1 : 0); } catch { }
         }
 
         public static void Comment(string e, string n = "", string n2 = "")

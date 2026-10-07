@@ -16,6 +16,7 @@ namespace Hoops.Game
         AudioClip bounce, whistle, ooh, chant;
         readonly Dictionary<long, AudioClip> tones = new();
         public static float EXC = 0.3f;
+        public static float CrowdVol = 1f; // crowd bed level (page Audio settings, PageBridge)
         double lastBz;
         bool wasDown;
         System.Random rnd = new System.Random(5);
@@ -135,7 +136,7 @@ namespace Hoops.Game
         {
             float dt = Time.unscaledDeltaTime;
             EXC = Mathf.Max(0.2f, EXC - dt * 0.25f);
-            bed.volume = 0.08f + 0.45f * EXC;
+            bed.volume = (0.08f + 0.45f * EXC) * CrowdVol;
             // dribble / loose-ball bounces: the ball reached the floor this frame
             bool down = B.z < BR + 1.5;
             if (down && !wasDown && lastBz > B.z && (S == "play" || RPL != null))

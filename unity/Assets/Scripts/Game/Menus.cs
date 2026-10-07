@@ -11,6 +11,9 @@ namespace Hoops.Game
     {
         public static int MyTeam = 0, Opp = 3, Diff = 1, QIdx = 1, Size = 5;
         public static bool Paused;
+        /// <summary>Quarter length in seconds from the page (PageBridge); 0 = the QIdx preset.</summary>
+        public static double QLen;
+        public static double Tempo; // shooting style of the human controller (0 hold & release, 1 tempo)
         static readonly double[] QL = { 120, 180, 300, 720 };
         static readonly string[] QN = { "2 MIN", "3 MIN", "5 MIN", "12 MIN" };
         static readonly string[] DN = { "ROOKIE", "PRO", "ALL-STAR", "HALL OF FAME" };
@@ -24,6 +27,7 @@ namespace Hoops.Game
 
         void Update()
         {
+            if (PageBridge.Active) return; // the page's pause menu (PageBridge handles Esc)
             if (UnityEngine.Input.GetKeyDown(KeyCode.Escape) && (S == "play" || S == "pause"))
             {
                 Paused = !Paused;
@@ -52,6 +56,7 @@ namespace Hoops.Game
 
         void OnGUI()
         {
+            if (PageBridge.Active) return; // WebGL template draws the menus (TemplateData/ui.js)
             Styles();
             GUI.depth = -10;
             if (S == "menu") Title();
@@ -156,26 +161,32 @@ namespace Hoops.Game
             });
         }
 
-        void Go(string mode)
+        /// <summary>Starts a mode with the current MyTeam / Opp (Opp &lt; 0 = random) / Diff / Size. arg = clutch
+        /// scenario. Also the entry point of PageBridge (the WebGL template's menus).</summary>
+        public static void Go(string mode, int arg = 0)
         {
             Paused = false;
             Modes.stopMode();
             cfg.DIFF = Diff;
             cfg.NP = Size;
-            setQtrLen(QL[QIdx]);
-            setCtrls(new List<Ctrl> { mkCtrl("p1", 0) });
+            setQtrLen(QLen > 0 ? QLen : QL[QIdx]);
+            setCtrls(new List<Ctrl> { mkCtrl("p1", 0, false, Tempo) });
+            double? opp = Opp >= 0 && Opp != MyTeam ? Opp : (double?)null;
             switch (mode)
             {
                 case "street": Modes.startStreet(MyTeam, Opp, Mathf.Min(Size, 3)); break;
-                case "clutch": Modes.startClutch(0, MyTeam, Opp); break;
+                case "street1": Modes.startStreet(MyTeam, opp, 1); break;
+                case "street3": Modes.startStreet(MyTeam, opp, 3); break;
+                case "clutch": Modes.startClutch(Mathf.Clamp(arg, 0, Modes.CLUTCH.Length - 1), MyTeam, opp); break;
                 case "astar": Modes.startAllStar(); break;
+                case "tutorial": Modes.startPractice(MyTeam, true); break;
                 case "practice": Modes.startPractice(MyTeam); break;
                 case "3pt": Modes.start3pt(MyTeam); break;
                 case "dunk": Modes.startDunk(MyTeam); break;
-                case "horse": Modes.startHorse(MyTeam, Opp); break;
+                case "horse": Modes.startHorse(MyTeam, opp); break;
                 case "king": Modes.startKing(MyTeam); break;
                 case "daily": Modes.startDaily(); break;
-                default: start(MyTeam, new StartOpts { j = Opp == MyTeam ? (Opp + 1) % Data.TM.Length : Opp }); break;
+                default: start(MyTeam, new StartOpts { j = Opp < 0 ? null : Opp == MyTeam ? (Opp + 1) % nChoices() : Opp }); break;
             }
         }
 
