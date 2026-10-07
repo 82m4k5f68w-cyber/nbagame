@@ -93,3 +93,8 @@ Each behind a clear flag, with NetLoop.cs tests where possible:
 6. Quick rematch + host migration lite: if the host leaves mid-game, the longest-connected guest takes over from the
    last full snapshot instead of the game ending.
 Keep it UnityEngine-free where testable.
+Status (Oct 2026): N and N+ done. All six items are flags in `NetOpts` (Transport.cs; false = the faithful PROTO 10 port).
+`scripts/unity/cs.sh unity/CoreTests/NetLoop.cs [scenario] [lag= jitter= drop= seconds=]` runs RoomTransport retries +
+scenarios faithful / improved / improved+rtc / +isolation / +flap (direct dies, relay, retry) / +migration / improved+rematch.
+Not testable here: the real WebRTC / room in a browser (HoopsNet.jslib), and a hidden WebGL host tab stops ticking (Unity's
+loop is rAF-driven; the browser build keeps a timer).

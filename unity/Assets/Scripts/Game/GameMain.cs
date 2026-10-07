@@ -21,7 +21,6 @@ namespace Hoops.Game
         // edge events captured per frame, consumed by the first sim tick that reads them (like input.ts `ev`)
         bool eSd, eSu, eE, eR, eF, eQ, eG, eTo, eCh, eDs;
         int eMv;
-        readonly List<(string s, string c, float t, bool big, string sub)> texts = new();
         int team = 0, opp = 1;
 
         void Awake()
@@ -50,6 +49,7 @@ namespace Hoops.Game
             setQtrLen(180);
             gameObject.AddComponent<Menus>(); // title / matchup screen starts the game
             sfx = gameObject.AddComponent<GameAudio>();
+            gameObject.AddComponent<Broadcast>(); // banners, commentary, intros, halftime + Hud (OnGUI) + Music
         }
 
         Hoops.Core.Input ReadInput(Ctrl c)
@@ -113,7 +113,7 @@ namespace Hoops.Game
                 while (acc >= STEP && k < 6) { upd(STEP); Net.NetHooks.AfterTick(); acc -= STEP; k++; }
                 if (acc > STEP * 2) acc = STEP; // a slow frame drops time instead of snowballing
             }
-            else if (S == "half") setS("play");
+            // S == "intro" / "half": Broadcast holds the sim (player intros, halftime panel) and resumes play
             else if (S == "over") { postGame(System.Math.Min(dt, 0.05)); Net.NetHooks.AfterTick(); }
             DrainFx(dt);
             draw.Draw(dt);
@@ -127,98 +127,11 @@ namespace Hoops.Game
             foreach (var f in FX)
             {
                 sfx.OnFx(f);
-                if (f.k == "t" && f.s != null) texts.Add((f.s, f.c ?? "#ffffff", 1.6f, false, null));
-                else if (f.k == "ban") texts.Add((f.s, f.c ?? "#ffd23f", 2.6f, true, f.sub));
-                else if (f.k == "end") texts.Add(("FINAL", "#ffd23f", 99f, true, "ENTER for a rematch"));
+                Broadcast.OnFx(f); // banners, commentary, timing card, rumble, halftime; floating texts -> Hud
             }
             FX.Clear();
-            for (int i = texts.Count - 1; i >= 0; i--)
-            {
-                var t = texts[i];
-                t.t -= dt;
-                if (t.t <= 0) texts.RemoveAt(i); else texts[i] = t;
-            }
-            if (texts.Count > 8) texts.RemoveRange(0, texts.Count - 8);
         }
-
-        Player Focus()
-        {
-            var c = CT.Count > 0 ? CT[0] : null;
-            return c != null && c.idx >= 0 && c.idx < P.Count ? P[c.idx] : null;
-        }
-
-        static Color Col(string hex) => ColorUtility.TryParseHtmlString(hex, out var c) ? c : Color.white;
-        GUIStyle big, mid, small;
-
-        void OnGUI()
-        {
-            if (S == "menu") return; // the title / matchup screen (Menus) owns the screen
-            if (big == null)
-            {
-                big = new GUIStyle(GUI.skin.label) { fontSize = 34, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                mid = new GUIStyle(big) { fontSize = 22 };
-                small = new GUIStyle(big) { fontSize = 14, fontStyle = FontStyle.Normal };
-            }
-            float W = Screen.width;
-            // scoreboard
-            GUI.color = new Color(0, 0, 0, 0.72f);
-            GUI.DrawTexture(new Rect(W / 2 - 260, 8, 520, 54), Texture2D.whiteTexture);
-            GUI.color = Col(PC[0]);
-            GUI.DrawTexture(new Rect(W / 2 - 260, 8, 6, 54), Texture2D.whiteTexture);
-            GUI.color = Col(PC[1]);
-            GUI.DrawTexture(new Rect(W / 2 + 254, 8, 6, 54), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            mid.normal.textColor = Color.white;
-            GUI.Label(new Rect(W / 2 - 250, 8, 150, 28), (cl[0] ?? "").ToUpper(), mid);
-            GUI.Label(new Rect(W / 2 + 100, 8, 150, 28), (cl[1] ?? "").ToUpper(), mid);
-            big.normal.textColor = Color.white;
-            GUI.Label(new Rect(W / 2 - 250, 26, 150, 40), sc[0].ToString("0"), big);
-            GUI.Label(new Rect(W / 2 + 100, 26, 150, 40), sc[1].ToString("0"), big);
-            int cs = (int)System.Math.Ceiling(System.Math.Max(0, clock));
-            mid.normal.textColor = new Color(1f, 0.82f, 0.25f);
-            GUI.Label(new Rect(W / 2 - 80, 8, 160, 28), $"Q{q}  {cs / 60}:{cs % 60:00}", mid);
-            mid.normal.textColor = Color.white;
-            GUI.Label(new Rect(W / 2 - 80, 34, 160, 26), System.Math.Ceiling(System.Math.Max(0, shot)).ToString("0"), mid);
-            small.normal.textColor = new Color(1, 1, 1, 0.75f);
-            GUI.Label(new Rect(10, Screen.height - 26, 700, 20), $"Hoops 2K27 (Unity) · {fps:0} FPS · WASD move · Space shoot · E pass · R lob · F step-back · C/X/V moves · Shift sprint · Q switch", small);
-            // floating texts and banners
-            float y = Screen.height * 0.22f;
-            foreach (var t in texts)
-            {
-                var st = t.big ? big : mid;
-                st.normal.textColor = Col(t.c);
-                GUI.Label(new Rect(0, y, W, t.big ? 44 : 30), t.s, st);
-                y += t.big ? 44 : 30;
-                if (t.big && !string.IsNullOrEmpty(t.sub)) { mid.normal.textColor = Color.white; GUI.Label(new Rect(0, y, W, 28), t.sub, mid); y += 28; }
-            }
-            Meter();
-        }
-
-        /// <summary>Shot meter (hud.ts meter, bar style): green window at the TOP.</summary>
-        void Meter()
-        {
-            var p = Focus();
-            if (p == null || p.mode != "c" || Util.T(tempoOf(p))) return;
-            double D0 = Util.Hypot(hoop(p.tm) - p.x, HY - p.y),
-                rat = shotRat(p, D0, ftq != null),
-                c = contestOf(p).Item1,
-                win = (0.07 + rat / 100 * 0.05) * (1 - 0.45 * c) * (0.85 + 0.15 * p.en) * (D0 < 90 || Util.T(p.hk) ? 1 : winMul(p, D0)),
-                ideal = p.st == 1 ? 0.45 : 0.6,
-                wm = 0.07 + rat / 100 * 0.05,
-                m = (ideal + wm) / 0.97,
-                pg = System.Math.Min(1, p.t / m),
-                g0 = 0.97 - 2 * win / m;
-            var sp = cam.WorldToScreenPoint(PhysXBall.U(p.x, p.y, p.ht * 10 * 0.6));
-            float h = 150, x = sp.x + 40, yb = Screen.height - sp.y + h / 2;
-            GUI.color = new Color(0, 0, 0, 0.75f);
-            GUI.DrawTexture(new Rect(x, yb - h, 16, h), Texture2D.whiteTexture);
-            GUI.color = new Color(0.18f, 0.8f, 0.44f);
-            GUI.DrawTexture(new Rect(x, yb - h * 1f, 16, (float)(h * (1 - g0))), Texture2D.whiteTexture);
-            bool inG = pg >= g0;
-            GUI.color = inG ? new Color(0.2f, 1f, 0.5f) : new Color(0.96f, 0.77f, 0.26f);
-            GUI.DrawTexture(new Rect(x + 4, yb - (float)(h * pg), 8, (float)(h * pg)), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-        }
+        // HUD / scoreboard / meter / banners: Hud.cs + Broadcast.cs (OnGUI); menus: Menus.cs
     }
 
     /// <summary>Starts the game in any scene (no scene setup needed).</summary>

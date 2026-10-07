@@ -710,7 +710,9 @@ namespace Hoops.Game
             public float x, z, tx, f, ph; // three.js feet (bench) or game px (refs: x, z = game y)
             public int tm;
             public bool coach, isRef, hasHair;
+            public PlayerRig rig; // skinned model (Medium+); capsules on Low
         }
+        Transform figRoot;
         readonly List<Fig> bench = new List<Fig>(), refs = new List<Fig>();
         readonly Dictionary<Color, Batch> figCap = new Dictionary<Color, Batch>(), figSph = new Dictionary<Color, Batch>();
         readonly List<Batch> figAll = new List<Batch>();
@@ -736,7 +738,7 @@ namespace Hoops.Game
         {
             var f = new Fig
             {
-                p = new Player { n = n, ht = ht, bk = bk, hr = hr, q = new Q() },
+                p = new Player { n = n, ht = ht, bk = bk, hr = hr, q = new Q(), skin = "#" + ColorUtility.ToHtmlStringRGB(skin), sg = Hoops.Core.Data.FormOf(n), tm = -1, no = coach ? 0 : 1 + (n.Length * 7) % 40 },
                 jer = jer,
                 shorts = shorts,
                 skin = FigB(figCap, skin, 64),
@@ -934,6 +936,23 @@ namespace Hoops.Game
         /// <summary>Capsule figure from the core's 20-joint FK (Pose.skeleton) - the same look as PlayerDraw.</summary>
         void FigDraw(Fig f)
         {
+            if (QL >= 1)
+            {
+                // the same skinned model as the players: refs in their grey shirts, coaches in suits, the bench in
+                // the team's colours (rebuilt when the matchup changes)
+                string want = f.isRef ? "#b9bec6" : f.coach ? "#23252e" : PC[f.tm];
+                if (f.rig == null || f.p.col != want)
+                {
+                    f.rig?.Destroy();
+                    f.p.col = want;
+                    if (figRoot == null) figRoot = new GameObject("Figures").transform;
+                    f.rig = PlayerRig.Build(f.p, figRoot);
+                }
+                if (!f.rig.go.activeSelf) f.rig.go.SetActive(true);
+                f.rig.ApplyPose(f.p);
+                return;
+            }
+            if (f.rig != null && f.rig.go.activeSelf) f.rig.go.SetActive(false);
             Hoops.Core.Pose.skeleton(f.p, sk);
             float b = (float)f.p.bk;
             f.jer.Seg(J(0), J(1), 0.5f * b);

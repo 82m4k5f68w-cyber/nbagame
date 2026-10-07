@@ -57,7 +57,9 @@ namespace Hoops.Game.Net
         public static bool Fast60 = true;
         /// <summary>Mispredictions are corrected over ~120 ms with a decaying render offset (snap only above 40 px).</summary>
         public static bool SmoothCorrection = true;
-        /// <summary>Lag compensation rewind capped at 150 ms (was 300 ms).</summary>
+        /// <summary>Lag compensation rewind (RTT/2 + the guest's interpolation delay: what he actually saw) capped at 150 ms
+        /// (was 300 ms). Used for shot contests (Core contestRaw via ctrl.lag / LAGBUF); the Core has no pass interceptions
+        /// (a pass is catchable only by its target, steals are off by design), so there is nothing else to rewind.</summary>
         public static bool LagCap150 = true;
         /// <summary>Host migration lite: when the host leaves mid-game the longest-seated guest takes over.</summary>
         public static bool Migration = true;

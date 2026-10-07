@@ -65,8 +65,8 @@ public static class Build
             inc.GetArrayElementAtIndex(inc.arraySize - 1).objectReferenceValue = lit;
             gs.ApplyModifiedProperties();
         }
-        // arena (Arena.cs): unlit LED/jumbotron/panels + additive light shafts / glints
-        foreach (var sn in new[] { "Universal Render Pipeline/Unlit", "Universal Render Pipeline/Particles/Unlit" })
+        // arena (Arena.cs): unlit LED/jumbotron/panels + additive light shafts / glints; Hud.cs GL shapes (meters, rings)
+        foreach (var sn in new[] { "Universal Render Pipeline/Unlit", "Universal Render Pipeline/Particles/Unlit", "Hidden/Internal-Colored" })
         {
             var sh = Shader.Find(sn);
             bool hs = false;

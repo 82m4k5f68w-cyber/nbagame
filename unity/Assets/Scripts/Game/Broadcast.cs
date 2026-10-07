@@ -269,15 +269,24 @@ namespace Hoops.Game
             }
             else if (S == "half")
             {
-                halfT += dt;
-                setT(T + dt);
-                if (halfT >= HALF_LEN || (halfT > 0.6f && skip)) EndHalftime();
+                if (reelN > 0)
+                {
+                    // the first-half reel (GameMain keeps calling upd -> rplStep while RPL is set)
+                    if (skip || UnityEngine.Input.GetKeyDown(KeyCode.Escape)) { reelI = reelN; if (RPL != null) skipReplay(); }
+                    if (RPL == null) NextClip();
+                }
+                else
+                {
+                    halfT += dt;
+                    setT(T + dt);
+                    if (halfT >= HALF_LEN || (halfT > 0.6f && skip)) EndHalftime();
+                }
             }
         }
 
         static void Reset()
         {
-            bnN = capN = 0;
+            bnN = capN = reelN = 0;
             rise = null;
             tgOn = false;
             Hud.ClearTexts();
@@ -351,13 +360,43 @@ namespace Hoops.Game
         struct Bar { public string k, a, b; public float wa, wb; }
         static Bar[] halfBars;
 
+        // first-half highlights (game.ts playReel / nextClip): up to 4 clips from Q1-2, then the numbers
+        static readonly Highlight[] reel = new Highlight[4];
+        static int reelN, reelI;
+        public static bool InReel => reelN > 0;
+        static void NextClip()
+        {
+            reelI++;
+            if (reelI >= reelN)
+            {
+                reelN = 0;
+                setRPL(null);
+                halfT = 0;
+                Banner("HALFTIME", "FIRST-HALF NUMBERS", "#ffd23f");
+                return;
+            }
+            var c = reel[reelI];
+            playClip(c);
+            Banner("HIGHLIGHT " + (reelI + 1) + " / " + reelN, (c.s ?? "").ToUpperInvariant(), "#ffd23f");
+        }
+
         static void BeginHalftime()
         {
             setS("half");
             halfT = 0;
             Comment("half");
-            Banner("HALFTIME", "FIRST-HALF NUMBERS", "#ffd23f");
             Music.Riff("charge");
+            reelN = 0;
+            for (int i = HL.Count - 1; i >= 0 && reelN < reel.Length; i--)
+                if ((HL[i].q > 0 ? HL[i].q : 1) <= 2) reel[reelN++] = HL[i];
+            Array.Reverse(reel, 0, reelN); // oldest first, like .slice(-4)
+            if (reelN > 0)
+            {
+                Banner("HALFTIME", "FIRST-HALF HIGHLIGHTS", "#ffd23f");
+                reelI = -1;
+                NextClip();
+            }
+            else Banner("HALFTIME", "FIRST-HALF NUMBERS", "#ffd23f");
             // the numbers (computed once)
             var qs = TS.qs;
             double[] q1 = qs.Count > 0 ? qs[0] : new double[] { 0, 0 };
@@ -402,6 +441,7 @@ namespace Hoops.Game
         }
         static void EndHalftime()
         {
+            reelN = 0;
             if (S != "half") return;
             setS("play");
             Music.Riff("charge");
@@ -582,7 +622,7 @@ namespace Hoops.Game
         /// <summary>Halftime panel over the arena: quarter scores, team comparison bars, leaders, CPU adjustments, shot charts.</summary>
         public static void DrawHalftime()
         {
-            if (halfBars == null) return;
+            if (halfBars == null || reelN > 0) return;
             float s = Ui.s, a = Mathf.Min(1, halfT * 3, (HALF_LEN - halfT) * 3);
             Color c0 = Ui.Hex(PC[0]), c1 = Ui.Hex(PC[1]);
             Ui.RFill(Ui.X(150), Ui.Y(84), 660 * s, 432 * s, 14 * s, new Color(6 / 255f, 8 / 255f, 20 / 255f, 0.9f * a));
