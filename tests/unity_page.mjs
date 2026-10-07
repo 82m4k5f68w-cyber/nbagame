@@ -1,6 +1,8 @@
 // Unity WebGL template page (unity/Assets/WebGLTemplates/Hoops): the browser game's menus over the Unity canvas.
 // No Unity build here: the template is served as-is and Build/<loader> is a stub createUnityInstance that records
-// SendMessage calls and plays Unity's side (HoopsUi_Show "ready" / "pause" / "final").
+// SendMessage calls and plays Unity's side (HoopsUi_Show "ready" / "pause" / "final"). Covers the faithful copy
+// (hub, matchup, settings, pause, final) and the upgrades: carousel, player cards, settings tabs + audio sliders,
+// pause box score, loading screen, keyboard + gamepad navigation, phone layout.
 // Usage: node tests/unity_page.mjs   (regenerate the data first: npx tsx scripts/unity/gen-page.ts)
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -36,8 +38,9 @@ const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-119
 let bad = 0;
 const ok = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m); if (!c) bad++; };
 
-async function page(vp = { width: 1280, height: 860 }) {
-  const pg = await b.newPage({ viewport: vp });
+async function page(vp = { width: 1280, height: 860 }, init = null, opts = {}) {
+  const pg = await b.newPage({ viewport: vp, ...opts });
+  if (init) await pg.addInitScript(init);
   const errs = [];
   pg.on("pageerror", (e) => errs.push(String(e)));
   pg.on("console", (m) => m.type() === "error" && errs.push("console: " + m.text()));
@@ -70,6 +73,23 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok(await pg.locator("#ov .side.you .lu li").count() === 5, "five lineup cards");
   ok(await pg.evaluate(() => document.querySelector("#ov .side.you .lu img").src.startsWith("data:image/png")), "drawn avatar portraits");
   ok(await pg.locator("#hcss").getAttribute("media") === "not all" && (await pg.locator("#gcss").getAttribute("media")) === "all", "stylesheets swapped");
+  ok(await pg.locator("#ov .car .strip .card").count() === 14 && (await pg.locator("#ov .car .card.sel .c5 img").count()) === 5, "carousel: every team with its starting five");
+  await pg.hover("#ov .side.you .lu li >> nth=0", { force: true });
+  ok(await pg.locator("#pcard").isVisible() && (await pg.locator("#pcard .rt div").count()) === 5 && (await pg.locator("#pcard .bdg i").count()) >= 1, "player card on hover: ratings + badges");
+  await pg.mouse.move(5, 5);
+  ok(!(await pg.locator("#pcard").isVisible()), "player card hides");
+  // keyboard: Q/E cycle your team, arrows move focus, Esc -> hub, back again
+  await pg.keyboard.press("KeyE");
+  ok((await st(pg)).SEL === 1, "E: next team");
+  await pg.keyboard.press("KeyQ");
+  ok((await st(pg)).SEL === 0, "Q: previous team");
+  await pg.focus("#tip");
+  await pg.keyboard.press("ArrowDown");
+  const f1 = await pg.evaluate(() => document.activeElement.id || document.activeElement.className);
+  ok(f1 !== "tip" && f1 !== "", "arrow moves focus off TIP OFF (" + f1 + ")");
+  await pg.keyboard.press("Escape");
+  ok((await st(pg)).scr === "hub" && (await pg.locator("#hub").isVisible()), "Esc on matchup -> hub");
+  await pg.click('#grid button[data-g="5"]', { force: true });
   // team arrows, opponent, difficulty, quarter length
   await pg.click('#ov .arw[data-cy="y"][data-d="1"]', { force: true });
   await pg.click('#ov .arw[data-cy="o"][data-d="1"]', { force: true });
@@ -82,18 +102,35 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok(await pg.locator("#sd").isVisible(), "settings drawer opens");
   await pg.click('#sd [data-m="3"]', { force: true });
   await pg.click('#sd [data-rf="0"]', { force: true });
-  await pg.click("#sdx", { force: true });
+  ok(await pg.locator("#sd .tabs [data-tab]").count() === 4, "settings: four tabs");
+  await pg.click('#sd [data-tab="audio"]', { force: true });
+  ok(await pg.locator('#sd input[type=range][data-v]').count() === 4, "audio tab: four volume sliders");
+  await pg.$eval('#sd input[data-v="vv"]', (r) => { r.value = "40"; r.dispatchEvent(new Event("input")); r.dispatchEvent(new Event("change")); });
+  await pg.click('#sd [data-tab="graphics"]', { force: true });
+  await pg.click('#sd [data-q="1"]', { force: true });
+  await pg.click('#sd [data-tab="controls"]', { force: true });
+  ok((await pg.locator("#sd .tbody").innerText()).includes("GAMEPAD"), "controls tab: key + gamepad bindings");
+  await pg.keyboard.press("Escape");
+  ok(!(await pg.locator("#sd").isVisible()) && (await st(pg)).scr === "menu", "Esc closes settings");
   await pg.click("#tip", { force: true });
   const ss = await sent(pg);
   const startCmd = ss.find((x) => x.cmd === "start");
   ok(ss.some((x) => x.cmd === "setting" && x.k === "m" && x.v === 3), "setting sent (meter)");
-  ok(startCmd && startCmd.mode === "game" && startCmd.np === 5 && startCmd.sel === 1 && startCmd.opp === 0 && startCmd.diff === 2 && startCmd.ql === 120 && startCmd.set.rf === 0 && startCmd.set.m === 3,
+  ok(ss.some((x) => x.cmd === "setting" && x.k === "vv" && x.v === 40) && ss.some((x) => x.cmd === "setting" && x.k === "q" && x.v === 1), "audio slider + graphics sent");
+  ok(startCmd && startCmd.mode === "game" && startCmd.np === 5 && startCmd.sel === 1 && startCmd.opp === 0 && startCmd.diff === 2 && startCmd.ql === 120 && startCmd.set.rf === 0 && startCmd.set.m === 3 && startCmd.set.vv === 40 && startCmd.set.q === 1,
     "TIP OFF sends start " + JSON.stringify(startCmd));
   ok((await st(pg)).scr === "play" && !(await pg.locator("#ov").isVisible()), "overlay hidden while playing");
   // pause from Unity, resume with Esc
-  await pg.evaluate(() => H2KUI.show("pause", JSON.stringify({ sc: [10, 8], cl: ["Lakers", "Celtics"], q: 2, cm: 1, m: 3, s: 0, fx: 1 })));
+  await pg.evaluate((F) => H2KUI.show("pause", JSON.stringify({ sc: [10, 8], cl: ["Lakers", "Celtics"], q: 2, cm: 1, m: 3, s: 0, fx: 1, box: F.box })), FINAL);
   await pg.waitForSelector("#pz");
   ok((await pg.locator("#ov").innerText()).includes("PAUSED"), "pause menu shown");
+  ok(await pg.locator(".pzr .bx.live tr").count() === 5, "pause: live box score");
+  await pg.click("#pse", { force: true });
+  ok(await pg.locator("#sd").isVisible(), "pause -> settings");
+  await pg.keyboard.press("Escape");
+  ok((await st(pg)).scr === "pause" && (await pg.locator("#pz").isVisible()), "settings Esc -> back to pause");
+  await pg.keyboard.press("ArrowDown");
+  ok(await pg.evaluate(() => document.activeElement.id === "prp"), "pause: arrow navigation");
   await pg.keyboard.press("Escape");
   ok((await sent(pg)).some((x) => x.cmd === "resume") && (await st(pg)).scr === "play", "Esc resumes");
   // final screen from Unity
@@ -103,6 +140,7 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok(fin.includes("VICTORY") && fin.includes("PLAYER OF THE GAME") && fin.includes("Doncic"), "final: result + player of the game");
   ok(await pg.locator(".fin .cmp div").count() >= 8, "final: stat bars");
   ok(await pg.locator(".fin .chart img").count() === 2, "final: shot charts");
+  ok(await pg.locator(".fin .qtr td").count() > 6 && (await pg.locator(".fin .bxw .bx").count()) === 2, "final: quarter scores + box score tables");
   ok(await pg.evaluate(() => JSON.parse(localStorage.getItem("h2k_rec")).w === 1), "record saved");
   await pg.click("#rm", { force: true });
   ok((await sent(pg)).some((x) => x.cmd === "rematch"), "rematch sent");
