@@ -159,16 +159,69 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
 
 // 2. Play before Unity is ready: the command waits, a loading screen shows progress, then it goes through
 {
-  const { pg, errs } = await page();
-  await pg.evaluate(() => (window.__holdReady = 1));
+  const { pg, errs } = await page(undefined, () => (window.__holdReady = 1));
   await pg.click('#grid button[data-g="1"]', { force: true });
   ok((await st(pg)).NP === 1 && (await pg.locator("#ov .side.you .lu li").count()) === 1, "1v1 matchup: one star");
   await pg.waitForFunction(() => window.__sent);
   await pg.click("#tip", { force: true });
   ok((await st(pg)).scr === "loading" && (await st(pg)).queued === 1 && (await sent(pg)).length === 0, "start queued while loading");
+  ok(await pg.locator(".load .ldb").isVisible() && (await pg.locator(".load .lvs").innerText()).includes("VS"), "loading screen with progress + matchup");
   await pg.evaluate(() => H2KUI.show("ready", "{}"));
   const s = await sent(pg);
   ok(s.length === 1 && s[0].cmd === "start" && s[0].np === 1 && (await st(pg)).scr === "play", "queued start sent on ready");
+  ok(!errs.length, "no page errors " + (errs.length ? errs.join(" | ") : ""));
+  await pg.close();
+}
+
+// 3. Gamepad: d-pad moves focus, A selects, B goes back, Start resumes (navigator.getGamepads stubbed)
+{
+  const { pg, errs } = await page(undefined, () => {
+    window.__pad = { connected: true, axes: [0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
+    navigator.getGamepads = () => [window.__pad];
+  });
+  await pg.waitForFunction(() => H2KUI.state().ready, null, { timeout: 5000 });
+  const tapB = async (k) => {
+    await pg.evaluate((k) => (window.__pad.buttons[k].pressed = true), k);
+    await pg.waitForTimeout(80);
+    await pg.evaluate((k) => (window.__pad.buttons[k].pressed = false), k);
+    await pg.waitForTimeout(80);
+  };
+  await pg.focus('#grid button[data-g="5"]');
+  await tapB(0); // A
+  ok((await st(pg)).scr === "menu", "A on a mode card -> matchup");
+  await tapB(5); // RB
+  ok((await st(pg)).SEL === 1, "RB: next team");
+  await pg.focus("#tip");
+  await tapB(13); // d-pad down
+  ok(await pg.evaluate(() => document.activeElement.id !== "tip"), "d-pad moves focus");
+  await tapB(1); // B
+  ok((await st(pg)).scr === "hub", "B: back to the hub");
+  await pg.click('#grid button[data-g="5"]', { force: true });
+  await pg.click("#tip", { force: true });
+  await pg.evaluate(() => H2KUI.show("pause", JSON.stringify({ sc: [2, 0], cl: ["A", "B"], q: 1 })));
+  await tapB(9); // Start
+  ok((await st(pg)).scr === "play" && (await sent(pg)).some((x) => x.cmd === "resume"), "Start resumes from pause");
+  ok(!errs.length, "no page errors " + (errs.length ? errs.join(" | ") : ""));
+  await pg.close();
+}
+
+// 4. Phone: no sideways scrolling, tap targets, player card as a bottom sheet on tap
+{
+  const { pg, errs } = await page({ width: 390, height: 844 }, null, { hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  await pg.waitForFunction(() => H2KUI.state().ready, null, { timeout: 5000 });
+  const wide = () => pg.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  ok((await wide()) <= 0, "phone hub: no horizontal scroll");
+  await pg.tap('#grid button[data-g="5"]');
+  ok((await wide()) <= 0, "phone matchup: no horizontal scroll");
+  const h = await pg.evaluate(() => Math.min(...[...document.querySelectorAll("#ov .chips button, #tip, .arw")].map((b) => b.getBoundingClientRect().height)));
+  ok(h >= 40, "phone: tap targets >= 40 px (" + h + ")");
+  await pg.tap("#ov .side.you .lu li >> nth=1");
+  const pc = await pg.evaluate(() => { const r = document.getElementById("pcard").getBoundingClientRect(); return { b: innerHeight - r.bottom, w: r.width }; });
+  ok(await pg.locator("#pcard").isVisible() && pc.b <= 12 && pc.w > 300, "phone: player card bottom sheet on tap");
+  await pg.tap("#set");
+  const sd = await pg.evaluate(() => document.getElementById("sd").getBoundingClientRect().width);
+  ok(sd >= 380, "phone: settings full width");
+  await pg.screenshot({ path: "docs/unity-page-phone.png" }).catch(() => {});
   ok(!errs.length, "no page errors " + (errs.length ? errs.join(" | ") : ""));
   await pg.close();
 }
