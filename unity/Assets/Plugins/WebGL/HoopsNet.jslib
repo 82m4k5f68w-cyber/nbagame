@@ -1,4 +1,4 @@
-// Hoops 2K27 online bridge (WebGL): the page's JavaScript side of unity/Assets/Scripts/Game/Net/UnityNet.cs.
+// Hoops 2K27 online bridge (WebGL): the page's JavaScript side of unity/Assets/Scripts/Game/Net/JsNet.cs.
 // Three backends, all event-queued (C# drains everything once per frame with HN_Poll, as one JSON array):
 //  - the claude.ai `room` capability (window.claude.use("room")) when the build is published as an artifact;
 //  - a WebSocket to server/relay.ts (same JSON presence protocol as the browser build: PROTO 10);

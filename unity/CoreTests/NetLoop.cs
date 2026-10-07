@@ -183,6 +183,11 @@ sealed class FakeRtcHub
                 break;
         }
     }
+    /// <summary>The direct path dies (NAT rebinding, Wi-Fi switch): every open channel closes at once.</summary>
+    public void Kill()
+    {
+        foreach (var kv in pair) if (!closed.Contains(kv.Key)) { Q(kv.Key, 0, "C"); closed.Add(kv.Key); }
+    }
     public string Next(int h)
     {
         var l = q[h];
@@ -248,6 +253,7 @@ public static class GuestSide
     static ITransport t;
     static string name;
     static int fc;
+    static bool voted;
     static double maxVx, errSum, hostVx, rpx = double.NaN, rpy, maxJump, migratedAt = -1;
     static int errN, nan, jumpN;
     static readonly List<double> jumps = new List<double>();
@@ -294,6 +300,8 @@ public static class GuestSide
             return;
         }
         if (g.L != null && g.L.st == "lobby" && g.side != 0) { g.SetSide(0); g.SetReady(1); }
+        if (g.L != null && g.L.st == "over" && !voted) { g.WantRematch(); voted = true; } // (quick rematch)
+        if (g.L != null && g.L.st == "game") voted = false;
         g.Frame(dt, Sample);
         if (g.myIdx >= 0 && g.snaps.Count > 0)
         {
@@ -316,6 +324,7 @@ public static class GuestSide
     }
     static string Query(string what)
     {
+        if (what == "link") return t is ILinkInfo l0 && g.HostId != null ? l0.LinkOf(g.HostId) : "RELAY";
         if (what == "pos")
         {
             double rt = H != null || g.off == null ? -1 : NetClock.Mono() / 1000 * 60 + g.off.Value - g.D;
@@ -363,7 +372,7 @@ static class NetLoop
         NetClock.Mono = clock;
         RoomTest();
         string only = args.FirstOrDefault(a => !a.Contains("="));
-        foreach (var sc in new[] { "faithful", "improved", "improved+rtc", "improved+rtc+isolation", "improved+rtc+migration" })
+        foreach (var sc in new[] { "faithful", "improved", "improved+rtc", "improved+rtc+isolation", "improved+rtc+flap", "improved+rtc+migration", "improved+rematch" })
             if (only == null || only == sc) Scenario(sc, LAG, JIT, DROP, SECS);
         Console.WriteLine(fails == 0 ? "net loop ok" : $"net loop: {fails} failure(s)");
         Environment.Exit(fails == 0 ? 0 : 1);
@@ -403,6 +412,9 @@ static class NetLoop
         }
 
         int frames = 0, endFrame = -1, maxPres = 0, hostStarted = -1, hostLeft = -1;
+        bool flap = mode.Contains("flap"), rematch = mode.Contains("rematch");
+        string midLink = null;
+        double maxLag = 0;
         double interpErr = 0;
         int interpN = 0;
         var hist = new Dictionary<int, double[]>(); // host tick -> positions
@@ -428,7 +440,9 @@ static class NetLoop
                         upd(1 / 60.0);
                         H.Tick();
                         FX.Clear(); // (the shell drains FX every frame)
-                        if (H.k == 180 && cfg.NP == 5) { var U = lineup(); U[0][0] = 5; applyLineup(U); } // online substitution
+                        if (H.k == 180 && cfg.NP == 5 && H.L.gid == 1) { var U = lineup(); U[0][0] = 5; applyLineup(U); } // online substitution
+                        if (rematch && H.L.gid == 1 && H.k == 300 && S == "play") endGame(); // final buzzer -> the guest votes, the host restarts
+                        foreach (var c in CT) maxLag = Math.Max(maxLag, c.lag);
                         var pos = new double[P.Count * 2];
                         for (int i = 0; i < P.Count; i++) { pos[2 * i] = P[i].x; pos[2 * i + 1] = P[i].y; }
                         hist[H.k] = pos;
@@ -441,6 +455,12 @@ static class NetLoop
                 if (migr && hostStarted > 0 && frames == hostStarted + 360) { ht.Leave(); hostLeft = frames; }
             }
             foreach (var f in gFrame) f(1 / 60.0);
+            if (flap && hostStarted > 0)
+            {
+                // the direct path dies 4 s in and stays blocked 3 s: relay meanwhile, back to direct after the 5 s retry
+                if (frames == hostStarted + 240) { rtc.isolation = true; rtc.Kill(); }
+                if (frames == hostStarted + 420) { rtc.isolation = false; midLink = gQuery[0]("link"); }
+            }
             // interpolation accuracy: the guest's rendered others vs the host's positions at the guest's render tick
             if (hostStarted > 0 && frames > hostStarted + 120 && hostLeft < 0)
             {
@@ -458,6 +478,8 @@ static class NetLoop
         res["avgInterpErrPx"] = Math.Round(interpErr / Math.Max(1, interpN), 2);
         res["hostPresenceMaxBytes"] = (double)maxPres;
         if (ht is RtcTransport hr) { res["hostDirectRx"] = (double)hr.directMsgs; res["hostAllDirect"] = hr.AllDirect(); }
+        res["maxLagMs"] = Math.Round(maxLag * 1000);
+        if (midLink != null) res["linkDuringOutage"] = midLink;
         Console.WriteLine("  " + Json.Write(res));
         Check(res.Num("nan") == 0, "NaN state");
         Check(res.Num("delta") >= 10, "delta snapshots not used");
@@ -465,12 +487,19 @@ static class NetLoop
         Check(res.Num("hostVxMax") >= 100, "guest input did not drive the host player");
         Check(res.Num("predVxMax") >= 100, "guest prediction did not move the player");
         Check(maxPres <= 4096, "host presence exceeds the 4 KiB room limit");
-        Check(res.Num("np") != 5 || Json.Truthy(res.Get("subOk")), "guest did not follow the host's substitution");
+        Check(res.Num("np") != 5 || rematch || Json.Truthy(res.Get("subOk")), "guest did not follow the host's substitution");
         if (!migr) Check(res.Num("avgInterpErrPx") < 8, "interpolated players far from the host");
         if (mode.Contains("improved") && !migr)
         {
             Check(res.Num("late") < 2, "more than 2% late snapshots with the adaptive delay");
         }
+        Check(maxLag > 0 && maxLag <= (mode.Contains("improved") ? 0.15 : 0.3) + 1e-9, "lag compensation rewind missing or above its cap");
+        if (flap)
+        {
+            Check(res.Str("linkDuringOutage") == "RELAY", "a dead direct channel must fall back to the relay");
+            Check(res.Str("link") == "DIRECT" && Json.Truthy(res.Get("hostAllDirect")), "the direct channel did not come back after the retry");
+        }
+        if (rematch) Check(res.Num("gid") == 2 && res.Str("lobby") == "game" && res.Num("myIdx") >= 0, "quick rematch did not start a new game for the guest");
         if (mode == "improved+rtc") Check(res.Str("link") == "DIRECT" && Json.Truthy(res.Get("hostAllDirect")), "direct channel not used");
         if (mode.Contains("isolation")) Check(res.Str("link") == "RELAY", "isolated clients must stay on the relay");
         if (migr)
