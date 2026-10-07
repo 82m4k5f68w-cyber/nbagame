@@ -2,7 +2,7 @@
 
 Browser basketball game: 5v5 and 1v1, full court, 3D (three.js + Rapier) and 2D, plus a Classic side-view 1v1.
 Everything ships as ONE self-contained HTML file (`dist/hoops2k27-hub.html`, ~2.6 MB: three.js + Rapier inlined, no CDN).
-Unofficial fan project; rosters/ratings are approximations (7 teams, 35 players, 2026-27 era).
+Unofficial fan project; rosters/ratings are approximations (14 teams, 70 players, 2026-27 era).
 
 ## Layout
 - `src/core/` — the shared, DOM-free simulation (runs in the browser, in Node tests and on a server):

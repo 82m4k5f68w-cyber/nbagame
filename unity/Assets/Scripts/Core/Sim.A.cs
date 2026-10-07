@@ -1253,6 +1253,14 @@ namespace Hoops.Core
             ["LaMelo Ball"] = new[] { 0.42, 0.15, 0.3, 0, 0.6, 0.3 },
             ["Fox"] = new[] { 0.12, 0.25, 0.6, 0, 0.35, 0.15 },
             ["Murray"] = new[] { 0.3, 0.4, 0.2, 0, 0.35, 0.3 },
+            ["Antetokounmpo"] = new[] { 0.05, 0.1, 0.75, 0.2, 0.35, 0.05 },
+            ["Durant"] = new[] { 0.28, 0.48, 0.15, 0.15, 0.25, 0.25 },
+            ["Tatum"] = new[] { 0.35, 0.25, 0.3, 0.1, 0.35, 0.4 },
+            ["Mitchell"] = new[] { 0.35, 0.2, 0.42, 0, 0.3, 0.35 },
+            ["Irving"] = new[] { 0.3, 0.3, 0.35, 0, 0.3, 0.45 },
+            ["Cunningham"] = new[] { 0.18, 0.35, 0.38, 0.05, 0.5, 0.2 },
+            ["Banchero"] = new[] { 0.12, 0.25, 0.45, 0.2, 0.35, 0.15 },
+            ["Sengun"] = new[] { 0.05, 0.15, 0.1, 0.6, 0.6, 0.05 },
         };
         /// <summary>Tendencies adapted for CPU players in game-like modes. Returns a shared scratch array: copy it to keep it.</summary>
         public static double[] tendOf(Player p)
