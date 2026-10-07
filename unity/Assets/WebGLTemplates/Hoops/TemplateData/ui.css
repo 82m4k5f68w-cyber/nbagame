@@ -1,0 +1,15 @@
+/* Unity page layout on top of the copied browser CSS (hub.css / game.css): the Unity canvas fills the window under
+   the hub and the menu overlay (#ov), which is hidden while playing. Hand-written (not generated). */
+html,body{height:100%}
+#unity-canvas{position:fixed!important;inset:0;width:100vw!important;height:100vh!important;display:block;z-index:0;background:#000;outline:none;touch-action:none}
+#hub{position:relative;z-index:2;min-height:100vh;background:var(--bg)}
+#hub[hidden],#game[hidden]{display:none}
+#game{position:relative;z-index:3}
+#bk{position:fixed;left:6px;top:6px;z-index:99;background:#000a;color:#fff;border:1px solid #fff4;border-radius:8px;padding:6px 10px;font:700 12px system-ui;cursor:pointer}
+#game.playing #bk{display:none}
+body.playing{overflow:hidden}
+.ldb{width:min(420px,80%);height:6px;border-radius:3px;background:#ffffff18;overflow:hidden;margin:6px auto 0}
+.ldb i{display:block;height:100%;width:var(--w,0%);background:linear-gradient(90deg,#e8541e,#ffd23f);transition:width .2s}
+.ldm{font:800 11px system-ui;letter-spacing:2px;opacity:.75;text-align:center}
+#ov .err{color:#ff9966;max-width:560px}
+#pz .on{border-color:#ffd23f}
