@@ -156,6 +156,8 @@ namespace Hoops.Game
                 cfg.SUBS = GUILayout.Toggle(cfg.SUBS != 0, " Fatigue + substitutions") ? 1 : 0;
                 cfg.BADGES = GUILayout.Toggle(cfg.BADGES != 0, " Badges + hot zones") ? 1 : 0;
                 cfg.PRO = GUILayout.Toggle(cfg.PRO != 0, " Pro Play animation") ? 1 : 0;
+                GUILayout.Label("BALL PHYSICS  arcade .. sim  (" + cfg.PHYS.ToString("0.00") + ")", txt); // cfg.PHYS (Core/Sim.PH.cs, BallSim)
+                cfg.PHYS = Mathf.Round(GUILayout.HorizontalSlider((float)cfg.PHYS, 0f, 1f) * 20f) / 20f;
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button("BACK", btn)) screen = "title";
             });

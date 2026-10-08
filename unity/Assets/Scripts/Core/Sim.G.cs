@@ -684,6 +684,9 @@ namespace Hoops.Core
                             mC = C.bk * C.ht * (C.setT > 0 ? 3 : Util.T(C.postA) ? 1.7 : 1),
                             rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny,
                             ov = dm - d;
+                        // PH2 box-out (Sim.PH.cs): the defender sealing his man on a shot / rebound plays heavy
+                        int bxo = phOn() ? phBox(A, C) : 0;
+                        if (bxo == 1) mA *= PH_BOXM; else if (bxo == 2) mC *= PH_BOXM;
                         for (int w = 0; w < 2; w++)
                         {
                             Player sc0 = w == 0 ? A : C,
@@ -726,6 +729,8 @@ namespace Hoops.Core
                         A.y += (ny * ov * mC) / (mA + mC);
                         C.x -= (nx * ov * mA) / (mA + mC);
                         C.y -= (ny * ov * mA) / (mA + mC);
+                        if (bxo == 1) phShove(A, C, -nx, -ny, mA, mC);
+                        else if (bxo == 2) phShove(C, A, nx, ny, mC, mA);
                         if (rv < 0)
                         {
                             double j = (-1.05 * rv) / (1 / mA + 1 / mC),

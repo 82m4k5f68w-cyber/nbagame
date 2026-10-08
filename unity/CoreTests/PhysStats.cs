@@ -299,9 +299,272 @@ static class PhysStats
             }
         }
 
+        PH2();
+
         Console.WriteLine(fails == 0 ? "PASS" : $"FAIL ({fails})");
         Environment.Exit(fails == 0 ? 0 : 1);
     }
+
+    // ================= PH2 (cfg.UP = 1): full body, slider, rim / glass / net polish, dribble, box-outs, blocks =================
+    /// <summary>A standing player with a hand-built skeleton (joints as in Pose.skeleton): legOut = how far the right
+    /// foot is stepped out sideways (px), armsOut = upper arms held out sideways.</summary>
+    static Player Body(double x, double y, double legOut = 0, bool armsOut = false)
+    {
+        var p = new Player { x = x, y = y, z = 0, ht = 6.6, bk = 1, j = 70, skelOk = 1, skel = new float[60] };
+        void J(int k, double jx, double jy, double jz) { p.skel[k * 3] = (float)(x + jx); p.skel[k * 3 + 1] = (float)(y + jy); p.skel[k * 3 + 2] = (float)jz; }
+        J(0, 0, 0, 38); J(1, 0, 0, 48); J(2, 0, 0, 56); J(3, 0, 0, 62);
+        J(4, 0, -4, 36); J(5, 1, -5, 20); J(6, 0, -5, 4); J(7, 3, -5, 1);
+        J(8, 0, 4, 36); J(9, 1, 4 + legOut * 0.5, 20); J(10, 0, 4 + legOut, 4); J(11, 3, 4 + legOut, 1);
+        double ao = armsOut ? 12 : 3;
+        J(12, 0, -7, 53); J(13, 0, -7 - ao, armsOut ? 52 : 42); J(14, 2, -7 - ao * 1.6, armsOut ? 51 : 32); J(15, 3, -7 - ao * 1.9, armsOut ? 51 : 28);
+        J(16, 0, 7, 53); J(17, 0, 7 + ao, armsOut ? 52 : 42); J(18, 2, 7 + ao * 1.6, armsOut ? 51 : 32); J(19, 3, 7 + ao * 1.9, armsOut ? 51 : 28);
+        return p;
+    }
+    /// <summary>Runs a ball past / onto players (SyncPlayers each tick, two half steps). Returns the first contact
+    /// flag and position.</summary>
+    static int Run(BallSim s, List<Player> P, Ball b, double secs, out double cz, out double cy)
+    {
+        int c0 = s.Contacts; cz = cy = double.NaN;
+        int flag = 0;
+        for (double t = 0; t < secs; t += 1 / 60.0)
+        {
+            s.SyncPlayers(P, b);
+            for (int k = 0; k < 2; k++)
+            {
+                int cc = s.Contacts;
+                b.age += H; s.Step(H, b);
+                if (s.Contacts != cc && flag == 0 && s.LastFlag != BallSim.F_FLOOR) { flag = s.LastFlag; cz = b.z; cy = b.y; }
+            }
+        }
+        return flag;
+    }
+    static string FN(int f) => f == 0 ? "none" : f == BallSim.F_BODY ? "torso" : f == BallSim.F_ARM ? "forearm/hand" : f == BallSim.F_LIMB ? "head/upper arm" : f == BallSim.F_LEG ? "leg" : f == BallSim.F_FLOOR ? "floor" : "flag " + f;
+
+    static void PH2()
+    {
+        double hx = HXs[1];
+        Console.WriteLine("== PH2 (6) full body for loose balls: legs, head, upper arms (UP=0 -> UP=1) ==");
+        {
+            Ball Loose(double x, double y, double z, double vx, double vy, double vz, double sh = 0)
+            { var b = Ball(x, y, z, vx, vy, vz); b.age = 0.5; b.sh = sh; return b; }
+            // a ball skidding past a player whose right foot is stepped out 14 px (outside the torso capsule)
+            int[] f = new int[4]; double[] ex = new double[4];
+            for (int m = 0; m < 4; m++)
+            {
+                bool up = m > 0;
+                var s = new BallSim { UP = up ? 1 : 0 };
+                var P = new List<Player> { Body(400, 250, 14) };
+                double sp = m == 2 ? 60 : 260;
+                var b = Loose(400 - 60, 250 + 17, 9, sp, 0, 0, m == 3 ? 1 : 0);
+                f[m] = Run(s, P, b, 1.2, out _, out _);
+                ex[m] = Math.Sqrt((b.vx - sp) * (b.vx - sp) + b.vy * b.vy); // (how much the contact changed its course)
+            }
+            Console.WriteLine($"  ball skidding at 260 px/s past a foot stepped out: UP=0 {FN(f[0])}, UP=1 {FN(f[1])} (velocity change {ex[1]:F0} px/s); slow 60 px/s roller UP=1 {FN(f[2])}; shot in flight UP=1 {FN(f[3])}");
+            Check(f[0] == 0 && f[1] == BallSim.F_LEG && ex[1] > 20, "a loose ball skidding into a leg is kicked off it (UP=1 only)");
+            Check(f[2] == 0, "a slow roller is left for the hands (no leg contact)");
+            Check(f[3] == 0, "never a shot in flight");
+            // a ball dropped onto a head: UP=0 lands on the torso capsule top, UP=1 bounces off the head higher up
+            double z0, z1;
+            var s0 = new BallSim { UP = 0 }; var s1 = new BallSim { UP = 1 };
+            int h0 = Run(s0, new List<Player> { Body(400, 250) }, Loose(400.5, 250, 110, 0, 0, -60), 1.0, out z0, out _);
+            int h1 = Run(s1, new List<Player> { Body(400, 250) }, Loose(400.5, 250, 110, 0, 0, -60), 1.0, out z1, out _);
+            Console.WriteLine($"  ball dropped on his head: UP=0 first touch {FN(h0)} at z {z0:F1}, UP=1 {FN(h1)} at z {z1:F1}");
+            Check(h1 == BallSim.F_LIMB && z1 > z0 + 5, "the head is a body part (UP=1)");
+            // arms held out: a loose ball at shoulder height beside him
+            int a0 = Run(new BallSim { UP = 0 }, new List<Player> { Body(400, 250, 0, true) }, Loose(400, 250 + 60, 52, 0, -220, 60), 1.0, out _, out _);
+            int a1 = Run(new BallSim { UP = 1 }, new List<Player> { Body(400, 250, 0, true) }, Loose(400, 250 + 60, 52, 0, -220, 60), 1.0, out _, out double ay);
+            Console.WriteLine($"  loose ball at his outstretched arm (shoulder height): UP=0 first touch {FN(a0)}, UP=1 {FN(a1)} at y {ay - 250:F1}");
+            Check(a1 == BallSim.F_LIMB && a0 != BallSim.F_LIMB, "an outstretched upper arm deflects it (UP=1)");
+            // a crowd of rebounders: loose balls rained around them, contacts per bone group
+            var rnd = new Random(4);
+            int[,] hits = new int[2, 5];
+            for (int m = 0; m < 2; m++)
+            {
+                var s = new BallSim { UP = m };
+                var P = new List<Player> { Body(820, 230, 10, true), Body(830, 275, -8), Body(800, 255, 6), Body(845, 250, 0, true) };
+                var r2 = new Random(4);
+                for (int k = 0; k < 150; k++)
+                {
+                    var b = Loose(800 + r2.NextDouble() * 60, 220 + r2.NextDouble() * 70, 95 + r2.NextDouble() * 20, (r2.NextDouble() - 0.5) * 300, (r2.NextDouble() - 0.5) * 300, -50 + r2.NextDouble() * 150);
+                    int c0 = s.BodyHits, c1 = s.ArmHits, c2 = s.LimbHits, c3 = s.LegHits;
+                    Run(s, P, b, 1.4, out _, out _);
+                    hits[m, 0] += s.BodyHits - c0; hits[m, 1] += s.ArmHits - c1; hits[m, 2] += s.LimbHits - c2; hits[m, 3] += s.LegHits - c3;
+                }
+            }
+            Console.WriteLine($"  150 loose balls into 4 rebounders: UP=0 torso {hits[0, 0]} hands {hits[0, 1]} | UP=1 torso {hits[1, 0]} hands {hits[1, 1]} head/upper arms {hits[1, 2]} legs {hits[1, 3]}");
+            Check(hits[1, 2] + hits[1, 3] > 0, "the extra bones take part in a scramble");
+        }
+
+        Console.WriteLine("== PH2 (7) arcade .. sim slider cfg.PHYS (BallSim UP=1) ==");
+        {
+            string row = "";
+            double[] fr = new double[3], hard = new double[3], bp = new double[3], kick = new double[3];
+            for (int m = 0; m < 3; m++)
+            {
+                double k = m * 0.5;
+                var s = new BallSim { UP = 1, PHYS = k };
+                fr[m] = Ratio(s, Ball(hx, HY, 100, -300, 0, 0), 1, 0, 0);
+                hard[m] = Ratio(s, Ball(hx, HY, 100, -900, 0, 0), 1, 0, 0);
+                // backspin bounce pass: vx after the floor
+                var b = Ball(300, 250, 30, 300, 0, -150, 0, -150, 0);
+                for (int i = 0; i < 120; i++) { double vz0 = b.vz; s.Step(H, b); if (vz0 < 0 && b.vz > 0) break; }
+                bp[m] = b.vx;
+                // a still ball hit by a leg swinging at 300 px/s
+                var P = new List<Player> { Body(400, 250, 10) };
+                var lb = Ball(400, 250 + 18, BR, 0, 0, 0); lb.vy = -40; lb.age = 0.5; // (he runs into it: legs need relative speed)
+                s.SyncPlayers(P, lb);
+                for (int t = 0; t < 30; t++)
+                {
+                    foreach (var q in P) { q.y += 300 / 60.0; for (int j = 1; j < 60; j += 3) q.skel[j] += (float)(300 / 60.0); q.vy = 300; }
+                    s.SyncPlayers(P, lb); lb.age += H; s.Step(H, lb); lb.age += H; s.Step(H, lb);
+                }
+                kick[m] = lb.vy;
+                row += $"  PHYS {k:F1}: front iron ratio {fr[m]:F3} (900 px/s hit {hard[m]:F3}), backspin bounce pass vx {bp[m]:F0}, kicked by a leg {kick[m]:F0} px/s\n";
+            }
+            var s0 = new BallSim { UP = 0 };
+            double f0 = Ratio(s0, Ball(hx, HY, 100, -300, 0, 0), 1, 0, 0), h0 = Ratio(s0, Ball(hx, HY, 100, -900, 0, 0), 1, 0, 0);
+            Console.Write(row);
+            Console.WriteLine($"  UP=0 reference: front iron {f0:F3}, 900 px/s hit {h0:F3}");
+            Check(fr[0] < fr[1] && fr[1] < fr[2], "arcade iron is softer, sim iron livelier");
+            Check(Math.Abs(fr[1] - f0) < 0.02, "the middle of the slider keeps the PH iron at normal speeds");
+            Check(hard[1] < fr[1] - 0.08 && Math.Abs(h0 - f0) < 0.02, "a hard hit loses more bounce to the flex (UP=1 only)");
+            Check(bp[0] > bp[1] && bp[1] > bp[2], "spin bites harder toward sim");
+            Check(kick[0] < kick[1] && kick[1] < kick[2], "body contacts are stronger toward sim");
+        }
+
+        Console.WriteLine("== PH2 (8) glass thud + net drag ==");
+        {
+            double g0 = Ratio(new BallSim { UP = 0 }, Ball(880, 262, 120, 1100, 0, 0), -1, 0, 0), g1 = Ratio(new BallSim { UP = 1 }, Ball(880, 262, 120, 1100, 0, 0), -1, 0, 0),
+                gs = Ratio(new BallSim { UP = 1 }, Ball(880, 262, 120, 400, 0, 0), -1, 0, 0);
+            Console.WriteLine($"  glass at 1100 px/s: UP=0 {g0:F3}, UP=1 {g1:F3} (400 px/s UP=1 {gs:F3})");
+            Check(g1 < g0 - 0.03 && Math.Abs(gs - g0) < 0.02, "a hard throw thuds off the glass, a soft bank is unchanged");
+            double Exit(int up, out double vh, out double tn)
+            {
+                var s = new BallSim { UP = up };
+                var b = B;
+                b.x = hx - 2; b.y = HY; b.z = 112; b.vx = 70; b.vy = 0; b.vz = -240; b.mode = "air"; b.owner = null; b.sc = 1; b.wv[0] = b.wv[1] = b.wv[2] = 0;
+                tn = 0; vh = 0;
+                for (int i = 0; i < 160; i++)
+                {
+                    s.Step(H, b);
+                    if (i % 2 == 1) netSim(1 / 60.0);
+                    if (b.z < 99 && b.z > 78) { tn += H; vh += Math.Sqrt(b.vx * b.vx + b.vy * b.vy) * H; }
+                    if (b.z < 78) break;
+                }
+                vh /= Math.Max(H, tn); // mean sideways speed inside the net
+                return -b.vz;
+            }
+            double e0 = Exit(0, out double vh0, out double t0), e1 = Exit(1, out double vh1, out double t1);
+            Console.WriteLine($"  swish drifting 70 px/s: UP=0 exits at {e0:F0} px/s down, {vh0:F0} px/s sideways in the net ({t0 * 1000:F0} ms); UP=1 {e1:F0} down, {vh1:F0} sideways ({t1 * 1000:F0} ms)");
+            Check(vh1 < vh0 * 0.8 && e1 > 40 && t1 < 0.4, "the nylon drags it sideways and still lets it drop");
+        }
+
+        Console.WriteLine("== PH2 (9) dribble: real floor contact + spin (bstep with a running handler) ==");
+        {
+            cfg.NP = 5; cfg.MYM = 0; cfg.physics = "legacy"; cfg.input = c => new Input();
+            Phys.RAP = null;
+            setCtrls(new List<Ctrl>());
+            start(0);
+            foreach (var mode in new[] { "TS dz (UP=0)", "PH2 arcade", "PH2 default", "PH2 sim" })
+            {
+                cfg.UP = mode.StartsWith("TS") ? 0 : 1; Sim.PH2 = true;
+                cfg.PHYS = mode.EndsWith("arcade") ? 0 : mode.EndsWith("sim") ? 1 : 0.5;
+                var o = P[0];
+                for (int k = 1; k < P.Count; k++) { P[k].x = 60 + k * 10; P[k].y = 30; }
+                o.x = 300; o.y = 250; o.z = 0; o.f = 0; o.mode = "i"; o.ttT = 0; o.act = 0; o.actT = 0; o.chinT = 0; o.postA = 0;
+                inb = 0; JB = null; ftq = null; PREDICT = 0;
+                B.owner = o; B.mode = "held"; B.hold = o; B.dho = null; B.dhoNull = true; B.z = 40; B.wv[0] = B.wv[1] = B.wv[2] = 0;
+                int bounces = 0, catches = 0; double maxSpin = 0, maxDev = 0, apexLow = 1e9;
+                int b0 = phDrib, s0 = phDribShort;
+                for (int t = 0; t < 240; t++)
+                {
+                    double sp = t < 120 ? 0 : 220; // stand, then run
+                    o.vx = sp; o.vy = 0; o.x += sp / 60;
+                    for (int h = 0; h < 2; h++)
+                    {
+                        double dh0 = B.dhd, v0 = B.dvv;
+                        bstep(1 / 120.0);
+                        if (t < 10) continue; // (the first push out of the hands)
+                        if (v0 < 0 && B.dvv > 0 && B.dhd <= 0) bounces++;
+                        if (dh0 <= 0 && B.dhd > 0) { catches++; apexLow = Math.Min(apexLow, B.dh - (B.dtop ?? 0)); }
+                    }
+                    if (t >= 10) maxSpin = Math.Max(maxSpin, Math.Sqrt(B.wv[0] * B.wv[0] + B.wv[1] * B.wv[1]));
+                    if (t > 130) maxDev = Math.Max(maxDev, Math.Abs(B.dvx - o.vx));
+                }
+                Console.WriteLine($"  {mode,-13}: {bounces} bounces in 4 s, {catches} catches (lowest catch {apexLow:F1} px from dribTop, short hops {phDribShort - s0}), spin up to {maxSpin:F0} rad/s, ball speed off the hand up to {maxDev:F0} px/s");
+                if (mode.StartsWith("TS")) { Check(maxSpin == 0, "TS dribble: no spin"); DRB0 = bounces; }
+                else
+                {
+                    Check(apexLow > -1.01 && phDribShort == s0, "the hand still catches every bounce at dribTop");
+                    Check(maxSpin > 5 && maxSpin < 80, "the dribbled ball spins (hand roll + floor friction)");
+                    Check(Math.Abs(bounces - DRB0) <= 1, $"rhythm kept ({bounces} vs {DRB0} bounces)");
+                }
+            }
+            cfg.UP = 0; cfg.PHYS = 0.5;
+        }
+
+        Console.WriteLine("== PH2 (10) box-outs in collide (defender seals, man drives at the rim for 1 s) ==");
+        {
+            foreach (var cs in new[] { ("UP=0", 0, 1.0, 6.7, 1.0, 6.7), ("UP=1 equal", 1, 1.0, 6.7, 1.0, 6.7), ("UP=1 big boxer", 1, 1.25, 7.0, 0.9, 6.4), ("UP=1 small boxer", 1, 0.9, 6.3, 1.25, 7.0) })
+            {
+                cfg.UP = cs.Item2; Sim.PH2 = true; cfg.PRO = 1;
+                start(0);
+                foreach (var q in P) { q.off = 1; }
+                var X = P[cfg.NP]; var O = P[0]; // defender (team 1), his man (team 0, attacks the right hoop)
+                X.off = 0; O.off = 0;
+                X.bk = cs.Item3; X.ht = cs.Item4; O.bk = cs.Item5; O.ht = cs.Item6;
+                X.x = 840; X.y = 250; X.z = 0; O.x = 822; O.y = 250; O.z = 0; X.f = Math.PI; O.f = 0;
+                B.owner = null; B.mode = "air"; B.sh = 1; B.sc = 0; B.last = P[1]; B.age = 0.3; B.x = 870; B.y = 250; B.z = 130;
+                double x0 = O.x, xd0 = X.x; int n0 = phBoxN;
+                for (int t = 0; t < 60; t++)
+                {
+                    O.vx = 180; O.vy = 0; X.vx = 0; X.vy = 0;
+                    O.x += O.vx / 60; // drives into him
+                    collide();
+                }
+                Console.WriteLine($"  {cs.Item1,-16}: the man gained {O.x - x0:F1} px toward the rim, the boxer gave up {X.x - xd0:F1} px ({phBoxN - n0} box-out ticks)");
+                if (cs.Item1 == "UP=0") { BX0 = O.x - x0; BXD0 = X.x - xd0; }
+                else if (cs.Item1 == "UP=1 equal") { Check(X.x - xd0 < BXD0 * 0.5 && O.x - x0 < BX0 - 3, "a box-out holds position and keeps the man off the rim"); BX1 = X.x - xd0; }
+                else if (cs.Item1 == "UP=1 big boxer") BXB = X.x - xd0;
+                else Check(X.x - xd0 > BXB + 1, "a bigger, heavier man moves a small boxer more");
+            }
+            cfg.UP = 0;
+        }
+
+        Console.WriteLine("== PH2 (11) physical blocks: the hand capsule shapes the deflection (rule decides the outcome) ==");
+        {
+            cfg.UP = 1; Sim.PH2 = true; cfg.PHYS = 0.5;
+            start(0);
+            var sh = P[0]; var blk = P[cfg.NP];
+            (double, double, double, double, double, double, double) Blk(int kind, double hdx, double hdy, double hdz)
+            {
+                sh.x = 800; sh.y = 250; sh.z = 10;
+                blk.x = 812; blk.y = 250; blk.z = 20; blk.vx = -60; blk.vy = 0; blk.vz = 120;
+                B.x = 806; B.y = 250; B.z = 88; B.wv[0] = B.wv[1] = B.wv[2] = 0;
+                blk.skelOk = 1; blk.skel = blk.skel ?? new float[60];
+                for (int j = 0; j < 60; j += 3) { blk.skel[j] = 812; blk.skel[j + 1] = 250; blk.skel[j + 2] = 60; }
+                void J(int k, double x, double y, double z) { blk.skel[k * 3] = (float)x; blk.skel[k * 3 + 1] = (float)y; blk.skel[k * 3 + 2] = (float)z; }
+                // right arm reaching to (B + hd): elbow, wrist, hand
+                J(16, 812, 254, 75); J(17, B.x + hdx * 2.6 + 4, B.y + hdy * 2.6 + 2, B.z + hdz * 2.6); J(18, B.x + hdx * 1.4, B.y + hdy * 1.4, B.z + hdz * 1.4); J(19, B.x + hdx, B.y + hdy, B.z + hdz);
+                J(13, 812, 240, 70); J(14, 812, 238, 66); J(15, 812, 238, 64);
+                double rvx = (sh.x - blk.x) * 8, rvy = 0, rvz = 60;
+                if (kind == 2) { rvx = (sh.x - blk.x) * 6; rvy = 300; rvz = 30; }
+                B.vx = rvx; B.vy = rvy; B.vz = rvz;
+                phBlock(sh, blk, kind);
+                return (B.vx, B.vy, B.vz, Math.Sqrt(B.wv[0] * B.wv[0] + B.wv[1] * B.wv[1] + B.wv[2] * B.wv[2]), rvx, rvy, rvz);
+            }
+            var top = Blk(0, 1, 0, 6.5); var side = Blk(0, 0, 6.5, 0.5); var under = Blk(0, 1, 0, -6.5); var sw = Blk(2, 1, 0, 6.5); var ct = Blk(1, 1, 0, 6.5);
+            Console.WriteLine($"  rule pop (vx {top.Item5:F0}, vy 0, vz 60) -> hand on top: ({top.Item1:F0},{top.Item2:F0},{top.Item3:F0}) spin {top.Item4:F0}; hand at his side +y: ({side.Item1:F0},{side.Item2:F0},{side.Item3:F0}); hand under: ({under.Item1:F0},{under.Item2:F0},{under.Item3:F0})");
+            Console.WriteLine($"  swat (rule vy 300 to the sideline) with the hand on top: ({sw.Item1:F0},{sw.Item2:F0},{sw.Item3:F0}); control block keeps the rule velocity: ({ct.Item1:F0},{ct.Item2:F0},{ct.Item3:F0}) spin {ct.Item4:F0}");
+            Check(top.Item3 < -20 && under.Item3 > top.Item3 + 100, "a hand on top spikes it down, a hand under it pops it up");
+            Check(side.Item2 < -40, "a hand at the side knocks it the other way");
+            Check(sw.Item2 == 300 && sw.Item3 < 30, "a swat keeps its sideline, the hand on top drives it down");
+            Check(ct.Item1 == ct.Item5 && ct.Item3 == ct.Item7 && ct.Item4 > 0, "a control block keeps its target and leaves the fingers spinning");
+            cfg.UP = 0;
+        }
+    }
+    static double BX0, BXD0, BX1, BXB;
+    static int DRB0;
 
     static void Ratio0(this BallSim s, Ball b)
     {

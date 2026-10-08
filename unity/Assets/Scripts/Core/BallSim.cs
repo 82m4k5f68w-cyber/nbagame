@@ -19,6 +19,14 @@
 //  - spin: extra spin decay on the floor (wood grabs the ball), spin <-> velocity transfer on every contact
 //  - bodies: torso capsules lean with the pose (p.skel pelvis -> neck), forearm / hand capsules (p.skel 13-15, 17-19)
 //    for LOOSE balls above the catch zone (rebound tips), never a shot in flight or inside the cylinder
+//
+// PH2 (cfg.UP = 1 and Sim.PH2; UP = 0 is the PH engine above, unchanged):
+//  - full body for LOOSE balls: head, upper arms, thighs and shins from p.skel join the torso / forearms / hands
+//    (legs only for a ball skidding past them, so a player can still scoop a slow one); never a shot in flight
+//  - cfg.PHYS 0 arcade .. 1 sim: rim / bracket restitution, spin <-> velocity coupling (friction), body contact
+//    strength (restitution + how much of a moving limb's speed the ball takes); .5 = the PH numbers
+//  - rim flex soaks up hard hits (restitution falls with the impact speed), a hard throw thuds off the glass
+//  - net: the nylon drags the ball sideways too (and the legacy per-step net grab in bstep is skipped)
 using System;
 using System.Collections.Generic;
 
@@ -27,12 +35,28 @@ namespace Hoops.Core
     public sealed class BallSim : IBallPhysics
     {
         // ---- shape flags ----
-        public const int F_FLOOR = 1, F_WALL = 2, F_GLASS = 4, F_PAD = 8, F_RIM = 16, F_BRACKET = 32, F_BODY = 64, F_ARM = 128;
+        public const int F_FLOOR = 1, F_WALL = 2, F_GLASS = 4, F_PAD = 8, F_RIM = 16, F_BRACKET = 32, F_BODY = 64, F_ARM = 128, F_LIMB = 256, F_LEG = 512;
+        /// <summary>Shapes per player: torso, 4 forearm / hand capsules (PH) + head, 2 upper arms, 2 thighs, 2 shins (PH2).</summary>
+        public const int PSTRIDE = 12;
 
         /// <summary>Extras on (net, board regions, rim regions, lean, arms, floor spin decay). False = plain Rapier world.</summary>
         public bool Extras = true;
         /// <summary>Shooter's touch on the rim: -1 = follow Sim.cfg.UP (the Unity Pro Play flag), 0 off, 1 on.</summary>
         public int UP = -1;
+        /// <summary>Arcade (0) .. sim (1) override for tests; -1 = follow Sim.cfg.PHYS.</summary>
+        public double PHYS = -1;
+        /// <summary>PH2 features on for this step (cfg.UP / UP field, Sim.PH2, Extras).</summary>
+        public bool Up => Extras && (UP >= 0 ? UP : Sim.cfg.UP) != 0 && Sim.PH2;
+        double kRim = 1, kMu = 1, kC = 1; // slider multipliers (set per step)
+        void Slider()
+        {
+            double k = PHYS >= 0 ? PHYS : Sim.cfg.PHYS;
+            if (double.IsNaN(k)) k = 0.5;
+            k = Math.Max(0, Math.Min(1, k));
+            kRim = 0.84 + 0.32 * k; // arcade: softer iron (friendlier rolls) .. sim: harder, livelier iron
+            kMu = 0.5 + k; // spin bite on every contact
+            kC = 0.55 + 0.9 * k; // body contacts: restitution + limb speed transfer
+        }
 
         /// <summary>Rim flex per hoop in game px (+ = bent down), a damped spring; for the renderer (hoop / net offset).</summary>
         public static readonly double[] RimFlex = new double[2];
@@ -43,13 +67,17 @@ namespace Hoops.Core
         // ---- tunables ----
         const double K_MAG = 0.0032, ANG_DAMP = 0.3, BALL_E = 0.72, BALL_MU = 0.55;
         const double SUBLEN = 1.0; // max path length (px) between contact samples
+        // a ball resting exactly against a shape and sliding along it (gap -1e-15 from rounding) is not a new hit: without
+        // this a ball touching the glass and the iron at once was "wedged" every step and hung there (a frozen game)
+        const double HIT_EPS = 1e-7;
         const double REST_THR = 12; // px/s: slower normal impacts don't bounce (lets the ball settle)
         const double CRR = 42; // rolling resistance deceleration on the floor (px/s^2)
         const double NET_DRAG = 18; // 1/s at full grab
+        const double NET_DRAG_H = 24, NET_WRAP = 16; // PH2: sideways drag (1/s): pressing at full grab, just inside the mesh
         const double FLEX_W = 2 * Math.PI * 6, FLEX_Z = 0.22, FLEX_K = 0.05;
 
         // ---- debug counters (tests / stats dumps) ----
-        public int Contacts, RimHits, GlassHits, FrameHits, PadHits, BracketHits, FloorHits, BodyHits, ArmHits, NetSteps;
+        public int Contacts, RimHits, GlassHits, FrameHits, PadHits, BracketHits, FloorHits, BodyHits, ArmHits, LimbHits, LegHits, NetSteps;
         public double LastVn; // last impact normal speed (px/s, positive)
         public int LastFlag;
         /// <summary>The current flight touched a rim / board (a shot after that is a loose ball for the arms).</summary>
@@ -69,15 +97,18 @@ namespace Hoops.Core
         readonly int nStatic;
         int nShapes;
         readonly int[] cand;
+        readonly bool[] skip;
         int nc;
         double lastAge = -1, lastSh;
         bool dunkKick;
         double give; // rim softness for this flight (0..)
+        bool up; // PH2 on for this step
 
         public BallSim()
         {
-            S = new Sh[64 + 5 * 24];
+            S = new Sh[64 + PSTRIDE * 24];
             cand = new int[S.Length];
+            skip = new bool[S.Length];
             int n = 0;
             void Box(double cx, double cy, double cz, double hx, double hy, double hz, double e, double mu, int flag, int hoop = -1)
             {
@@ -125,7 +156,7 @@ namespace Hoops.Core
         bool Active(ref Sh s)
         {
             if (!s.on) return false;
-            if (!Extras && (s.flag & (F_PAD | F_BRACKET | F_ARM)) != 0) return false;
+            if (!Extras && (s.flag & (F_PAD | F_BRACKET | F_ARM | F_LIMB | F_LEG)) != 0) return false;
             return true;
         }
 
@@ -152,6 +183,8 @@ namespace Hoops.Core
         public void Step(double dt, Ball B)
         {
             NewFlight(B);
+            up = Up;
+            if (up) Slider();
             var W = B.wv;
             if (W == null) W = B.wv = new double[3];
             // (the same expressions, in the same order, as launch's pre-simulation)
@@ -168,6 +201,13 @@ namespace Hoops.Core
                 B.z += sz;
             }
             else floor = Sweep(B, W, dt);
+            if (up && B.z < Sim.BR)
+            {
+                // (PH2: the floor wins - a limb that pressed the ball down into the wood gives way)
+                B.z = Sim.BR;
+                Respond(ref S[0], B, W, 0, 0, 1);
+                floor = true;
+            }
             if (Extras) NetCouple(B, dt);
             if (floor) Floor(B, W, dt);
             if (Extras && B.dk != 0 && !dunkKick && B.z < 106)
@@ -235,6 +275,7 @@ namespace Hoops.Core
             double m = 1e9;
             for (int c = 0; c < nc; c++)
             {
+                if (skip[c]) continue;
                 double g = Gap(ref S[cand[c]], px, py, pz, out _, out _, out _);
                 if (g < m) m = g;
             }
@@ -262,18 +303,25 @@ namespace Hoops.Core
                 double sx = B.vx * dt * rem, sy = B.vy * dt * rem, sz = B.vz * dt * rem,
                     len = Math.Sqrt(sx * sx + sy * sy + sz * sz);
                 if (guard > 0) Gather(x0, y0, z0, sx, sy, sz); // (a bounce changed the path: its own neighbourhood)
+                // shapes the ball already touches and is sliding along / leaving are not hits for this path (resting
+                // against the glass and the iron at once used to read as "wedged" every step: a ball hung there forever)
+                for (int c = 0; c < nc; c++)
+                {
+                    double g = Gap(ref S[cand[c]], x0, y0, z0, out double nx, out double ny, out double nz);
+                    skip[c] = g < 0.02 && sx * nx + sy * ny + sz * nz >= 0;
+                }
                 int n = Math.Max(1, (int)Math.Ceiling(len / SUBLEN));
                 double fPrev = 0, fHit = -1;
                 for (int i = 1; i <= n; i++)
                 {
                     double f = (double)i / n;
-                    if (MinGap(x0 + sx * f, y0 + sy * f, z0 + sz * f) < 0)
+                    if (MinGap(x0 + sx * f, y0 + sy * f, z0 + sz * f) < -HIT_EPS)
                     {
                         double lo = fPrev, hi = f;
                         for (int it = 0; it < 12; it++)
                         {
                             double mid = (lo + hi) * 0.5;
-                            if (MinGap(x0 + sx * mid, y0 + sy * mid, z0 + sz * mid) < 0) hi = mid; else lo = mid;
+                            if (MinGap(x0 + sx * mid, y0 + sy * mid, z0 + sz * mid) < -HIT_EPS) hi = mid; else lo = mid;
                         }
                         fHit = lo;
                         break;
@@ -322,15 +370,28 @@ namespace Hoops.Core
         bool Respond(ref Sh s, Ball B, double[] W, double nx, double ny, double nz)
         {
             double R = Sim.BR, rx = -nx * R, ry = -ny * R, rz = -nz * R;
-            double cvx = B.vx + (W[1] * rz - W[2] * ry) - s.vx,
-                cvy = B.vy + (W[2] * rx - W[0] * rz) - s.vy,
-                cvz = B.vz + (W[0] * ry - W[1] * rx) - s.vz,
+            // (PH2: a moving limb hands the ball only part of its speed in arcade, all of it (and a bit) in sim)
+            double kv = up && (s.flag & (F_BODY | F_ARM | F_LIMB | F_LEG)) != 0 ? Math.Min(1.2, kC) : 1;
+            double cvx = B.vx + (W[1] * rz - W[2] * ry) - s.vx * kv,
+                cvy = B.vy + (W[2] * rx - W[0] * rz) - s.vy * kv,
+                cvz = B.vz + (W[0] * ry - W[1] * rx) - s.vz * kv,
                 vn = cvx * nx + cvy * ny + cvz * nz;
             if (vn >= 0) return false;
             double es = s.e, ms = s.mu;
             if (Extras) Material(ref s, B, ref es, ref ms);
             double e = (BALL_E + es) * 0.5, mu = (BALL_MU + ms) * 0.5; // Rapier's Average combine rule
             if ((s.flag & F_RIM) != 0 && B.sh != 0) e *= 1 - give;
+            if (up)
+            {
+                if ((s.flag & (F_RIM | F_BRACKET)) != 0)
+                {
+                    // the slider, then the flex: a hard hit bends the ring and loses more of its bounce
+                    e = Math.Min(0.92, e * kRim) * (1 - 0.3 * Clamp01((-vn - 250) / 700));
+                }
+                else if (s.flag == F_GLASS) e *= 1 - 0.15 * Clamp01((-vn - 400) / 800); // a hard throw thuds
+                else if ((s.flag & (F_BODY | F_ARM | F_LIMB | F_LEG)) != 0) e = Math.Min(0.6, e * kC);
+                mu = Math.Min(1, mu * kMu);
+            }
             if (-vn < REST_THR) e = 0;
             double jn = -(1 + e) * vn;
             B.vx += jn * nx;
@@ -360,6 +421,8 @@ namespace Hoops.Core
                 case F_BRACKET: BracketHits++; break;
                 case F_BODY: BodyHits++; break;
                 case F_ARM: ArmHits++; break;
+                case F_LIMB: LimbHits++; break;
+                case F_LEG: LegHits++; break;
             }
             if (s.hoop >= 0)
             {
@@ -369,6 +432,8 @@ namespace Hoops.Core
             }
             return true;
         }
+
+        static double Clamp01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
 
         /// <summary>Regional materials: frame strip round the glass, the back iron by the hook.</summary>
         void Material(ref Sh s, Ball B, ref double e, ref double mu)
@@ -438,6 +503,13 @@ namespace Hoops.Core
                 }
                 if (rad < 0) rad = rPrev; // below the hem: last ring
                 double pen = d + Sim.SEGR - rad;
+                if (up)
+                {
+                    // PH2: the mesh wraps the ball and drags it sideways (more where it presses into the nylon); the
+                    // bstep per-step net grab is off with UP on the engine
+                    double hd = 1 / (1 + dt * (NET_WRAP + NET_DRAG_H * Math.Max(0, Math.Min(1, pen / 2.5))));
+                    B.vx *= hd; B.vy *= hd;
+                }
                 if (pen <= 0) continue;
                 NetSteps++;
                 double ux = d > 1e-6 ? dx / d : 0, uy = d > 1e-6 ? dy / d : 0, vo = B.vx * ux + B.vy * uy;
@@ -466,12 +538,14 @@ namespace Hoops.Core
             }
         }
 
-        /// <summary>Kinematic torso capsules (Rapier's enable rule) + forearm/hand capsules for loose balls.</summary>
+        /// <summary>Kinematic torso capsules (Rapier's enable rule) + forearm/hand capsules for loose balls; PH2 (UP) adds
+        /// the head, upper arms, thighs and shins for loose balls.</summary>
         public void SyncPlayers(List<Player> P, Ball B)
         {
             NewFlight(B);
             Tick(1 / 60.0, P);
-            int need = nStatic + P.Count * 5;
+            up = Up;
+            int need = nStatic + P.Count * PSTRIDE;
             if (need > S.Length) need = S.Length;
             for (int i = nShapes; i < need; i++) { S[i].hasPrev = false; S[i].on = false; }
             nShapes = need;
@@ -479,9 +553,10 @@ namespace Hoops.Core
                 nearRim = B.z > 55 && (Util.Hypot(B.x - Sim.HXs[0], B.y - Sim.HY) < 30 || Util.Hypot(B.x - Sim.HXs[1], B.y - Sim.HY) < 30),
                 cyl = B.z > 55 && (Util.Hypot(B.x - Sim.HXs[0], B.y - Sim.HY) < 22 || Util.Hypot(B.x - Sim.HXs[1], B.y - Sim.HY) < 22),
                 loose = B.sh == 0 || HoopTouched;
-            for (int k = 0; k < P.Count && nStatic + k * 5 + 4 < S.Length; k++)
+            for (int k = 0; k < P.Count && nStatic + k * PSTRIDE + PSTRIDE - 1 < S.Length; k++)
             {
                 var p = P[k];
+                int b0 = nStatic + k * PSTRIDE;
                 double H = p.ht * 10, r = 8.5 * p.bk, hh = Math.Max(4, (H * 0.78 - 2 * r) / 2);
                 double bx = p.x, by = p.y, bz = p.z + r, tx = p.x, ty = p.y, tz = p.z + r + 2 * hh;
                 var sk = p.skel;
@@ -495,19 +570,39 @@ namespace Hoops.Core
                     if (!double.IsNaN(ox + oy)) { tx += ox; ty += oy; }
                 }
                 bool torsoOn = air && !nearRim && !(B.last == p && B.age < 0.35);
-                Kin(ref S[nStatic + k * 5], bx, by, bz, tx, ty, tz, r, 0.35, 0.5, F_BODY, torsoOn);
+                Kin(ref S[b0], bx, by, bz, tx, ty, tz, r, 0.35, 0.5, F_BODY, torsoOn);
                 for (int a = 0; a < 4; a++)
                 {
                     int j0 = a < 2 ? 13 + a : 17 + (a - 2), j1 = j0 + 1;
-                    ref var s = ref S[nStatic + k * 5 + 1 + a];
+                    ref var s = ref S[b0 + 1 + a];
                     if (!skOk) { s.on = false; s.hasPrev = false; continue; }
                     // reaching above the catch zone (where the sim's hands would not take it anyway): tips, not catches
                     int wj = a < 2 ? 14 : 18;
                     bool on = Extras && torsoOn && loose && !cyl && sk[wj * 3 + 2] > p.z + 64 + p.j * 0.2 && B.z > p.z + 55;
                     Kin(ref s, sk[j0 * 3], sk[j0 * 3 + 1], sk[j0 * 3 + 2], sk[j1 * 3], sk[j1 * 3 + 1], sk[j1 * 3 + 2], (a & 1) == 0 ? 1.5 : 1.9, 0.3, 0.6, F_ARM, on);
                 }
+                // PH2 full body (loose balls only, never a shot in flight): head, upper arms, thighs, shins
+                bool body = up && skOk && torsoOn && loose && !cyl && B.mode == "air";
+                // a ball moving past him bounces off; a slow / resting one is left for the hands (nothing balances on a
+                // head or shoulder out of reach, no ball is pinned under a leg); legs only for a low one skidding past
+                double rvx = B.vx - p.vx, rvy = B.vy - p.vy, rvz = B.vz - p.vz, rv2 = rvx * rvx + rvy * rvy;
+                body = body && rv2 + rvz * rvz > 90 * 90;
+                bool legs = body && B.z < p.z + 46 && rv2 > 110 * 110;
+                for (int a = 0; a < 7; a++)
+                {
+                    ref var s = ref S[b0 + 5 + a];
+                    if (!up || !skOk) { s.on = false; s.hasPrev = false; continue; }
+                    int j0 = BONE[a * 2], j1 = BONE[a * 2 + 1];
+                    bool leg = a >= 3;
+                    Kin(ref s, sk[j0 * 3], sk[j0 * 3 + 1], sk[j0 * 3 + 2], sk[j1 * 3], sk[j1 * 3 + 1], sk[j1 * 3 + 2],
+                        BONER[a] * (a == 0 ? 1 : Math.Min(1.25, p.bk)), leg ? 0.32 : 0.3, 0.6, a == 0 || a < 3 ? F_LIMB : F_LEG, leg ? legs : body);
+                }
             }
         }
+
+        // PH2 bones (p.skel joints): head (neck..head), upper arms (shoulder..elbow), thighs (hip..knee), shins (knee..ankle)
+        static readonly int[] BONE = { 2, 3, 12, 13, 16, 17, 4, 5, 8, 9, 5, 6, 9, 10 };
+        static readonly double[] BONER = { 4.6, 2.6, 2.6, 3.4, 3.4, 2.5, 2.5 };
 
         static void Kin(ref Sh s, double x0, double y0, double z0, double x1, double y1, double z1, double r, double e, double mu, int flag, bool on)
         {

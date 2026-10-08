@@ -22,6 +22,7 @@ namespace Hoops.Core
         public int PLANT = 1; // stance feet pinned to the floor in the core pose (0 = off)
         public int INZ = 1; // inertialized animation blending (0 = old exponential smoothing)
         public int UP = 0; // Unity Pro Play upgrades (Sim.UP.cs / Pose.UP.cs): new moves, finishes, reactions. 0 = TS parity
+        public double PHYS = 0.5; // ball physics feel with UP (Sim.PH.cs / BallSim): 0 arcade .. 1 sim (restitution, spin, contact strength)
         public string physics = "rapier"; // "rapier" | "legacy"
         public bool hand = true; // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
         public bool replays = true;

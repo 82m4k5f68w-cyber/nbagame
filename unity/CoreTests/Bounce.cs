@@ -1,5 +1,6 @@
 // BallSim contact tests: drop-test energy loss vs restitution, backspin bounce pass, rolling stop, spin -> roll
-// transfer, and no tunnelling through the iron / glass at any speed.
+// transfer, and no tunnelling through the iron / glass at any speed; PH2 (UP=1) at both slider ends: the iron and the
+// moving bones (head, upper arms, legs) of a running player.
 //   scripts/unity/cs.sh unity/CoreTests/Bounce.cs
 using System;
 using Hoops.Core;
@@ -151,8 +152,109 @@ static class Bounce
             Check(glassThrough == 0, $"400 balls at 1000..5000 px/s never get into / through the glass ({glassThrough})");
         }
 
+        // 6. PH2 (cfg.UP = 1) at both ends of the slider: the iron (restitution now depends on PHYS + impact speed) and
+        //    the new kinematic bones (head, upper arms, thighs, shins of a player running at 400 px/s) never get tunnelled
+        foreach (var k in new[] { 0.0, 1.0 })
+        {
+            var s = new BallSim { UP = 1, PHYS = k };
+            var rnd = new Random(8);
+            int through = 0, n = 0, hit = 0;
+            double minClear = 1e9;
+            for (int sh = 0; sh < 1500; sh++)
+            {
+                double hx = HXs[sh & 1], a = rnd.NextDouble() * Math.PI * 2, sp = 600 + rnd.NextDouble() * 3400,
+                    tx = hx + Math.Cos(a) * RR, ty = HY + Math.Sin(a) * RR, tz = 100 + (rnd.NextDouble() - 0.5) * 3,
+                    el = (rnd.NextDouble() - 0.5) * 1.6, az = rnd.NextDouble() * Math.PI * 2,
+                    dx = Math.Cos(az) * Math.Cos(el), dy = Math.Sin(az) * Math.Cos(el), dz = Math.Sin(el);
+                var b = Ball(tx - dx * 40, ty - dy * 40, tz - dz * 40, dx * sp, dy * sp, dz * sp);
+                b.sh = 1; b.age = 0.3;
+                if (Torus(b, hx) < BR + 0.55) continue;
+                n++;
+                int c0 = s.RimHits;
+                for (int i = 0; i < 12; i++)
+                {
+                    double px = b.x, py = b.y, pz = b.z;
+                    int cc = s.Contacts;
+                    s.Step(H, b);
+                    minClear = Math.Min(minClear, Torus(b, hx) - BR - 0.55);
+                    if (s.Contacts == cc)
+                        for (int q = 1; q < 40; q++)
+                        {
+                            double f = q / 40.0;
+                            var t = Ball(px + (b.x - px) * f, py + (b.y - py) * f, pz + (b.z - pz) * f, 0, 0, 0);
+                            if (Torus(t, hx) < BR + 0.55 - 0.05) { through++; i = 99; break; }
+                        }
+                }
+                if (s.RimHits > c0) hit++;
+            }
+            Check(through == 0 && minClear > -0.05, $"UP=1 PHYS {k}: {n} fast balls at the iron ({hit} hit it), tunnelled {through}, min clearance {minClear:F3}");
+            // moving bones
+            int inside = 0, contacts = 0, shots = 0;
+            double worst = 0;
+            var r2 = new Random(12);
+            for (int sh = 0; sh < 600; sh++)
+            {
+                var p = Body(400, 250, (r2.NextDouble() - 0.5) * 24, r2.NextDouble() < 0.5);
+                var P = new System.Collections.Generic.List<Player> { p };
+                double vy = (r2.NextDouble() - 0.5) * 800; // he runs across at up to 400 px/s
+                int bone = r2.Next(7), j0 = BONES[bone * 2], j1 = BONES[bone * 2 + 1];
+                double u = r2.NextDouble(), gx = p.skel[j0 * 3] + (p.skel[j1 * 3] - p.skel[j0 * 3]) * u, gy = p.skel[j0 * 3 + 1] + (p.skel[j1 * 3 + 1] - p.skel[j0 * 3 + 1]) * u,
+                    gz = p.skel[j0 * 3 + 2] + (p.skel[j1 * 3 + 2] - p.skel[j0 * 3 + 2]) * u,
+                    sp = 300 + r2.NextDouble() * 2200, az = r2.NextDouble() * Math.PI * 2, el = (r2.NextDouble() - 0.3) * 0.8,
+                    dx = Math.Cos(az) * Math.Cos(el), dy = Math.Sin(az) * Math.Cos(el), dz = Math.Sin(el);
+                var b = Ball(gx - dx * 45, gy - dy * 45, Math.Max(BR + 0.5, gz - dz * 45), dx * sp, dy * sp, dz * sp);
+                b.age = 0.5; b.sh = 0;
+                shots++;
+                s.ClearBodies();
+                for (int t = 0; t < 12; t++)
+                {
+                    p.y += vy / 60; p.vy = vy;
+                    for (int j = 1; j < 60; j += 3) p.skel[j] += (float)(vy / 60);
+                    s.SyncPlayers(P, b);
+                    bool legsOn = b.z < p.z + 46 && (b.vx * b.vx + (b.vy - vy) * (b.vy - vy)) > 110 * 110;
+                    for (int h = 0; h < 2; h++)
+                    {
+                        int cc = s.Contacts;
+                        b.age += H; s.Step(H, b);
+                        contacts += s.Contacts - cc;
+                        for (int q = 0; q < 7; q++)
+                        {
+                            if (q >= 3 && !legsOn) continue;
+                            double pen = BR + BONER[q] - Seg(b, p.skel, BONES[q * 2], BONES[q * 2 + 1]);
+                            if (pen > 0.05) { inside++; worst = Math.Max(worst, pen); }
+                        }
+                    }
+                }
+            }
+            Check(inside == 0, $"UP=1 PHYS {k}: {shots} balls at 300..2500 px/s into the bones of a running player ({contacts} contacts): ended a step inside a bone {inside} times (worst {worst:F2} px)");
+        }
+
         Console.WriteLine(fails == 0 ? "PASS" : $"FAIL ({fails})");
         Environment.Exit(fails == 0 ? 0 : 1);
+    }
+
+    // PH2 bones: head, upper arms, thighs, shins (as BallSim.BONE / BONER, build 1)
+    static readonly int[] BONES = { 2, 3, 12, 13, 16, 17, 4, 5, 8, 9, 5, 6, 9, 10 };
+    static readonly double[] BONER = { 4.6, 2.6, 2.6, 3.4, 3.4, 2.5, 2.5 };
+    static double Seg(Ball b, float[] s, int a, int c)
+    {
+        double ax = s[a * 3], ay = s[a * 3 + 1], az = s[a * 3 + 2], vx = s[c * 3] - ax, vy = s[c * 3 + 1] - ay, vz = s[c * 3 + 2] - az,
+            L2 = vx * vx + vy * vy + vz * vz, u = L2 > 0 ? Math.Max(0, Math.Min(1, ((b.x - ax) * vx + (b.y - ay) * vy + (b.z - az) * vz) / L2)) : 0,
+            qx = b.x - ax - vx * u, qy = b.y - ay - vy * u, qz = b.z - az - vz * u;
+        return Math.Sqrt(qx * qx + qy * qy + qz * qz);
+    }
+    /// <summary>A standing player with a hand-built skeleton (as PhysStats.Body).</summary>
+    static Player Body(double x, double y, double legOut = 0, bool armsOut = false)
+    {
+        var p = new Player { x = x, y = y, z = 0, ht = 6.6, bk = 1, j = 70, skelOk = 1, skel = new float[60] };
+        void J(int k, double jx, double jy, double jz) { p.skel[k * 3] = (float)(x + jx); p.skel[k * 3 + 1] = (float)(y + jy); p.skel[k * 3 + 2] = (float)jz; }
+        J(0, 0, 0, 38); J(1, 0, 0, 48); J(2, 0, 0, 56); J(3, 0, 0, 62);
+        J(4, 0, -4, 36); J(5, 1, -5, 20); J(6, 0, -5, 4); J(7, 3, -5, 1);
+        J(8, 0, 4, 36); J(9, 1, 4 + legOut * 0.5, 20); J(10, 0, 4 + legOut, 4); J(11, 3, 4 + legOut, 1);
+        double ao = armsOut ? 12 : 3;
+        J(12, 0, -7, 53); J(13, 0, -7 - ao, armsOut ? 52 : 42); J(14, 2, -7 - ao * 1.6, armsOut ? 51 : 32); J(15, 3, -7 - ao * 1.9, armsOut ? 51 : 28);
+        J(16, 0, 7, 53); J(17, 0, 7 + ao, armsOut ? 52 : 42); J(18, 2, 7 + ao * 1.6, armsOut ? 51 : 32); J(19, 3, 7 + ao * 1.9, armsOut ? 51 : 28);
+        return p;
     }
 
     static double Torus(Ball b, double hx)

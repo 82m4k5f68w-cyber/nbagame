@@ -1,6 +1,7 @@
 // Port of tests/greens.ts: 400 perfectly timed jumpers from random spots (no defenders) -> expect >= 95% made with
 // BallSim. Also checks that free flight is bit-identical to launch()'s aim pre-simulation (h = 1/120).
-//   scripts/unity/cs.sh unity/CoreTests/Greens.cs [ball|plain|legacy|all] [N] [dt]
+//   scripts/unity/cs.sh unity/CoreTests/Greens.cs [ball|plain|legacy|ball+up|ball+up+arcade|ball+up+sim|ball+up-ph2|all] [N] [dt]
+// (+up = cfg.UP 1 with PH2, +arcade / +sim = cfg.PHYS 0 / 1 (default .5), -ph2 = UP without the PH2 physics)
 using System;
 using System.Collections.Generic;
 using Hoops.Core;
@@ -14,10 +15,10 @@ static class Greens
         int N = a.Length > 1 ? int.Parse(a[1]) : 400;
         double dt = a.Length > 2 ? double.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture) : 1 / 120.0;
         bool ok = true;
-        foreach (var m in which == "all" ? new[] { "legacy", "plain", "ball", "ball+up" } : new[] { which })
+        foreach (var m in which == "all" ? new[] { "legacy", "plain", "ball", "ball+up-ph2", "ball+up", "ball+up+arcade", "ball+up+sim" } : new[] { which })
         {
             double pct = Run(m, N, dt, out int bitBad, out int bitChecked);
-            Console.WriteLine($"{m,-8} dt {dt:F4}: made {pct:F1}%" + (bitChecked > 0 ? $"  free-flight bit-identical {bitChecked - bitBad}/{bitChecked}" : ""));
+            Console.WriteLine($"{m,-14} dt {dt:F4}: made {pct:F1}%" + (bitChecked > 0 ? $"  free-flight bit-identical {bitChecked - bitBad}/{bitChecked}" : ""));
             if (m != "legacy" && pct < 95) ok = false;
             if (bitBad > 0 && Math.Abs(dt - 1 / 120.0) < 1e-12) ok = false;
         }
@@ -29,13 +30,17 @@ static class Greens
     {
         Rng.Seed(7);
         cfg.NP = 5; cfg.MYM = 0; cfg.hand = true;
+        bool up = mode.StartsWith("ball+up");
+        cfg.UP = up ? 1 : 0;
+        Sim.PH2 = !mode.EndsWith("-ph2");
+        cfg.PHYS = mode.EndsWith("+arcade") ? 0 : mode.EndsWith("+sim") ? 1 : 0.5;
         cfg.input = c => new Input();
         BallSim bs = null;
         if (mode == "legacy") { cfg.physics = "legacy"; Phys.RAP = null; }
         else
         {
             cfg.physics = "rapier";
-            Phys.RAP = bs = new BallSim { Extras = mode != "plain", UP = mode == "ball+up" ? 1 : 0 };
+            Phys.RAP = bs = new BallSim { Extras = mode != "plain", UP = up ? 1 : 0 };
         }
         setCtrls(new List<Ctrl> { mkCtrl("p1", 0) });
         start(0);

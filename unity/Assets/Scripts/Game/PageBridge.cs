@@ -174,6 +174,7 @@ namespace Hoops.Game
                 case "rv": cfg.VIOL = i; break;
                 case "rs": cfg.SUBS = i; break;
                 case "rb": cfg.BADGES = i; break;
+                case "phys": cfg.PHYS = Mathf.Clamp01(v > 1 ? (float)v / 100f : (float)v); break; // ball physics 0 arcade .. 1 sim (or 0..100)
                 case "cmt": Broadcast.COMM = i > 0; Broadcast.VOICE = i == 2; Prefs("h2k_comm", i > 0); Prefs("h2k_voice", i == 2); break;
                 case "pi": Broadcast.INTRO = on; Prefs("h2k_intro", on); break;
                 case "mu": Music.On = on; Prefs("h2k_music", on); break;
