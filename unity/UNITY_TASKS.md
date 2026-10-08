@@ -147,6 +147,16 @@ pose/clip data, blending that passes the jerk/limits/foot-slide budgets. Port th
 unity/CoreTests (Blend.cs jerk budget like tests/blend.ts, Limits.cs joint limits, FootSlide.cs) and run them with
 UP=0 and UP=1. Do not change behaviour when cfg.UP == 0 (the Trace.cs lockstep test vs TS must stay identical for the
 first 3000 ticks). Report the moves added, keys, and test numbers.
+Status (Oct 2026): done. Sim side Core/Sim.UP.cs, poses Core/Pose.UP.cs (hooks in Sim.C/D/E/F/G, Pose.Pose3, Pose.Rest
+are all `cfg.UP != 0` guarded; Trace.cs stays identical to the TS). Keys unchanged, the stick picks the variant when the
+move key is pressed: C hesitation | C + stick sideways = in-and-out | C + stick pulled back = snatch-back; X spin; V behind
+the back | V + stick sideways = crossover; flick at speed = crossover, again within .5 s = double crossover (any move
+within .5 s of the last chains a combo); Space driving at the rim from 8-16 ft = gather (two-step / hop-step / spin
+gather by the defender's spot, floater vs a rim protector, off-hand reverse on the baseline); post (hold B) + C = sky hook for
+tall / skilled bigs. CPU: signature dribble packages (formOf dk), snatch-back vs hard closeouts, drive gathers, floor
+putbacks, V-cuts. Defense: slide hips, swipe-downs, hand checks, contest variety; shooters lean away from late
+closeouts. Guide hand: post-blend solve keeps the off palm on the ball until the release.
+Tests (scripts/unity/cs.sh unity/CoreTests/X.cs UP=0|1): Blend, Limits, FootSlide, GuideHand; GameRun ... up=1; Greens.
 
 ## Wave 2 (start when PH / AP / U are merged)
 - PH2 physics: ball-vs-player full-body contact for loose balls (all skeleton bones as capsules), rebound physics with

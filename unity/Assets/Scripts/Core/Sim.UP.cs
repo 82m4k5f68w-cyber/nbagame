@@ -1,6 +1,6 @@
 // Unity-only Pro Play upgrades (cfg.UP = 1): new dribble moves and combo chains, drive gathers (two-step / hop-step /
 // spin), floaters, sky hooks, off-hand reverses, contest reactions, stronger landings, power putbacks, drive bumps,
-// defensive swipe-downs, V-cuts. Sim side only (the poses are in Pose.UP.cs). Nothing here runs with cfg.UP == 0, and
+// defensive swipe-downs and hand checks, V-cuts. Sim side only (the poses are in Pose.UP.cs). Nothing here runs with cfg.UP == 0, and
 // every hook in the ported files is guarded so the TS lockstep trace (CoreTests/Trace.cs) stays bit-identical.
 //
 // Move codes (Input.mv / p.mvk): 1 hesitation, 2 spin, 3 behind the back, 4 post move (TS) + 5 in-and-out, 6 crossover,
@@ -27,7 +27,7 @@ namespace Hoops.Core
         public double gath, gathT, gsu, gSd; // drive gather: kind (1 two-step, 2 hop-step, 3 spin), time, deferred release, side
         public double lnA, lnS; // contest reaction: lean-away weight and side (+ = his left)
         public double offH; // finishing with the off hand (reverse off the glass): the shot pose is mirrored
-        public double bmpT, swpT, vcT; // drive-bump cooldown, defender swipe-down timer, V-cut timer
+        public double bmpT, swpT, vcT, hcT; // drive-bump cooldown, defender swipe-down timer, V-cut timer, hand-check timer
         public double catchT = -9, jg; // last catch time; jumper gather: 1 catch-and-shoot 1-2 step, 2 off the dribble hop
         public double mvP; // the move before the current one (combo names)
         public double upLand; // last landing strength (0..1.3)
@@ -258,16 +258,16 @@ namespace Hoops.Core
         public static void upPutback(Player p, bool wasShot, Player shooter)
         {
             if (!wasShot || shooter == null || shooter.tm != p.tm || p.z > 8 || isH(p) || ftq != null || PREDICT != 0) return;
-            if (Hypot(hoop(p.tm) - p.x, HY - p.y) > 42 || p.j < 60 || Rng.R() > 0.55) return;
+            if (Hypot(hoop(p.tm) - p.x, HY - p.y) > 60 || p.j < 45 || Rng.R() > 0.65) return;
             p.mode = "s";
             p.t = 0.1;
-            p.sv = p.j >= 80 && Rng.R() < 0.4 ? 12 : 11;
+            p.sv = p.j < 60 ? 5 : p.j >= 80 && Rng.R() < 0.4 ? 12 : 11; // (power layup for the lower leapers)
             p.rl = 0;
             p.hk = 1;
             p.vz = 150 + p.j * 0.9;
             p.ttT = 0;
             upc("putback");
-            txtW("PUTBACK SLAM!", p.x, p.y, 115, "#ffd23f");
+            txtW(p.sv == 5 ? "PUTBACK" : "PUTBACK SLAM!", p.x, p.y, 115, "#ffd23f");
         }
 
         /// <summary>CPU drive (UP): attacking the rim at speed, start the gather from 9-14 ft (layup / floater territory).</summary>
@@ -308,6 +308,7 @@ namespace Hoops.Core
                 p.bmpT -= dt;
                 if (p.swpT > -5) p.swpT -= dt;
                 if (p.vcT > 0) p.vcT -= dt;
+                if (p.hcT > -5) p.hcT -= dt;
                 if (p.mode != "s") p.lnA = Math.Max(0, p.lnA - dt * 5);
                 if (p.mode == "i") { if (p.z <= 0) p.offH = 0; if (p.gath > 0 || p.z <= 0) p.gath = 0; }
                 if (p.mode == "s" && p.t < 0.02) p.tdT = T;
@@ -335,6 +336,16 @@ namespace Hoops.Core
                 d.swpT = 0.36;
                 upc("swipe");
             }
+            // hand check: the on-ball defender jabs a hand into the handler's hip as he sizes him up (legal - the handler's
+            // torso gives a little and he loses a step of speed; no foul, no steal)
+            else if (dd < 30 && dd > 1 && sp < 150 && d.hcT < -0.9 && d.swpT <= 0 && d.z <= 0 && Rng.R() < dt * 1.1)
+            {
+                d.hcT = 0.3;
+                double nx = dx / dd, ny = dy / dd;
+                o.hitT = Math.Max(o.hitT, 0.12); o.hitX = -nx; o.hitY = -ny;
+                o.vx *= 0.94; o.vy *= 0.94;
+                upc("handCheck");
+            }
         }
 
         /// <summary>The active UP feature of a player this tick (tests bucket jerk / limits / foot slide by it). Works
@@ -358,6 +369,7 @@ namespace Hoops.Core
             }
             if (p.landT > 0) return "landing";
             if (p.swpT > 0) return "swipe";
+            if (p.hcT > 0) return "handCheck";
             if (p.vcT > 0) return "vcut";
             if (p.hitT > 0 && p.bmpT > 0) return "bump";
             if (B.mode == "pass" && B.to == p && p.z > 10) return "oopCatch";

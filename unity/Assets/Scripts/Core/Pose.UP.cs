@@ -4,7 +4,9 @@
 // hop gather off the dribble, elbow under the ball, leg drive + toe extension, landing knees by jump height, contest
 // lean-away, signature forms (Curry one-motion, Durant high release, Jokic push shot, Doncic step-back, Antetokounmpo
 // slow set), FT set, layup gathers (plant foot, ball protect, off-arm shield, full reach), floater / sky hook clips.
-// Moves: in-and-out, crossover, snatch-back with anticipation and settle. Defense: slide hip turn, swipe-down, contest
+// Guide hand (upGuide, post-blend): the off palm sits on the side of the ball until the release (damped Gauss-Newton
+// on the guide arm against the exact palm FK; tests: CoreTests/GuideHand.cs).
+// Moves: in-and-out, crossover, snatch-back with anticipation and settle. Defense: slide hip turn, swipe-down, hand check, contest
 // variety (one hand high / verticality / late flail). Off ball: cut lean, V-cut plant, screen brace + roll turn, alley-oop
 // catch hands. Landings flow into the next action.
 using System;
@@ -242,6 +244,15 @@ namespace Hoops.Core
                     double s = 1 - p.swpT / 0.36; // high to low through the ball, no reach-in foul, no steal
                     u.aR = 2.3 - 2.0 * SS(s); u.eR = 0.3; u.sz = 0.25; u.gR = 0.05; u.ln += 0.1 * Bump(s);
                 }
+                else if (p.hcT > 0)
+                {
+                    // hand check: the near hand jabs out to the handler's hip and comes straight back (forearm, palm flat)
+                    double w = Bump(1 - p.hcT / 0.3);
+                    var r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7);
+                    if (r.right) { u.aR += (r.a - u.aR) * w; u.eR += (Math.Max(0.25, r.e) - u.eR) * w; u.sz += (r.ab - u.sz) * w; u.wR -= 0.4 * w; }
+                    else { u.aL += (r.a - u.aL) * w; u.eL += (Math.Max(0.25, r.e) - u.eL) * w; u.ZL(u.zL + (r.ab - u.zL) * w); u.wL -= 0.4 * w; }
+                    u.cr += 0.06 * w;
+                }
             }
             {
                 var sh = ow != null && ow.tm != p.tm && (ow.mode == "c" || ow.mode == "s") ? ow : Util.T(B.sh) && ow == null && B.age < 0.4 && B.last != null && B.last.tm != p.tm && !Util.T(B.ft) ? B.last : null;
@@ -322,11 +333,22 @@ namespace Hoops.Core
     {
         public double gdW, gdV; // guide-hand lock weight (critically damped) and its velocity
         public double[] gdD; // last applied guide-arm correction (a, e, ab) - fades out after the release
+        public double[] gdO; // shooting-arm assist offsets (a, e, ab) while the guide hand can't reach the ball
         public double gdErr = -1; // palm-to-ball-surface error left after the solve (px, -1 = not locked this tick)
     }
     public static partial class Pose
     {
-        static readonly double[] GDT = new double[3], GDC = new double[3];
+        static readonly double[] GDT = new double[3], GDC = new double[3], R0 = new double[3], R1 = new double[3], R2 = new double[3], R3 = new double[3],
+            JA = new double[3], JE = new double[3], JZ = new double[3];
+        static double Dot(double[] a, double[] b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        /// <summary>Guide palm miss (target GDT - palm) for candidate guide-arm angles; returns its length.</summary>
+        static double gdRes(Player p, Q oq, bool mir, double a, double e, double ab, double[] r)
+        {
+            if (mir) { oq.aR = a; oq.eR = e; oq.sz = ab; } else { oq.aL = a; oq.eL = e; oq.zL = ab; }
+            guidePalm(p, oq, GDC);
+            r[0] = GDT[0] - GDC[0]; r[1] = GDT[1] - GDC[1]; r[2] = GDT[2] - GDC[2];
+            return Math.Sqrt(Dot(r, r));
+        }
         /// <summary>Palm point (0, -0.62, 0.1) of the guide (non-shooting) wrist for the current p.q.</summary>
         static void guidePalm(Player p, Q q, double[] o)
         {
@@ -337,47 +359,142 @@ namespace Hoops.Core
             o[0] = h[0]; o[1] = h[1]; o[2] = h[2];
         }
 
+        /// <summary>Damped Gauss-Newton on the guide arm (shoulder raise, elbow, abduction) against the exact palm FK (target
+        /// GDT), from a start pose: the nearest arm that puts the palm there (armIK's abduction model only holds for a hanging
+        /// arm, and it ignores the torso's lean / twist). Leaves the arm at the start values; returns the best miss (px).</summary>
+        static double gdSolve(Player p, Q oq, bool mir, double sa, double se, double sz, int iters, out double ba, out double be, out double bz)
+        {
+            double xa = sa, xe = clamp(se, 0.05, 2.7), xz = clamp(sz, -1.5, 1.2), best = 1e9;
+            ba = xa; be = xe; bz = xz;
+            for (int it = 0; it < iters; it++)
+            {
+                double er = gdRes(p, oq, mir, xa, xe, xz, R0);
+                if (er < best) { best = er; ba = xa; be = xe; bz = xz; }
+                if (er < 0.03) break;
+                const double h = 1e-3;
+                gdRes(p, oq, mir, xa + h, xe, xz, R1); gdRes(p, oq, mir, xa, xe + h, xz, R2); gdRes(p, oq, mir, xa, xe, xz + h, R3);
+                // J columns = d(palm)/dx = -(dR)/h ; normal equations (J'J + lambda I) dx = J' r
+                for (int k = 0; k < 3; k++) { JA[k] = (R0[k] - R1[k]) / h; JE[k] = (R0[k] - R2[k]) / h; JZ[k] = (R0[k] - R3[k]) / h; }
+                const double lam = 3;
+                double m00 = Dot(JA, JA) + lam, m01 = Dot(JA, JE), m02 = Dot(JA, JZ), m11 = Dot(JE, JE) + lam, m12 = Dot(JE, JZ), m22 = Dot(JZ, JZ) + lam,
+                    b0 = Dot(JA, R0), b1 = Dot(JE, R0), b2 = Dot(JZ, R0),
+                    det = m00 * (m11 * m22 - m12 * m12) - m01 * (m01 * m22 - m12 * m02) + m02 * (m01 * m12 - m11 * m02);
+                if (Math.Abs(det) < 1e-9) break;
+                double da = (b0 * (m11 * m22 - m12 * m12) - m01 * (b1 * m22 - m12 * b2) + m02 * (b1 * m12 - m11 * b2)) / det,
+                    de = (m00 * (b1 * m22 - m12 * b2) - b0 * (m01 * m22 - m12 * m02) + m02 * (m01 * b2 - b1 * m02)) / det,
+                    dz = (m00 * (m11 * b2 - b1 * m12) - m01 * (m01 * b2 - b1 * m02) + b0 * (m01 * m12 - m11 * m02)) / det,
+                    sl = Math.Max(Math.Abs(da), Math.Max(Math.Abs(de), Math.Abs(dz)));
+                if (sl > 0.5) { da *= 0.5 / sl; de *= 0.5 / sl; dz *= 0.5 / sl; }
+                xa += da; xe = clamp(xe + de, 0.05, 2.7); xz = clamp(xz + dz, -1.5, 1.2);
+            }
+            return best;
+        }
+
+        /// <summary>One damped least-squares step of the shooting arm (a, e, ab) that moves the ball centre so the guide palm's
+        /// best reachable point lands on its surface; accumulated into the assist offsets o (rate- and size-limited).</summary>
+        static void upAssist(Player p, Q oq, bool mir, double ga, double ge, double gz, double cx, double cy, double cz, double[] o)
+        {
+            gdRes(p, oq, mir, ga, ge, gz, R0); // guide palm at its best -> GDC
+            double vx = GDC[0] - cx, vy = GDC[1] - cy, vz = GDC[2] - cz, vl = Math.Sqrt(vx * vx + vy * vy + vz * vz);
+            if (vl < 1e-6) return;
+            double k = 1 - BR / vl;
+            R0[0] = vx * k; R0[1] = vy * k; R0[2] = vz * k; // wanted ball move
+            double sa = mir ? oq.aL : oq.aR, se = mir ? oq.eL : oq.eR, ss = mir ? oq.zL : oq.sz;
+            const double h = 1e-3;
+            for (int j = 0; j < 3; j++)
+            {
+                double[] J = j == 0 ? JA : j == 1 ? JE : JZ;
+                if (mir) { oq.aL = sa + (j == 0 ? h : 0); oq.eL = se + (j == 1 ? h : 0); oq.zL = ss + (j == 2 ? h : 0); }
+                else { oq.aR = sa + (j == 0 ? h : 0); oq.eR = se + (j == 1 ? h : 0); oq.sz = ss + (j == 2 ? h : 0); }
+                var hp = handPos(p);
+                J[0] = (hp[0] - cx) / h; J[1] = (hp[1] - cy) / h; J[2] = (hp[2] - cz) / h;
+            }
+            if (mir) { oq.aL = sa; oq.eL = se; oq.zL = ss; } else { oq.aR = sa; oq.eR = se; oq.sz = ss; }
+            const double lam = 120;
+            double m00 = Dot(JA, JA) + lam, m01 = Dot(JA, JE), m02 = Dot(JA, JZ), m11 = Dot(JE, JE) + lam, m12 = Dot(JE, JZ), m22 = Dot(JZ, JZ) + lam,
+                b0 = Dot(JA, R0), b1 = Dot(JE, R0), b2 = Dot(JZ, R0),
+                det = m00 * (m11 * m22 - m12 * m12) - m01 * (m01 * m22 - m12 * m02) + m02 * (m01 * m12 - m11 * m02);
+            if (Math.Abs(det) < 1e-9) return;
+            double da = (b0 * (m11 * m22 - m12 * m12) - m01 * (b1 * m22 - m12 * b2) + m02 * (b1 * m12 - m11 * b2)) / det,
+                de = (m00 * (b1 * m22 - m12 * b2) - b0 * (m01 * m22 - m12 * m02) + m02 * (m01 * b2 - b1 * m02)) / det,
+                dz = (m00 * (m11 * b2 - b1 * m12) - m01 * (m01 * b2 - b1 * m02) + b0 * (m01 * m12 - m11 * m02)) / det;
+            o[0] = clamp(o[0] + clamp(da * 0.6, -0.05, 0.05), -0.35, 0.35);
+            o[1] = clamp(o[1] + clamp(de * 0.6, -0.05, 0.05), -0.35, 0.35);
+            o[2] = clamp(o[2] + clamp(dz * 0.6, -0.05, 0.05), -0.35, 0.35);
+        }
+
         /// <summary>UP guide hand (post-blend, after every other pass): from the set until the release the off hand's palm
-        /// sits on the side of the ball (the ball centre is the shooting palm, where the renderers pin it). armIK ignores the
-        /// torso's lean / twist and aims the wrist, so the target is corrected by the palm's measured miss and re-solved
-        /// (a few fixed-point steps, contracting by ~the torso rotation each). The correction eases in over the gather and
-        /// rides a critically damped weight, so it fades out after the release instead of popping.</summary>
+        /// sits on the side of the ball (the ball centre is the shooting palm, where the renderers pin it). The contact point
+        /// slides continuously from the ball's side toward its underside-back as the ball rises above the guide shoulder (a
+        /// set point overhead is out of reach of the side). Warm-started from last tick's solution (smooth, 1-2 steps). The
+        /// correction eases in over the gather and rides a critically damped weight, so it fades out after the release
+        /// instead of popping.</summary>
         public static void upGuide(Player p, Q oq, string md, bool has)
         {
-            var d = p.gdD ?? (p.gdD = new double[3]);
+            var d = p.gdD ?? (p.gdD = new double[6]);
             bool mir = oq.mir != 0;
             int sv = I(Or0(p.sv));
-            bool on = has && B.mode == "held" && !Util.T(p.postA) && p.z > -1
+            bool on = has && B.mode == "held" && !Util.T(p.postA)
                 && (md == "c" || md == "s" && !Util.T(p.rl) && sv != 10 && sv != 25 && (!IsLaySv(sv) || sv == 11 || sv == 14 || sv == 15) && !(Util.T(p.hk) && sv != 11 && sv != 14 && sv != 15));
             double wt = on ? (md == "c" ? SS(p.t / 0.1) : 1) : 0;
+            bool warm = p.gdErr >= 0;
             p.gdErr = -1;
+            // shooting-arm assist (pre-release): where the guide arm can't reach the ball, the shooting arm has eased the ball
+            // a little toward it (offsets built up below, a few hundredths of a radian per tick); applied with the lock's
+            // weight, so it fades out with it after the release
+            var o = p.gdO ?? (p.gdO = new double[3]);
+            double wa = on ? wt : p.gdW;
+            if (wa > 0 && (o[0] != 0 || o[1] != 0 || o[2] != 0))
+            {
+                if (mir) { oq.aL += o[0] * wa; oq.eL = clamp(oq.eL + o[1] * wa, -0.05, 2.75); oq.zL += o[2] * wa; }
+                else { oq.aR += o[0] * wa; oq.eR = clamp(oq.eR + o[1] * wa, -0.05, 2.75); oq.sz += o[2] * wa; }
+            }
+            if (!on && p.gdW < 0.002) { o[0] = o[1] = o[2] = 0; }
             if (on)
             {
                 var c = handPos(p);
-                double cx = c[0], cy = c[1], cz = c[2], f = fv(p), lx = -Math.Sin(f), ly = Math.Cos(f), sd = mir ? -1 : 1;
+                double cx = c[0], cy = c[1], cz = c[2], f = fv(p), fx = Math.Cos(f), fy = Math.Sin(f), lx = -fy, ly = fx, sd = mir ? -1 : 1,
+                    s = p.ht / 6.4,
+                    // guide shoulder (approximate: upright chest) and the ball's height above it
+                    shx = p.x + lx * sd * RIG.shX * p.bk * s * 10, shy = p.y + ly * sd * RIG.shX * p.bk * s * 10,
+                    shz = p.z + (RIG.hip + RIG.chest + RIG.sh) * s * 10 - oq.cr * 4,
+                    ux = shx - cx, uy = shy - cy, uz = shz - cz, ul = Math.Max(1e-6, Math.Sqrt(ux * ux + uy * uy + uz * uz)),
+                    k = clamp((cz - shz) / 16, 0, 1.4);
                 // the side of the ball, a touch behind it (thumb toward the shooter) - the classic guide position
-                double nx = lx * sd * 0.97 - Math.Cos(f) * 0.2, ny = ly * sd * 0.97 - Math.Sin(f) * 0.2, nz = 0.12, nl = Math.Sqrt(nx * nx + ny * ny + nz * nz);
-                double tx = cx + nx / nl * BR, ty = cy + ny / nl * BR, tz = cz + nz / nl * BR;
+                double nx = lx * sd * 0.97 - fx * 0.2 + k * ux / ul, ny = ly * sd * 0.97 - fy * 0.2 + k * uy / ul, nz = 0.12 + k * uz / ul,
+                    nl = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                GDT[0] = cx + nx / nl * BR; GDT[1] = cy + ny / nl * BR; GDT[2] = cz + nz / nl * BR;
                 double a0 = mir ? oq.aR : oq.aL, e0 = mir ? oq.eR : oq.eL, z0 = mir ? oq.sz : oq.zL;
-                double gx = tx, gy = ty, gz = tz, best = 1e9, ba = a0, be = e0, bz = z0;
-                for (int it = 0; it < 8; it++)
+                double ba = a0, be = e0, bz = z0, best = 1e9;
+                if (warm) best = gdSolve(p, oq, mir, d[3], d[4], d[5], 6, out ba, out be, out bz);
+                if (best > 0.3)
                 {
-                    var r = armIK(p, oq.cr, gx, gy, gz, -sd, 1.1);
-                    double a = r.a, e = clamp(r.e, -0.05, 2.75), ab = r.ab;
-                    if (mir) { oq.aR = a; oq.eR = e; oq.sz = ab; } else { oq.aL = a; oq.eL = e; oq.zL = ab; }
-                    guidePalm(p, oq, GDC);
-                    double ex = tx - GDC[0], ey = ty - GDC[1], ez = tz - GDC[2], er = Math.Sqrt(ex * ex + ey * ey + ez * ez);
-                    if (er < best) { best = er; ba = a; be = e; bz = ab; }
-                    if (er < 0.05) break;
-                    gx += ex; gy += ey; gz += ez;
+                    double best2 = gdSolve(p, oq, mir, a0, e0, z0, 10, out var a2, out var e2, out var z2);
+                    if (best2 < best - 0.2) { best = best2; ba = a2; be = e2; bz = z2; }
                 }
-                if (best < 4)
+                // preferred spot out of reach (a set point far across / overhead): settle on the nearest reachable part of the
+                // ball's surface instead - re-target to the surface point under the best palm, a couple of rounds
+                for (int rr = 0; rr < 3 && best > 0.25; rr++)
+                {
+                    gdRes(p, oq, mir, ba, be, bz, R0);
+                    double px = GDC[0] - cx, py = GDC[1] - cy, pz = GDC[2] - cz, pl = Math.Sqrt(px * px + py * py + pz * pz);
+                    if (pl < 1e-6) break;
+                    double sdist = Math.Abs(pl - BR);
+                    if (sdist < 0.2) { best = sdist; break; }
+                    GDT[0] = cx + px / pl * BR; GDT[1] = cy + py / pl * BR; GDT[2] = cz + pz / pl * BR;
+                    double b3 = gdSolve(p, oq, mir, ba, be, bz, 6, out var a3, out var e3, out var z3);
+                    if (b3 < sdist) { best = b3; ba = a3; be = e3; bz = z3; } else { best = sdist; break; }
+                }
+                if (best > 0.4) upAssist(p, oq, mir, ba, be, bz, cx, cy, cz, o);
+                else for (int j = 0; j < 3; j++) o[j] *= 1 - Math.Min(1, DT * 5); // not needed: leak back to the clip's arm
+                if (mir) { oq.aR = a0; oq.eR = e0; oq.sz = z0; } else { oq.aL = a0; oq.eL = e0; oq.zL = z0; }
+                if (best < 20)
                 {
                     d[0] = wrapPi(ba - a0); d[1] = be - e0; d[2] = bz - z0;
+                    d[3] = ba; d[4] = be; d[5] = bz;
                     p.gdErr = best;
                 }
                 else wt = 0;
-                if (mir) { oq.aR = a0; oq.eR = e0; oq.sz = z0; } else { oq.aL = a0; oq.eL = e0; oq.zL = z0; }
             }
             // weight: eased by the gather ramp while on (exact), a critically damped fade once off
             if (on && wt > 0) { p.gdW = wt; p.gdV = 0; }

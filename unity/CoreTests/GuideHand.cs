@@ -2,7 +2,7 @@
 // off hand's palm must sit on the side of the ball. Distance = | |guide palm - ball centre| - BR | in px, ball centre =
 // the shooting palm (handPos, where the renderers pin the ball), guide palm = the same palm point in the other wrist
 // frame. Seeded CPU 5v5 stretches; hooks / one-hand finishes / post moves are left out (no guide hand by design).
-//   scripts/unity/cs.sh unity/CoreTests/GuideHand.cs UP=0|1 [secs=240] [worst=1]
+//   scripts/unity/cs.sh unity/CoreTests/GuideHand.cs UP=0|1 [secs=240] [worst=1] [ph2=0]
 //@include unity/CoreTests/Common/*.cs
 using System;
 using System.Collections.Generic;
@@ -41,9 +41,11 @@ static class GuideHand
         int up = UH.ArgI(a, "UP", 0), secs = UH.ArgI(a, "secs", 240);
         var bk = new Buckets();
         var worst = new List<(double d, string s)>();
+        var miss = new Dictionary<string, int>();
         foreach (var (seed, ta, tb) in new[] { (91UL, 0, 3), (92UL, 5, 1), (93UL, 2, 6) })
         {
             UH.Game(seed, up, ta, tb, 150);
+            Sim.PH2 = UH.Arg(a, "ph2", "1") != "0"; // (PH2 ball physics under UP; ph2=0 to measure without it)
             for (int i = 0; i < 60 * secs && UH.Tick(); i++)
             {
                 if (S != "play") continue;
@@ -56,12 +58,14 @@ static class GuideHand
                 var g = GuidePalm(p);
                 double d = Math.Abs(Math.Sqrt((g[0] - bx) * (g[0] - bx) + (g[1] - by) * (g[1] - by) + (g[2] - bz) * (g[2] - bz)) - BR);
                 bk.Add(ph, d);
+                if (d > 1.5) { string mk = ph + " sv" + p.sv + " " + p.n; miss.TryGetValue(mk, out int mc); miss[mk] = mc + 1; }
                 if (d > 3) worst.Add((d, $"{UH.F(d, 2)} {ph} {p.n} md {p.mode} t {UH.F(p.t)} sv {p.sv} gs {(p.sg != null ? p.sg.gs : 0)} lockErr {UH.F(p.gdErr, 2)} w {UH.F(p.gdW, 2)} mir {p.q.mir} T {UH.F(T - UH.T0, 2)}"));
             }
         }
         Console.WriteLine($"UP={up} guide palm to ball surface (px), n {bk.All.Count}: p50 {UH.F(Buckets.Pct(bk.All, 0.5), 2)}  p95 {UH.F(Buckets.Pct(bk.All, 0.95), 2)}  p99 {UH.F(Buckets.Pct(bk.All, 0.99), 2)}  max {UH.F(Buckets.Max(bk.All), 2)}");
         var keys = new List<string>(bk.B.Keys); keys.Sort(StringComparer.Ordinal);
         foreach (var k in keys) { var l = bk.B[k]; Console.WriteLine($"  {k.PadRight(8)} n {l.Count,6}  p50 {UH.F(Buckets.Pct(l, 0.5), 2)}  p95 {UH.F(Buckets.Pct(l, 0.95), 2)}  max {UH.F(Buckets.Max(l), 2)}"); }
+        if (UH.Arg(a, "worst", "0") == "1") foreach (var kv in miss) if (kv.Value >= 3) Console.WriteLine($"  miss>1.5 {kv.Key}: {kv.Value}");
         if (UH.Arg(a, "worst", "0") == "1") { worst.Sort((x, y) => y.d.CompareTo(x.d)); for (int i = 0; i < Math.Min(25, worst.Count); i++) Console.WriteLine("  worst " + worst[i].s); }
         bool ok = Buckets.Pct(bk.All, 0.95) <= 1.5;
         Console.WriteLine(ok ? "GUIDE OK" : "GUIDE FAIL (p95 > 1.5 px)");
