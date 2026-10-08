@@ -32,6 +32,7 @@ namespace Hoops.Game
             cfg.physics = "rapier"; // = "the engine": PhysX here
             cfg.hand = true;
             cfg.replays = true;
+            cfg.UP = 1; // Unity Pro Play / animation / ball-physics upgrades (Sim.UP, Pose.UP, Sim.PH; 0 = the browser's behaviour)
             Phys.RAP = USE_PHYSX ? new PhysXBall() : new BallSim(); // ball engine: Core/BallSim (deterministic, pure C#) or PhysX
             CourtBuilder.Build();
             draw = new RigDraw();

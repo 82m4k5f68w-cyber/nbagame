@@ -201,9 +201,9 @@ namespace Hoops.Core
                 B.z += sz;
             }
             else floor = Sweep(B, W, dt);
-            if (up && B.z < Sim.BR)
+            if (B.z < Sim.BR)
             {
-                // (PH2: the floor wins - a limb that pressed the ball down into the wood gives way)
+                // (the floor wins: a body / limb that pressed the ball down into the wood gives way)
                 B.z = Sim.BR;
                 Respond(ref S[0], B, W, 0, 0, 1);
                 floor = true;
