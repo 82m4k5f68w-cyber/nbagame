@@ -574,7 +574,7 @@ namespace Hoops.Core
             {
                 double? tf = null;
                 if (pos != p.tm && B.owner != null) tf = Math.Atan2(B.y - p.y, B.x - p.x);
-                else if (has) tf = (p.vx * ux + p.vy * uy) / D < -0.3 * sv ? Math.Atan2(uy, ux) : sv > 20 ? Math.Atan2(p.vy, p.vx) : (double?)null;
+                else if (has) tf = sv > 1 && (p.vx * ux + p.vy * uy) / D < -0.3 * sv ? Math.Atan2(uy, ux) /* (sv > 1: not on float noise) */ : sv > 20 ? Math.Atan2(p.vy, p.vx) : (double?)null;
                 else tf = sv > 150 ? Math.Atan2(p.vy, p.vx) : Math.Atan2(B.y - p.y, B.x - p.x);
                 if (tf != null)
                 {

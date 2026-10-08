@@ -405,7 +405,7 @@ namespace Hoops.Core
             {
                 if (o.tm == L.tm || Util.T(o.off) || o.actT > 0 || o == B.to) continue;
                 double d = Hypot(o.x - B.x, o.y - B.y);
-                if (d > 11 || B.z < o.z + 18 || B.z > o.z + 78 + o.ht * 2) continue;
+                if (d > 14 || B.z < o.z + 18 || B.z > o.z + 78 + o.ht * 2) continue;
                 B.dfl = 1;
                 if (Rng.R() < clamp(0.18 + (o.d - 60) / 220, 0.08, 0.42))
                 {

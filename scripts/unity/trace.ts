@@ -23,12 +23,30 @@ seed(2024n);
 Math.random = R;
 const N = +(process.argv[2] || 3000);
 Object.assign(G.cfg, { NP: 5, physics: "legacy", MYM: 0, DIFF: 2 });
-G.cfg.input = () => ({ dx: 0, dy: 0 });
+// "hum" (3rd arg): a scripted human on team 0 (arithmetic-only pattern, same in Trace.cs) covers the human-only paths
+// (move buffer / cancel window, stance, sprint burst, release feedback, passes, fakes, step-backs).
+const HUM = process.argv[3] === "hum";
+let TK = 0;
+const hin = (t: number) => {
+  const ph = t % 240,
+    i: any = { dx: ph < 60 ? 1 : ph < 120 ? -0.6 : ph < 180 ? 0.3 : -1, dy: ((Math.floor(t / 37) % 3) - 1) * 0.7 };
+  if (Math.floor(t / 100) % 2 === 0) i.sp = 1;
+  if (t % 53 === 0) i.mv = 1 + (Math.floor(t / 53) % 3);
+  else if (t % 53 === 20) i.mv = 3;
+  if (t % 131 === 0) i.sd = 1;
+  if (t % 131 === 22) i.su = 1;
+  if (t % 173 === 90) i.pf = 1;
+  if (t % 97 === 40) i.e = 1;
+  if (t % 211 === 150) i.sb = 1;
+  return i;
+};
+G.cfg.input = HUM ? () => hin(TK) : () => ({ dx: 0, dy: 0 });
 G.setQtrLen(180);
-G.setCtrls([]);
+G.setCtrls(HUM ? [G.mkCtrl("h", 0)] : []);
 G.start(0, { j: 3 });
 const f = (v: number) => (Math.round(v * 1000) / 1000).toFixed(3);
 for (let t = 0; t < N && G.S !== "over"; t++) {
+  TK = t;
   G.upd(1 / 60);
   if (G.RPL) G.skipReplay();
   G.FX.length = 0;

@@ -1909,7 +1909,7 @@ function ppDeflect() {
   for (const o of P) {
     if (o.tm === L.tm || o.off || o.actT > 0 || o === B.to) continue;
     const d = Math.hypot(o.x - B.x, o.y - B.y);
-    if (d > 11 || B.z < o.z + 18 || B.z > o.z + 78 + o.ht * 2) continue;
+    if (d > 14 || B.z < o.z + 18 || B.z > o.z + 78 + o.ht * 2) continue;
     B.dfl = 1;
     if (Math.random() < clamp(0.18 + (o.d - 60) / 220, 0.08, 0.42)) {
       const w = (Math.random() - 0.5) * 0.5, // turned up to ~14 degrees, 30% slower
@@ -2385,7 +2385,7 @@ export function step(p: Player, dt: number) {
   else {
     let tf: number | null = null;
     if (pos !== p.tm && B.owner) tf = Math.atan2(B.y - p.y, B.x - p.x);
-    else if (has) tf = (p.vx * ux + p.vy * uy) / D < -0.3 * sv ? Math.atan2(uy, ux) : sv > 20 ? Math.atan2(p.vy, p.vx) : null;
+    else if (has) tf = sv > 1 && (p.vx * ux + p.vy * uy) / D < -0.3 * sv ? Math.atan2(uy, ux) : sv > 20 ? Math.atan2(p.vy, p.vx) : null;
     else tf = sv > 150 ? Math.atan2(p.vy, p.vx) : Math.atan2(B.y - p.y, B.x - p.x);
     if (tf != null) {
       const dd = Math.atan2(Math.sin(tf - p.f), Math.cos(tf - p.f));
