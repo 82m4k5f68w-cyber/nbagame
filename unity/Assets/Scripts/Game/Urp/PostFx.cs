@@ -23,7 +23,7 @@ namespace Hoops.Game
         MotionBlur mb;
         int ql = 2;
         bool on = true;
-        static readonly float[] BASE = { 0.75f, 0.9f, 1f }; // render scale per tier (the browser caps DPR at 1 / 1.5 / 2)
+        static readonly float[] BASE = { 1f, 1f, 1f }; // render scale per tier (the browser caps DPR at 1 / 1.5 / 2)
 
         static UniversalRenderPipelineAsset Asset => (QualitySettings.renderPipeline ?? GraphicsSettings.defaultRenderPipeline) as UniversalRenderPipelineAsset;
 
@@ -75,10 +75,14 @@ namespace Hoops.Game
             vig.active = grade;
             cd.renderShadows = ql > 0 && lvl >= 3;
             var a = Asset;
-            float scale = BASE[Mathf.Clamp(ql, 0, 2)] * (lvl >= 2 ? 1 : lvl == 1 ? 0.85f : 0.75f);
+            float scale = BASE[Mathf.Clamp(ql, 0, 2)] * (lvl >= 2 ? 1 : lvl == 1 ? 0.9f : 0.85f); // native resolution on every tier (sub-native looked blurry); slow GPUs drop effects first
             cd.antialiasing = scale < 0.95f ? AntialiasingMode.SubpixelMorphologicalAntiAliasing : AntialiasingMode.None;
             if (a == null) return;
             a.renderScale = scale;
+            // a sub-native rung upscales with FSR 1 + sharpening (bilinear looked soft)
+            a.upscalingFilter = scale < 0.99f ? UpscalingFilterSelection.FSR : UpscalingFilterSelection.Auto;
+            a.fsrOverrideSharpness = true;
+            a.fsrSharpness = 0.92f;
             a.msaaSampleCount = ql == 0 ? 1 : 4;
             a.shadowDistance = ql >= 2 ? 60 : 45;
             // SSAO (High, top rung): the renderer feature Build.cs adds to the renderer asset

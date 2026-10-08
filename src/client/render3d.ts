@@ -11,6 +11,7 @@ import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
 import { makeFx, type Fx } from "./fx3d";
 
 const DPR = [1, 1.5, 2]; // device pixel ratio cap per quality level
+const MAXR = [1.4, 2.2, 4]; // max drawing-buffer scale over 960x540 per quality level (1344 / 2112 / 3840 px wide)
 
 /** Start the 3D view. WebGL by default; the WebGPU renderer (Display -> Renderer, or ?webgpu) drives the same scene
  *  and falls back to its WebGL2 backend where the browser has no WebGPU. If WebGPU fails to load, WebGL is used. */
@@ -1209,7 +1210,10 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const fxLevel = () => {
       const ql = V.QL,
         on = V.FX && ql > 0;
-      R.setPixelRatio(Math.min(devicePixelRatio || 1, DPR[ql]) * (lvl >= 2 ? 1 : lvl === 1 ? 0.85 : 0.75));
+      // the drawing buffer follows the canvas's real size on screen (it was a fixed 960x540 x DPR stretched to the
+      // window: blurry on a 1080p laptop); capped per tier, then the frame-rate ladder's 85% / 75% rungs
+      const scr = Math.max(1, (C.clientWidth || 960) / 960);
+      R.setPixelRatio(Math.min(scr * Math.min(devicePixelRatio || 1, DPR[ql]), MAXR[ql]) * (lvl >= 2 ? 1 : lvl === 1 ? 0.85 : 0.75));
       R.setSize(960, 540, false);
       fx.setLevel(on && lvl >= 4 ? ql : on ? 0 : 0, on && lvl >= 4, 960, 540, on && lvl >= 6 && ql >= 2);
       setMirror(on && ql >= 2 && lvl >= 5);
@@ -1227,6 +1231,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       }
     };
     V.onResize = fxLevel;
+    let rsT: any = 0;
+    if (typeof window !== "undefined") window.addEventListener("resize", () => (clearTimeout(rsT), (rsT = setTimeout(() => ((settle = performance.now() + 500), fxLevel()), 200))));
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => (paused = true));
     const cl2 = new THREE.Vector3(0, 0, 3),
       TV = new THREE.Vector3(),

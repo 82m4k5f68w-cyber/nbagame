@@ -1082,7 +1082,16 @@ function loadReel(file: File) {
 }
 // ---------------- drawing ----------------
 let cx = 0;
+// HUD canvas at the screen's real resolution (the 960x540 backing store was stretched: blurry text and meters);
+// everything still draws in 960x540 HUD units through the transform
+function hudRes() {
+  const c = X.canvas,
+    k = Math.min(3, Math.max(1, Math.round((((c.clientWidth || 960) * (devicePixelRatio || 1)) / 960) * 4) / 4));
+  if (c.width !== 960 * k) (c.width = 960 * k), (c.height = 540 * k);
+  X.setTransform(k, 0, 0, k, 0, 0);
+}
 export function draw() {
+  hudRes();
   if (!V.r3d) return draw2d();
   const tx = P.length ? G.clamp((B.x - 470) * 0.085, -30, 30) : 0;
   cx += (tx - cx) * 0.08;

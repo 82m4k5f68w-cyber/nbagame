@@ -44,7 +44,7 @@ section[hidden]{display:none}.panel{background:#ffffff08;border:1px solid #fffff
 :root[data-theme="dark"]{--bg:#0e0f14;--fg:#eee}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
-#app{position:relative;max-width:960px;margin:0 auto}
+#app{position:relative;width:min(100%,calc((100vh - 64px)*16/9));min-width:min(100%,960px);margin:0 auto}
 canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 #h{position:absolute;left:0;top:0;width:100%;height:auto;pointer-events:none;background:transparent!important}
 #ov{position:absolute;inset:0;background:rgba(8,10,22,.93);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px;overflow:auto}
