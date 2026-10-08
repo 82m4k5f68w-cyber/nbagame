@@ -51,7 +51,7 @@ body.playing{overflow:hidden}
 .card .cn{font:900 13px system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px}
 .card .co{font:900 12px system-ui;color:#ffd23f}
 .card .c5{display:flex;gap:2px}.card .c5 img{width:24px!important;height:24px!important;border-radius:6px!important}
-.card .tg{position:absolute;top:4px;right:6px;font:900 9px system-ui;font-style:normal;letter-spacing:1px;background:#ffd23f;color:#111;border-radius:999px;padding:1px 6px}
+.card .tg{position:absolute;top:4px;right:6px;bottom:auto;height:auto;line-height:1.4;font:900 9px system-ui;font-style:normal;letter-spacing:1px;background:#ffd23f;color:#111;border-radius:999px;padding:1px 6px}
 .card .tg.o{background:#ff8a6b}
 .lu b .bd{color:#ffd23f;font:800 10px system-ui}
 .lu li{cursor:default;transition:transform .15s,border-color .15s}.lu li[data-pn]:hover,.lu li[data-pn]:focus{transform:translateX(3px);border-color:#ffd23f88}
