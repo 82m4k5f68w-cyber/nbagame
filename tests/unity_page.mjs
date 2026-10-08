@@ -120,6 +120,9 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok(startCmd && startCmd.mode === "game" && startCmd.np === 5 && startCmd.sel === 1 && startCmd.opp === 0 && startCmd.diff === 2 && startCmd.ql === 120 && startCmd.set.rf === 0 && startCmd.set.m === 3 && startCmd.set.vv === 40 && startCmd.set.q === 1,
     "TIP OFF sends start " + JSON.stringify(startCmd));
   ok((await st(pg)).scr === "play" && !(await pg.locator("#ov").isVisible()), "overlay hidden while playing");
+  await pg.evaluate(() => document.activeElement && document.activeElement.blur());
+  await pg.keyboard.press("Escape");
+  ok((await sent(pg)).some((x) => x.cmd === "pause") && (await st(pg)).scr === "play", "Esc with the canvas unfocused asks Unity to pause");
   // pause from Unity, resume with Esc
   await pg.evaluate((F) => H2KUI.show("pause", JSON.stringify({ sc: [10, 8], cl: ["Lakers", "Celtics"], q: 2, cm: 1, m: 3, s: 0, fx: 1, box: F.box })), FINAL);
   await pg.waitForSelector("#pz");
@@ -222,7 +225,16 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   await pg.tap("#set");
   const sd = await pg.evaluate(() => document.getElementById("sd").getBoundingClientRect().width);
   ok(sd >= 380, "phone: settings full width");
+  await pg.waitForTimeout(450); // slide-in
+  const sdr = await pg.evaluate(() => { const r = document.getElementById("sd").getBoundingClientRect(), h = document.querySelector("#sd .opts h3"); return { l: r.left, r: r.right, h: parseFloat(getComputedStyle(h).fontSize) }; });
+  ok(sdr.l >= 0 && sdr.r <= 390.5 && sdr.h <= 12, "phone: settings drawer inside the screen, small section titles (" + JSON.stringify(sdr) + ")");
   if (process.env.SHOTS) await pg.screenshot({ path: process.env.SHOTS + "/unity-page-phone.png" });
+  await pg.keyboard.press("Escape");
+  await pg.tap("#tip", { force: true });
+  await pg.evaluate((F) => H2KUI.show("pause", JSON.stringify({ sc: [4, 2], cl: ["Lakers", "Celtics"], q: 1, box: F.box })), FINAL);
+  await pg.waitForSelector(".pzr");
+  const pz = await pg.evaluate(() => { const a = document.querySelector(".pzl").getBoundingClientRect(), b = document.querySelector(".pzr").getBoundingClientRect(); return { below: b.top >= a.bottom - 1, w: b.width }; });
+  ok(pz.below && pz.w > 330 && (await wide()) <= 0, "phone pause: box score stacked under the menu " + JSON.stringify(pz));
   ok(!errs.length, "no page errors " + (errs.length ? errs.join(" | ") : ""));
   await pg.close();
 }

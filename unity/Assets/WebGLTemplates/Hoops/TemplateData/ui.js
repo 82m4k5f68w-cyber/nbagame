@@ -811,6 +811,9 @@
     if (scr === "play") {
       // Unity reads the keys (captureAllKeyboardInput off so the page's inputs work): just keep the page still
       if (/^(Arrow|Space)/.test(e.code) && !typing(e.target)) e.preventDefault();
+      // Unity only hears keys while its canvas has focus: if the focus went elsewhere, Esc / P still pause
+      // (PageBridge ignores a second pause; the page waits for Unity's HoopsUi_Show("pause") with the box score)
+      if ((e.code === "Escape" || e.code === "KeyP") && document.activeElement !== $("#unity-canvas")) { send({ cmd: "pause" }); e.preventDefault(); }
       return;
     }
     if (typing(e.target) && e.code !== "Escape") return;

@@ -71,8 +71,9 @@ body.playing{overflow:hidden}
 @keyframes gr{from{transform:scaleX(0)}}
 
 /* ---- settings: tabbed drawer ---- */
-#sd{width:min(520px,100%);gap:12px}
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#ffffff0d;border:1px solid #ffffff18;border-radius:14px;padding:4px}
+#sd{width:min(520px,100%);gap:12px;box-sizing:border-box;z-index:100}
+#sd *{box-sizing:border-box}
+#sd .opts h3{margin:0 0 2px;font:800 11px system-ui;letter-spacing:3px;color:#ffd23f;text-align:left}.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#ffffff0d;border:1px solid #ffffff18;border-radius:14px;padding:4px}
 .tabs button{border:0;background:none;color:#cfd5f5;font:800 12px system-ui;padding:10px 4px;border-radius:10px;cursor:pointer}
 .tabs button.on{background:linear-gradient(90deg,#e8541e,#ffd23f);color:#111}
 .tbody{display:flex;flex-direction:column;gap:10px}
@@ -116,7 +117,8 @@ body.playing{overflow:hidden}
   #pcard{left:8px!important;right:8px;top:auto!important;bottom:8px;width:auto}
   #sd{width:100%;padding:calc(12px + env(safe-area-inset-top,0px)) 12px 20px}
   .tabs button{font-size:11px;padding:10px 2px}
-  .pzr{min-width:0;width:100%}
+  .pzw{flex-direction:column;align-items:stretch}
+  .pzr{min-width:0;width:100%;flex:none;box-sizing:border-box}
   .bxw,.pzr{overflow-x:auto}
   .fin .sc b{font-size:34px}
   .fin .pog img{width:72px;height:72px}
