@@ -97,7 +97,7 @@ namespace Hoops.Core
             }
             if (has && p.mode == "i" && p.cd <= 0 && !(p.mvT > 0) && (Util.T(i.dx) || Util.T(i.dy)) && p.li != null && i.dx * p.li[0] + i.dy * p.li[1] < -0.3 && Hypot(p.vx, p.vy) > 110)
             {
-                if (!Util.T(i.mv)) i.mv = cfg.UP != 0 ? 6 : 3; // (UP: flick-to-cross is a crossover)
+                if (!Util.T(i.mv)) i.mv = cfg.PP != 0 ? 6 : 3; // (Pro Play: flick-to-cross is a crossover)
             }
             if (Util.T(i.dx) || Util.T(i.dy))
             {
@@ -110,6 +110,12 @@ namespace Hoops.Core
             {
                 i.dx = (ux / D) * 0.3;
                 i.dy = (uy / D) * 0.3;
+            }
+            if (cfg.PP != 0)
+            {
+                if (hum && has && p.mode == "i") ppBuffer(p, i);
+                ppStance(p, i, has, hum);
+                p.spT = hum && i.sp ? p.spT + dt : 0;
             }
             if (p.mvT > 0)
             {
@@ -230,7 +236,7 @@ namespace Hoops.Core
                         if (u) txtW("DROP STEP", p.x, p.y, 100, "#ffd23f");
                     }
                 }
-                else if (cfg.UP != 0) upMoveStart(p, i, d, dist, Sd, u, ux, uy, D);
+                else if (cfg.PP != 0) upMoveStart(p, i, d, dist, Sd, u, ux, uy, D);
                 else
                 {
                     // chaining moves right off the end of the last one builds a combo: quicker, and harder to stay in front of
@@ -394,7 +400,7 @@ namespace Hoops.Core
                         p.mode = "c";
                         p.t = 0;
                         if (Util.T(TEMPO)) i.su = true;
-                        if (cfg.UP != 0) upGatherStart(p, ux, uy, D);
+                        if (cfg.PP != 0) upGatherStart(p, ux, uy, D);
                     }
                     else if (!has && p.z <= 0)
                     {
@@ -425,7 +431,7 @@ namespace Hoops.Core
             if (p.mode == "c")
             {
                 p.t += dt;
-                if (!(cfg.UP != 0 && upGather(p, i, dt, ux, uy, D, hum)))
+                if (!(cfg.PP != 0 && upGather(p, i, dt, ux, uy, D, hum)))
                 {
                     p.vx *= 0.85;
                     p.vy *= 0.85;
@@ -434,7 +440,8 @@ namespace Hoops.Core
                 else if (i.su || p.t > 1.4)
                 {
                     p.mt = i.su && i.mt != null ? Clamp(i.mt.Value, p.t - 0.25, p.t + 0.05) : p.t;
-                    p.cw = Math.Min(1, contestOf(p).Item1 + p.bmp * 0.5);
+                    var cto = contestOf(p);
+                    p.cw = Math.Min(1, cto.Item1 + p.bmp * 0.5);
                     if (p.upu > 0 && D < 120 && ftq == null)
                     {
                         p.fsv = 23; // up-and-under: step through for a layup
@@ -465,7 +472,7 @@ namespace Hoops.Core
                                         : p.st == 1
                                             ? 1
                                             : 0;
-                    if (cfg.UP != 0) upAfterClip(p, D, lay);
+                    if (cfg.PP != 0) { upAfterClip(p, D, lay); ppRelease(p, cto.Item1, cto.Item2, D); }
                     p.tp = null;
                     p.vz = ftq != null ? 60 : ((lay ? 150 : 126) + p.j * 0.9) * (pro && p.st == 1 && !lay ? 0.75 : 1);
                     p.vx = ftq != null ? 0 : lay ? (ux / D) * 100 : pro && p.sv == 8 ? p.vx * 0.5 : (-ux / D) * k;
@@ -500,7 +507,7 @@ namespace Hoops.Core
                         else p.react = 2; // rushes it out early
                     }
                 }
-                double upq = cfg.UP != 0 && !Util.T(p.rl) ? upContest(p, D, has) : 0; // (UP: lean away from a late closeout)
+                double upq = cfg.PP != 0 && !Util.T(p.rl) ? upContest(p, D, has) : 0; // (lean away from a late closeout)
                 if (!Util.T(p.rl) && has && PREDICT == 0 && p.t >= (D < 90 ? 0.28 : p.st == 1 ? 0.3 : 0.4) + p.dcl - (p.react == 2 ? 0.05 : 0) + upq) launch(p);
                 if (p.t > 0.7 && p.z <= 0)
                 {
@@ -517,7 +524,8 @@ namespace Hoops.Core
                         (0.75 + 0.25 * p.en) *
                         (has ? 0.96 : 1) *
                         (i.sp ? 1.2 : 1) *
-                        (p.z > 0 ? 0.5 : 1),
+                        (p.z > 0 ? 0.5 : 1) *
+                        (Util.T(p.stc) ? 1.08 : 1), // (Pro Play: a human in his defensive stance slides a little quicker)
                     k = Math.Min(1, dt * (p.z > 0 ? 1.5 : 9));
                 if (C_on(cfg.PRO) && p.z <= 0)
                 {
@@ -527,7 +535,7 @@ namespace Hoops.Core
                         cur = Hypot(p.vx, p.vy);
                     bool brk = cur > 40 && dx * p.vx + dy * p.vy < 0,
                         first = p.fsT > 0;
-                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * dt,
+                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * dt, // (+ stance slides / sprint burst)
                         mm = Math.Min(dl, ac);
                     // a hard cut at speed: plant the outside foot (two-three steps to stop), and sometimes slip
                     if (brk && cur > 170 && !(p.plantT > 0) && !(p.brk > 0.5))
@@ -596,7 +604,7 @@ namespace Hoops.Core
                 p.z += p.vz * dt;
                 if (p.z <= 0)
                 {
-                    if (cfg.UP != 0) upLanding(p);
+                    if (cfg.PP != 0) upLanding(p);
                     else if (p.vz < -120) p.landT = Math.Min(0.28, -p.vz / 900); // absorb the landing
                     if (Util.T(p.lateJ) && PREDICT == 0)
                     {

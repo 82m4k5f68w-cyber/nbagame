@@ -138,6 +138,7 @@ namespace Hoops.Core
                 B.vx += ((dx / ds) * sp - B.vx) * Math.Min(1, dt * 2.5);
                 B.vy += ((dy / ds) * sp - B.vy) * Math.Min(1, dt * 2.5);
             }
+            if (cfg.PP != 0 && B.mode == "pass" && B.to != null && PREDICT == 0 && !Util.T(B.dfl) && B.age > 0.08 && ftq == null && inb <= 0) ppDeflect();
             double pz = B.z;
             if (RA) Phys.RAP.Step(dt, B);
             else
@@ -436,7 +437,7 @@ namespace Hoops.Core
             {
                 SORTP.Add(p);
                 // (+ the defense has inside position on a missed shot, more so when it boxed out: NBA ORB% ~24)
-                p._ks = p.j + p.d * 0.3 + (p.z > 5 ? 25 : 0) + Rng.R() * 40 + (hasB(p, "GC") ? 18 : 0) + (Util.T(B.sh) && B.last != null && p.tm != B.last.tm ? 9 + (p.boxT > 0 ? 8 : 0) : 0);
+                p._ks = p.j + p.d * 0.3 + (p.z > 5 ? 25 : 0) + Rng.R() * 40 + (hasB(p, "GC") ? 18 : 0) + (Util.T(B.sh) && B.last != null && p.tm != B.last.tm ? 9 + (p.boxT > 0 ? 8 : 0) : 0) + (cfg.PP != 0 ? (p.ht - 6.5) * 10 : 0); // (Pro Play: size matters on the glass)
             }
             SortStable(SORTP, SORTP_CMP);
             foreach (var p in SORTP)
@@ -451,7 +452,7 @@ namespace Hoops.Core
                     double hd = Math.Min(Hypot(k[45] - B.x, k[46] - B.y, k[47] - B.z), Hypot(k[57] - B.x, k[58] - B.y, k[59] - B.z));
                     if (hd > 9 && B.age < 2.5 && d > 17) d = 99; // not in his hands yet: let it come (the pass homes in on him)
                 }
-                if (d < (rc ? 26 : 12) && B.z > p.z + (rc ? -8 : 2) && B.z < p.z + 68 + p.j * 0.2 + (rc && B.ptype == 2 ? 55 : 0))
+                if (d < (rc ? 26 : 12) && B.z > p.z + (rc ? -8 : 2) && B.z < p.z + 68 + p.j * 0.2 + (rc && B.ptype == 2 ? 55 : 0) + (cfg.PP != 0 && !rc ? (p.ht - 6.5) * 10 : 0))
                 {
                     if (B.mode == "pass" && p != B.to) continue;
                     if (B.mode == "air" && B.age < 0.5 && (B.vz > 0 || p.tm == B.last.tm)) continue;
@@ -556,7 +557,7 @@ namespace Hoops.Core
                         p.hk = 1;
                         txtW(p.sv == 11 ? "PUTBACK SLAM!" : "TIP-IN", p.x, p.y, 115, "#ffd23f");
                     }
-                    if (cfg.UP != 0 && !oop && p.mode == "i") upPutback(p, wasShot, shooter);
+                    if (cfg.PP != 0 && !oop && p.mode == "i") upPutback(p, wasShot, shooter);
                     if (oop)
                     {
                         // ALLEY-OOP: catch it in the air and throw it down

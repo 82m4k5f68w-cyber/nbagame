@@ -798,7 +798,7 @@ namespace Hoops.Core
         /// <summary>A shoulder angle in armIK's range (-2.6 .. 2 pi - 2.6): over the top stays over the top.</summary>
         public static double armN(double a) => a < -2.6 ? a + 2 * Math.PI : a > 2 * Math.PI - 2.6 ? a - 2 * Math.PI : a;
         /// <summary>Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release.</summary>
-        public static readonly Dictionary<string, double> RELK = new() { ["jump"] = 0.7, ["mshot"] = 0.7, ["upunder"] = 0.7, ["quick"] = 0.46, ["fade"] = 0.7, ["step"] = 0.7, ["float"] = 0.6, ["hop"] = 0.58, ["curry"] = 0.78, ["hook"] = 0.95, ["lay"] = 0.7, ["euro"] = 0.7, ["roll"] = 0.72, ["revlay"] = 0.6, ["contact"] = 0.6, ["leaner"] = 0.68, ["runner"] = 0.66, ["dunk"] = 0.7, ["dunk2"] = 0.72, ["tomahawk"] = 0.76, ["windmill"] = 0.76, ["reverse"] = 0.78, ["d360"] = 0.68, ["hang"] = 1 };
+        public static readonly Dictionary<string, double> RELK = new() { ["jump"] = 0.7, ["mshot"] = 0.7, ["upunder"] = 0.7, ["quick"] = 0.46, ["fade"] = 0.7, ["step"] = 0.7, ["float"] = 0.6, ["hop"] = 0.58, ["curry"] = 0.78, ["hook"] = 0.95, ["lay"] = 0.7, ["euro"] = 0.7, ["roll"] = 0.72, ["revlay"] = 0.6, ["contact"] = 0.6, ["leaner"] = 0.68, ["runner"] = 0.66, ["dunk"] = 0.7, ["dunk2"] = 0.72, ["tomahawk"] = 0.76, ["windmill"] = 0.76, ["reverse"] = 0.78, ["d360"] = 0.68, ["hang"] = 1, ["floater"] = 0.6, ["sky"] = 0.95 }; // (floater / sky: Pro Play clips 24 / 25)
 
         /// <summary>Joint channel names in p.q order (TS sim.ts QK).</summary>
         public static readonly string[] QK = { "tL", "tR", "kL", "kR", "aL", "aR", "eL", "eR", "sz", "cr", "ln", "rz", "ty", "wR", "wL", "zL", "hz", "cx", "cy", "nk", "hy", "hp", "fL", "fR", "gL", "gR", "hs", "oL", "oR", "hL", "hR" };

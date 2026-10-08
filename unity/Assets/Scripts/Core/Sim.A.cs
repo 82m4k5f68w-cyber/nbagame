@@ -21,6 +21,7 @@ namespace Hoops.Core
         public int AVOID = 1; // arms/shoulders kept out of other players' torsos (0 = off, A/B tests)
         public int PLANT = 1; // stance feet pinned to the floor in the core pose (0 = off)
         public int INZ = 1; // inertialized animation blending (0 = old exponential smoothing)
+        public int PP = 1; // Pro Play pack v5.3 (Sim.UP.cs sim side, shared with the TS sim: cfg.PP); 0 = the v5.2 game
         public int UP = 0; // Unity Pro Play upgrades (Sim.UP.cs / Pose.UP.cs): new moves, finishes, reactions. 0 = TS parity
         public double PHYS = 0.5; // ball physics feel with UP (Sim.PH.cs / BallSim): 0 arcade .. 1 sim (restitution, spin, contact strength)
         public string physics = "rapier"; // "rapier" | "legacy"

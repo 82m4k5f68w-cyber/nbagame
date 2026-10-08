@@ -533,6 +533,39 @@ export const CL: Record<string, Record<string, number[]>> = {
       kR: [0, 0.8, 1, 0.3],
       ln: [0, 0.18, 0.6, -0.05, 1, -0.05],
     },
+    // Pro Play (v5.3, from the Unity UP clips): one-hand push floater over a rim protector, sky hook out of the post
+    floater: {
+      aR: [0, 1.1, 0.35, 1.9, 0.6, 2.85, 1, 2.9],
+      eR: [0, 1.6, 0.35, 1.2, 0.6, 0.35, 1, 0.3],
+      wR: [0, -0.3, 0.5, -0.5, 0.62, 0.7, 1, 0.8],
+      aL: [0, 1.1, 0.35, 1.7, 0.55, 1.2, 1, 0.9],
+      eL: [0, 1.6, 0.35, 1.2, 1, 1.0],
+      zL: [0, 0.1, 1, 0.35],
+      ln: [0, 0.25, 1, 0.15],
+      tL: [0, 0.9, 1, 0.8],
+      kL: [0, 1.2, 1, 1.0],
+      tR: [0, -0.2, 1, -0.25],
+      kR: [0, 0.5, 1, 0.4],
+      sz: [0, 0.05, 1, 0.1],
+      oR: [0, 0, 0.6, -0.4, 1, -0.5],
+    },
+    sky: {
+      aR: [0, 1.0, 0.3, 1.6, 0.6, 2.9, 0.9, 3.2, 1, 3.15],
+      sz: [0, 1.1, 0.5, 0.85, 0.85, 0.25, 1, 0.2],
+      eR: [0, 0.3, 1, 0.05],
+      aL: [0, 1.3, 1, 1.25],
+      eL: [0, 0.9, 1, 0.8],
+      zL: [0, 0.7, 1, 0.7],
+      ty: [0, 1.4, 1, 1.25],
+      rz: [0, 0.2, 1, 0.15],
+      ln: [0, 0.05, 1, 0.0],
+      tL: [0, 1.0, 1, 1.15],
+      kL: [0, 1.3, 1, 1.45],
+      tR: [0, -0.15, 1, -0.15],
+      kR: [0, 0.3, 1, 0.3],
+      wR: [0, 0, 0.85, 0.3, 0.97, 1.0, 1, 1.0],
+      oR: [0, 0, 0.6, -1, 1, -1],
+    },
   },
   CK = [
     "jump",
@@ -559,6 +592,8 @@ export const CL: Record<string, Record<string, number[]>> = {
     "runner", // 21 one-foot runner on the move
     "mshot", // 22 motion-captured jump shot (CMU), with the classic high release
     "upunder", // 23 up-and-under out of the post (step through)
+    "floater", // 24 floater (Pro Play)
+    "sky", // 25 sky hook (Pro Play)
   ],
   SIG: Record<string, any> = {
     Curry: { cl: 1, w: 0.15, off: 1, ce: [1, 8, 2], dk: 1, gs: 0 }, // shimmy, point up, night night

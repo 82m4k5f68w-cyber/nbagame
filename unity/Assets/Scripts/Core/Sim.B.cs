@@ -162,6 +162,7 @@ namespace Hoops.Core
         {
             double sk = Clamp((p.s + p.c) / 200, 0.4, 0.95);
             B.kick = HPL.h != null && T - HPL.at < 0.1 && HPL.t != p.tm ? 1 : 0; // a pass out of the help: drive-and-kick
+            B.dfl = 0; // (Pro Play: not checked for a deflection yet)
             double near = 0;
             double ddx = r.x - B.x, ddy = r.y - B.y, l2v = ddx * ddx + ddy * ddy, l2 = Util.T(l2v) ? l2v : 1;
             foreach (var qq in P)

@@ -1,7 +1,10 @@
-// Unity-only Pro Play upgrades (cfg.UP = 1): new dribble moves and combo chains, drive gathers (two-step / hop-step /
-// spin), floaters, sky hooks, off-hand reverses, contest reactions, stronger landings, power putbacks, drive bumps,
-// defensive swipe-downs and hand checks, V-cuts. Sim side only (the poses are in Pose.UP.cs). Nothing here runs with cfg.UP == 0, and
-// every hook in the ported files is guarded so the TS lockstep trace (CoreTests/Trace.cs) stays bit-identical.
+// Pro Play pack (cfg.PP = 1, the default in BOTH engines since v5.3; the TS twin is the "Pro Play pack" block in
+// src/core/sim.ts - same names, same order of random draws, so CoreTests/Trace.cs stays bit-identical to the TS).
+// Started as the Unity-only UP moves: new dribble moves and combo chains, drive gathers (two-step / hop-step / spin),
+// floaters, sky hooks, off-hand reverses, contest reactions, stronger landings, power putbacks, drive bumps, defensive
+// swipe-downs and hand checks, V-cuts. v5.3 adds: human move buffer + cancel window (ppBuffer), sprint burst, on-ball
+// stance (ppStance), contest timing + feedback (ppRelease), pass deflections that never change possession (ppDeflect),
+// height on the glass, box-outs that wear off. Sim side only: the extra Unity poses stay in Pose.UP.cs under cfg.UP.
 //
 // Move codes (Input.mv / p.mvk): 1 hesitation, 2 spin, 3 behind the back, 4 post move (TS) + 5 in-and-out, 6 crossover,
 // 7 snatch-back (UP). Keys stay the same; the stick picks the variant at the moment the move key is pressed:
@@ -33,6 +36,9 @@ namespace Hoops.Core
         public double upLand; // last landing strength (0..1.3)
         public double tdT; // takeoff time of the last jumper (pose: rise / extension)
         public string upF; // active UP feature this tick (tests bucket their numbers by it)
+        public double mvB, mvBT; // buffered move (human): code and press time
+        public double stc; // human on-ball defensive stance this tick (host-side)
+        public double spT; // seconds of the current sprint press (human): the first .35 s is a burst
     }
 
     public static partial class Sim
@@ -309,6 +315,7 @@ namespace Hoops.Core
                 if (p.swpT > -5) p.swpT -= dt;
                 if (p.vcT > 0) p.vcT -= dt;
                 if (p.hcT > -5) p.hcT -= dt;
+                if (p.boxT > 0) p.boxT -= dt; // (a box-out holds while he keeps it: it used to count forever)
                 if (p.mode != "s") p.lnA = Math.Max(0, p.lnA - dt * 5);
                 if (p.mode == "i") { if (p.z <= 0) p.offH = 0; if (p.gath > 0 || p.z <= 0) p.gath = 0; }
                 if (p.mode == "s" && p.t < 0.02) p.tdT = T;
@@ -345,6 +352,107 @@ namespace Hoops.Core
                 o.hitT = Math.Max(o.hitT, 0.12); o.hitX = -nx; o.hitY = -ny;
                 o.vx *= 0.94; o.vy *= 0.94;
                 upc("handCheck");
+            }
+        }
+
+        /// <summary>Human move buffer + cancel window: a move pressed while it can't start is kept 0.25 s; pressed in (or
+        /// buffered into) the last 0.15 s of the current move it cancels the tail and starts at once (a combo chain).</summary>
+        public static void ppBuffer(Player p, Input i)
+        {
+            if (Util.T(i.mv)) { p.mvB = i.mv; p.mvBT = T; }
+            if (!Util.T(p.mvB)) return;
+            if (T - p.mvBT > 0.25 || Util.T(p.postA) || ftq != null || pos != p.tm)
+            {
+                p.mvB = 0;
+                return;
+            }
+            if (p.mvT > 0)
+            {
+                if (p.mvk != 4 && p.mvT < 0.15)
+                {
+                    p.mvT = 0;
+                    p.mvEnd = T;
+                    p.cd = 0;
+                    i.mv = p.mvB;
+                    p.mvB = 0;
+                    upc("cancel");
+                }
+                return;
+            }
+            if (p.cd <= 0)
+            {
+                i.mv = p.mvB;
+                p.mvB = 0;
+            }
+        }
+
+        /// <summary>Human on-ball defense: guarding the handler (no sprint, feet down, within 70 px) = in a stance.</summary>
+        public static void ppStance(Player p, Input i, bool has, bool hum)
+        {
+            var o = B.owner;
+            p.stc = hum && !has && o != null && o.tm != p.tm && !i.sp && p.z <= 0 && p.mode == "i" && !(p.actT > 0) && Hypot(o.x - p.x, o.y - p.y) < 70 ? 1 : 0;
+            // a shooter gathering right in front of him: the hand goes up by itself (a contest without leaving his feet)
+            if (Util.T(p.stc) && (o.mode == "c" || o.mode == "s") && Hypot(o.x - p.x, o.y - p.y) < 42 && !(p.hupT > 0)) p.hupT = 0.5;
+        }
+
+        /// <summary>A pass in flight past a defender's hands can be tipped: it slows and wobbles, but stays a pass to its
+        /// target (steals are off: a deflection never changes possession). One check per pass.</summary>
+        public static void ppDeflect()
+        {
+            var L = B.last;
+            if (L == null) return;
+            foreach (var o in P)
+            {
+                if (o.tm == L.tm || Util.T(o.off) || o.actT > 0 || o == B.to) continue;
+                double d = Hypot(o.x - B.x, o.y - B.y);
+                if (d > 11 || B.z < o.z + 18 || B.z > o.z + 78 + o.ht * 2) continue;
+                B.dfl = 1;
+                if (Rng.R() < clamp(0.18 + (o.d - 60) / 220, 0.08, 0.42))
+                {
+                    double w = (Rng.R() - 0.5) * 0.5, // turned up to ~14 degrees, 30% slower
+                        vx = B.vx,
+                        vy = B.vy;
+                    B.vx = (vx - vy * w) * 0.7;
+                    B.vy = (vy + vx * w) * 0.7;
+                    B.vz = Math.Max(B.vz, 0) + 55;
+                    o.swpT = 0.3;
+                    statAdd("defl", 1);
+                    upc("deflect");
+                    if (isH(o) || isH(L)) txtW("DEFLECTED!", o.x, o.y, 95, "#9fe7ff");
+                }
+                return;
+            }
+        }
+
+        /// <summary>Feedback on the release (humans): contest timing for the defender, shot selection for the shooter.</summary>
+        public static void ppRelease(Player p, double ct, Player o2, double D)
+        {
+            if (PREDICT != 0 || ftq != null) return;
+            if (o2 != null && isH(o2) && ct > 0.3)
+            {
+                if (o2.z > 8)
+                {
+                    bool good = o2.vz > -90;
+                    txtW(good ? "GREAT CONTEST" : "JUMPED EARLY", o2.x, o2.y, 105, good ? "#7cff9e" : "#ff9966");
+                    upc(good ? "goodContest" : "earlyJump");
+                }
+                else if (o2.hupT > 0) upc("handUp");
+            }
+            if (!isH(p) || D < 90 || ct < 0.55 || shot < 8 || cfg.NP < 2) return;
+            // a forced, contested jumper early in the clock with a teammate wide open in his range
+            foreach (var m in P)
+            {
+                if (m.tm != p.tm || m == p || Util.T(m.off)) continue;
+                double md = Hypot(hoop(m.tm) - m.x, HY - m.y);
+                if (md > (m.c >= 75 ? 270 : 200)) continue;
+                double near = 1e9;
+                foreach (var q in P) if (q.tm != p.tm && !Util.T(q.off)) near = Math.Min(near, Hypot(q.x - m.x, q.y - m.y));
+                if (near > 75)
+                {
+                    txtW("FORCED IT · " + m.n.ToUpperInvariant() + " WAS OPEN", p.x, p.y, 125, "#ff9966");
+                    statAdd("badShot", 1);
+                    return;
+                }
             }
         }
 

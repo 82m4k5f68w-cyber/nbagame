@@ -391,7 +391,7 @@ namespace Hoops.Core
                 mv(p, hx + dir * 25, HY + (p.y < HY ? -18 : 18), 1.25); // backdoor
                 if (Hypot(md.x - p.x, md.y - p.y) > 26) OFFS[ti] = p;
             }
-            else if (cfg.UP != 0 && upVcut(p, spX, spY, hx, md)) { }
+            else if (cfg.PP != 0 && upVcut(p, spX, spY, hx, md)) { }
             else mv(p, spX + Math.Sin(T * 0.8 + p.k) * 10, spY, 0.95);
             return true;
         }
@@ -619,7 +619,7 @@ namespace Hoops.Core
                     d = Hypot(ox - p.x, oy - p.y);
                 if (d < 60)
                 {
-                    double c2 = (1 - d / 60) * (oz > 8 ? 1.5 : o.hupT > 0 ? 1.2 : 1) * (hasB(o, "LD") ? 1.15 : 1);
+                    double c2 = (1 - d / 60) * (oz > 8 ? (cfg.PP != 0 && o.vz < -90 ? 1.15 : 1.5) : o.hupT > 0 ? 1.2 : 1) /* (Pro Play: coming down already = a weaker contest) */ * (hasB(o, "LD") ? 1.15 : 1);
                     if (c2 > ct)
                     {
                         ct = c2;
