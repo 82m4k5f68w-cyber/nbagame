@@ -23,7 +23,8 @@ static class GameRun
         cfg.UP = int.Parse(Arg("up", "0")); UPC.Clear();
         cfg.PHYS = double.Parse(Arg("phys", "0.5"), System.Globalization.CultureInfo.InvariantCulture);
         Sim.PH2 = Arg("ph2", "1") != "0";
-        int tunnel = 0;
+        int tunnel = 0, ftTrips = 0, ftTicks = 0;
+        bool ftPrev = false;
         double orb = 0, drb = 0;
         cfg.input = c => new Input();
         double pts = 0, fga = 0, fgm = 0, tpa = 0, tpm = 0, reb = 0, ast = 0, blk = 0;
@@ -40,6 +41,8 @@ static class GameRun
             while (S != "over" && ticks < 60 * QL * 6)
             {
                 upd(1 / 60.0);
+                if (ftq != null) { ftTicks++; if (!ftPrev) ftTrips++; }
+                ftPrev = ftq != null;
                 if (RPL != null) skipReplay();
                 FX.Clear();
                 ticks++;
@@ -74,6 +77,7 @@ static class GameRun
         }
         double k = 48 * 60 / (4 * QL) / teams; // per team per 48 min
         Console.WriteLine($"per team/48: pts {pts * k:F1} fga {fga * k:F1} fg% {100 * fgm / Math.Max(1, fga):F1} 3pa {tpa * k:F1} 3p% {100 * tpm / Math.Max(1, tpa):F1} reb {reb * k:F1} ast {ast * k:F1} blk {blk * k:F1}");
+        Console.WriteLine($"free throws per game: {ftTrips / (double)N:F1} trips, {ftTicks / (double)N:F0} ticks at the line");
         Console.WriteLine($"orb% {100 * orb / Math.Max(1, orb + drb):F1}  up {cfg.UP} phys {cfg.PHYS} ph2 {(Sim.PH2 ? 1 : 0)}" + (bs != null ? $"  per game: rim {bs.RimHits / (double)N:F0} glass {bs.GlassHits / (double)N:F0} body {bs.BodyHits / (double)N:F1} arm {bs.ArmHits / (double)N:F1} limb {bs.LimbHits / (double)N:F1} leg {bs.LegHits / (double)N:F1}  dribble bounces {phDrib / (double)N:F0} short {phDribShort / (double)N:F1}  box-out ticks {phBoxN / (double)N:F0} shove {phBoxPx / N:F0} px  phys blocks {phBlkN / (double)N:F1}; tunnelling {tunnel}" : ""));
         if (tunnel > 0) bad++;
         if (cfg.UP != 0) { var l = new List<string>(); foreach (var kv in UPC) l.Add(kv.Key + ":" + kv.Value); l.Sort(StringComparer.Ordinal); Console.WriteLine("UP features fired: " + string.Join(" ", l)); }
