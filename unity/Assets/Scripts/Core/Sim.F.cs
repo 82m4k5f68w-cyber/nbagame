@@ -57,7 +57,11 @@ namespace Hoops.Core
                     continue;
                 }
                 var c = ctrlOf(k);
-                if (c != null) p.@in = rs > 0 ? zin(k) : c.inp;
+                if (c != null)
+                {
+                    p.@in = rs > 0 ? zin(k) : c.inp;
+                    if (c.inp.sd) p.hJ = T; // the human's own jump press (goaltending only counts jumps he started)
+                }
                 else ai(p, dt);
             }
             // Rebound/loose-ball assist for idle humans.
@@ -67,10 +71,13 @@ namespace Hoops.Core
                 if (rs <= 0 && B.owner == null && ftq == null && inb <= 0 && (B.mode != "pass" || B.to == P[c.idx]))
                 {
                     var q = P[c.idx];
+                    // a live shot still up around either rim: the assist never jumps for the human (goaltending)
+                    bool noJ = Util.T(B.sh) && B.mode == "air" && B.z > 80 && (Hypot(B.x - HXs[0], B.y - HY) < 140 || Hypot(B.x - HXs[1], B.y - HY) < 140);
                     if (!Util.T(h.dx) && !Util.T(h.dy) && !h.sd && q.mode == "i")
                     {
                         q.@in = zin(c.idx);
                         loose(q, q.tm);
+                        if (noJ) q.@in.sd = false;
                     }
                     else if (q.mode == "i" && B.mode == "air" && Hypot(B.x - q.x, B.y - q.y) < 150)
                     {
@@ -82,7 +89,7 @@ namespace Hoops.Core
                         q.@in = sv;
                         sv.dx = sv.dx * 0.4 + a.dx * 0.9;
                         sv.dy = sv.dy * 0.4 + a.dy * 0.9;
-                        if (a.sd || (q.z <= 0 && B.z > 45 && Hypot(B.x - q.x, B.y - q.y) < 34)) sv.sd = true;
+                        if (!noJ && (a.sd || (q.z <= 0 && B.z > 45 && Hypot(B.x - q.x, B.y - q.y) < 34))) sv.sd = true;
                     }
                 }
             }

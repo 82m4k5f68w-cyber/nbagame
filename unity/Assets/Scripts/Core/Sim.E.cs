@@ -407,7 +407,7 @@ namespace Hoops.Core
                 {
                     double hx = hoop(B.last.tm);
                     foreach (var p in P)
-                        if (p.tm != B.last.tm && p.z > 10 && Hypot(p.x - B.x, p.y - B.y) < 13 && B.z < p.z + 68 + p.j * 0.2 && Hypot(B.x - hx, B.y - HY) < 22 && (isH(p) || gtcRoll()))
+                        if (p.tm != B.last.tm && p.z > 10 && Hypot(p.x - B.x, p.y - B.y) < 13 && B.z < p.z + 68 + p.j * 0.2 && Hypot(B.x - hx, B.y - HY) < 22 && ((isH(p) && T - p.hJ < 1.6) || gtcRoll()))
                         {
                             B.gt = 1;
                             double t = B.last.tm,

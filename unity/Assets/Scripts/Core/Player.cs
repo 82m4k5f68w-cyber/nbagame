@@ -8,6 +8,7 @@ namespace Hoops.Core
         public string n, col, skin;
         public double c, i, s, d, j, st, tm, k, hr, bd, ht, bk, no;
         public double rid;
+        public double hJ = -9; // time of the human's own last jump press (goaltending)
         public Form sg;
         public bool my;
         // ---- kinematics ----

@@ -3548,7 +3548,7 @@ export function bstep(dt: number) {
     if (cfg.VIOL && !PREDICT && B.last && !B.ft && B.vz < 0 && B.z > 101 && !B.gt) {
       const hx = hoop(B.last.tm);
       for (const p of P)
-        if (p.tm !== B.last.tm && p.z > 10 && Math.hypot(p.x - B.x, p.y - B.y) < 13 && B.z < p.z + 68 + p.j * 0.2 && Math.hypot(B.x - hx, B.y - HY) < 22 && (isH(p) || (!B.gtc && ((B.gtc = 1), Math.random() < 0.05)))) {
+        if (p.tm !== B.last.tm && p.z > 10 && Math.hypot(p.x - B.x, p.y - B.y) < 13 && B.z < p.z + 68 + p.j * 0.2 && Math.hypot(B.x - hx, B.y - HY) < 22 && ((isH(p) && T - (p.hJ ?? -9) < 1.6) || (!B.gtc && ((B.gtc = 1), Math.random() < 0.05)))) {
           B.gt = 1;
           const t = B.last.tm,
             pts = B.three ? 3 : 2;
@@ -3726,17 +3726,23 @@ export function upd(dt: number) {
       return;
     }
     const c = ctrlOf(k);
-    if (c) p.in = rs > 0 ? zin(k) : c.inp;
-    else ai(p, dt);
+    if (c) {
+      p.in = rs > 0 ? zin(k) : c.inp;
+      if (c.inp.sd) p.hJ = T; // the human's own jump press (goaltending only counts jumps he started)
+    } else ai(p, dt);
   });
   // Rebound/loose-ball assist for idle humans.
   for (const c of CT) {
     const h = c.inp;
     if (rs <= 0 && !B.owner && !ftq && inb <= 0 && (B.mode !== "pass" || B.to === P[c.idx])) {
-      const q = P[c.idx];
+      const q = P[c.idx],
+        // a live shot still up around either rim: the assist never jumps for the human (it walked him into
+        // goaltending on every CPU shot); he jumps himself if he wants to
+        noJ = B.sh && B.mode === "air" && B.z > 80 && (Math.hypot(B.x - HXs[0], B.y - HY) < 140 || Math.hypot(B.x - HXs[1], B.y - HY) < 140);
       if (!h.dx && !h.dy && !h.sd && q.mode === "i") {
         q.in = zin(c.idx);
         loose(q, q.tm);
+        if (noJ) q.in.sd = 0;
       } else if (q.mode === "i" && B.mode === "air" && Math.hypot(B.x - q.x, B.y - q.y) < 150) {
         const a = { dx: 0, dy: 0 } as Input,
           sv = q.in;
@@ -3745,7 +3751,7 @@ export function upd(dt: number) {
         q.in = sv;
         sv.dx = sv.dx * 0.4 + a.dx * 0.9;
         sv.dy = sv.dy * 0.4 + a.dy * 0.9;
-        if (a.sd || (q.z <= 0 && B.z > 45 && Math.hypot(B.x - q.x, B.y - q.y) < 34)) sv.sd = 1;
+        if (!noJ && (a.sd || (q.z <= 0 && B.z > 45 && Math.hypot(B.x - q.x, B.y - q.y) < 34))) sv.sd = 1;
       }
     }
   }
