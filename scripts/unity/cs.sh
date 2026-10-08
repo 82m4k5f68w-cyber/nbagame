@@ -11,7 +11,9 @@ O=${TMPDIR:-/tmp}/h2kcs
 mkdir -p $O
 T=$1; shift
 N=$(basename $T .cs)
+# extra sources: lines "//@include <glob>" in the test file (e.g. the UnityEngine-free net code)
+INC=$(sed -n 's#^//@include ##p' $T | while read g; do ls $g; done | tr '\n' ' ')
 REFS=$(ls $R/*.dll | grep -v "Native\|mscorlib.ni" | sed 's/^/-r:/' | tr '\n' ' ')
-$D/dotnet $C -nologo -nostdlib -optimize+ -langversion:9 -nullable:disable -warn:0 -out:$O/$N.dll $REFS unity/Assets/Scripts/Core/*.cs $T
+$D/dotnet $C -nologo -nostdlib -optimize+ -langversion:9 -nullable:disable -warn:0 -out:$O/$N.dll $REFS unity/Assets/Scripts/Core/*.cs $INC $T
 printf '{"runtimeOptions":{"tfm":"net6.0","framework":{"name":"Microsoft.NETCore.App","version":"%s"}}}' "$(basename $R)" > $O/$N.runtimeconfig.json
 $D/dotnet $O/$N.dll "$@"

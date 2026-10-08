@@ -480,6 +480,7 @@ namespace Hoops.Core
                     B.vy = (Rng.R() - 0.5) * 120;
                     B.vz = 60;
                 }
+                if (phOn()) phBlock(p, blk, ctl ? 1 : swat ? 2 : 0); // PH2: his hand vs the ball shapes the deflection
                 B.sh = 0;
                 B.last = blk; // (he touched it last: swatted out of bounds, the shooting team keeps it)
                 blk.stt.blk++;

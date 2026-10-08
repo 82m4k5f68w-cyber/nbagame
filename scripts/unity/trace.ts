@@ -9,7 +9,9 @@ function seed(seed: bigint) {
   s1 = ((seed * 0xbf58476d1ce4e5b9n) & M64) ^ 0x94d049bb133111ebn;
   for (let i = 0; i < 8; i++) R();
 }
+let RN = 0;
 function R() {
+  RN++;
   let x = s0;
   const y = s1;
   s0 = y;
@@ -31,5 +33,6 @@ for (let t = 0; t < N && G.S !== "over"; t++) {
   if (G.RPL) G.skipReplay();
   G.FX.length = 0;
   if (G.S === "half") G.setS("play");
-  console.log(t + " " + G.P.map((p) => f(p.x) + "," + f(p.y) + "," + f(p.z)).join(" ") + " | " + f(G.B.x) + "," + f(G.B.y) + "," + f(G.B.z) + " " + G.B.mode + " " + G.sc.join("-"));
+  if (process.env.DBG && t >= 178 && t <= 181) { const o: any = G.B.owner; console.error(t, o && o.n, o && o.mode, o && G.heldBall(o), G.inb, o && o.q && o.q.wR, o && o.act, o && o.actT, G.B.z, G.B.tgz); }
+  console.log(t + " " + G.P.map((p) => f(p.x) + "," + f(p.y) + "," + f(p.z)).join(" ") + " | " + f(G.B.x) + "," + f(G.B.y) + "," + f(G.B.z) + " " + G.B.mode + " " + G.sc.join("-") + " r" + RN);
 }

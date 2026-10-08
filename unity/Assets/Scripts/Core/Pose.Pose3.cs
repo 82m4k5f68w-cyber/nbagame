@@ -225,7 +225,7 @@ namespace Hoops.Core
                 // Clip time is scaled so each clip's wrist-snap keyframe lands exactly on the sim's release (launch) moment:
                 // the ball leaves the fingertips as the wrist flicks, not after the follow-through.
                 string kind0 = CKof(p.sv);
-                double rT = IsLaySv(I(p.sv)) || kind0 == "hook" ? 0.28 : p.st == 1 ? 0.3 : 0.4,
+                double rT = IsLaySv(I(p.sv)) || kind0 == "hook" || kind0 == "sky" ? 0.28 : p.st == 1 ? 0.3 : 0.4,
                     k = Math.Min(1, (p.t / rT) * (kind0 != null && RELK.TryGetValue(kind0, out var rk) ? rk : 0.7));
                 var o = clip(p, k);
                 aR = o.aR;
@@ -1585,6 +1585,16 @@ namespace Hoops.Core
                     tR += p.sf * 0.5;
                 }
             }
+            // ---- Unity Pro Play upgrades (cfg.UP, Pose.UP.cs): shots, moves, gathers, defense, off-ball ----
+            if (cfg.UP != 0 && PRO)
+            {
+                var U = UQ;
+                U.tL = tL; U.tR = tR; U.kL = kL; U.kR = kR; U.aL = aL; U.aR = aR; U.eL = eL; U.eR = eR; U.sz = sz; U.cr = cr; U.ln = ln; U.rz = rz; U.ty = ty; U.wR = wR; U.wL = wL; U.hz = hz; U.cx = cx; U.cy = cy; U.hs = hs; U.gL = gL; U.gR = gR; U.oL = oL; U.oR = oR; U.hL = hL; U.hR = hR; U.toe = toe; U.st = st;
+                U.zL = zL ?? sz; U.zSet = false;
+                upPose(p, U, md, has, air, sp, hold);
+                tL = U.tL; tR = U.tR; kL = U.kL; kR = U.kR; aL = U.aL; aR = U.aR; eL = U.eL; eR = U.eR; sz = U.sz; cr = U.cr; ln = U.ln; rz = U.rz; ty = U.ty; wR = U.wR; wL = U.wL; hz = U.hz; cx = U.cx; cy = U.cy; hs = U.hs; gL = U.gL; gR = U.gR; oL = U.oL; oR = U.oR; hL = U.hL; hR = U.hR; toe = U.toe; st = U.st;
+                if (U.zSet) zL = U.zL;
+            }
             // ---- additive layer: breathing (deeper when tired) ----
             {
                 double tired = 1 - p.en; // (TS p.en ?? 1: en starts at 1)
@@ -1652,7 +1662,7 @@ namespace Hoops.Core
                         // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early, 3 elbow flared out wide,
                         // 4 rides high with the ball after the release, 5 old-school two-hand push (both wrists snap)
                         double gs = p.sg != null ? Or0(p.sg.gs) : 0,
-                            k7 = md == "s" ? p.t / 0.4 : 0,
+                            k7 = md == "s" && cfg.UP == 0 ? p.t / 0.4 : 0, // (UP: the guide hand stays on until the release; its style plays after it, upPose)
                             off = gs == 2 && k7 > 0.6 ? Math.Min(1, (k7 - 0.6) / 0.15) : 0;
                         aL += (r2.a - aL) * w * (1 - off);
                         eL += (r2.e - eL) * w * (1 - off);
@@ -1675,7 +1685,7 @@ namespace Hoops.Core
             // ---- left-handed shooters: the whole shot is mirrored across the body (shooting arm, guide hand, legs, twist).
             // Everything above was solved for a right-hander (guide-hand IK included); mirroring is exact, and handPos follows
             // the left hand while q.mir is set, so the release point and the 3D ball stay in the shooting hand.
-            bool mirr = p.sg != null && Util.T(p.sg.lh) && (md == "s" || (md == "c" && has));
+            bool mirr = (p.sg != null && Util.T(p.sg.lh)) != (cfg.UP != 0 && Util.T(p.offH) && md == "s") && (md == "s" || (md == "c" && has)); // (UP: an off-hand finish mirrors the shot)
             if (mirr)
             {
                 double t = aL;
@@ -1769,7 +1779,10 @@ namespace Hoops.Core
                         bool quick = (st == ST.shot || st == ST.move) && !hd; // (the head never snaps)
                         double big = Math.Min(quick ? 0.1 : 0.32, 0.08 + Math.Abs(iz.x[j]) * (hd ? 0.12 : 0.1));
                         // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
-                        iz.tf[j] = trans ? Math.Max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : 0) : big * 0.75) : big;
+                        double qk = quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : 0) : big * 0.75;
+                        // (UP: a gather / move out of a sprint carries the arms a few ticks instead of snapping a big swing over)
+                        if (cfg.UP != 0 && quick && trans && (md == "c" || st == ST.move)) qk = Math.Max(qk, Math.Min(0.12, 0.02 + Math.Abs(iz.x[j]) * 0.04));
+                        iz.tf[j] = trans ? Math.Max(BLEND[st] * (hd ? 0.4 : 0.65), qk) : big;
                         iz.b[j] = v;
                     }
                     iz.pv[j] = jump ? 0 : Wq(j, v - iz.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
@@ -1886,10 +1899,15 @@ namespace Hoops.Core
                     double cgR = drib || cat ? clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctRg ?? 1;
                     p.ctRg = (p.ctRg ?? cgR) + (cgR - (p.ctRg ?? cgR)) * Math.Min(1, DT * 14);
                     double w = p.ctR * (fade ? Math.Min(p.ctRg ?? 1, clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1)) : p.ctRg ?? 1);
-                    oq.aR += da * w;
-                    oq.eR += (K[1] - oq.eR) * w;
-                    oq.sz += (K[2] - oq.sz) * w;
+                    if (cfg.UP != 0) { oq.aR += upCt(p, 0, da * w); oq.eR += upCt(p, 1, (K[1] - oq.eR) * w); oq.sz += upCt(p, 2, (K[2] - oq.sz) * w); }
+                    else
+                    {
+                        oq.aR += da * w;
+                        oq.eR += (K[1] - oq.eR) * w;
+                        oq.sz += (K[2] - oq.sz) * w;
+                    }
                 }
+                else if (cfg.UP != 0) { oq.aR += upCt(p, 0, 0); oq.eR += upCt(p, 1, 0); oq.sz += upCt(p, 2, 0); }
                 if (p.ctL > 0.01)
                 {
                     if (cwL > 0)
@@ -1906,13 +1924,19 @@ namespace Hoops.Core
                     double gL2 = drib || cat ? clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctLg ?? 1;
                     p.ctLg = (p.ctLg ?? gL2) + (gL2 - (p.ctLg ?? gL2)) * Math.Min(1, DT * 14);
                     double w = p.ctL * (fadeL ? Math.Min(p.ctLg ?? 1, clamp(1 - (Math.Abs(da) - 0.8) / 0.6, 0, 1)) : p.ctLg ?? 1);
-                    oq.aL += da * w;
-                    oq.eL += (K[4] - oq.eL) * w;
-                    oq.zL = z0 + (K[5] - z0) * w;
+                    if (cfg.UP != 0) { oq.aL += upCt(p, 3, da * w); oq.eL += upCt(p, 4, (K[4] - oq.eL) * w); oq.zL = z0 + upCt(p, 5, (K[5] - z0) * w); }
+                    else
+                    {
+                        oq.aL += da * w;
+                        oq.eL += (K[4] - oq.eL) * w;
+                        oq.zL = z0 + (K[5] - z0) * w;
+                    }
                 }
+                else if (cfg.UP != 0) { oq.aL += upCt(p, 3, 0); oq.eL += upCt(p, 4, 0); oq.zL += upCt(p, 5, 0); }
             }
             if (PRO && cfg.PLANT != 0) plantFeet(p, oq, sp);
             if (PRO && cfg.AVOID != 0) avoidBodies(p, oq);
+            if (cfg.UP != 0 && PRO) upGuide(p, oq, md, has); // (UP: guide palm on the side of the ball until the release)
             face(p, st, hyT, hpT);
         }
     }

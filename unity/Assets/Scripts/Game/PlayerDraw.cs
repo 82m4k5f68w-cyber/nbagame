@@ -51,7 +51,7 @@ namespace Hoops.Game
             if (!d.TryGetValue(c, out var b))
             {
                 b = new Batch { m = Mat(c), cap = d == caps };
-                b.rp = new RenderParams(b.m) { shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true };
+                b.rp = new RenderParams(b.m) { worldBounds = new Bounds(Vector3.zero, new Vector3(2000f, 2000f, 2000f)), shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true };
                 d[c] = b;
             }
             if (b.n == 0) used.Add(b);
@@ -124,7 +124,8 @@ namespace Hoops.Game
             Ball(new Color(0.85f, 0.38f, 0.1f), PhysXBall.U(B.x, B.y, B.z), Vector3.one * (float)(BR * 2 * 0.1), Quaternion.Euler(0, 0, (float)(B.a * Mathf.Rad2Deg)));
             foreach (var bt in used)
             {
-                Graphics.RenderMeshInstanced(bt.rp, bt.cap ? capsule : sphere, 0, bt.mx, bt.n);
+                if (SystemInfo.supportsInstancing) Graphics.RenderMeshInstanced(bt.rp, bt.cap ? capsule : sphere, 0, bt.mx, bt.n);
+                else for (int i = 0; i < bt.n; i++) Graphics.RenderMesh(bt.rp, bt.cap ? capsule : sphere, 0, bt.mx[i]);
                 bt.n = 0;
             }
         }

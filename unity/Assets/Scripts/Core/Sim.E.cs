@@ -86,8 +86,9 @@ namespace Hoops.Core
                                 ? o.z + o.ht * 11.6 // inbounder holds it overhead
                                 : Util.T((double)heldBall(o))
                                     ? heldZ(o)
-                                    : dz(o, dt);
-                if (Util.T((double)heldBall(o))) B.dho = null; // the dribble starts fresh from the hand when he puts it on the floor
+                                    : phOn() ? dzPH(o, dt) : dz(o, dt); // (PH2: real floor contact + spin, Sim.PH.cs)
+                if (phOn()) phHeldSpin(dt);
+                if (Util.T((double)heldBall(o))) { B.dho = null; B.dhoNull = true; } // the dribble starts fresh from the hand when he puts it on the floor
                 // gather and shot: the ball sits in the shooting hand's palm (the same FK the release uses)
                 if ((o.mode == "c" || o.mode == "s") && cfg.hand && cfg.PRO != 0 && o.q != null && o.posed)
                 {
@@ -313,7 +314,7 @@ namespace Hoops.Core
                     B.sh = 0;
                     fin = 0;
                 }
-                if (Util.T(B.sc) && B.z > 60 && B.z < 100 && d < RR + 3)
+                if (Util.T(B.sc) && B.z > 60 && B.z < 100 && d < RR + 3 && !(RA && phOn())) // (PH2: BallSim's net drags it)
                 {
                     // the net grabs the ball: horizontal motion dies, the drop slows, then it falls out the bottom
                     B.vx *= 0.86;
@@ -368,7 +369,7 @@ namespace Hoops.Core
             }
             else B.stk = 0;
             // Out of bounds: a loose ball that reaches the lines is out - the other team than the last one to touch it gets it
-            if (cfg.VIOL != 0 && !Util.T(PREDICT) && B.owner == null && (B.mode == "air" || B.mode == "pass") && (B.x < 6 || B.x > CW - 6 || B.y < 6 || B.y > CH - 6) && !(B.mode == "pass" && B.age < 0.3) && B.last != null && ftq == null && JB == null && rs <= 0 && inb <= 0 && S == "play" && gameLike() && !Util.T(B.sc))
+            if (cfg.VIOL != 0 && !Util.T(PREDICT) && B.owner == null && (B.mode == "air" || B.mode == "pass") && (B.x < 6 || B.x > CW - 6 || B.y < 6 || B.y > CH - 6) && (!(RA && phOn()) || B.z < BR + 3 || B.x < BR + 1 || B.x > CW - BR - 1 || B.y < BR + 1 || B.y > CH - BR - 1) && !(B.mode == "pass" && B.age < 0.3) && B.last != null && ftq == null && JB == null && rs <= 0 && inb <= 0 && S == "play" && gameLike() && !Util.T(B.sc))
             {
                 statAdd("oob", 1);
                 var L = B.last;
@@ -378,16 +379,21 @@ namespace Hoops.Core
             }
             // World bounds for both engines (a fast Rapier ball could tunnel past or fly over the thin arena walls).
             {
-                if (B.x < 6 || B.x > CW - 6)
+                // (PH2 on the engine: out over the line until it lands or hits the wall; the engine's walls bounce it)
+                double wb = RA && phOn() ? BR : 6;
+                if (B.x < wb || B.x > CW - wb)
                 {
-                    B.x = clamp(B.x, 6, CW - 6);
+                    B.x = clamp(B.x, wb, CW - wb);
                     B.vx *= -0.5;
                 }
                 if (B.y < 6 || B.y > CH - 6)
                 {
                     if (B.owner == null && Hypot(B.vx, B.vy) > 160 && !Util.T(PREDICT) && T - B.duckT > 1) { B.duckT = T; fx(new Fx { k = "duck", x = B.x, y = B.y }); } // into the courtside seats
-                    B.y = clamp(B.y, 6, CH - 6);
-                    B.vy *= -0.5;
+                    if (B.y < wb || B.y > CH - wb)
+                    {
+                        B.y = clamp(B.y, wb, CH - wb);
+                        B.vy *= -0.5;
+                    }
                 }
             }
             if (Util.T(B.sc)) return;
@@ -550,6 +556,7 @@ namespace Hoops.Core
                         p.hk = 1;
                         txtW(p.sv == 11 ? "PUTBACK SLAM!" : "TIP-IN", p.x, p.y, 115, "#ffd23f");
                     }
+                    if (cfg.UP != 0 && !oop && p.mode == "i") upPutback(p, wasShot, shooter);
                     if (oop)
                     {
                         // ALLEY-OOP: catch it in the air and throw it down

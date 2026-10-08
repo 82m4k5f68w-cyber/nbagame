@@ -46,10 +46,52 @@ public static partial class Data {
       new Tuple("Bridges", 80, 78, 78, 88, 55, 0, "#8d5524", 1, 0, 6.6, 1.0, 25),
       new Tuple("Anunoby", 78, 72, 76, 90, 60, 0, "#8d5524", 1, 0, 6.7, 1.1, 8),
       new Tuple("Towns", 84, 88, 60, 70, 45, 2, "#c68642", 1, 1, 7.0, 1.2, 32) }),
+    new Team("Celtics", "#007a33", new[] {
+      new Tuple("Tatum", 85, 88, 80, 78, 62, 2, "#6b4226", 1, 1, 6.75, 1.05, 0),
+      new Tuple("Brown", 76, 86, 84, 80, 70, 0, "#6b4226", 1, 1, 6.6, 1.1, 7),
+      new Tuple("White", 82, 76, 78, 84, 58, 0, "#e8b88f", 1, 0, 6.4, 0.95, 9),
+      new Tuple("Pritchard", 84, 70, 82, 62, 50, 1, "#e8b88f", 1, 0, 6.1, 0.9, 11),
+      new Tuple("Queta", 20, 80, 58, 80, 55, 4, "#6b4226", 1, 0, 7.0, 1.05, 88) }),
+    new Team("Bucks", "#00471b", new[] {
+      new Tuple("Antetokounmpo", 55, 98, 86, 84, 82, 0, "#6b4226", 1, 1, 6.9, 1.25, 34),
+      new Tuple("Porter Jr.", 78, 80, 84, 62, 58, 0, "#8d5524", 1, 0, 6.4, 1.0, 7),
+      new Tuple("Trent Jr.", 84, 68, 74, 64, 50, 0, "#8d5524", 1, 0, 6.45, 1.0, 5),
+      new Tuple("Portis", 78, 80, 62, 66, 50, 0, "#8d5524", 1, 1, 6.85, 1.15, 9),
+      new Tuple("Turner", 80, 78, 60, 86, 52, 2, "#8d5524", 1, 0, 6.9, 1.1, 3) }),
+    new Team("Mavericks", "#00538c", new[] {
+      new Tuple("Irving", 90, 90, 84, 58, 55, 3, "#8d5524", 1, 1, 6.2, 0.95, 11),
+      new Tuple("Thompson", 88, 62, 64, 66, 45, 1, "#c68642", 1, 0, 6.55, 1.0, 31),
+      new Tuple("Flagg", 72, 84, 84, 84, 72, 0, "#e8b88f", 1, 0, 6.75, 1.0, 32),
+      new Tuple("Davis", 60, 92, 66, 92, 68, 0, "#6b4226", 1, 0, 6.85, 1.2, 3),
+      new Tuple("Lively", 15, 82, 62, 86, 72, 4, "#6b4226", 1, 0, 7.1, 1.1, 2) }),
+    new Team("Cavaliers", "#860038", new[] {
+      new Tuple("Garland", 88, 80, 84, 58, 50, 1, "#8d5524", 1, 0, 6.1, 0.9, 10),
+      new Tuple("Mitchell", 88, 88, 88, 66, 72, 3, "#6b4226", 1, 0, 6.2, 1.0, 45),
+      new Tuple("Strus", 84, 66, 72, 66, 58, 0, "#e8b88f", 1, 1, 6.45, 1.0, 1),
+      new Tuple("Mobley", 68, 88, 74, 92, 68, 0, "#6b4226", 1, 0, 6.9, 0.95, 4),
+      new Tuple("Allen", 25, 86, 58, 86, 62, 4, "#6b4226", 1, 1, 6.9, 1.15, 31) }),
+    new Team("Rockets", "#ce1141", new[] {
+      new Tuple("VanVleet", 84, 66, 74, 74, 45, 0, "#6b4226", 1, 1, 6.0, 1.0, 5),
+      new Tuple("Amen Thompson", 55, 82, 90, 90, 78, 0, "#6b4226", 1, 0, 6.65, 1.05, 1),
+      new Tuple("Durant", 90, 90, 72, 70, 55, 2, "#6b4226", 1, 0, 6.9, 0.95, 7),
+      new Tuple("Smith Jr.", 78, 76, 70, 78, 62, 0, "#6b4226", 1, 0, 6.9, 1.1, 10),
+      new Tuple("Sengun", 60, 90, 64, 78, 55, 4, "#e8b88f", 1, 1, 6.9, 1.25, 28) }),
+    new Team("Pistons", "#c8102e", new[] {
+      new Tuple("Cunningham", 82, 90, 80, 72, 55, 0, "#6b4226", 1, 0, 6.55, 1.1, 2),
+      new Tuple("Ivey", 80, 82, 92, 62, 72, 0, "#6b4226", 1, 0, 6.35, 0.95, 23),
+      new Tuple("Ausar Thompson", 55, 82, 90, 90, 80, 0, "#6b4226", 1, 0, 6.65, 1.0, 9),
+      new Tuple("Harris", 80, 74, 64, 70, 50, 0, "#c68642", 1, 1, 6.75, 1.1, 12),
+      new Tuple("Duren", 15, 86, 66, 82, 72, 4, "#6b4226", 1, 0, 6.85, 1.25, 0) }),
+    new Team("Magic", "#0077c0", new[] {
+      new Tuple("Suggs", 78, 74, 82, 90, 62, 0, "#6b4226", 1, 0, 6.4, 1.0, 4),
+      new Tuple("Bane", 88, 80, 76, 72, 58, 0, "#6b4226", 1, 1, 6.45, 1.15, 3),
+      new Tuple("F. Wagner", 76, 86, 74, 72, 55, 0, "#e8b88f", 1, 0, 6.85, 1.05, 22),
+      new Tuple("Banchero", 72, 90, 76, 72, 62, 0, "#c68642", 1, 0, 6.85, 1.2, 5),
+      new Tuple("Carter Jr.", 70, 80, 62, 80, 58, 0, "#6b4226", 1, 1, 6.9, 1.15, 34) }),
   };
   public static readonly string[] SK = { "#f1c27d", "#c68642", "#8d5524", "#e0ac69", "#6b4226" };
   public static readonly double[][] SP = { new double[] { 250.0, 250.0 }, new double[] { 190.0, 110.0 }, new double[] { 190.0, 390.0 }, new double[] { 75.0, 40.0 }, new double[] { 95.0, 250.0 } };
-  public static readonly Dictionary<string, int> OV = new() { ["Curry"] = 97, ["Doncic"] = 97, ["Jokic"] = 99, ["Gilgeous-Alexander"] = 98, ["Wembanyama"] = 98, ["Edwards"] = 93, ["Brunson"] = 93, ["Towns"] = 90, ["Fox"] = 91, ["Murray"] = 90, ["LaMelo Ball"] = 90, ["Reaves"] = 85, ["Kessler"] = 82, ["Gobert"] = 84, ["Green"] = 80, ["Porzingis"] = 86, ["Hart"] = 82, ["Bridges"] = 84, ["Anunoby"] = 85, ["Castle"] = 84, ["Holmgren"] = 90, ["J. Williams"] = 87, ["McDaniels"] = 83, ["Kuminga"] = 82, ["Vassell"] = 82 };
+  public static readonly Dictionary<string, int> OV = new() { ["Curry"] = 97, ["Doncic"] = 97, ["Jokic"] = 99, ["Gilgeous-Alexander"] = 98, ["Wembanyama"] = 98, ["Edwards"] = 93, ["Brunson"] = 93, ["Towns"] = 90, ["Fox"] = 91, ["Murray"] = 90, ["LaMelo Ball"] = 90, ["Reaves"] = 85, ["Kessler"] = 82, ["Gobert"] = 84, ["Green"] = 80, ["Porzingis"] = 86, ["Hart"] = 82, ["Bridges"] = 84, ["Anunoby"] = 85, ["Castle"] = 84, ["Holmgren"] = 90, ["J. Williams"] = 87, ["McDaniels"] = 83, ["Kuminga"] = 82, ["Vassell"] = 82, ["Antetokounmpo"] = 97, ["Tatum"] = 93, ["Mitchell"] = 91, ["Cunningham"] = 91, ["Durant"] = 91, ["Mobley"] = 90, ["Irving"] = 90, ["Brown"] = 89, ["Davis"] = 89, ["Banchero"] = 88, ["Sengun"] = 88, ["F. Wagner"] = 88, ["Flagg"] = 86, ["Garland"] = 86, ["Bane"] = 85, ["Amen Thompson"] = 85, ["Ausar Thompson"] = 82, ["Suggs"] = 84, ["White"] = 84, ["Turner"] = 84 };
   public static readonly Dictionary<string, double[]> PRE = new() { ["Sharpshooter"] = new double[] { 92.0, 70.0, 78.0, 62.0, 60.0, 1.0 }, ["Slasher"] = new double[] { 72.0, 92.0, 90.0, 65.0, 78.0, 0.0 }, ["Playmaker"] = new double[] { 82.0, 76.0, 88.0, 68.0, 60.0, 3.0 }, ["Two-Way"] = new double[] { 78.0, 78.0, 80.0, 88.0, 65.0, 0.0 }, ["Big"] = new double[] { 52.0, 92.0, 60.0, 90.0, 70.0, 4.0 } };
   public static readonly Dictionary<string, Clip> CL = new() {
     ["jump"] = new Clip { ["aR"] = new double[] { 0.0, 1.0, 0.55, 2.25, 0.7, 2.95, 1.0, 2.6 }, ["eR"] = new double[] { 0.0, 1.7, 0.55, 1.25, 0.7, 0.15, 1.0, 0.5 }, ["aL"] = new double[] { 0.0, 1.0, 0.55, 1.95, 0.75, 1.1, 1.0, 1.1 }, ["eL"] = new double[] { 0.0, 1.5, 1.0, 1.3 }, ["tL"] = new double[] { 0.0, 0.5, 0.6, 0.5, 0.75, 0.2, 1.0, 0.2 }, ["tR"] = new double[] { 0.0, -0.1, 1.0, -0.1 }, ["kL"] = new double[] { 0.0, 0.9, 0.6, 0.9, 0.75, 0.2, 1.0, 0.2 }, ["kR"] = new double[] { 0.0, 0.6, 0.6, 0.6, 0.75, 0.1, 1.0, 0.1 }, ["ln"] = new double[] { 0.0, -0.05, 1.0, -0.05 }, ["sz"] = new double[] { 0.0, 0.03, 0.6, 0.03, 0.75, 0.13, 1.0, 0.13 }, ["cr"] = new double[] { 0.0, 0.0, 0.7, 0.0, 0.85, 0.5, 1.0, 0.5 }, ["rz"] = new double[] { 0.0, 0.0, 1.0, 0.0 }, ["ty"] = new double[] { 0.0, 0.0, 1.0, 0.0 }, ["wR"] = new double[] { 0.0, -0.5, 0.5, -0.8, 0.62, -0.8, 0.7, 1.1, 1.0, 1.1 }, ["wL"] = new double[] { 0.0, -0.2, 0.55, -0.3, 0.7, 0.2, 1.0, 0.2 }, ["zL"] = new double[] { 0.0, -0.08, 0.55, -0.1, 0.65, -0.1, 0.85, 0.5, 1.0, 0.55 } },
@@ -92,6 +134,9 @@ public static partial class Data {
       case "LaMelo Ball": f.k = 0.15; f.l = -0.2; f.f = 0.06; break;
       case "Porzingis": f.a = 0.3; f.l = -0.15; break;
       case "Holmgren": f.a = 0.28; f.l = -0.08; break;
+      case "Durant": f.a = 0.32; f.l = -0.06; f.f = -0.03; break;
+      case "Irving": f.k = 0.08; f.w = 0.1; break;
+      case "Mitchell": f.k = 0.18; f.f = 0.04; break;
     }
   }
   public static readonly string[] MC_CH = { "tL", "tR", "kL", "kR", "fL", "fR", "hz", "hs", "ln", "ty", "rz", "cx", "cy", "aL", "aR", "eL", "eR", "sz", "zL", "cr" };
