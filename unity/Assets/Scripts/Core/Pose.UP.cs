@@ -318,6 +318,85 @@ namespace Hoops.Core
 
 namespace Hoops.Core
 {
+    public partial class Player
+    {
+        public double gdW, gdV; // guide-hand lock weight (critically damped) and its velocity
+        public double[] gdD; // last applied guide-arm correction (a, e, ab) - fades out after the release
+        public double gdErr = -1; // palm-to-ball-surface error left after the solve (px, -1 = not locked this tick)
+    }
+    public static partial class Pose
+    {
+        static readonly double[] GDT = new double[3], GDC = new double[3];
+        /// <summary>Palm point (0, -0.62, 0.1) of the guide (non-shooting) wrist for the current p.q.</summary>
+        static void guidePalm(Player p, Q q, double[] o)
+        {
+            double m = q.mir;
+            q.mir = m != 0 ? 0 : 1;
+            var h = handPos(p);
+            q.mir = m;
+            o[0] = h[0]; o[1] = h[1]; o[2] = h[2];
+        }
+
+        /// <summary>UP guide hand (post-blend, after every other pass): from the set until the release the off hand's palm
+        /// sits on the side of the ball (the ball centre is the shooting palm, where the renderers pin it). armIK ignores the
+        /// torso's lean / twist and aims the wrist, so the target is corrected by the palm's measured miss and re-solved
+        /// (a few fixed-point steps, contracting by ~the torso rotation each). The correction eases in over the gather and
+        /// rides a critically damped weight, so it fades out after the release instead of popping.</summary>
+        public static void upGuide(Player p, Q oq, string md, bool has)
+        {
+            var d = p.gdD ?? (p.gdD = new double[3]);
+            bool mir = oq.mir != 0;
+            int sv = I(Or0(p.sv));
+            bool on = has && B.mode == "held" && !Util.T(p.postA) && p.z > -1
+                && (md == "c" || md == "s" && !Util.T(p.rl) && sv != 10 && sv != 25 && (!IsLaySv(sv) || sv == 11 || sv == 14 || sv == 15) && !(Util.T(p.hk) && sv != 11 && sv != 14 && sv != 15));
+            double wt = on ? (md == "c" ? SS(p.t / 0.1) : 1) : 0;
+            p.gdErr = -1;
+            if (on)
+            {
+                var c = handPos(p);
+                double cx = c[0], cy = c[1], cz = c[2], f = fv(p), lx = -Math.Sin(f), ly = Math.Cos(f), sd = mir ? -1 : 1;
+                // the side of the ball, a touch behind it (thumb toward the shooter) - the classic guide position
+                double nx = lx * sd * 0.97 - Math.Cos(f) * 0.2, ny = ly * sd * 0.97 - Math.Sin(f) * 0.2, nz = 0.12, nl = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                double tx = cx + nx / nl * BR, ty = cy + ny / nl * BR, tz = cz + nz / nl * BR;
+                double a0 = mir ? oq.aR : oq.aL, e0 = mir ? oq.eR : oq.eL, z0 = mir ? oq.sz : oq.zL;
+                double gx = tx, gy = ty, gz = tz, best = 1e9, ba = a0, be = e0, bz = z0;
+                for (int it = 0; it < 8; it++)
+                {
+                    var r = armIK(p, oq.cr, gx, gy, gz, -sd, 1.1);
+                    double a = r.a, e = clamp(r.e, -0.05, 2.75), ab = r.ab;
+                    if (mir) { oq.aR = a; oq.eR = e; oq.sz = ab; } else { oq.aL = a; oq.eL = e; oq.zL = ab; }
+                    guidePalm(p, oq, GDC);
+                    double ex = tx - GDC[0], ey = ty - GDC[1], ez = tz - GDC[2], er = Math.Sqrt(ex * ex + ey * ey + ez * ez);
+                    if (er < best) { best = er; ba = a; be = e; bz = ab; }
+                    if (er < 0.05) break;
+                    gx += ex; gy += ey; gz += ez;
+                }
+                if (best < 4)
+                {
+                    d[0] = wrapPi(ba - a0); d[1] = be - e0; d[2] = bz - z0;
+                    p.gdErr = best;
+                }
+                else wt = 0;
+                if (mir) { oq.aR = a0; oq.eR = e0; oq.sz = z0; } else { oq.aL = a0; oq.eL = e0; oq.zL = z0; }
+            }
+            // weight: eased by the gather ramp while on (exact), a critically damped fade once off
+            if (on && wt > 0) { p.gdW = wt; p.gdV = 0; }
+            else
+            {
+                const double om = 26;
+                p.gdV += (om * om * (0 - p.gdW) - 2 * om * p.gdV) * DT;
+                p.gdW = Math.Max(0, p.gdW + p.gdV * DT);
+            }
+            if (p.gdW < 0.002) { p.gdW = 0; p.gdV = 0; return; }
+            double w = p.gdW;
+            if (mir) { oq.aR += d[0] * w; oq.eR = clamp(oq.eR + d[1] * w, -0.05, 2.75); oq.sz += d[2] * w; oq.gR = Math.Min(oq.gR, 0.15); }
+            else { oq.aL += d[0] * w; oq.eL = clamp(oq.eL + d[1] * w, -0.05, 2.75); oq.zL += d[2] * w; oq.gL = Math.Min(oq.gL, 0.15); }
+        }
+    }
+}
+
+namespace Hoops.Core
+{
     public partial class Player { public double[] upCs; }
     public static partial class Pose
     {

@@ -1662,7 +1662,7 @@ namespace Hoops.Core
                         // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early, 3 elbow flared out wide,
                         // 4 rides high with the ball after the release, 5 old-school two-hand push (both wrists snap)
                         double gs = p.sg != null ? Or0(p.sg.gs) : 0,
-                            k7 = md == "s" ? p.t / 0.4 : 0,
+                            k7 = md == "s" && cfg.UP == 0 ? p.t / 0.4 : 0, // (UP: the guide hand stays on until the release; its style plays after it, upPose)
                             off = gs == 2 && k7 > 0.6 ? Math.Min(1, (k7 - 0.6) / 0.15) : 0;
                         aL += (r2.a - aL) * w * (1 - off);
                         eL += (r2.e - eL) * w * (1 - off);
@@ -1936,6 +1936,7 @@ namespace Hoops.Core
             }
             if (PRO && cfg.PLANT != 0) plantFeet(p, oq, sp);
             if (PRO && cfg.AVOID != 0) avoidBodies(p, oq);
+            if (cfg.UP != 0 && PRO) upGuide(p, oq, md, has); // (UP: guide palm on the side of the ball until the release)
             face(p, st, hyT, hpT);
         }
     }
