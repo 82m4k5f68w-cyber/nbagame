@@ -68,9 +68,18 @@ public static class Build
             gs.ApplyModifiedProperties();
         }
         // arena (Arena.cs): unlit LED/jumbotron/panels + additive light shafts / glints; Hud.cs GL shapes (meters, rings)
-        foreach (var sn in new[] { "Universal Render Pipeline/Unlit", "Universal Render Pipeline/Particles/Unlit", "Hidden/Internal-Colored" })
+        foreach (var sn in new[] { "Universal Render Pipeline/Unlit", "Universal Render Pipeline/Particles/Unlit", "Hoops/HudColored", "Hidden/Internal-Colored" })
         {
             var sh = Shader.Find(sn);
+            // 6000.6 marks Hidden/Internal-Colored DontSave: the build skips it and then fails writing
+            // Resources/unity_builtin_extra. Never include a DontSave shader (and drop one an older build added).
+            if (sh != null && (sh.hideFlags & HideFlags.DontSave) != 0)
+            {
+                for (int i = inc.arraySize - 1; i >= 0; i--)
+                    if (inc.GetArrayElementAtIndex(i).objectReferenceValue == sh) inc.DeleteArrayElementAtIndex(i);
+                gs.ApplyModifiedProperties();
+                continue;
+            }
             bool hs = false;
             for (int i = 0; i < inc.arraySize; i++) hs |= inc.GetArrayElementAtIndex(i).objectReferenceValue == sh;
             if (hs || sh == null) continue;

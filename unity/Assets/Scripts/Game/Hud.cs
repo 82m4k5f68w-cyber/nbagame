@@ -98,7 +98,8 @@ namespace Hoops.Game
             if (Event.current == null || Event.current.type != EventType.Repaint) return false;
             if (mat == null)
             {
-                var sh = Shader.Find("Hidden/Internal-Colored");
+                // Hoops/HudColored ships with the build (6000.6 leaves the DontSave built-in out); 6000.3 has either
+                var sh = Shader.Find("Hoops/HudColored") ?? Shader.Find("Hidden/Internal-Colored");
                 if (sh == null) return false;
                 mat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
                 mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
