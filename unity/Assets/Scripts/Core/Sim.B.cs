@@ -108,7 +108,7 @@ namespace Hoops.Core
                 p.t = 0;
                 p.ai = new PlayerAi();
                 p.cd = 0;
-                p.f = Math.Atan2(HY - p.y, hx - p.x) + (p.tm != off ? Math.PI : 0);
+                p.f = JsMath.Atan2(HY - p.y, hx - p.x) + (p.tm != off ? Math.PI : 0);
             }
             B.owner = P[of * NP];
             B.mode = "held";
@@ -201,7 +201,7 @@ namespace Hoops.Core
             p.pT = 0.25;
             {
                 // how it's thrown: behind the back to a man behind you, no-look on the move, wraparound around a defender
-                double ang = Math.Abs(Math.Atan2(Math.Sin(Math.Atan2(ddy, ddx) - p.f), Math.Cos(Math.Atan2(ddy, ddx) - p.f)));
+                double ang = Math.Abs(JsMath.Atan2(JsMath.Sin(JsMath.Atan2(ddy, ddx) - p.f), JsMath.Cos(JsMath.Atan2(ddy, ddx) - p.f)));
                 p.pk = ang > 2.2 && p.s >= 72 && ty != 2 ? 2 : ang > 0.9 && Hypot(p.vx, p.vy) > 90 && p.s >= 75 && ty == 0 ? 1 : near != 0 && ty == 1 && p.s >= 80 ? 3 : 0;
                 if (Util.T(p.pk) && isH(p)) txtW(PK_TXT[(int)p.pk], p.x, p.y, 95, "#9fe7ff");
             }
@@ -224,7 +224,7 @@ namespace Hoops.Core
             {
                 if (r.tm != p.tm || r == p) continue;
                 double dx = r.x - p.x, dy = r.y - p.y, dh = Hypot(dx, dy), d = Util.T(dh) ? dh : 1, m = Hypot(i.dx, i.dy);
-                double al = m > 0.1 ? (dx * i.dx + dy * i.dy) / d / m : (Math.Cos(p.f) * dx + Math.Sin(p.f) * dy) / d;
+                double al = m > 0.1 ? (dx * i.dx + dy * i.dy) / d / m : (JsMath.Cos(p.f) * dx + JsMath.Sin(p.f) * dy) / d;
                 Player nd = P[(int)nearest(1 - p.tm, r.x, r.y)];
                 double s = al * 2 - d / 1500 + (Math.Min(80, Hypot(nd.x - r.x, nd.y - r.y)) / 80) * 0.12 - (al < 0.3 ? 1.5 : 0);
                 if (s > bs)
@@ -500,8 +500,8 @@ namespace Hoops.Core
             bool mk = dunkMiss ? false : lay ? Rng.R() < Clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) : gr && (Util.T(p.perf) || Rng.R() < 0.98 - cx * 0.25);
             double a = Rng.R() * 6.28,
                 off = mk ? (rap ? 0.3 : 1.2) : 9 + Rng.R() * 7,
-                tx = hx + Math.Cos(a) * off,
-                ty = HY + Math.Sin(a) * off,
+                tx = hx + JsMath.Cos(a) * off,
+                ty = HY + JsMath.Sin(a) * off,
                 dx = tx - x0,
                 dy = ty - y0,
                 Dh = Hypot(dx, dy),
@@ -534,19 +534,19 @@ namespace Hoops.Core
             // Release angles like real shooters (~48-55 deg; floaters and heaves higher), plus a small per-player arc from the form signature.
             double fa = p.sg != null && Util.T(p.sg.a) ? p.sg.a : 0;
             double th = (D < 90 ? 1.0 : D < 200 ? 0.9 : D < 300 ? 0.86 : D < 400 ? 0.97 : 1.1) + fa * 0.12;
-            for (int k = 0; k < 8 && D * Math.Tan(th) - dz < 8 && th < 1.45; k++) th += 0.08;
+            for (int k = 0; k < 8 && D * JsMath.Tan(th) - dz < 8 && th < 1.45; k++) th += 0.08;
             double ge = g,
-                v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(Math.Cos(th), 2) * Math.Max(1, D * Math.Tan(th) - dz)));
+                v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(JsMath.Cos(th), 2) * Math.Max(1, D * JsMath.Tan(th) - dz)));
             if (rap)
             {
-                ge = g - 0.0032 * 16 * v * Math.Cos(th);
-                v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(Math.Cos(th), 2) * Math.Max(1, D * Math.Tan(th) - dz)));
+                ge = g - 0.0032 * 16 * v * JsMath.Cos(th);
+                v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(JsMath.Cos(th), 2) * Math.Max(1, D * JsMath.Tan(th) - dz)));
             }
-            B.vz = v * Math.Sin(th);
+            B.vz = v * JsMath.Sin(th);
             // a tip from right under the rim can come out too soft to even reach it: give it enough lift to clear the iron
             if (B.vz * B.vz + 2 * ge * (z0 - 100) < 0) B.vz = Math.Sqrt(2 * ge * (106 - z0));
             double TF = (B.vz + Math.Sqrt(Math.Max(0, B.vz * B.vz + 2 * ge * (z0 - 100)))) / ge,
-                hv = (D * 0.1) / (1 - Math.Exp(-0.1 * TF));
+                hv = (D * 0.1) / (1 - JsMath.Exp(-0.1 * TF));
             B.vx = (hv * dx) / D;
             B.vy = (hv * dy) / D;
             {

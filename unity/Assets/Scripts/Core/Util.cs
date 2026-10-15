@@ -35,8 +35,34 @@ namespace Hoops.Core
         public static int Cmp(double d) => d < 0 ? -1 : d > 0 ? 1 : 0;
         public static double Max(double[] a) { double m = double.NegativeInfinity; foreach (var v in a) if (v > m || double.IsNaN(v)) m = v; return m; }
         public static double Min(double[] a) { double m = double.PositiveInfinity; foreach (var v in a) if (v < m || double.IsNaN(v)) m = v; return m; }
-        public static double Hypot(double a, double b) => Math.Sqrt(a * a + b * b);
-        public static double Hypot(double a, double b, double c) => Math.Sqrt(a * a + b * b + c * c);
+        // JS Math.hypot exactly as V8 computes it (math.tq MathHypot): normalized by the largest magnitude, Kahan-summed,
+        // sqrt * max. A plain sqrt(a*a + b*b) differs in the last bit now and then, and the lockstep twins drifted apart.
+        public static double Hypot(double a, double b)
+        {
+            if (double.IsInfinity(a) || double.IsInfinity(b)) return double.PositiveInfinity;
+            if (double.IsNaN(a) || double.IsNaN(b)) return double.NaN;
+            a = Math.Abs(a); b = Math.Abs(b);
+            double max = a > b ? a : b;
+            if (max == 0) return 0;
+            double sum = 0, comp = 0, n, sm, pre;
+            n = a / max; sm = n * n - comp; pre = sum + sm; comp = (pre - sum) - sm; sum = pre;
+            n = b / max; sm = n * n - comp; pre = sum + sm; comp = (pre - sum) - sm; sum = pre;
+            return Math.Sqrt(sum) * max;
+        }
+        public static double Hypot(double a, double b, double c)
+        {
+            if (double.IsInfinity(a) || double.IsInfinity(b) || double.IsInfinity(c)) return double.PositiveInfinity;
+            if (double.IsNaN(a) || double.IsNaN(b) || double.IsNaN(c)) return double.NaN;
+            a = Math.Abs(a); b = Math.Abs(b); c = Math.Abs(c);
+            double max = a > b ? a : b;
+            if (c > max) max = c;
+            if (max == 0) return 0;
+            double sum = 0, comp = 0, n, sm, pre;
+            n = a / max; sm = n * n - comp; pre = sum + sm; comp = (pre - sum) - sm; sum = pre;
+            n = b / max; sm = n * n - comp; pre = sum + sm; comp = (pre - sum) - sm; sum = pre;
+            n = c / max; sm = n * n - comp; pre = sum + sm; comp = (pre - sum) - sm; sum = pre;
+            return Math.Sqrt(sum) * max;
+        }
         /// <summary>JS `x | 0` (truncate toward zero to int32).</summary>
         public static int I(double v) => double.IsNaN(v) || double.IsInfinity(v) ? 0 : (int)(long)v;
         /// <summary>JS truthiness of a number.</summary>

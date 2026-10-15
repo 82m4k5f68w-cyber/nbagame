@@ -138,7 +138,7 @@ namespace Hoops.Core
                 for (int k = 0; k < 24; k++)
                 {
                     double a0 = k / 24.0 * 6.283, a1 = (k + 1) / 24.0 * 6.283;
-                    Cap(hx + Math.Cos(a0) * Sim.RR, Sim.HY + Math.Sin(a0) * Sim.RR, 100, hx + Math.Cos(a1) * Sim.RR, Sim.HY + Math.Sin(a1) * Sim.RR, 100, 0.55, 0.55, 0.4, F_RIM, b);
+                    Cap(hx + JsMath.Cos(a0) * Sim.RR, Sim.HY + JsMath.Sin(a0) * Sim.RR, 100, hx + JsMath.Cos(a1) * Sim.RR, Sim.HY + JsMath.Sin(a1) * Sim.RR, 100, 0.55, 0.55, 0.4, F_RIM, b);
                 }
                 // the bracket / flange from the back iron to the glass (extras)
                 Cap(hx + sd * (Sim.RR + 0.9), Sim.HY, 99.2, bx - sd * 0.3, Sim.HY, 99.2, 0.9, 0.3, 0.5, F_BRACKET, b);
@@ -534,7 +534,7 @@ namespace Hoops.Core
                 RimFlex[h] += RimFlexV[h] * dt;
                 if (RimFlex[h] > 4) { RimFlex[h] = 4; if (RimFlexV[h] > 0) RimFlexV[h] = 0; }
                 if (RimFlex[h] < -1.5) { RimFlex[h] = -1.5; if (RimFlexV[h] < 0) RimFlexV[h] = 0; }
-                NetSnap[h] *= Math.Exp(-dt * 6);
+                NetSnap[h] *= JsMath.Exp(-dt * 6);
             }
         }
 

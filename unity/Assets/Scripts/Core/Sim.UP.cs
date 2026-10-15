@@ -197,7 +197,7 @@ namespace Hoops.Core
                 ex = ux / D, ey = uy / D, lx = -ey * p.gSd, ly = ex * p.gSd;
             double f = sp, l = 0;
             if (p.gath == 2) { if (p.gathT > 0.14 && p.gathT < 0.28) { f = sp * 0.55; l = 150; } else f = sp * 0.8; } // the hop to the side
-            else if (p.gath == 3) { f = sp * 0.75; l = 70 * Math.Sin(p.gathT / dur * Math.PI); } // spin round him
+            else if (p.gath == 3) { f = sp * 0.75; l = 70 * JsMath.Sin(p.gathT / dur * Math.PI); } // spin round him
             double tx = ex * f + lx * l, ty = ey * f + ly * l, k = Math.Min(1, dt * 14);
             p.vx += (tx - p.vx) * k;
             p.vy += (ty - p.vy) * k;
@@ -237,7 +237,7 @@ namespace Hoops.Core
                 if (cl < 110 && !(o.z > 8 && d < 30)) continue;
                 p.lnA = 1;
                 // side of his hand in the shooter's frame (+ = shooter's left): lean the other way
-                double sd = (-(o.x - p.x) * Math.Sin(p.f) + (o.y - p.y) * Math.Cos(p.f));
+                double sd = (-(o.x - p.x) * JsMath.Sin(p.f) + (o.y - p.y) * JsMath.Cos(p.f));
                 p.lnS = sd >= 0 ? -1 : 1;
                 if (PREDICT == 0)
                 {
@@ -296,7 +296,7 @@ namespace Hoops.Core
             double d = Hypot(spX - p.x, spY - p.y);
             if (!(p.vcT > 0))
             {
-                if (d > 45 || md == null || Hypot(md.x - p.x, md.y - p.y) > 30 || B.owner == null || Math.Sin(T * 0.9 + p.k * 2.3) < 0.93) return false;
+                if (d > 45 || md == null || Hypot(md.x - p.x, md.y - p.y) > 30 || B.owner == null || JsMath.Sin(T * 0.9 + p.k * 2.3) < 0.93) return false;
                 p.vcT = 0.75;
                 upc("vcut");
             }

@@ -49,9 +49,9 @@ namespace Hoops.Core
                     else { lat = DRIB0[0]; fwd = DRIB0[1]; }
                     double off = lat,
                         // (a pump fake carries the ball up AND out in front of the forehead)
-                        fw = fwd + (hold == 2 && o.act == 1 ? 7 * Math.Sin(Math.Min(1, 1 - o.actT / 0.42) * Math.PI) : 0),
-                        tx = o.x + Math.Cos(o.f) * fw - Math.Sin(o.f) * off,
-                        ty = o.y + Math.Sin(o.f) * fw + Math.Cos(o.f) * off;
+                        fw = fwd + (hold == 2 && o.act == 1 ? 7 * JsMath.Sin(Math.Min(1, 1 - o.actT / 0.42) * Math.PI) : 0),
+                        tx = o.x + JsMath.Cos(o.f) * fw - JsMath.Sin(o.f) * off,
+                        ty = o.y + JsMath.Sin(o.f) * fw + JsMath.Cos(o.f) * off;
                     if (cfg.PRO != 0 && o.mode == "i" && B.hold == o && !Util.T(PREDICT))
                     {
                         // Dribble physics: the ball has momentum; the hand pulls it with a stiff, critically damped spring,

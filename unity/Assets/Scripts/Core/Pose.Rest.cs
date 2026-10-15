@@ -231,13 +231,13 @@ namespace Hoops.Core
                     for (int i = 0; i < n; i++)
                     {
                         double a = (2 * Math.PI * k * i) / n;
-                        re += v[i * C + j] * Math.Cos(a);
-                        im += v[i * C + j] * Math.Sin(a);
+                        re += v[i * C + j] * JsMath.Cos(a);
+                        im += v[i * C + j] * JsMath.Sin(a);
                     }
                     for (int i = 0; i < n; i++)
                     {
                         double a = (2 * Math.PI * k * i) / n;
-                        tmp[i] += ((2 * re) / n) * Math.Cos(a) + ((2 * im) / n) * Math.Sin(a);
+                        tmp[i] += ((2 * re) / n) * JsMath.Cos(a) + ((2 * im) / n) * JsMath.Sin(a);
                     }
                 }
                 for (int i = 0; i < n; i++) v[i * C + j] = (float)tmp[i];
@@ -338,7 +338,7 @@ namespace Hoops.Core
             double up = Math.Min(1, k / 0.7);
             o.aR += Or0(g.a) * up;
             o.sz += Or0(g.f) * up;
-            o.ln += Or0(g.l) * Math.Sin(Math.Min(1, k) * 3.14);
+            o.ln += Or0(g.l) * JsMath.Sin(Math.Min(1, k) * 3.14);
             o.tL += Or0(g.k) * (k > 0.5 ? 1 : 0);
             o.aL -= Or0(g.g) * 0.4 * (k > 0.7 ? (k - 0.7) / 0.3 : 0);
             o.wR *= 1 + Or0(g.w);
@@ -348,10 +348,10 @@ namespace Hoops.Core
             o.wR += Or0(g.ft) * 0.35 * rel;
             o.tR += Or0(g.lk) * (k > 0.6 ? 1 : 0); // leg kick
             o.kR += Or0(g.lk) * 0.9 * (k > 0.6 ? 1 : 0);
-            o.ty += Or0(g.tw) * Math.Sin(Math.Min(1, k) * 3.14);
+            o.ty += Or0(g.tw) * JsMath.Sin(Math.Min(1, k) * 3.14);
             o.aL += Or0(g.gh) * 0.35 * up;
             o.zL += Or0(g.gh) * 0.25 * up;
-            if (k < 0.3) o.aR -= Or0(g.dp) * Math.Sin((k / 0.3) * 3.14) * 0.6; // dip before the rise
+            if (k < 0.3) o.aR -= Or0(g.dp) * JsMath.Sin((k / 0.3) * 3.14) * 0.6; // dip before the rise
             if (ck == "curry" && p.sbw > 0)
             {
                 o.ln -= 0.22;
@@ -388,8 +388,8 @@ namespace Hoops.Core
             var sk = p.skel ?? (p.skel = new float[60]);
             skeleton(p, AV);
             double s = p.ht / 6.4,
-                cf = Math.Cos(fv(p)),
-                sf = Math.Sin(fv(p)),
+                cf = JsMath.Cos(fv(p)),
+                sf = JsMath.Sin(fv(p)),
                 ua = RIG.ua * s * 10,
                 sw = RIG.shX * p.bk * s * 10;
             double dsz = 0, dzL = 0, daR = 0, daL = 0, deR = 0, deL = 0, dcy = 0;
@@ -476,8 +476,8 @@ namespace Hoops.Core
                 L1 = RIG.L1 * s * 10,
                 L2 = RIG.L2 * s * 10,
                 Lm = L1 + L2,
-                cf = Math.Cos(fv(p)),
-                sf = Math.Sin(fv(p));
+                cf = JsMath.Cos(fv(p)),
+                sf = JsMath.Sin(fv(p));
             // lying on the floor (a dive, knocked down): nothing may sink through it - lift the whole body by the deepest point
             if (p.actT > 0 && (p.act == 3 || p.act == 4) && p.z < 2)
             {
@@ -646,7 +646,7 @@ namespace Hoops.Core
                         if (F.u >= 1) { F.st = 1; F.z = 0; S.last = -1; }
                     }
                 }
-                if (Util.T(F.st) && Util.T(F.zo)) F.zo = F.zo < 0.05 ? 0 : F.zo * Math.Exp(-DT / 0.035);
+                if (Util.T(F.st) && Util.T(F.zo)) F.zo = F.zo < 0.05 ? 0 : F.zo * JsMath.Exp(-DT / 0.035);
                 // pelvis dip so a planted foot stays within reach
                 double fw = (F.x - hx) * cf + (F.y - hy) * sf;
                 if (Util.T(F.st))
@@ -681,11 +681,11 @@ namespace Hoops.Core
                     vert = Hypot(dz, lt),
                     ds = Lm * 0.88, // (soft IK from 88% of reach: lift-off pops otherwise)
                     d0 = Math.Max(0.35 * Lm, Hypot(fw, vert)),
-                    d = d0 > ds ? ds + (Lm - ds) * (1 - Math.Exp(-(d0 - ds) / (Lm - ds))) : d0,
-                    a1 = Math.Acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1)),
-                    tI = Math.Atan2(fw, vert) + a1,
-                    kI = Math.PI - Math.Acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1)),
-                    ab = Math.Atan2(lt, Math.Max(5, -dz));
+                    d = d0 > ds ? ds + (Lm - ds) * (1 - JsMath.Exp(-(d0 - ds) / (Lm - ds))) : d0,
+                    a1 = JsMath.Acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1)),
+                    tI = JsMath.Atan2(fw, vert) + a1,
+                    kI = Math.PI - JsMath.Acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1)),
+                    ab = JsMath.Atan2(lt, Math.Max(5, -dz));
                 if (k != 0)
                 {
                     o.tR += (tI - o.tR) * W;
@@ -716,12 +716,12 @@ namespace Hoops.Core
                         fz += r0 * roll * (1 - sw) * (1 - sw) * (1 + 2 * sw); // smooth fade (zero slope at touchdown)
                     }
                 }
-                else if (!Util.T(F.st)) fz += 0.2 * Math.Sin(Math.PI * F.u);
+                else if (!Util.T(F.st)) fz += 0.2 * JsMath.Sin(Math.PI * F.u);
                 {
                     // the toe roll / swing pitch are continuous by design, except where a contact flips early: carry the gap and fade it
                     double add = fz - (tI - kI);
                     if (F.pst != null && F.pst.Value != F.st) F.pd = Or0(F.pa) - add;
-                    else F.pd = Math.Abs(Or0(F.pd)) < 1e-3 ? 0 : F.pd * Math.Exp(-DT / 0.06);
+                    else F.pd = Math.Abs(Or0(F.pd)) < 1e-3 ? 0 : F.pd * JsMath.Exp(-DT / 0.06);
                     add += F.pd;
                     F.pa = add;
                     F.pst = F.st;
@@ -759,7 +759,7 @@ namespace Hoops.Core
                     t.sm = 1; t.jw = 0.14; t.br = 0.25;
                     break;
                 case 13:
-                    t.sm = 1; t.jw = 0.2 + 0.35 * Math.Abs(Math.Sin(e * 9)); t.br = 0.3; // "let's go!"
+                    t.sm = 1; t.jw = 0.2 + 0.35 * Math.Abs(JsMath.Sin(e * 9)); t.br = 0.3; // "let's go!"
                     break;
                 case 2: // night-night, shh: a smirk
                 case 7:
@@ -772,13 +772,13 @@ namespace Hoops.Core
                     t.jw = 0.95; t.an = 0.85; t.sq = 0.55; t.wd = 0.8; t.sm = -0.1;
                     break;
                 case 15:
-                    t.jw = 0.45 + 0.25 * Math.Abs(Math.Sin(e * 7)); t.an = 0.5; t.sq = 0.4; t.wd = 0.5;
+                    t.jw = 0.45 + 0.25 * Math.Abs(JsMath.Sin(e * 7)); t.an = 0.5; t.sq = 0.4; t.wd = 0.5;
                     break;
                 case 11: // missed an open look: wince
                     t.jw = 0.3; t.br = 0.9; t.sq = 0.6; t.sm = -0.7; t.wd = 0.3;
                     break;
                 case 12: // arguing a call: talking, brows knit
-                    t.jw = 0.12 + 0.4 * Math.Abs(Math.Sin(e * 11) * Math.Sin(e * 4.3)); t.an = 0.75; t.br = 0.2; t.sm = -0.4;
+                    t.jw = 0.12 + 0.4 * Math.Abs(JsMath.Sin(e * 11) * JsMath.Sin(e * 4.3)); t.an = 0.75; t.br = 0.2; t.sm = -0.4;
                     break;
                 case 10: // held follow-through on a green: cool, confident
                     t.sm = 0.35; t.sq = 0.2;
@@ -786,7 +786,7 @@ namespace Hoops.Core
                 default:
                     if (Or0(p.hitT) > 0.04) { t.an = 0.7; t.sq = 1; t.wd = 1; t.jw = 0.12; t.sm = -0.35; } // contact: gritted teeth
                     else if (md == "s" && p.z > 6 && IsDunkSv(I(Or0(p.sv)))) { t.jw = 0.75; t.an = 0.7; t.wd = 0.7; t.sq = 0.35; } // throwing it down
-                    else if (Or0(p.callT) > 0) { t.jw = 0.35 + 0.3 * Math.Abs(Math.Sin(Sim.T * 9)); t.br = 0.5; t.wd = 0.3; } // "Ball! Ball!"
+                    else if (Or0(p.callT) > 0) { t.jw = 0.35 + 0.3 * Math.Abs(JsMath.Sin(Sim.T * 9)); t.br = 0.5; t.wd = 0.3; } // "Ball! Ball!"
                     else if (Or0(p.frT) > 0) { t.sm = -0.85; t.br = 0.75; t.jw = 0.18 + (p.frT > 1.2 ? 0.25 : 0); t.sq = 0.3; } // frustration after a miss
                     else if (md == "s" || md == "c") { t.an = 0.3; t.sq = 0.3; t.sm = -0.12; } // focus: lips pressed
                     else if (S == "over")
@@ -796,7 +796,7 @@ namespace Hoops.Core
                         else { t.sm = -0.75; t.br = 0.6; t.sq = 0.2; }
                     }
                     else if (st == ST.def) { t.an = 0.4; t.sq = 0.25; t.sm = -0.1; }
-                    else if (p.en < 0.6) t.jw = 0.22 + 0.12 * Math.Sin(Sim.T * 4.5 + p.k); // gassed: breathing through the mouth (TS p.en ?? 1)
+                    else if (p.en < 0.6) t.jw = 0.22 + 0.12 * JsMath.Sin(Sim.T * 4.5 + p.k); // gassed: breathing through the mouth (TS p.en ?? 1)
                     break;
             }
             double kf = Math.Min(1, DT * 10),
@@ -810,7 +810,7 @@ namespace Hoops.Core
             // blinks: every 2.6-4.6 s per player (slot-seeded), a quick 0.15 s close; a flinch blink on contact
             double per = 2.6 + ((p.k * 7) % 5) * 0.5,
                 ph = (Sim.T + p.k * 1.37) % per;
-            c.bl = ph < 0.15 ? Math.Sin((ph / 0.15) * Math.PI) : 0;
+            c.bl = ph < 0.15 ? JsMath.Sin((ph / 0.15) * Math.PI) : 0;
             if (Or0(p.hitT) > 0.3) c.bl = 1;
             // eyes take what the head turn did not (clamped to the eye's travel), and lead it a little
             var q = p.q;
@@ -850,30 +850,30 @@ namespace Hoops.Core
                 X1 = b0 - w0,
                 Y1 = b1 - (w1 - cr * 0.4),
                 Z1 = b2 - w2,
-                lx = (X1 * Math.Cos(th) - Z1 * Math.Sin(th)) / S2,
-                lz = (X1 * Math.Sin(th) + Z1 * Math.Cos(th)) / S2;
+                lx = (X1 * JsMath.Cos(th) - Z1 * JsMath.Sin(th)) / S2,
+                lz = (X1 * JsMath.Sin(th) + Z1 * JsMath.Cos(th)) / S2;
             bool right = Util.T(side) ? side > 0 : lx >= 0;
             double tx = right ? lx - RIG.shX * p.bk : lx + RIG.shX * p.bk,
                 // the shoulder rides the pelvis pitch (ln) and the chest pitch (cx): target seen from the chest's frame
                 L = ln + cx,
-                cL = Math.Cos(L),
-                sL = Math.Sin(L),
-                dy = Y1 / S2 - (RIG.hip + RIG.chest * Math.Cos(ln) + RIG.sh * cL),
-                dz = lz - (RIG.chest * Math.Sin(ln) + RIG.sh * sL),
+                cL = JsMath.Cos(L),
+                sL = JsMath.Sin(L),
+                dy = Y1 / S2 - (RIG.hip + RIG.chest * JsMath.Cos(ln) + RIG.sh * cL),
+                dz = lz - (RIG.chest * JsMath.Sin(ln) + RIG.sh * sL),
                 ty2 = dy * cL + dz * sL,
                 tz = -dy * sL + dz * cL,
                 L1 = 1.02,
                 L2 = 1.15,
                 raw = Hypot(tx, ty2, tz),
                 d = Math.Min(L1 + L2 - 0.02, Math.Max(0.3, raw)),
-                ph2 = Math.Atan2(tz, -ty2),
-                al = Math.Acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+                ph2 = JsMath.Atan2(tz, -ty2),
+                al = JsMath.Acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
             IK.right = right;
             IK.a = ph2 - al;
             // keep the shoulder in its real range (a target straight overhead and a hair behind wraps atan2)
             if (IK.a < -2.6) IK.a += 2 * Math.PI;
-            IK.e = Math.PI - Math.Acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
-            IK.ab = clamp(Math.Atan2(right ? tx : -tx, Math.Max(0.2, Math.Abs(ty2))), -0.4, abMax);
+            IK.e = Math.PI - JsMath.Acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
+            IK.ab = clamp(JsMath.Atan2(right ? tx : -tx, Math.Max(0.2, Math.Abs(ty2))), -0.4, abMax);
             IK.over = raw - (L1 + L2);
             return IK;
         }
@@ -905,17 +905,17 @@ namespace Hoops.Core
         public static double hipAb(Q q, double sd) => sd * (Or0(q.hz) + sd * Or0(q.hs));
         public static V3 rx(V3 v, double a)
         {
-            double c = Math.Cos(a), s = Math.Sin(a);
+            double c = JsMath.Cos(a), s = JsMath.Sin(a);
             return new V3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
         }
         public static V3 ry(V3 v, double a)
         {
-            double c = Math.Cos(a), s = Math.Sin(a);
+            double c = JsMath.Cos(a), s = JsMath.Sin(a);
             return new V3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
         }
         public static V3 rz(V3 v, double a)
         {
-            double c = Math.Cos(a), s = Math.Sin(a);
+            double c = JsMath.Cos(a), s = JsMath.Sin(a);
             return new V3(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
         }
         public static V3 add(V3 a, V3 b) => new V3(a.x + b.x, a.y + b.y, a.z + b.z);
@@ -993,8 +993,8 @@ namespace Hoops.Core
         }
         public static double[] rot(int ax, double t, double[] o)
         {
-            double c = Math.Cos(t),
-                s = Math.Sin(t);
+            double c = JsMath.Cos(t),
+                s = JsMath.Sin(t);
             if (ax == 0) { o[0] = 1; o[1] = 0; o[2] = 0; o[3] = 0; o[4] = c; o[5] = -s; o[6] = 0; o[7] = s; o[8] = c; }
             else if (ax == 1) { o[0] = c; o[1] = 0; o[2] = s; o[3] = 0; o[4] = 1; o[5] = 0; o[6] = -s; o[7] = 0; o[8] = c; }
             else { o[0] = c; o[1] = -s; o[2] = 0; o[3] = s; o[4] = c; o[5] = 0; o[6] = 0; o[7] = 0; o[8] = 1; }

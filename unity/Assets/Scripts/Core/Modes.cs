@@ -127,7 +127,7 @@ namespace Hoops.Core
             p.vx = p.vy = p.vz = p.z = 0;
             p.mode = "i";
             p.t = 0;
-            p.f = Math.Atan2(HY - y, hoop(p.tm) - x);
+            p.f = JsMath.Atan2(HY - y, hoop(p.tm) - x);
         }
         public static void give(Player p)
         {
@@ -380,7 +380,7 @@ namespace Hoops.Core
             for (int k = 0; k < 5; k++)
             {
                 double a = (ds[k] * Math.PI) / 180, hx = hoop(0);
-                r[k] = new[] { hx - 243 * Math.Cos(a), HY + 243 * Math.Sin(a) };
+                r[k] = new[] { hx - 243 * JsMath.Cos(a), HY + 243 * JsMath.Sin(a) };
             }
             return r;
         }
@@ -598,7 +598,7 @@ namespace Hoops.Core
         public static double[] spotXY(double[] s)
         {
             double a = (s[0] * Math.PI) / 180;
-            return new[] { hoop(0) - s[1] * Math.Cos(a), HY + s[1] * Math.Sin(a) };
+            return new[] { hoop(0) - s[1] * JsMath.Cos(a), HY + s[1] * JsMath.Sin(a) };
         }
         public static void startHorse(double sel, double? opp = null)
         {

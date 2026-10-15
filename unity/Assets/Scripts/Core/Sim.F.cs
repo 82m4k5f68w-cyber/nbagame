@@ -293,8 +293,8 @@ namespace Hoops.Core
                         cy = 34,
                         a = ((double)j / n) * Math.PI * 2 + 0.4,
                         r = 15 + n * 2,
-                        tx = cx + Math.Cos(a) * r,
-                        ty = cy + Math.Sin(a) * r,
+                        tx = cx + JsMath.Cos(a) * r,
+                        ty = cy + JsMath.Sin(a) * r,
                         d = Hypot(tx - p.x, ty - p.y);
                     p.hcx = cx;
                     p.hcy = cy;
@@ -306,7 +306,7 @@ namespace Hoops.Core
                     else
                     {
                         p.@in.dx = p.@in.dy = 0;
-                        p.f = Math.Atan2(cy - p.y, cx - p.x);
+                        p.f = JsMath.Atan2(cy - p.y, cx - p.x);
                     }
                     p.hudT = d < 12 && TS.hud < 0.75 ? 0.2 : 0; // hands in
                     continue;
@@ -372,8 +372,8 @@ namespace Hoops.Core
                     p.z = 0;
                     p.mode = "i";
                     p.ph += ((v * dt) / stepLen(v)) * Math.PI;
-                    double tfa = d > 6 ? Math.Atan2(dy, dx) : Math.Atan2(o.y - p.y, o.x - p.x);
-                    p.f += Math.Atan2(Math.Sin(tfa - p.f), Math.Cos(tfa - p.f)) * Math.Min(1, dt * 8);
+                    double tfa = d > 6 ? JsMath.Atan2(dy, dx) : JsMath.Atan2(o.y - p.y, o.x - p.x);
+                    p.f += JsMath.Atan2(JsMath.Sin(tfa - p.f), JsMath.Cos(tfa - p.f)) * Math.Min(1, dt * 8);
                     if (d < 6 && !(p.celT > 0) && !Util.T(p.pgDap)) { p.cel = 9; p.celT = CEL_T; p.pgDap = 1; }
                     if (p.celT > 0) p.celT = Math.Max(0, p.celT - dt);
                 }

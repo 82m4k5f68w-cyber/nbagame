@@ -427,9 +427,9 @@ namespace Hoops.Core
                 {
                     int k = T(p.tm) ? b2++ : a++;
                     double ang = (T(p.tm) ? 0 : Math.PI) + (k - 1.5) * 0.75;
-                    p.x = 470 + Math.Cos(ang) * 82;
-                    p.y = 250 + Math.Sin(ang) * 82;
-                    p.f = Math.Atan2(250 - p.y, 470 - p.x);
+                    p.x = 470 + JsMath.Cos(ang) * 82;
+                    p.y = 250 + JsMath.Sin(ang) * 82;
+                    p.f = JsMath.Atan2(250 - p.y, 470 - p.x);
                 }
             }
             c0.cel = 9; c0.celT = CEL_T; // dap before the tip
@@ -1153,7 +1153,7 @@ namespace Hoops.Core
                 };
             ib.x = ix;
             ib.y = iy;
-            ib.f = Math.Atan2(HY - iy, (@base ? ah + dir * 120 : ix) - ix);
+            ib.f = JsMath.Atan2(HY - iy, (@base ? ah + dir * 120 : ix) - ix);
             int j = 0;
             foreach (var o in P)
                 if (o.tm == off && o != ib && !T(o.off))
@@ -1161,7 +1161,7 @@ namespace Hoops.Core
                     var s = spots[j++ % spots.Length];
                     o.x = s[0];
                     o.y = s[1];
-                    o.f = Math.Atan2(iy - o.y, ix - o.x);
+                    o.f = JsMath.Atan2(iy - o.y, ix - o.x);
                 }
             foreach (var o in P)
                 if (o.tm == off && !T(o.off))
@@ -1184,7 +1184,7 @@ namespace Hoops.Core
                         d.x = o.x + ((ah - o.x) / l) * 22;
                         d.y = o.y + ((HY - o.y) / l) * 22;
                     }
-                    d.f = Math.Atan2(o.y - d.y, o.x - d.x);
+                    d.f = JsMath.Atan2(o.y - d.y, o.x - d.x);
                 }
             foreach (var p in P) { p.x = clamp(p.x, 4, CW - 4); p.y = clamp(p.y, 4, CH - 4); }
             B.x = ib.x;

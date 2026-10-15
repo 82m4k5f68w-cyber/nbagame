@@ -81,15 +81,15 @@ namespace Hoops.Core
                 dy = ty - p.y,
                 l = Hypot(dx, dy);
             if (!Util.T(l)) l = 1;
-            double ux = (dx / l) * 0.55 + Math.Cos(f) * 0.45,
-                uy = (dy / l) * 0.55 + Math.Sin(f) * 0.45,
+            double ux = (dx / l) * 0.55 + JsMath.Cos(f) * 0.45,
+                uy = (dy / l) * 0.55 + JsMath.Sin(f) * 0.45,
                 m = Hypot(ux, uy);
             if (!Util.T(m)) m = 1;
             rx0 = p.x + (ux / m) * 40;
             ry0 = p.y + (uy / m) * 40;
         }
         /// <summary>Pelvis height helper: vertical extension of a leg (thigh t, knee k).</summary>
-        static double Ext(double t, double k) => RIG.L1 * Math.Cos(t) + RIG.L2 * Math.Cos(t - k);
+        static double Ext(double t, double k) => RIG.L1 * JsMath.Cos(t) + RIG.L2 * JsMath.Cos(t - k);
         /// <summary>Blend offset wrap: cr (crouch, channel 9) is a distance, every other channel an angle.</summary>
         /// <summary>(the shoulder raise channels aL / aR go over the top: an offset up to 4 rad is a real arm path)</summary>
         static double Wq(int j, double a) => j == 9 ? a : j == 4 || j == 5 ? wrapArm(a) : wrapPi(a);
@@ -105,20 +105,20 @@ namespace Hoops.Core
                 air = p.z > 2;
             double sp = Hypot(p.vx, p.vy),
                 spd = Math.Min(1, sp / 200),
-                s = Math.Sin(p.ph),
-                c = Math.Cos(p.ph);
+                s = JsMath.Sin(p.ph),
+                c = JsMath.Cos(p.ph);
             string md = p.mode;
             // stride-matched gait: thigh swing sized so the planted foot travels exactly one step (see sim stepLen)
             double legF = (3.18 * p.ht) / 6.4,
-                A = Math.Asin(Math.Min(0.9, (stepLen(sp) / 10 / (2 * legF)) * 0.92)) * Math.Min(1, sp / 30),
+                A = JsMath.Asin(Math.Min(0.9, (stepLen(sp) / 10 / (2 * legF)) * 0.92)) * Math.Min(1, sp / 30),
                 ksw = 0.45 + 0.95 * spd, // swing-knee flex: heel kick grows with speed
                 mv = Math.Min(1, sp / 30); // 0 standing .. 1 moving
             double hL = 0, // humeral twist (+ = internal rotation), applied about the upper-arm bone
                 hR = 0;
             double tL = s * A,
                 tR = -s * A,
-                kL = 0.07 + Math.Pow(Math.Max(0, c), 1.5) * ksw * Math.Min(1, sp / 30),
-                kR = 0.07 + Math.Pow(Math.Max(0, -c), 1.5) * ksw * Math.Min(1, sp / 30),
+                kL = 0.07 + Math.Max(0, c) * Math.Sqrt(Math.Max(0, c)) * ksw * Math.Min(1, sp / 30),
+                kR = 0.07 + Math.Max(0, -c) * Math.Sqrt(Math.Max(0, -c)) * ksw * Math.Min(1, sp / 30),
                 // (standing: the swing dies out - the arms hang relaxed and a little forward, elbows soft)
                 aL = -s * (0.2 * mv + 0.65 * spd) + 0.07 * (1 - mv),
                 aR = s * (0.2 * mv + 0.65 * spd) + 0.07 * (1 - mv),
@@ -224,7 +224,7 @@ namespace Hoops.Core
                 else if (PRO)
                 {
                     // catch-and-dip: the ball drops toward the hip and comes back up into the shot pocket as the knees load
-                    double dk = Math.Sin(Math.Min(1, p.t / 0.2) * Math.PI);
+                    double dk = JsMath.Sin(Math.Min(1, p.t / 0.2) * Math.PI);
                     aR -= 0.45 * dk;
                     aL -= 0.4 * dk;
                     eR += 0.2 * dk;
@@ -263,8 +263,8 @@ namespace Hoops.Core
                 if (kind != "hang" && p.z > 0)
                 {
                     // momentum shapes every jumper: drifting sideways tilts the body, fading falls back, attacking leans in
-                    double cf2 = Math.Cos(p.f),
-                        sf2 = Math.Sin(p.f),
+                    double cf2 = JsMath.Cos(p.f),
+                        sf2 = JsMath.Sin(p.f),
                         fwv = p.vx * cf2 + p.vy * sf2,
                         sdv = -p.vx * sf2 + p.vy * cf2;
                     ln += clamp(fwv / 650, -0.3, 0.25);
@@ -281,7 +281,7 @@ namespace Hoops.Core
                 if (kind == "hang")
                 {
                     // swinging under the rim, gripping the iron
-                    double sw = Math.Sin(Sim.T * 5.5 + p.k);
+                    double sw = JsMath.Sin(Sim.T * 5.5 + p.k);
                     tL += sw * 0.18;
                     tR += sw * 0.18;
                     ln += sw * 0.06;
@@ -290,7 +290,7 @@ namespace Hoops.Core
                 else if ((kind == "lay" || kind == "roll" || kind == "contact") && k > 0.4 && k < 0.92)
                 {
                     // layup hand extends toward the rim around the release
-                    double w = Math.Sin(((k - 0.4) / 0.52) * Math.PI) * 0.75;
+                    double w = JsMath.Sin(((k - 0.4) / 0.52) * Math.PI) * 0.75;
                     var r1 = armIK(p, cr, hoop(p.tm), HY, 104, 1, 0.5, ln, cx);
                     aR += (r1.a - aR) * w;
                     eR += (r1.e - eR) * w;
@@ -326,7 +326,7 @@ namespace Hoops.Core
                 }
                 if (v == 2)
                 {
-                    ln = -0.5 * Math.Sin(Math.Min(1, k * 1.1) * 3.14);
+                    ln = -0.5 * JsMath.Sin(Math.Min(1, k * 1.1) * 3.14);
                     tL = 1.1;
                     kL = 0.2;
                     tR = -0.4;
@@ -376,16 +376,16 @@ namespace Hoops.Core
             else if (md == "b")
             {
                 ln = -0.38;
-                tL = Math.Sin(p.t * 28) * 0.7;
+                tL = JsMath.Sin(p.t * 28) * 0.7;
                 tR = -tL;
                 kL = Math.Max(0, -tL) + 0.4;
                 kR = Math.Max(0, tL) + 0.4;
-                aR = 0.7 + Math.Sin(p.t * 22) * 0.5;
+                aR = 0.7 + JsMath.Sin(p.t * 22) * 0.5;
                 eR = 1.2;
                 aL = 0.5;
                 eL = 1;
                 cr = 0.3;
-                ty = Math.Sin(p.t * 22) * 0.3;
+                ty = JsMath.Sin(p.t * 22) * 0.3;
             }
             else if (has)
             {
@@ -419,11 +419,11 @@ namespace Hoops.Core
                 gL = gR = 0.05; // active hands
                 cy = 0;
                 // stance: hips back and down, chest up over the knees, hands out in front and alive (own rhythms)
-                aL = 0.78 + Math.Sin(Sim.T * 7.3 + p.k) * 0.07;
-                aR = 0.78 + Math.Sin(Sim.T * 8.1 + p.k + 1.7) * 0.07;
+                aL = 0.78 + JsMath.Sin(Sim.T * 7.3 + p.k) * 0.07;
+                aR = 0.78 + JsMath.Sin(Sim.T * 8.1 + p.k + 1.7) * 0.07;
                 eL = eR = 0.8;
-                sz = 0.82 + Math.Sin(Sim.T * 6.2 + p.k * 2.1) * 0.06;
-                zL = 0.82 + Math.Sin(Sim.T * 5.7 + p.k * 1.3) * 0.06;
+                sz = 0.82 + JsMath.Sin(Sim.T * 6.2 + p.k * 2.1) * 0.06;
+                zL = 0.82 + JsMath.Sin(Sim.T * 5.7 + p.k * 1.3) * 0.06;
                 cr = 0.55;
                 tL = s * 0.5 * spd + 0.35;
                 tR = -s * 0.5 * spd + 0.35;
@@ -437,8 +437,8 @@ namespace Hoops.Core
                 bool def = pos != p.tm && B.owner != null;
                 if (md == "i" && !air && sv > 25)
                 {
-                    double cf = Math.Cos(p.f),
-                        sf = Math.Sin(p.f),
+                    double cf = JsMath.Cos(p.f),
+                        sf = JsMath.Sin(p.f),
                         fw = (p.vx * cf + p.vy * sf) / sv,
                         sd2 = (-p.vx * sf + p.vy * cf) / sv;
                     if (!def && !(p.mvT > 0))
@@ -627,14 +627,14 @@ namespace Hoops.Core
                 }
                 else if (p.mvk == 3)
                 {
-                    ty += Math.Sin(e * 10) * 0.9 * sd;
+                    ty += JsMath.Sin(e * 10) * 0.9 * sd;
                     ln = 0.2;
                     cr = Math.Max(cr, 0.25); // sit into the between-the-legs; the hand IK carries the ball
                 }
                 else
                 {
                     // crossover: low, the shoulders dip and turn toward the side the ball goes to
-                    double b = Math.Sin(clamp(e / 0.4, 0, 1) * Math.PI);
+                    double b = JsMath.Sin(clamp(e / 0.4, 0, 1) * Math.PI);
                     ln = 0.3;
                     cr = 0.2 + 0.2 * b;
                     rz += 0.16 * b * sd;
@@ -643,10 +643,10 @@ namespace Hoops.Core
             }
             // ---- smarter running: plant-and-cut lean, drive steps out of a standstill, braking stops ----
             {
-                double hd = Math.Atan2(p.vy, p.vx);
+                double hd = JsMath.Atan2(p.vy, p.vx);
                 if (sp > 60 && p.hd0 != null)
                 {
-                    double dh = Math.Atan2(Math.Sin(hd - p.hd0.Value), Math.Cos(hd - p.hd0.Value));
+                    double dh = JsMath.Atan2(JsMath.Sin(hd - p.hd0.Value), JsMath.Cos(hd - p.hd0.Value));
                     p.trn = Or0(p.trn) * 0.75 + (dh / DT) * 0.25;
                 }
                 else p.trn = Or0(p.trn) * 0.8;
@@ -701,7 +701,7 @@ namespace Hoops.Core
                 else if (hold == 2 && p.act == 1)
                 {
                     // pump fake: ball snaps up toward the forehead, legs straighten, then back down
-                    double u = Math.Sin(clamp(1 - p.actT / 0.42, 0, 1) * Math.PI);
+                    double u = JsMath.Sin(clamp(1 - p.actT / 0.42, 0, 1) * Math.PI);
                     cr = 0.3 * (1 - u);
                     kL = kR = 0.6 - 0.45 * u;
                     tL = tR = 0.35 - 0.25 * u;
@@ -711,7 +711,7 @@ namespace Hoops.Core
                 else if (hold == 2 && p.act == 2)
                 {
                     // jab step: the lead foot stabs out toward the jab, weight shifts onto it, ball ripped to the far hip
-                    double u = Math.Sin(clamp(1 - p.actT / 0.38, 0, 1) * Math.PI);
+                    double u = JsMath.Sin(clamp(1 - p.actT / 0.38, 0, 1) * Math.PI);
                     tL = 0.35 + 0.55 * u;
                     kL = 0.6 + 0.3 * u;
                     tR = 0.2;
@@ -751,7 +751,7 @@ namespace Hoops.Core
                     double bx = own ? B.tgx : B.x,
                         by = own ? B.tgy : B.y,
                         bz = own ? B.tgz : B.z;
-                    var k5 = armIK(p, cr, bx + Math.Sin(fv(p)) * 3 * sd, by - Math.Cos(fv(p)) * 3 * sd, bz, sd, 0.9, ln, cx);
+                    var k5 = armIK(p, cr, bx + JsMath.Sin(fv(p)) * 3 * sd, by - JsMath.Cos(fv(p)) * 3 * sd, bz, sd, 0.9, ln, cx);
                     if (sd > 0) { aR = k5.a; eR = k5.e; sz = k5.ab; }
                     else { aL = k5.a; eL = k5.e; zL = k5.ab; }
                 }
@@ -828,7 +828,7 @@ namespace Hoops.Core
                 else if (a == 8)
                 {
                     // shoulder fake in the post: shoulders dip and turn one way
-                    double u = Math.Sin(clamp(e / 0.4, 0, 1) * Math.PI);
+                    double u = JsMath.Sin(clamp(e / 0.4, 0, 1) * Math.PI);
                     ty += 0.55 * u;
                     rz += 0.2 * u;
                     cr += 0.1 * u;
@@ -839,7 +839,7 @@ namespace Hoops.Core
             {
                 // (aimed a little in front of him and never past straight up: a ball right overhead used to flip the arm
                 // over the top and back as it wobbled in front of / behind the shoulder)
-                var k6 = armIK(p, cr, B.x + Math.Cos(fv(p)) * 8, B.y + Math.Sin(fv(p)) * 8, B.z + 4, 1, 0.8, ln, cx);
+                var k6 = armIK(p, cr, B.x + JsMath.Cos(fv(p)) * 8, B.y + JsMath.Sin(fv(p)) * 8, B.z + 4, 1, 0.8, ln, cx);
                 aR = Math.Min(armN(k6.a), 3.25);
                 eR = k6.e;
                 sz = k6.ab;
@@ -866,7 +866,7 @@ namespace Hoops.Core
                     // (not a shot that just left the hand: it flies by too fast to track - the swat was the block layer's job)
                     // rebounds, tips and catches: both hands go to where the ball actually is (not behind him: a ball that
                     // went past his back is let go, the arms don't swing backwards after it)
-                    double fw = (Math.Cos(fv(p)) * (B.x - p.x) + Math.Sin(fv(p)) * (B.y - p.y)) / (Util.T(bd) ? bd : 1),
+                    double fw = (JsMath.Cos(fv(p)) * (B.x - p.x) + JsMath.Sin(fv(p)) * (B.y - p.y)) / (Util.T(bd) ? bd : 1),
                         w = clamp((45 - bd) / 20, 0, 1) * clamp((fw + 0.35) / 0.5, 0, 1);
                     var r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0, ln, cx);
                     aR += (r1.a - aR) * w; eR += (r1.e - eR) * w; sz += (r1.ab - sz) * w;
@@ -894,7 +894,7 @@ namespace Hoops.Core
                 var m = PAt(p.man.Value);
                 double w = Math.Min(1, p.swT * 4) * Math.Min(1, (0.7 - p.swT) * 8 + 0.2),
                     f = fv(p),
-                    sd = Math.Sin(f) * (m.x - p.x) - Math.Cos(f) * (m.y - p.y) > 0 ? 1 : -1;
+                    sd = JsMath.Sin(f) * (m.x - p.x) - JsMath.Cos(f) * (m.y - p.y) > 0 ? 1 : -1;
                 var k = armIK(p, cr, m.x, m.y, p.z + p.ht * 7.4, sd, 0.9, ln, cx);
                 double a = Math.Min(k.a, 1.7);
                 if (sd > 0) { aR += (a - aR) * w; eR += (0.1 - eR) * w; sz += (k.ab - sz) * w; gR = 0.6; }
@@ -907,7 +907,7 @@ namespace Hoops.Core
                 for (int si = 0; si < 2; si++)
                 {
                     double sd = si == 0 ? 1 : -1;
-                    var k = armIK(p, cr, p.hcx + Math.Sin(fv(p)) * 2 * sd, p.hcy - Math.Cos(fv(p)) * 2 * sd, zc, sd, 0.6, ln, cx);
+                    var k = armIK(p, cr, p.hcx + JsMath.Sin(fv(p)) * 2 * sd, p.hcy - JsMath.Cos(fv(p)) * 2 * sd, zc, sd, 0.6, ln, cx);
                     if (sd > 0) { aR = k.a; eR = k.e; sz = k.ab; }
                     else { aL = k.a; eL = k.e; zL = k.ab; }
                 }
@@ -955,7 +955,7 @@ namespace Hoops.Core
                 double near = NearOpp(p);
                 if (near < 50)
                 {
-                    double c2 = Math.Sin(Sim.T * 22 + p.k),
+                    double c2 = JsMath.Sin(Sim.T * 22 + p.k),
                         w = Math.Min(1, (50 - near) / 20) * (1 - sp / 45);
                     tL += (0.25 + c2 * 0.1 - tL) * w;
                     tR += (0.25 - c2 * 0.1 - tR) * w;
@@ -997,7 +997,7 @@ namespace Hoops.Core
                     if (mk != null && mk != ow && w > 0)
                     {
                         double f = fv(p),
-                            bs = Math.Sin(f) * (B.x - p.x) - Math.Cos(f) * (B.y - p.y) > 0 ? 1 : -1, // ball on his right?
+                            bs = JsMath.Sin(f) * (B.x - p.x) - JsMath.Cos(f) * (B.y - p.y) > 0 ? 1 : -1, // ball on his right?
                             zc = p.z + p.ht * 5.2; // (pointing low and soft, not a scarecrow)
                         // aim 40 px out along a direction between his facing and the target
                         PtAim(p, f, B.x, B.y, out double b2x, out double b2y);
@@ -1028,7 +1028,7 @@ namespace Hoops.Core
                         double lx = mk.x + (B.x - mk.x) * 0.3,
                             ly = mk.y + (B.y - mk.y) * 0.3,
                             f = fv(p),
-                            bs = Math.Sin(f) * (lx - p.x) - Math.Cos(f) * (ly - p.y) > 0 ? 1 : -1;
+                            bs = JsMath.Sin(f) * (lx - p.x) - JsMath.Cos(f) * (ly - p.y) > 0 ? 1 : -1;
                         var kd = armIK(p, cr, lx, ly, p.z + p.ht * 6.2, bs, 0.9, ln, cx);
                         double ad = Math.Min(kd.a, 1.6);
                         if (bs > 0) { aR += (ad - aR) * wd; eR += (0.25 - eR) * wd; sz += (kd.ab - sz) * wd; gR = 0.1; }
@@ -1041,7 +1041,7 @@ namespace Hoops.Core
             if (PRO && pos == p.tm && !has && B.owner != null && B.owner.tm == p.tm && md == "i" && !air && !(p.setT > 0))
             {
                 double open = NearOpp(p);
-                double cw = clamp((Math.Sin(Sim.T * 1.3 + p.k * 2.1) - 0.4) / 0.15, 0, 1); // (eased, never pops)
+                double cw = clamp((JsMath.Sin(Sim.T * 1.3 + p.k * 2.1) - 0.4) / 0.15, 0, 1); // (eased, never pops)
                 if (open > 50 && Hypot(B.owner.vx, B.owner.vy) < 120 && cw > 0)
                 {
                     aR += (2.6 - aR) * cw;
@@ -1073,7 +1073,7 @@ namespace Hoops.Core
                         double w = clamp((ap - 50) / 110, 0, 1) * clamp((140 - d) / 50, 0, 1),
                             brk = clamp((85 - d) / 40, 0, 1) * w, // breaking down: chop steps
                             shoot = ow.mode == "c" || ow.mode == "s" ? 1 : 0.65,
-                            ch = Math.Sin(Sim.T * 27 + p.k * 1.3);
+                            ch = JsMath.Sin(Sim.T * 27 + p.k * 1.3);
                         aR += (2.2 + 0.7 * shoot - aR) * w;
                         eR += (0.5 - 0.35 * shoot - eR) * w;
                         sz += (0.2 - sz) * w;
@@ -1110,10 +1110,10 @@ namespace Hoops.Core
                 if (ow != null && ow.tm != p.tm && !air && md == "i" && !(p.hupT > 0) && !(p.celT > 0))
                 {
                     double d = Hypot(ow.x - p.x, ow.y - p.y);
-                    double hw = clamp((Math.Sin(Sim.T * 1.7 + p.k) + 0.3) / 0.25, 0, 1); // (on and off his hip, eased)
+                    double hw = clamp((JsMath.Sin(Sim.T * 1.7 + p.k) + 0.3) / 0.25, 0, 1); // (on and off his hip, eased)
                     if (d < 34 && d > 10 && hw > 0)
                     {
-                        var r = armIK(p, cr, ow.x - Math.Cos(ow.f) * 3, ow.y - Math.Sin(ow.f) * 3, ow.z + ow.ht * 4.4, 0, 0.9, ln, cx);
+                        var r = armIK(p, cr, ow.x - JsMath.Cos(ow.f) * 3, ow.y - JsMath.Sin(ow.f) * 3, ow.z + ow.ht * 4.4, 0, 0.9, ln, cx);
                         double w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0) * hw;
                         if (r.right) { aR += (r.a - aR) * w; eR += (r.e - eR) * w; sz += (r.ab - sz) * w; gR = 0.1; }
                         else { aL += (r.a - aL) * w; eL += (r.e - eL) * w; zL = (zL ?? sz) + (r.ab - (zL ?? sz)) * w; gL = 0.1; }
@@ -1146,8 +1146,8 @@ namespace Hoops.Core
                     }
                     else if (p.pk == 1)
                     {
-                        LOOK.x = p.x + Math.Cos(p.f) * 200;
-                        LOOK.y = p.y + Math.Sin(p.f) * 200;
+                        LOOK.x = p.x + JsMath.Cos(p.f) * 200;
+                        LOOK.y = p.y + JsMath.Sin(p.f) * 200;
                         LOOK.z = 70;
                         LOOK.on = 1;
                     }
@@ -1172,7 +1172,7 @@ namespace Hoops.Core
                 // double clutch: the ball comes down under the contest, then back up to the release
                 if (md == "s" && Or0(p.dcl) >= 0.09 && !Util.T(p.rl))
                 {
-                    double w = clamp(Math.Sin(((p.t - 0.14) / 0.3) * Math.PI), 0, 1);
+                    double w = clamp(JsMath.Sin(((p.t - 0.14) / 0.3) * Math.PI), 0, 1);
                     aR -= 0.95 * w;
                     eR += 0.55 * w;
                     aL -= 0.8 * w;
@@ -1258,7 +1258,7 @@ namespace Hoops.Core
                     // landing: feet split (one lands first) and the drift carries the stance sideways
                     tL += 0.22 * k;
                     tR -= 0.12 * k;
-                    hs += clamp((-p.vx * Math.Sin(p.f) + p.vy * Math.Cos(p.f)) / 600, -0.25, 0.25) * k;
+                    hs += clamp((-p.vx * JsMath.Sin(p.f) + p.vy * JsMath.Cos(p.f)) / 600, -0.25, 0.25) * k;
                     cr += 0.4 * k;
                     kL += 0.55 * k;
                     kR += 0.55 * k;
@@ -1309,7 +1309,7 @@ namespace Hoops.Core
                 sz = 0.62;
                 eL = eR = 1.55;
                 hL = hR = 1.25;
-                cx = -0.05 + Math.Sin(Sim.T * 2 + p.k) * 0.04;
+                cx = -0.05 + JsMath.Sin(Sim.T * 2 + p.k) * 0.04;
                 gL = gR = 0.35;
             }
             else if (md == "i" && !has && !air && sp < 15 && !(p.celT > 0) && !(p.setT > 0) && (ftq != null ? ftq.s != p && !onLane : rs > 0.3 && p.en < 0.75))
@@ -1331,7 +1331,7 @@ namespace Hoops.Core
             {
                 // gassed, walking at a dead ball: arms hang heavy, shoulders slump, a big breath (arms and chest only - the
                 // legs keep walking)
-                double br = Math.Sin(Sim.T * 2.4 + p.k) * 0.06;
+                double br = JsMath.Sin(Sim.T * 2.4 + p.k) * 0.06;
                 // hands on the hips: elbows out, forearms turned in to the hip bones, chest heaving
                 aL = aR = -0.15;
                 zL = 0.62;
@@ -1351,7 +1351,7 @@ namespace Hoops.Core
                 switch (cel)
                 {
                     case 1: // shimmy: elbows tucked, shoulders shake (the chest shakes over still hips)
-                        cy += Math.Sin(e * 50) * 0.25 * k;
+                        cy += JsMath.Sin(e * 50) * 0.25 * k;
                         gL = gR = Lp(gR, 0.6, k);
                         aL = Lp(aL, 0.45, k);
                         aR = Lp(aR, 0.45, k);
@@ -1359,8 +1359,8 @@ namespace Hoops.Core
                         eR = Lp(eR, 1.75, k);
                         sz = Lp(sz, 0.3, k);
                         zL = Lp(zl, 0.3, k);
-                        ty += Math.Sin(e * 50) * 0.08 * k;
-                        rz += Math.Sin(e * 50) * 0.07 * k;
+                        ty += JsMath.Sin(e * 50) * 0.08 * k;
+                        rz += JsMath.Sin(e * 50) * 0.07 * k;
                         ln = Lp(ln, -0.05, k);
                         break;
                     case 2: // night night: hands together beside the cheek, head tilted onto them
@@ -1377,7 +1377,7 @@ namespace Hoops.Core
                     case 3: // front double-bicep flex with a pump: upper arms out level, forearms turned up (external rotation)
                         gL = gR = Lp(gR, 1, k);
                         aL = aR = Lp((aL + aR) / 2, 0.15, k);
-                        eL = eR = Lp((eL + eR) / 2, 1.75 + Math.Sin(e * 12) * 0.18, k);
+                        eL = eR = Lp((eL + eR) / 2, 1.75 + JsMath.Sin(e * 12) * 0.18, k);
                         hL = Lp(hL, -1.45, k);
                         hR = Lp(hR, -1.45, k);
                         sz = Lp(sz, 1.45, k);
@@ -1388,8 +1388,8 @@ namespace Hoops.Core
                     case 4: // both arms up, three fingers to the crowd, pumping
                         gL = gR = Lp(gR, 0.4, k);
                         HEADX = -0.35 * k;
-                        aL = Lp(aL, 2.7 + Math.Sin(e * 10) * 0.15, k);
-                        aR = Lp(aR, 2.7 + Math.Sin(e * 10 + 1) * 0.15, k);
+                        aL = Lp(aL, 2.7 + JsMath.Sin(e * 10) * 0.15, k);
+                        aR = Lp(aR, 2.7 + JsMath.Sin(e * 10 + 1) * 0.15, k);
                         eL = Lp(eL, 0.35, k);
                         eR = Lp(eR, 0.35, k);
                         sz = Lp(sz, 0.35, k);
@@ -1399,7 +1399,7 @@ namespace Hoops.Core
                     case 5: // chest thump, chin up
                         gR = Lp(gR, 1, k);
                         aR = Lp(aR, 1.25, k);
-                        eR = Lp(eR, 2.25 + Math.Max(0, Math.Sin(e * 15)) * 0.35, k);
+                        eR = Lp(eR, 2.25 + Math.Max(0, JsMath.Sin(e * 15)) * 0.35, k);
                         sz = Lp(sz, -0.45, k);
                         aL = Lp(aL, 0.35, k);
                         zL = Lp(zl, 0.6, k);
@@ -1422,7 +1422,7 @@ namespace Hoops.Core
                         sz = Lp(sz, -0.3, k);
                         aL = Lp(aL, 0.2, k);
                         eL = Lp(eL, 0.35, k);
-                        ty += Math.Sin(e * 2.2) * 0.35 * k;
+                        ty += JsMath.Sin(e * 2.2) * 0.35 * k;
                         break;
                     case 11: // missed an open look: hands on the head
                         aL = Lp(aL, 2.55, k);
@@ -1436,7 +1436,7 @@ namespace Hoops.Core
                     case 12:
                         {
                             // arguing the call: arms out, palms up, shrug
-                            double sh = Math.Sin(e * 7) * 0.15;
+                            double sh = JsMath.Sin(e * 7) * 0.15;
                             aL = Lp(aL, 0.9 + sh, k);
                             aR = Lp(aR, 0.9 - sh, k);
                             eL = Lp(eL, 0.9, k);
@@ -1451,7 +1451,7 @@ namespace Hoops.Core
                     case 13:
                         {
                             // hyping a teammate: clapping in front of the chest
-                            double cl = Math.Abs(Math.Sin(e * 9));
+                            double cl = Math.Abs(JsMath.Sin(e * 9));
                             aL = Lp(aL, 1.35, k);
                             aR = Lp(aR, 1.35, k);
                             eL = Lp(eL, 0.9, k);
@@ -1521,7 +1521,7 @@ namespace Hoops.Core
                                     if (d < bd2) { bd2 = d; mate = o2; }
                                 }
                             }
-                            double reach = e < 0.7 ? Math.Sin((e / 0.7) * Math.PI) : 0;
+                            double reach = e < 0.7 ? JsMath.Sin((e / 0.7) * Math.PI) : 0;
                             aR = Lp(aR, 0.5 + reach * 0.9, k);
                             eR = Lp(eR, 0.9 - reach * 0.6, k);
                             sz = Lp(sz, -0.15, k);
@@ -1588,19 +1588,19 @@ namespace Hoops.Core
             {
                 double w = (1 - mv) * (st == ST.def ? 0.5 : 1),
                     k0 = p.k * 1.7;
-                rz += Math.Sin(Sim.T * 0.55 + k0) * 0.035 * w;
-                cy += Math.Sin(Sim.T * 0.37 + k0 * 1.3) * 0.06 * w;
-                ty += Math.Sin(Sim.T * 0.29 + k0 * 0.7) * 0.04 * w;
-                cx += Math.Sin(Sim.T * 0.21 + k0 * 2.1) * 0.025 * w;
-                aL += Math.Sin(Sim.T * 0.8 + k0) * 0.035 * w; aR += Math.Sin(Sim.T * 0.73 + k0 + 2) * 0.035 * w;
+                rz += JsMath.Sin(Sim.T * 0.55 + k0) * 0.035 * w;
+                cy += JsMath.Sin(Sim.T * 0.37 + k0 * 1.3) * 0.06 * w;
+                ty += JsMath.Sin(Sim.T * 0.29 + k0 * 0.7) * 0.04 * w;
+                cx += JsMath.Sin(Sim.T * 0.21 + k0 * 2.1) * 0.025 * w;
+                aL += JsMath.Sin(Sim.T * 0.8 + k0) * 0.035 * w; aR += JsMath.Sin(Sim.T * 0.73 + k0 + 2) * 0.035 * w;
             }
             // ---- secondary motion (light ragdoll): a damped spring on the torso. Contact impulses (sized by the hit, so the
             // momentum of the collision carries into the reaction) and the body's own inertia when speeding up, stopping or
             // cutting drive it; it overshoots and settles. Big hits make the arms flail for balance and force a recovery step.
             if (PRO)
             {
-                double cf = Math.Cos(p.f),
-                    sf = Math.Sin(p.f),
+                double cf = JsMath.Cos(p.f),
+                    sf = JsMath.Sin(p.f),
                     ax = (p.vx - (p.svx ?? p.vx)) / DT,
                     ay = (p.vy - (p.svy ?? p.vy)) / DT;
                 p.svx = p.vx;
@@ -1657,7 +1657,7 @@ namespace Hoops.Core
             // ---- additive layer: breathing (deeper when tired) ----
             {
                 double tired = 1 - p.en; // (TS p.en ?? 1: en starts at 1)
-                cx += Math.Sin(Sim.T * (2.1 + tired * 3) + p.k * 1.7) * (0.012 + tired * 0.05);
+                cx += JsMath.Sin(Sim.T * (2.1 + tired * 3) + p.k * 1.7) * (0.012 + tired * 0.05);
             }
             // ---- feet: flat on the floor through stance, toe-off behind the body, pointed in the air ----
             double fL = tL - kL + toe + (st == ST.run || st == ST.drib ? Math.Max(0, -tL - 0.12) * 0.9 * spd : 0),
@@ -1672,7 +1672,7 @@ namespace Hoops.Core
             double nk = -(ln + cx) * 0.35;
             {
                 // idle glance: off the ball and standing at a dead ball, eyes wander (bench, crowd, a teammate) now and then
-                double gl0 = Math.Sin(Sim.T * 0.37 + p.k * 2.1);
+                double gl0 = JsMath.Sin(Sim.T * 0.37 + p.k * 2.1);
                 if (!Util.T(LOOK.on) && !has && sp < 20 && (rs > 0 || ftq != null || inb > 0) && gl0 > 0.55)
                 {
                     var o = P[(int)((p.k * 3 + Math.Floor((Sim.T * 0.37) / 3)) % P.Count)];
@@ -1694,10 +1694,10 @@ namespace Hoops.Core
                     dist = Hypot(dx, dy);
                 if (dist > 6)
                 {
-                    double d = Math.Atan2(Math.Sin(Math.Atan2(dy, dx) - p.f), Math.Cos(Math.Atan2(dy, dx) - p.f)),
+                    double d = JsMath.Atan2(JsMath.Sin(JsMath.Atan2(dy, dx) - p.f), JsMath.Cos(JsMath.Atan2(dy, dx) - p.f)),
                         hz2 = p.z + p.ht * 9.3;
                     hyT = -d - ty - cy;
-                    hpT = Math.Atan2(hz2 - LOOK.z, dist) - (ln + cx) * 0.9 - nk;
+                    hpT = JsMath.Atan2(hz2 - LOOK.z, dist) - (ln + cx) * 0.9 - nk;
                     hy = clamp(hyT, -1.25, 1.25);
                     hp = clamp(hpT, -0.75, 0.8);
                     hy *= 1 - 0.6 * clamp((Math.Abs(hyT) - 1.8) / 0.6, 0, 1); // target behind: don't owl-turn (eases in, no snap)
@@ -1712,8 +1712,8 @@ namespace Hoops.Core
                 var ball = palmAt(p, aR, eR, sz, wR, ln, ty, rz, cx, cy, cr);
                 if (ball != null)
                 {
-                    double lx = -Math.Sin(p.f),
-                        ly = Math.Cos(p.f);
+                    double lx = -JsMath.Sin(p.f),
+                        ly = JsMath.Cos(p.f);
                     var r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9, ln, cx);
                     if (r2.over < 0.6)
                     {
@@ -1761,7 +1761,7 @@ namespace Hoops.Core
             // 50 ms filter smooths the targets (IK and clip switches).
             bool sm = PRO && p.q != null && p.posed, // (TS q && q.wR != null)
                 INZ = cfg.INZ != 0;
-            double fS = sm ? 1 - Math.Exp((-DT * 3) / (INZ ? Math.Min(0.05, BLEND[st]) : BLEND[st])) : 1;
+            double fS = sm ? 1 - JsMath.Exp((-DT * 3) / (INZ ? Math.Min(0.05, BLEND[st]) : BLEND[st])) : 1;
             var oq = p.q ?? (p.q = new Q());
             VALS[0] = tL;
             VALS[1] = tR;

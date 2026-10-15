@@ -199,8 +199,9 @@ export function pose3(p: Player) {
     hR = 0;
   let tL = s * A,
     tR = -s * A,
-    kL = 0.07 + Math.pow(Math.max(0, c), 1.5) * ksw * Math.min(1, sp / 30),
-    kR = 0.07 + Math.pow(Math.max(0, -c), 1.5) * ksw * Math.min(1, sp / 30),
+    // (x^1.5 as x * sqrt(x): correctly rounded everywhere, so the C# twin gets the same bits - pow is not)
+    kL = 0.07 + Math.max(0, c) * Math.sqrt(Math.max(0, c)) * ksw * Math.min(1, sp / 30),
+    kR = 0.07 + Math.max(0, -c) * Math.sqrt(Math.max(0, -c)) * ksw * Math.min(1, sp / 30),
     // (standing: the swing dies out - the arms hang relaxed and a little forward, elbows soft, instead of freezing
     // mid-swing wherever the gait phase stopped)
     aL = -s * (0.2 * mv + 0.65 * spd) + 0.07 * (1 - mv),

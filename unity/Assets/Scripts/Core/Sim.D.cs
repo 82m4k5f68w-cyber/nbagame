@@ -297,7 +297,7 @@ namespace Hoops.Core
                     if (clock > shot + 4 && clock < shot + 14 && QTRLEN >= 60) a.w = 0.3;
                 }
                 if (cfg.PP != 0 && upCpuGather(p, D)) return; // (UP: attack the rim with a gather from 9-14 ft)
-                if (D > a.r) mv(p, oh, HY + Math.Sin(T * 1.5 + p.k) * 90, 1);
+                if (D > a.r) mv(p, oh, HY + JsMath.Sin(T * 1.5 + p.k) * 90, 1);
                 else
                 {
                     a.w += dt;
@@ -525,7 +525,7 @@ namespace Hoops.Core
                 double[] s = SP[(int)p.k];
                 double x = Util.T(t) ? 52.5 + s[0] : 887.5 - s[0];
                 Player nd = P[nearest(1 - t, p.x, p.y)];
-                mv(p, x + (p.x - nd.x) * 0.35, s[1] + Math.Sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
+                mv(p, x + (p.x - nd.x) * 0.35, s[1] + JsMath.Sin(T + p.k * 2) * 18 + (p.y - nd.y) * 0.3, 0.95);
             }
             else if (B.owner != null && Util.T(TS.tr[1 - ti]) && B.owner.tm != t && NP > 1 && cfg.HALF == 0 && !isH(p))
             {
@@ -862,7 +862,7 @@ namespace Hoops.Core
             {
                 // in the hand: the catch is cushioned (the hand gives a little upward), then the push
                 B.dhd -= dt;
-                B.dvv *= Math.Exp(-28 * dt);
+                B.dvv *= JsMath.Exp(-28 * dt);
                 B.dh = Math.Min(Math.Max(top + 5, B.dh), B.dh + B.dvv * dt);
                 if (B.dhd <= 0) B.dvv = -(165 + sp * 0.4) * (o.s >= 86 ? 1.15 : o.ht >= 6.9 ? 0.9 : 1); // (quick handlers pound it, bigs bounce it)
             }
@@ -924,7 +924,7 @@ namespace Hoops.Core
             if (h == 2)
             {
                 double k = 1 - o.actT / (o.act == 1 ? 0.42 : 0.38),
-                    u = Math.Sin(Math.Min(1, k) * Math.PI);
+                    u = JsMath.Sin(Math.Min(1, k) * Math.PI);
                 return o.act == 1 ? hip + u * o.ht * 4.2 : hip;
             }
             if (h == 3)
@@ -988,7 +988,7 @@ namespace Hoops.Core
                     if (d != null && dd < 46)
                     {
                         // defender's side in the handler's frame (+ = right)
-                        double rs2 = (d.x - o.x) * Math.Sin(o.f) - (d.y - o.y) * Math.Cos(o.f),
+                        double rs2 = (d.x - o.x) * JsMath.Sin(o.f) - (d.y - o.y) * JsMath.Cos(o.f),
                             sp = Hypot(o.vx, o.vy);
                         if (Sign(rs2) == B.dhn && Math.Abs(rs2) > 7) dhSw(1, 0.22); // protect: cross away from the defender
                         else if (cfg.PP != 0 && sp < 25 && dd < 60) upSizeUp(o);
@@ -1013,11 +1013,11 @@ namespace Hoops.Core
                 B.dsw = Math.Max(0, B.dsw - dt);
                 double u0 = 1 - B.dsw / (Util.T(B.dswd) ? B.dswd : 0.2),
                     u = u0 * u0 * (3 - 2 * u0),
-                    arc = Math.Sin(Math.PI * u0);
+                    arc = JsMath.Sin(Math.PI * u0);
                 double from = B.dswf ?? -lat;
                 lat = from + (dhBase() - from) * u;
                 if (B.dswk == 3) fwd = 6 - 10 * arc; // through the legs / behind the back
-                else if (B.dswk == 2) { fwd = 6 * Math.Cos(Math.PI * u0); lat += 5 * arc * B.dhn; } // swung around the hip
+                else if (B.dswk == 2) { fwd = 6 * JsMath.Cos(Math.PI * u0); lat += 5 * arc * B.dhn; } // swung around the hip
                 else if (B.dswk >= 5) upDribPath(u0, arc, ref lat, ref fwd, from);
                 else fwd = 6 - 1.5 * arc; // crossover: low and tight across the front
             }

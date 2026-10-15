@@ -84,7 +84,7 @@ namespace Hoops.Core
                 // smoothed acceleration along the facing direction (body leans into it)
                 double ax = (p.vx - p.pvx) / dt,
                     ay = (p.vy - p.pvy) / dt;
-                p.acc = p.acc * 0.85 + (ax * Math.Cos(p.f) + ay * Math.Sin(p.f)) * 0.15;
+                p.acc = p.acc * 0.85 + (ax * JsMath.Cos(p.f) + ay * JsMath.Sin(p.f)) * 0.15;
                 p.pvx = p.vx;
                 p.pvy = p.vy;
             }
@@ -569,20 +569,20 @@ namespace Hoops.Core
             p.y = Clamp(p.y + p.vy * dt, 8, CH - 8);
             double sv = Hypot(p.vx, p.vy);
             p.ph += ((sv * dt) / stepLen(sv)) * Math.PI; // one step = half a gait cycle, so the feet travel with the body
-            if (p.mode != "i") p.f = Math.Atan2(uy, ux);
+            if (p.mode != "i") p.f = JsMath.Atan2(uy, ux);
             else
             {
                 double? tf = null;
-                if (pos != p.tm && B.owner != null) tf = Math.Atan2(B.y - p.y, B.x - p.x);
-                else if (has) tf = sv > 1 && (p.vx * ux + p.vy * uy) / D < -0.3 * sv ? Math.Atan2(uy, ux) /* (sv > 1: not on float noise) */ : sv > 20 ? Math.Atan2(p.vy, p.vx) : (double?)null;
-                else tf = sv > 150 ? Math.Atan2(p.vy, p.vx) : Math.Atan2(B.y - p.y, B.x - p.x);
+                if (pos != p.tm && B.owner != null) tf = JsMath.Atan2(B.y - p.y, B.x - p.x);
+                else if (has) tf = sv > 1 && (p.vx * ux + p.vy * uy) / D < -0.3 * sv ? JsMath.Atan2(uy, ux) /* (sv > 1: not on float noise) */ : sv > 20 ? JsMath.Atan2(p.vy, p.vx) : (double?)null;
+                else tf = sv > 150 ? JsMath.Atan2(p.vy, p.vx) : JsMath.Atan2(B.y - p.y, B.x - p.x);
                 if (tf != null)
                 {
-                    double dd = Math.Atan2(Math.Sin(tf.Value - p.f), Math.Cos(tf.Value - p.f));
+                    double dd = JsMath.Atan2(JsMath.Sin(tf.Value - p.f), JsMath.Cos(tf.Value - p.f));
                     p.f += dd * Math.Min(1, dt * 10);
                 }
             }
-            if (Util.T(p.postA)) p.f = Math.Atan2(-uy, -ux);
+            if (Util.T(p.postA)) p.f = JsMath.Atan2(-uy, -ux);
             if (p.hangT > 0)
             {
                 // hanging on the rim after a dunk: hands on the iron, body under the front of the rim
@@ -612,8 +612,8 @@ namespace Hoops.Core
                         double dh = Hypot(p.vx, p.vy), d = Util.T(dh) ? dh : 1;
                         p.hitT = 0.28;
                         double hxv = p.vx / d, hyv = p.vy / d;
-                        p.hitX = Util.T(hxv) ? hxv : Math.Cos(p.f);
-                        p.hitY = Util.T(hyv) ? hyv : Math.Sin(p.f);
+                        p.hitX = Util.T(hxv) ? hxv : JsMath.Cos(p.f);
+                        p.hitY = Util.T(hyv) ? hyv : JsMath.Sin(p.f);
                         p.slow = Math.Max(p.slow, 0.45);
                     }
                     p.z = 0;

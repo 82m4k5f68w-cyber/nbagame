@@ -61,7 +61,7 @@ namespace Hoops.Core
         }
 
         static double SS(double u) { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); }
-        static double Bump(double u) => u <= 0 || u >= 1 ? 0 : Math.Sin(u * Math.PI);
+        static double Bump(double u) => u <= 0 || u >= 1 ? 0 : JsMath.Sin(u * Math.PI);
 
         /// <summary>Clip phase of the current shot (same mapping as pose3).</summary>
         static double upK(Player p, string kind)
@@ -96,7 +96,7 @@ namespace Hoops.Core
                     // jumper gather -> dip: depth / speed from the form; catch-and-shoot 1-2 step or a hop off the dribble
                     double td = curry ? 0.1 : sig == 5 ? 0.32 : 0.16 + dp * 0.18,
                         depth = curry ? 0.12 : 0.18 + dp * 0.45 + fk * 0.6 + (sig == 5 ? 0.15 : 0),
-                        dk = p.t < td ? Math.Sin(p.t / td * Math.PI / 2) : 1 - 0.25 * SS((p.t - td) / 0.12); // dip, then a slight rise into the set
+                        dk = p.t < td ? JsMath.Sin(p.t / td * Math.PI / 2) : 1 - 0.25 * SS((p.t - td) / 0.12); // dip, then a slight rise into the set
                     u.aR -= 0.35 * depth * dk * 2;
                     u.aL -= 0.3 * depth * dk * 2;
                     u.cr += 0.35 * depth * dk;
@@ -236,7 +236,7 @@ namespace Hoops.Core
                 if (sp > 40 && u.st == ST.def)
                 {
                     // slides: the hips open toward where he is going
-                    double lat = (-p.vx * Math.Sin(p.f) + p.vy * Math.Cos(p.f)) / sp, w = Math.Min(1, sp / 150);
+                    double lat = (-p.vx * JsMath.Sin(p.f) + p.vy * JsMath.Cos(p.f)) / sp, w = Math.Min(1, sp / 150);
                     u.ty += 0.3 * lat * w; u.hs += 0.08 * lat * w;
                 }
                 if (p.swpT > 0)
@@ -263,7 +263,7 @@ namespace Hoops.Core
                     {
                         double w = clamp((48 - d) / 14, 0, 1);
                         bool front = Hypot(hoop(sh.tm) - p.x, HY - p.y) < Ds;
-                        if (ow == null && sp > 100) { u.aL += (2.2 + 0.5 * Math.Sin(Sim.T * 18 + p.k) - u.aL) * w; u.ZL(u.zL + (0.7 - u.zL) * w); } // late: flailing
+                        if (ow == null && sp > 100) { u.aL += (2.2 + 0.5 * JsMath.Sin(Sim.T * 18 + p.k) - u.aL) * w; u.ZL(u.zL + (0.7 - u.zL) * w); } // late: flailing
                         else if (p.ht >= 6.8 && front && Ds < 140) { u.aL += (3.05 - u.aL) * w; u.aR += (3.05 - u.aR) * w; u.eL += (0.08 - u.eL) * w; u.eR += (0.08 - u.eR) * w; u.sz += (0.08 - u.sz) * w; u.ZL(u.zL + (0.08 - u.zL) * w); } // verticality
                         else { u.aL += (1.0 - u.aL) * w; u.ZL(u.zL + (0.55 - u.zL) * w); } // one hand high, the other out wide
                     }
@@ -284,8 +284,8 @@ namespace Hoops.Core
                 else if (p.setT > -0.45 && ow != null && ow.tm == p.tm)
                 {
                     // rolling out of the screen: open up toward the ball
-                    double s = (p.setT + 0.45) / 0.45, a = Math.Atan2(ow.y - p.y, ow.x - p.x) - p.f;
-                    a = Math.Atan2(Math.Sin(a), Math.Cos(a));
+                    double s = (p.setT + 0.45) / 0.45, a = JsMath.Atan2(ow.y - p.y, ow.x - p.x) - p.f;
+                    a = JsMath.Atan2(JsMath.Sin(a), JsMath.Cos(a));
                     u.ty += clamp(a, -0.6, 0.6) * Bump(s);
                 }
                 if (B.mode == "pass" && B.to == p && p.z > 10)
@@ -453,7 +453,7 @@ namespace Hoops.Core
             if (on)
             {
                 var c = handPos(p);
-                double cx = c[0], cy = c[1], cz = c[2], f = fv(p), fx = Math.Cos(f), fy = Math.Sin(f), lx = -fy, ly = fx, sd = mir ? -1 : 1,
+                double cx = c[0], cy = c[1], cz = c[2], f = fv(p), fx = JsMath.Cos(f), fy = JsMath.Sin(f), lx = -fy, ly = fx, sd = mir ? -1 : 1,
                     s = p.ht / 6.4,
                     // guide shoulder (approximate: upright chest) and the ball's height above it
                     shx = p.x + lx * sd * RIG.shX * p.bk * s * 10, shy = p.y + ly * sd * RIG.shX * p.bk * s * 10,

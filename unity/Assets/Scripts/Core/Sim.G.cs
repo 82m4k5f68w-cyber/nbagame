@@ -397,7 +397,7 @@ namespace Hoops.Core
                 if (Hypot(md.x - p.x, md.y - p.y) > 26) OFFS[ti] = p;
             }
             else if (cfg.PP != 0 && upVcut(p, spX, spY, hx, md)) { }
-            else mv(p, spX + Math.Sin(T * 0.8 + p.k) * 10, spY, 0.95);
+            else mv(p, spX + JsMath.Sin(T * 0.8 + p.k) * 10, spY, 0.95);
             return true;
         }
 
@@ -553,7 +553,7 @@ namespace Hoops.Core
             if (p.sbw > 0) return 3;
             {
                 // runners and leaners: shaped by how the shooter is moving
-                double lat = Math.Abs(-p.vx * Math.Sin(p.f) + p.vy * Math.Cos(p.f));
+                double lat = Math.Abs(-p.vx * JsMath.Sin(p.f) + p.vy * JsMath.Cos(p.f));
                 if (fw > 150 && D > 90 && D < 230) return 21;
                 if (lat > 130 && D > 150) return 20;
             }
@@ -668,8 +668,8 @@ namespace Hoops.Core
                     double dm = 16;
                     if (cfg.PRO != 0 && d < 29 && d > 0)
                     {
-                        double sA = Math.Abs(Math.Sin(Math.Atan2(-dy, -dx) - A.f)),
-                            sC = Math.Abs(Math.Sin(Math.Atan2(dy, dx) - C.f));
+                        double sA = Math.Abs(JsMath.Sin(JsMath.Atan2(-dy, -dx) - A.f)),
+                            sC = Math.Abs(JsMath.Sin(JsMath.Atan2(dy, dx) - C.f));
                         dm = 16 + 5 * (sA * Math.Min(1.2, A.bk) + sC * Math.Min(1.2, C.bk));
                     }
                     if (d < dm && d > 0 && A.z < 8 && C.z < 8)
@@ -863,7 +863,7 @@ namespace Hoops.Core
                     for (int k = 0; k < NS; k++)
                     {
                         double a = ((double)k / NS) * 6.283 + (r % 2 != 0 ? 3.1416 / NS : 0);
-                        var q = new NetKnot { x = hx + Math.Cos(a) * NR[r][0], y = HY + Math.Sin(a) * NR[r][0], z = NR[r][1], f = r == 0 };
+                        var q = new NetKnot { x = hx + JsMath.Cos(a) * NR[r][0], y = HY + JsMath.Sin(a) * NR[r][0], z = NR[r][1], f = r == 0 };
                         q.px = q.x;
                         q.py = q.y;
                         q.pz = q.z;

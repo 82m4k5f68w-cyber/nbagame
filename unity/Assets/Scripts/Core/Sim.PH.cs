@@ -60,9 +60,9 @@ namespace Hoops.Core
             if (B.dhd > 0)
             {
                 B.dhd -= dt;
-                B.dvv *= Math.Exp(-28 * dt);
+                B.dvv *= JsMath.Exp(-28 * dt);
                 B.dh = Math.Min(Math.Max(top + 5, B.dh), B.dh + B.dvv * dt);
-                double gr = Math.Exp(-18 * dt); // the fingers grip it: the spin dies in the hand
+                double gr = JsMath.Exp(-18 * dt); // the fingers grip it: the spin dies in the hand
                 W[0] *= gr; W[1] *= gr; W[2] *= gr;
                 if (B.dhd <= 0)
                 {
@@ -124,7 +124,7 @@ namespace Hoops.Core
         {
             if (!phDr && B.wv != null)
             {
-                double gr = Math.Exp(-25 * dt);
+                double gr = JsMath.Exp(-25 * dt);
                 B.wv[0] *= gr; B.wv[1] *= gr; B.wv[2] *= gr;
             }
             phDr = false;
