@@ -518,6 +518,9 @@ namespace Hoops.Core
                 ux = v > 1 ? p.vx / v : cf,
                 uy = v > 1 ? p.vy / v : sf;
             double drop = 0;
+            // athletic base: crouched, the hips sit back over the middle of the feet (feet rest a little ahead of the
+            // hip joints); fades out with speed
+            double fo = clamp((o.cr + S.drop / 4 - 0.2) * 3.2, 0, 5) * s * (1 - spd);
             // regime change (moving <-> standing): a foot that is mid-air finishes its step from where it is now
             if (S.reg != reg)
             {
@@ -539,7 +542,7 @@ namespace Hoops.Core
                     double hx = PSK[P0 * 3],
                         hy = PSK[P0 * 3 + 1],
                         lat = ((PSK[(P0 + 2) * 3] - hx) * sf - (PSK[(P0 + 2) * 3 + 1] - hy) * cf) * (st == ST.post ? 1.6 : 1) + (st == ST.post ? (k != 0 ? 2 : -2) * s : 0),
-                        e = gat ? Hypot(S.f[k].x - PSK[(P0 + 2) * 3], S.f[k].y - PSK[(P0 + 2) * 3 + 1]) : Hypot(S.f[k].x - (hx + sf * lat), S.f[k].y - (hy - cf * lat));
+                        e = gat ? Hypot(S.f[k].x - PSK[(P0 + 2) * 3], S.f[k].y - PSK[(P0 + 2) * 3 + 1]) : Hypot(S.f[k].x - (hx + sf * lat + cf * fo), S.f[k].y - (hy - cf * lat + sf * fo));
                     if (e > best && S.last != k) { best = e; need = k; }
                 }
             }
@@ -557,8 +560,8 @@ namespace Hoops.Core
                 // (posting up: a wide, low base to lean into the defender)
                 double lat = ((ax - hx) * sf - (ay - hy) * cf) * (st == ST.post ? 1.6 : 1) + (st == ST.post ? (k != 0 ? 2 : -2) * s : 0);
                 // (a jumper's gather keeps the clip's stagger too: the shooting foot a little ahead)
-                double restX = gat ? ax : hx + sf * lat,
-                    restY = gat ? ay : hy - cf * lat;
+                double restX = gat ? ax : hx + sf * lat + cf * fo,
+                    restY = gat ? ay : hy - cf * lat + sf * fo;
                 if (reg != 0)
                 {
                     // gait schedule: leg phase 0 = touchdown (L lands at ph = pi/2, R at 3pi/2)
@@ -837,7 +840,7 @@ namespace Hoops.Core
         /// target's side. Returns shoulder raise a, elbow e, abduction ab (for zL/sz), and how far the target is beyond
         /// reach (over). Shared result object.</summary>
         public static readonly IKRes IK = new IKRes();
-        public static IKRes armIK(Player p, double cr, double x, double y, double z, double side, double abMax)
+        public static IKRes armIK(Player p, double cr, double x, double y, double z, double side, double abMax, double ln = 0, double cx = 0)
         {
             double S2 = p.ht / 6.4;
             // W3(p.x, p.y, p.z) and W3(x, y, z), inline (no allocation)
@@ -851,8 +854,14 @@ namespace Hoops.Core
                 lz = (X1 * Math.Sin(th) + Z1 * Math.Cos(th)) / S2;
             bool right = Util.T(side) ? side > 0 : lx >= 0;
             double tx = right ? lx - RIG.shX * p.bk : lx + RIG.shX * p.bk,
-                ty2 = Y1 / S2 - (RIG.hip + RIG.chest + RIG.sh),
-                tz = lz,
+                // the shoulder rides the pelvis pitch (ln) and the chest pitch (cx): target seen from the chest's frame
+                L = ln + cx,
+                cL = Math.Cos(L),
+                sL = Math.Sin(L),
+                dy = Y1 / S2 - (RIG.hip + RIG.chest * Math.Cos(ln) + RIG.sh * cL),
+                dz = lz - (RIG.chest * Math.Sin(ln) + RIG.sh * sL),
+                ty2 = dy * cL + dz * sL,
+                tz = -dy * sL + dz * cL,
                 L1 = 1.02,
                 L2 = 1.15,
                 raw = Hypot(tx, ty2, tz),

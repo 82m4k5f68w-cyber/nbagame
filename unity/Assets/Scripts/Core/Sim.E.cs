@@ -174,9 +174,11 @@ namespace Hoops.Core
                         double dot = B.vx * nx + B.vy * ny + B.vz * nz;
                         if (dot < 0)
                         {
-                            B.vx -= 1.55 * dot * nx;
-                            B.vy -= 1.55 * dot * ny;
-                            B.vz -= 1.55 * dot * nz;
+                            // the back quarter (on the bracket) is deader iron; a hard hit bends the rim and loses more of its bounce
+                            double e = ((rx / d) * (b != 0 ? 1 : -1) > 0.82 ? 0.4 : 0.55) * (1 - 0.3 * clamp((-dot - 250) / 700, 0, 1));
+                            B.vx -= (1 + e) * dot * nx;
+                            B.vy -= (1 + e) * dot * ny;
+                            B.vz -= (1 + e) * dot * nz;
                             B.vx *= 0.93;
                             B.vy *= 0.93;
                             snd(300, 0.06, "triangle");
@@ -332,6 +334,14 @@ namespace Hoops.Core
                 B.vx *= 0.9;
                 B.vy *= 0.9;
                 if (Math.Abs(B.vz) < 25) B.vz = 0;
+            }
+            if (!RA && B.z <= BR + 0.5 && Math.Abs(B.vz) < 30)
+            {
+                // rolling on the wood: rolling resistance (42 px/s^2), then it stops
+                double vh = Math.Sqrt(B.vx * B.vx + B.vy * B.vy),
+                    k = vh > 1.5 ? Math.Max(0, vh - 42 * dt) / vh : 0;
+                B.vx *= k;
+                B.vy *= k;
             }
             // A ball balanced on the iron or wedged between the back iron and the glass: after a beat it rolls off,
             // away from the middle of the rim - but never toward the backboard (that just wedged it again)

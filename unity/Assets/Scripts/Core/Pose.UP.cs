@@ -176,7 +176,7 @@ namespace Hoops.Core
                     if ((kind == "lay" || kind == "roll" || kind == "contact" || kind == "euro" || kind == "revlay" || kind == "upunder") && k > 0.4 && k < 0.92)
                     {
                         double w = Bump((k - 0.4) / 0.52) * (kind == "lay" || kind == "roll" || kind == "contact" ? 0.3 : 0.85);
-                        var r1 = armIK(p, u.cr, hx, HY, 108, 1, 0.5);
+                        var r1 = armIK(p, u.cr, hx, HY, 108, 1, 0.5, u.ln, u.cx);
                         u.aR += (r1.a - u.aR) * w; u.eR += (r1.e - u.eR) * w; u.sz += (r1.ab - u.sz) * w;
                     }
                 }
@@ -248,7 +248,7 @@ namespace Hoops.Core
                 {
                     // hand check: the near hand jabs out to the handler's hip and comes straight back (forearm, palm flat)
                     double w = Bump(1 - p.hcT / 0.3);
-                    var r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7);
+                    var r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7, u.ln, u.cx);
                     if (r.right) { u.aR += (r.a - u.aR) * w; u.eR += (Math.Max(0.25, r.e) - u.eR) * w; u.sz += (r.ab - u.sz) * w; u.wR -= 0.4 * w; }
                     else { u.aL += (r.a - u.aL) * w; u.eL += (Math.Max(0.25, r.e) - u.eL) * w; u.ZL(u.zL + (r.ab - u.zL) * w); u.wL -= 0.4 * w; }
                     u.cr += 0.06 * w;
@@ -293,9 +293,9 @@ namespace Hoops.Core
                     // alley-oop catch: both hands up to where the ball is going, one each side
                     double fx = B.x + B.vx * 0.08, fy = B.y + B.vy * 0.08, fz = B.z + B.vz * 0.08,
                         w = clamp(1 - Hypot(fx - p.x, fy - p.y) / 90, 0, 1);
-                    var r = armIK(p, u.cr, fx, fy, fz, 1, 0.8);
+                    var r = armIK(p, u.cr, fx, fy, fz, 1, 0.8, u.ln, u.cx);
                     u.aR += (r.a - u.aR) * w; u.eR += (r.e - u.eR) * w; u.sz += (r.ab - u.sz) * w;
-                    r = armIK(p, u.cr, fx, fy, fz, -1, 0.8);
+                    r = armIK(p, u.cr, fx, fy, fz, -1, 0.8, u.ln, u.cx);
                     u.aL += (r.a - u.aL) * w; u.eL += (r.e - u.eL) * w; u.ZL(u.zL + (r.ab - u.zL) * w);
                     u.gL = u.gR = 0.1;
                 }

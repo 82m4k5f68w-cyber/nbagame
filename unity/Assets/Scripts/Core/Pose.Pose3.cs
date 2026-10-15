@@ -291,7 +291,7 @@ namespace Hoops.Core
                 {
                     // layup hand extends toward the rim around the release
                     double w = Math.Sin(((k - 0.4) / 0.52) * Math.PI) * 0.75;
-                    var r1 = armIK(p, cr, hoop(p.tm), HY, 104, 1, 0.5);
+                    var r1 = armIK(p, cr, hoop(p.tm), HY, 104, 1, 0.5, ln, cx);
                     aR += (r1.a - aR) * w;
                     eR += (r1.e - eR) * w;
                     sz += (r1.ab - sz) * w;
@@ -402,7 +402,7 @@ namespace Hoops.Core
                 aL = 0.4 + spd * 0.3;
                 eL = 1;
                 cr = 0.5 - 0.2 * spd; // sitting down over the ball (taller when he runs with it)
-                ln = 0.14 + spd * 0.16;
+                ln = 0.22 + spd * 0.08;
                 cx += 0.05; // chest over the ball, head up
                 ty = 0;
             }
@@ -516,7 +516,7 @@ namespace Hoops.Core
                 {
                     // Dribble hand IK with EITHER hand: whichever side of the body the ball is on (works on guests too: it
                     // only needs the ball position). The free arm relaxes, or becomes an arm-bar toward a close defender.
-                    var k2 = armIK(p, cr, B.x, B.y, Math.Max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8), 0, 0.6); // hand waits at the hip
+                    var k2 = armIK(p, cr, B.x, B.y, Math.Max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8), 0, 0.6, ln, cx); // hand waits at the hip
                     bool right = k2.right;
                     double a2 = k2.a,
                         e2 = k2.e,
@@ -751,7 +751,7 @@ namespace Hoops.Core
                     double bx = own ? B.tgx : B.x,
                         by = own ? B.tgy : B.y,
                         bz = own ? B.tgz : B.z;
-                    var k5 = armIK(p, cr, bx + Math.Sin(fv(p)) * 3 * sd, by - Math.Cos(fv(p)) * 3 * sd, bz, sd, 0.9);
+                    var k5 = armIK(p, cr, bx + Math.Sin(fv(p)) * 3 * sd, by - Math.Cos(fv(p)) * 3 * sd, bz, sd, 0.9, ln, cx);
                     if (sd > 0) { aR = k5.a; eR = k5.e; sz = k5.ab; }
                     else { aL = k5.a; eL = k5.e; zL = k5.ab; }
                 }
@@ -760,7 +760,7 @@ namespace Hoops.Core
             // ---- jump ball: the centers reach for the toss ----
             if (PRO && JB != null && air && (JB.c[0] == p || JB.c[1] == p))
             {
-                var kj = armIK(p, cr, B.x, B.y, B.z, 1, 0.6);
+                var kj = armIK(p, cr, B.x, B.y, B.z, 1, 0.6, ln, cx);
                 aR = kj.a;
                 eR = kj.e;
                 sz = kj.ab;
@@ -839,7 +839,7 @@ namespace Hoops.Core
             {
                 // (aimed a little in front of him and never past straight up: a ball right overhead used to flip the arm
                 // over the top and back as it wobbled in front of / behind the shoulder)
-                var k6 = armIK(p, cr, B.x + Math.Cos(fv(p)) * 8, B.y + Math.Sin(fv(p)) * 8, B.z + 4, 1, 0.8);
+                var k6 = armIK(p, cr, B.x + Math.Cos(fv(p)) * 8, B.y + Math.Sin(fv(p)) * 8, B.z + 4, 1, 0.8, ln, cx);
                 aR = Math.Min(armN(k6.a), 3.25);
                 eR = k6.e;
                 sz = k6.ab;
@@ -857,7 +857,7 @@ namespace Hoops.Core
                     double w = clamp((70 - bd) / 30, 0, 1),
                         tx3 = p.x + (B.x - p.x) * 0.7,
                         ty3 = p.y + (B.y - p.y) * 0.7;
-                    var k3 = armIK(p, cr, tx3, ty3, Math.Max(18, B.z + 6), 0, 0.9);
+                    var k3 = armIK(p, cr, tx3, ty3, Math.Max(18, B.z + 6), 0, 0.9, ln, cx);
                     if (k3.right) { aR += (k3.a - aR) * w; eR += (k3.e - eR) * w; sz += (k3.ab - sz) * w; }
                     else { aL += (k3.a - aL) * w; eL += (k3.e - eL) * w; zL = (zL ?? sz) + (k3.ab - (zL ?? sz)) * w; }
                 }
@@ -868,9 +868,9 @@ namespace Hoops.Core
                     // went past his back is let go, the arms don't swing backwards after it)
                     double fw = (Math.Cos(fv(p)) * (B.x - p.x) + Math.Sin(fv(p)) * (B.y - p.y)) / (Util.T(bd) ? bd : 1),
                         w = clamp((45 - bd) / 20, 0, 1) * clamp((fw + 0.35) / 0.5, 0, 1);
-                    var r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0);
+                    var r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0, ln, cx);
                     aR += (r1.a - aR) * w; eR += (r1.e - eR) * w; sz += (r1.ab - sz) * w;
-                    var r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0);
+                    var r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0, ln, cx);
                     aL += (r2.a - aL) * w; eL += (r2.e - eL) * w; zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w;
                     gL = gR = 0.2;
                 }
@@ -895,7 +895,7 @@ namespace Hoops.Core
                 double w = Math.Min(1, p.swT * 4) * Math.Min(1, (0.7 - p.swT) * 8 + 0.2),
                     f = fv(p),
                     sd = Math.Sin(f) * (m.x - p.x) - Math.Cos(f) * (m.y - p.y) > 0 ? 1 : -1;
-                var k = armIK(p, cr, m.x, m.y, p.z + p.ht * 7.4, sd, 0.9);
+                var k = armIK(p, cr, m.x, m.y, p.z + p.ht * 7.4, sd, 0.9, ln, cx);
                 double a = Math.Min(k.a, 1.7);
                 if (sd > 0) { aR += (a - aR) * w; eR += (0.1 - eR) * w; sz += (k.ab - sz) * w; gR = 0.6; }
                 else { aL += (a - aL) * w; eL += (0.1 - eL) * w; zL = (zL ?? sz) + (k.ab - (zL ?? sz)) * w; gL = 0.6; }
@@ -907,7 +907,7 @@ namespace Hoops.Core
                 for (int si = 0; si < 2; si++)
                 {
                     double sd = si == 0 ? 1 : -1;
-                    var k = armIK(p, cr, p.hcx + Math.Sin(fv(p)) * 2 * sd, p.hcy - Math.Cos(fv(p)) * 2 * sd, zc, sd, 0.6);
+                    var k = armIK(p, cr, p.hcx + Math.Sin(fv(p)) * 2 * sd, p.hcy - Math.Cos(fv(p)) * 2 * sd, zc, sd, 0.6, ln, cx);
                     if (sd > 0) { aR = k.a; eR = k.e; sz = k.ab; }
                     else { aL = k.a; eL = k.e; zL = k.ab; }
                 }
@@ -972,7 +972,7 @@ namespace Hoops.Core
                 if (dd < 24 && Hypot(ow.vx, ow.vy) > 140)
                 {
                     // hand on the driver's hip
-                    var k8 = armIK(p, cr, ow.x, ow.y, ow.z + ow.ht * 5, -1, 0.9);
+                    var k8 = armIK(p, cr, ow.x, ow.y, ow.z + ow.ht * 5, -1, 0.9, ln, cx);
                     aL = k8.a;
                     eL = k8.e;
                     zL = k8.ab;
@@ -1004,8 +1004,8 @@ namespace Hoops.Core
                         PtAim(p, f, mk.x, mk.y, out double m2x, out double m2y);
                         // (as in the TS: armIK returns one shared object, so kb and km are the same - both hold the
                         // second solve. Kept for parity.)
-                        var kb = armIK(p, cr, b2x, b2y, zc, bs, 0.7);
-                        var km = armIK(p, cr, m2x, m2y, zc, -bs, 0.7);
+                        var kb = armIK(p, cr, b2x, b2y, zc, bs, 0.7, ln, cx);
+                        var km = armIK(p, cr, m2x, m2y, zc, -bs, 0.7, ln, cx);
                         double kbAb = kb.ab, kmAb = km.ab;
                         double ab = Math.Min(kb.a, 1.3),
                             am = Math.Min(km.a, 1.2);
@@ -1029,7 +1029,7 @@ namespace Hoops.Core
                             ly = mk.y + (B.y - mk.y) * 0.3,
                             f = fv(p),
                             bs = Math.Sin(f) * (lx - p.x) - Math.Cos(f) * (ly - p.y) > 0 ? 1 : -1;
-                        var kd = armIK(p, cr, lx, ly, p.z + p.ht * 6.2, bs, 0.9);
+                        var kd = armIK(p, cr, lx, ly, p.z + p.ht * 6.2, bs, 0.9, ln, cx);
                         double ad = Math.Min(kd.a, 1.6);
                         if (bs > 0) { aR += (ad - aR) * wd; eR += (0.25 - eR) * wd; sz += (kd.ab - sz) * wd; gR = 0.1; }
                         else { aL += (ad - aL) * wd; eL += (0.25 - eL) * wd; zL = (zL ?? sz) + (kd.ab - (zL ?? sz)) * wd; gL = 0.1; }
@@ -1113,7 +1113,7 @@ namespace Hoops.Core
                     double hw = clamp((Math.Sin(Sim.T * 1.7 + p.k) + 0.3) / 0.25, 0, 1); // (on and off his hip, eased)
                     if (d < 34 && d > 10 && hw > 0)
                     {
-                        var r = armIK(p, cr, ow.x - Math.Cos(ow.f) * 3, ow.y - Math.Sin(ow.f) * 3, ow.z + ow.ht * 4.4, 0, 0.9);
+                        var r = armIK(p, cr, ow.x - Math.Cos(ow.f) * 3, ow.y - Math.Sin(ow.f) * 3, ow.z + ow.ht * 4.4, 0, 0.9, ln, cx);
                         double w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0) * hw;
                         if (r.right) { aR += (r.a - aR) * w; eR += (r.e - eR) * w; sz += (r.ab - sz) * w; gR = 0.1; }
                         else { aL += (r.a - aL) * w; eL += (r.e - eL) * w; zL = (zL ?? sz) + (r.ab - (zL ?? sz)) * w; gL = 0.1; }
@@ -1279,7 +1279,7 @@ namespace Hoops.Core
                 {
                     // backing down: low dribble on the far side, the off arm a bar into the defender, chest shielding
                     // (the sim's dribble hand, not the ball's side: a ball crossing his midline must not swap the arms)
-                    var kp = armIK(p, cr, B.x, B.y, Math.Max(B.z, (B.dtop ?? p.z + p.ht * 4.4) - 8), (Util.T(B.dhn) ? B.dhn : 1) > 0 ? 1 : -1, 0.6);
+                    var kp = armIK(p, cr, B.x, B.y, Math.Max(B.z, (B.dtop ?? p.z + p.ht * 4.4) - 8), (Util.T(B.dhn) ? B.dhn : 1) > 0 ? 1 : -1, 0.6, ln, cx);
                     if (kp.right) { aR = kp.a; eR = kp.e; sz = kp.ab; aL = 1.05; eL = 1.55; zL = 0.62; hL = 0.55; gR = 0.15; gL = 0.5; }
                     else { aL = kp.a; eL = kp.e; zL = kp.ab; aR = 1.05; eR = 1.55; sz = 0.62; hR = 0.55; gL = 0.15; gR = 0.5; }
                     cy += kp.right ? 0.18 : -0.18;
@@ -1475,7 +1475,7 @@ namespace Hoops.Core
                             if (f2 != null)
                             {
                                 double pull = e > 0.45 ? (e - 0.45) * 0.6 : 0;
-                                var k16 = armIK(p, cr, f2.x, f2.y, 18 + pull * 40, 1, 0.95);
+                                var k16 = armIK(p, cr, f2.x, f2.y, 18 + pull * 40, 1, 0.95, ln, cx);
                                 aR = Lp(aR, k16.a, k);
                                 eR = Lp(eR, k16.e, k);
                                 sz = Lp(sz, k16.ab, k);
@@ -1714,7 +1714,7 @@ namespace Hoops.Core
                 {
                     double lx = -Math.Sin(p.f),
                         ly = Math.Cos(p.f);
-                    var r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9);
+                    var r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9, ln, cx);
                     if (r2.over < 0.6)
                     {
                         double w = md == "c" ? Math.Min(1, p.t / 0.12) : 1;
@@ -1886,7 +1886,7 @@ namespace Hoops.Core
                         P0[0] = B.x;
                         P0[1] = B.y;
                         P0[2] = Math.Max(B.z + 10, p.z + p.ht * 10.6);
-                        P0[3] = armIK(p, oq.cr, P0[0], P0[1], P0[2], 0, 0.6).right ? 1 : 0;
+                        P0[3] = armIK(p, oq.cr, P0[0], P0[1], P0[2], 0, 0.6, oq.ln, oq.cx).right ? 1 : 0;
                     }
                     p.ctPo = 1;
                     double w = clamp((48 - Hypot(sh.x - p.x, sh.y - p.y)) / 14, 0, 1);
@@ -1899,7 +1899,7 @@ namespace Hoops.Core
                         bz = Math.Max(B.z, dtop - 8),
                         // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
                         wt = clamp((B.z - (dtop - 16)) / 8, 0, 1) * clamp((dtop + 12 - B.z) / 6, 0, 1);
-                    if (armIK(p, oq.cr, B.x, B.y, bz, 0, 0.6).right) { cwR = wt; K[6] = B.x; K[7] = B.y; K[8] = bz; }
+                    if (armIK(p, oq.cr, B.x, B.y, bz, 0, 0.6, oq.ln, oq.cx).right) { cwR = wt; K[6] = B.x; K[7] = B.y; K[8] = bz; }
                     else { cwL = wt; K[9] = B.x; K[10] = B.y; K[11] = bz; }
                 }
                 else if (cat)
@@ -1941,7 +1941,7 @@ namespace Hoops.Core
                 {
                     if (cwR > 0)
                     {
-                        var k = armIK(p, oq.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
+                        var k = armIK(p, oq.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6, oq.ln, oq.cx);
                         if (con) { oq.wR = -0.2; oq.gR = 0.05; } // fingers spread, wrist back
                         K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks);
                         K[1] += (k.e - K[1]) * ks;
@@ -1971,7 +1971,7 @@ namespace Hoops.Core
                 {
                     if (cwL > 0)
                     {
-                        var k = armIK(p, oq.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
+                        var k = armIK(p, oq.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6, oq.ln, oq.cx);
                         if (con) oq.gL = 0.05;
                         K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks);
                         K[4] += (k.e - K[4]) * ks;

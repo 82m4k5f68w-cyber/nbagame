@@ -9,6 +9,7 @@
 //   N=3 npx tsx tests/sanity.ts
 import * as G from "../src/core/sim";
 import { rapInit } from "../src/core/physics";
+(globalThis as any).TRL = 1;
 (async () => {
   await rapInit();
   let fails = 0;

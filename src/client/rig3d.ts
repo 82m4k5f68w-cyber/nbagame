@@ -20,6 +20,8 @@ type Blend = { to: number; axis?: "y" | "z"; from: number; len: number; end: "st
 /** cf: per-face colour key from the face centroid (part-local coords, v = loft level fraction); null drops the face. */
 type CF = (x: number, y: number, z: number, v: number) => string | null;
 type Part = { g: THREE.BufferGeometry; key: string; bone: number; blend?: Blend; blend2?: Blend; cf?: CF; print?: boolean };
+/** cf on a part tagged with VTX paints per vertex (soft hairlines / beard edges) and never drops faces. */
+const VTX = new WeakSet<CF>();
 
 export interface Rig {
   G: THREE.Group;
@@ -56,8 +58,9 @@ export interface Rig {
 }
 
 // ---------------------------------------------------------------- material classes + the shared data texture
-/** Material classes: 0 cloth, 1 jersey knit (tiled), 2 skin, 3 gloss (eyes, teeth), 4 leather (shoes), 5 hair, 6 rubber, 7 lips */
-const ROUGH = "0.82 0.8 0.52 0.16 0.4 0.86 0.9 0.4";
+/** Material classes: 0 cloth, 1 jersey knit (tiled), 2 skin, 3 hair, 4 leather (shoes), 5 gloss (eyes, teeth), 6 rubber,
+ *  7 lips (skin and hair are neighbours: a per-vertex skin/hair blend only crosses those two swatches) */
+const ROUGH = "0.82 0.8 0.52 0.86 0.4 0.16 0.9 0.4";
 const TXN = 128;
 /** R = bump (knit holes, flat elsewhere), G = roughness. Knit holes repeat every 32 px; rows 1..8 hold no holes, so
  *  the per-class swatches live there (16 px wide each) and a constant-UV part samples one flat swatch texel. */
@@ -176,10 +179,10 @@ function loft(L: number[], seg: number, e = 1) {
   return weld(g);
 }
 /** Insert n-1 linearly interpolated levels between neighbours (finer rings for crisp painted edges). */
-function refine(L: number[], n: number) {
+function refine(L: number[], n: number, from = -1e9) {
   const o: number[] = [];
   for (let j = 0; j < L.length / 5 - 1; j++)
-    for (let s = 0; s < n; s++) for (let k = 0; k < 5; k++) o.push(L[j * 5 + k] + ((L[j * 5 + 5 + k] - L[j * 5 + k]) * s) / n);
+    for (let s = 0; s < (L[j * 5 + 5] > from ? n : 1); s++) for (let k = 0; k < 5; k++) o.push(L[j * 5 + k] + ((L[j * 5 + 5 + k] - L[j * 5 + k]) * s) / n);
   for (let k = 0; k < 5; k++) o.push(L[L.length - 5 + k]);
   return o;
 }
@@ -235,7 +238,12 @@ function put(parts: Part[], bonePos: THREE.Vector3[], g: THREE.BufferGeometry, k
   g.scale(sx, sy, sz);
   if (g.index) g = g.toNonIndexed();
   let keys: string[] | null = null;
-  if (cf) {
+  if (cf && VTX.has(cf)) {
+    const p = g.attributes.position as THREE.BufferAttribute,
+      uv = g.attributes.uv as THREE.BufferAttribute | undefined;
+    keys = [];
+    for (let i = 0; i < p.count; i++) keys.push(cf(p.getX(i), p.getY(i), p.getZ(i), uv ? uv.getY(i) : 0) ?? key);
+  } else if (cf) {
     // paint per face at its centroid (part-local, before placement); a null key drops the face
     const p = g.attributes.position as THREE.BufferAttribute,
       uv = g.attributes.uv as THREE.BufferAttribute | undefined,
@@ -384,19 +392,19 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       shtD: [shade(p.col, 0.5), 0],
       sec: [sec, 0],
       secK: [sec, 1],
-      hair: [hcol, 5],
-      h1: [mixHex(hcol, sk, 0.3), 5],
-      h2: [mixHex(hcol, sk, 0.55), 5],
+      hair: [hcol, 3],
+      h1: [mixHex(hcol, sk, 0.3), 3],
+      h2: [mixHex(hcol, sk, 0.55), 3],
       h3: [mixHex(hcol, sk, 0.78), 2],
-      hw: [shade(hcol, 1.9), 5],
+      hw: [shade(hcol, 1.9), 3],
       stub: [mixHex(sk, hcol, 0.42), 2],
-      white: [mixHex("#f4f1ea", sk, 0.08), 3],
-      iris: [LK.eye, 3],
-      pupil: ["#060606", 3],
-      glint: ["#ffffff", 3],
-      teeth: ["#efeadf", 3],
+      white: [mixHex("#f4f1ea", sk, 0.08), 5],
+      iris: [LK.eye, 5],
+      pupil: ["#060606", 5],
+      glint: ["#ffffff", 5],
+      teeth: ["#efeadf", 5],
       mouth: ["#3a1416", 7],
-      lash: [mixHex("#141010", hcol, 0.3), 5],
+      lash: [mixHex("#141010", hcol, 0.3), 3],
       sleeve: [LK.sleeveC, 0],
       wrist: [LK.wristC, 0],
       knee: [LK.kneeC, 0],
@@ -416,7 +424,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
   const mu = Math.min(1, Math.max(0, (k - 0.85) / 0.45)),
     lean = 1 - Math.min(0.08, Math.max(-0.04, (p.ht - 6.5) * 0.09)),
     ga = (0.95 + 0.18 * k) * lean, // arm girth
-    gl = (0.88 + 0.14 * k) * lean, // leg girth
+    gl = (0.96 + 0.15 * k) * lean, // leg girth
     kz = 0.86 + 0.14 * k; // chest depth
 
   // ---------------- torso: pelvis -> chest -> trapezius -> neck base (one surface, painted jersey/skin/piping)
@@ -440,7 +448,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
   ];
   const TL = TL0.slice();
   for (let j = 0; j < TL.length; j += 5) (TL[j + 1] *= k), (TL[j + 2] *= kz), (TL[j + 3] *= kz), (TL[j + 4] *= kz);
-  const TLr = hi ? refine(TL, 2) : TL;
+  const TLr = hi ? refine(refine(TL, 2), 2, 1.1) : refine(TL, 2, 1.1);
   const tAt: number[] = [0, 0, 0, 0];
   const neckY = (ax: number, z: number) => (z > 0 ? 1.68 + 1.1 * ax : 1.9 + 0.45 * ax);
   const jersey: CF = (x, y, z) => {
@@ -458,11 +466,11 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     if (Math.abs(a - Math.PI / 2) < 0.14 && y < 1.4) return "secK"; // side panel
     return "jer";
   };
-  P(loft(TLr, SG(36), 0.86), "jer", I.bd, 0, 0, 0, 1, 1, 1, bl(I.ch, 1.25, 0.6, "start", 1), { to: I.hem, from: 0.05, len: 0.35, end: "end", max: 0.7 }, jersey);
+  P(loft(TLr, SG(48), 0.86), "jer", I.bd, 0, 0, 0, 1, 1, 1, bl(I.ch, 1.25, 0.6, "start", 1), { to: I.hem, from: 0.05, len: 0.35, end: "end", max: 0.7 }, jersey);
   // waistband
   P(new THREE.TorusGeometry(0.555 * k, 0.05, 6, SG(36)).rotateX(Math.PI / 2), "sec", I.bd, 0, 0.24, -0.015 * kz, 1, 1, 0.7 * kz);
   // neck with the trapezius flowing into it (bottom rides the chest, top the head)
-  P(loft([-0.16, 0.2, 0.17, 0.2, 0, -0.06, 0.165, 0.15, 0.17, 0.01, 0.1, 0.145, 0.135, 0.15, 0.02, 0.26, 0.135, 0.125, 0.14, 0.01, 0.38, 0.13, 0.12, 0.135, 0, 0.44, 0, 0, 0, 0], SG(22)), "skin", I.nk, 0, 0, 0, 1 + 0.08 * mu, 1, 1 + 0.06 * mu, bl(I.ch, -0.16, 0.2, "end", 0.6), bl(I.hd, 0.4, 0.15, "start", 0.5));
+  P(loft([-0.16, 0.21, 0.18, 0.21, 0, -0.06, 0.165, 0.15, 0.17, 0.01, 0.1, 0.145, 0.135, 0.15, 0.02, 0.26, 0.135, 0.125, 0.14, 0.01, 0.38, 0.13, 0.12, 0.135, 0, 0.44, 0, 0, 0, 0], SG(22)), "skin", I.nk, 0, 0, 0, 1.12 + 0.1 * mu, 1, 1.1 + 0.08 * mu, bl(I.ch, -0.16, 0.2, "end", 0.6), bl(I.hd, 0.4, 0.15, "start", 0.5));
 
   // ---------------- legs: one continuous surface hip -> ankle, skinned across the knee
   const K = -L1,
@@ -499,7 +507,6 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       if (y < sockTop) return "sock";
       if (LK.knee & side && y < K + 0.3 && y > K - 0.38) return "knee";
       if (LK.tights && y > (LK.tights === 2 ? K - 0.45 : K + 0.42)) return "tights";
-      if (y < K + 0.12 && y > K - 0.12 && Math.abs(x) < 0.12 && LK.tights !== 2) return "warm"; // knee cap
       return "skin";
     };
     P(loft(RF(LEG, 2), SG(22), 0.95), "skin", t, 0, 0, 0, 1, 1, 1, bl(kn, K - 0.2, 0.4, "end", 1), bl(I.bd, 0.07, 0.3, "start", 0.3), legC);
@@ -590,7 +597,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       if (y < -UA + 0.07 && y > -UA - 0.07 && z < -0.05) return "dark"; // elbow point
       return "skin";
     };
-    P(sphere(hi ? 18 : 12, hi ? 14 : 9), slv ? "sleeve" : "skin", s2, sd * 0.012, -0.13, 0, 0.19 * ga * (1 + 0.08 * mu), 0.3, 0.21 * ga * (1 + 0.06 * mu), bl(I.ch, 0.08, 0.22, "start", 0.25)); // deltoid
+    P(sphere(hi ? 14 : 10, hi ? 10 : 8), slv ? "sleeve" : "skin", s2, sd * 0.012, -0.13, 0, 0.19 * ga * (1 + 0.08 * mu), 0.3, 0.21 * ga * (1 + 0.06 * mu), bl(I.ch, 0.08, 0.22, "start", 0.25)); // deltoid
     P(loft(RF(ARM, 2), SG(20)), "skin", s2, 0, 0, 0, 1, 1, 1, bl(e, -UA - 0.12, 0.24, "end", 1), bl(I.ch, 0.06, 0.24, "start", 0.3), armC);
     if (LK.wrist & side) P(loft([W + 0.03, 0.093 * ga, 0.07 * ga, 0.075 * ga, 0, W + 0.2, 0.098 * ga, 0.075 * ga, 0.08 * ga, 0, W + 0.2, 0.08 * ga, 0.06 * ga, 0.06 * ga, 0, W + 0.03, 0.08 * ga, 0.06 * ga, 0.06 * ga, 0], SG(16)), "wrist", e, 0, UA, 0); // wristband (thickness)
     // hand: palm + back of hand, four fingers on the finger bone (curl together), thumb off the wrist
@@ -625,13 +632,12 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
   ];
   for (let j = 0; j < SK0.length; j += 5) SK0[j + 1] *= fw;
   const SKL = hi ? refine(SK0, 2) : SK0;
-  putT(loft(SKL, SG(32), 0.92), "skin", H, 0, 0, 0);
   // jaw (opens on its hinge): wide at the angle, tapering to the chin; F.jl stretches it down, F.jw widens it
   const jy = (y: number) => 2.64 - (2.64 - y) * F.jl,
     JL0 = [2.64, 0.25, 0.2, 0.16, 0.1, 2.57, 0.27, 0.26, 0.2, 0.09, 2.5, 0.25, 0.275, 0.19, 0.09, 2.43, 0.2, 0.26, 0.15, 0.1, 2.375, 0.13, 0.215 * F.ch, 0.1, 0.12, 2.335, 0.065, 0.14 * F.ch, 0.05, 0.15, 2.318, 0, 0, 0, 0.16];
   for (let j = 0; j < JL0.length; j += 5) (JL0[j] = jy(JL0[j])), (JL0[j + 1] *= F.jw);
-  const JLr = hi ? refine(JL0, 2) : JL0;
-  putT(loft(JLr, SG(24), 0.9), "skin", I.jw, 0, 0, 0);
+  const JLr = hi ? refine(JL0, 3) : refine(JL0, 2);
+  let jawC: CF | undefined;
   putT(S1, "mouth", I.mi, 0, 2.5, 0.315, 0.072, 0.056, 0.05); // mouth interior (scaled open with the jaw)
   putT(box(0.11, 0.022, 0.02), "teeth", I.mi, 0, 2.548, 0.352); // upper teeth
   putT(box(0.1, 0.02, 0.02), "teeth", I.mi, 0, 2.452, 0.345); // lower teeth
@@ -643,14 +649,14 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     putT(S1, "crease", H, sd * (0.338 * fw + 0.03), 2.72, -0.025, 0.022, 0.06 * F.ea, 0.042);
     putT(S1, "warm", H, sd * (0.338 * fw + 0.005), 2.63 - 0.02 * F.ea, -0.015, 0.035, 0.035, 0.035);
     // eye: white, iris + pupil + glint (look around on the eye bones), lid folds, lash line, lower lid
-    putT(S2, "white", H, ex, 2.8, 0.322, 0.062 * es, 0.038 * es, 0.034);
+    putT(S2, "white", H, ex, 2.8, 0.322, 0.066 * es, 0.046 * es, 0.034);
     const yb = sd < 0 ? I.yL : I.yR;
-    putT(S1, "iris", yb, ex, 2.8, 0.349, 0.028 * es, 0.028 * es, 0.009);
+    putT(S1, "iris", yb, ex, 2.8, 0.349, 0.03 * es, 0.03 * es, 0.009);
     putT(S1, "pupil", yb, ex, 2.8, 0.356, 0.013 * es, 0.013 * es, 0.005);
     putT(S1, "glint", yb, ex + 0.011, 2.811, 0.361, 0.006, 0.006, 0.003);
-    putT(S2, "skin", H, ex, 2.832, 0.33, 0.07 * es, 0.026, 0.036); // upper lid fold
-    putT(warp(box(0.13 * es, 0.012, 0.016), (v) => (v.y -= 9 * v.x * v.x)), "lash", H, ex, 2.822, 0.356);
-    putT(S1, "skin", H, ex, 2.774, 0.333, 0.064 * es, 0.014, 0.03); // lower lid
+    putT(sphere(12, 8), "skin", H, ex, 2.846, 0.326, 0.074 * es, 0.024, 0.036); // upper lid fold
+    putT(warp(box(0.13 * es, 0.012, 0.016, 4), (v) => (v.y -= 6 * v.x * v.x)), "lash", H, ex, 2.834, 0.352);
+    putT(S1, "skin", H, ex, 2.762, 0.33, 0.066 * es, 0.013, 0.03); // lower lid
     putT(S2, "dark", sd < 0 ? I.lL : I.lR, ex, 2.8, 0.338, 0.072, 0.056, 0.038); // closing lid (blinks, squints)
     // brow: arched, thick at the inner end, tapering outward (raises / knits on its bone)
     const brow = warp(box(0.16, F.br, 0.045, 6), (v) => {
@@ -658,7 +664,6 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       v.y = v.y * (1 - 0.35 * Math.max(0, u)) - 2.2 * v.x * v.x;
     }).rotateZ(-sd * F.ba);
     putT(brow, "lash", sd < 0 ? I.brL : I.brR, ex, 2.9, 0.352);
-    putT(S2, "skin", H, sd * 0.2 * fw, 2.7, 0.235 + 0.02 * F.ck, 0.085, 0.05, 0.07); // cheekbone
   }
   // nose: bridge, tip, wings, nostrils
   const nw = F.nw,
@@ -675,41 +680,57 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
   putT(box(0.13, 0.012, 0.02), "lipD", I.mo, 0, 2.565, 0.37);
   for (const sd of [-1, 1]) putT(box(0.05, 0.016, 0.02), "lipD", sd < 0 ? I.cL : I.cR, sd * 0.082, 2.563, 0.36);
 
-  // hair: shells of the skull above a hairline (front / temples / nape); style decides scale, colour bands and volume
+  // hair: painted onto the skull above a hairline (front / temples / nape), plus volume shells whose thickness eases
+  // to zero at the hairline (no helmet lip); style decides colour bands, volume and texture
   const hair = LK.hair,
+    beard = LK.beard,
     hcy = 2.78;
-  const hline = (x: number, y: number, z: number, lo = 0) => {
+  // margin above the hairline (> 0 = hair); sideburns run down in front of the ears
+  const hm = (x: number, y: number, z: number, lo = 0) => {
     const ax = Math.abs(x),
       f = Math.min(1, Math.max(0, z / 0.3)),
       b = Math.min(1, Math.max(0, -z / 0.25)),
-      yl = 2.84 + f * (0.17 - 0.09 * Math.min(1, ax / 0.3)) - b * 0.32 - lo;
-    if (y > yl) return true;
-    return ax > 0.3 && z > -0.03 && z < 0.12 && y > 2.66; // sideburns
+      yl = 2.85 + f * (0.16 - 0.08 * Math.min(1, ax / 0.3)) - b * 0.3 - lo;
+    let m = y - yl;
+    if (ax > 0.29 && z > -0.04 && z < 0.1) m = Math.max(m, Math.min(y - 2.66, 0.02));
+    return m;
   };
-  const shellH = (s: number, cf: CF, L = SKL, sy = s) => putT(loft(shell(L, s, hcy, sy), SG(32), 0.92), "hair", H, 0, 0, 0, 1, 1, 1, undefined, undefined, cf);
-  if (hair === 1) shellH(1.012, (x, y, z) => (hline(x, y, z) ? "h1" : null));
-  if (hair === 2 || hair === 5 || hair === 6) shellH(1.016, (x, y, z) => (!hline(x, y, z) ? null : y > 2.98 ? "hair" : y > 2.9 ? "h1" : y > 2.8 ? "h2" : "h3"));
-  if (hair === 3 || hair === 10)
-    shellH(1.018, (x, y, z) => {
-      if (!hline(x, y, z)) return null;
-      if (hair === 10) return Math.sin(x * 70) > 0.15 || y < 2.9 ? "hair" : "h2"; // cornrows: rows front to back
-      const d = Math.hypot(x, z + 0.06, (y - 3.25) * 0.8);
-      return Math.sin(d * 60) > 0.35 ? "hw" : "hair"; // 360 waves
-    });
-  if (hair === 4) {
-    shellH(1.02, (x, y, z) => (hline(x, y, z) ? (y > 2.92 ? "hair" : "h1") : null));
-    putT(warp(loft(shell(SKL, 1.075, hcy, 1.11), SG(32), 0.92), (v) => (v.z += 0.02 * Math.max(0, v.y - 3))), "hair", H, 0, 0, 0, 1, 1, 1, undefined, undefined, (x, y, z) => (y > 3.0 + (z > 0.2 ? 0.04 : 0) && hline(x, y, z) ? (Math.abs(x - 0.13 * fw) < 0.014 && z > -0.1 ? "h3" : "hair") : null));
-  }
-  if (hair === 5) putT(loft([2.98, 0.3 * fw, 0.31, 0.33, -0.05, 3.2, 0.31 * fw, 0.31, 0.33, -0.06, 3.42, 0.3 * fw, 0.3, 0.32, -0.06, 3.47, 0.22 * fw, 0.22, 0.24, -0.06, 3.48, 0, 0, 0, -0.06], SG(28), 0.75), "hair", H, 0, 0, 0);
-  if (hair === 6 || hair === 9) {
-    const big = hair === 9,
-      s = big ? 1.3 : 1.1;
+  const fadeKey = (y: number) => (y > 2.97 ? "hair" : y > 2.9 ? "h1" : y > 2.82 ? "h2" : "h3");
+  const scalp = (x: number, y: number, z: number): string | null => {
+    if (!hair) return null;
+    const m = hm(x, y, z);
+    if (m < 0) return null;
+    if (hair === 1) return m < 0.02 ? "h2" : "h1";
+    if (hair === 2 || hair === 5 || hair === 6) return fadeKey(y);
+    if (hair === 3) return Math.sin(Math.hypot(x, z + 0.06, (y - 3.25) * 0.8) * 60) > 0.35 ? "hw" : m < 0.02 ? "h1" : "hair";
+    if (hair === 10) return Math.sin(x * 70) > 0.1 || y < 2.88 ? "hair" : "h2";
+    return m < 0.015 ? "h1" : "hair";
+  };
+  const skullC: CF = (x, y, z) => {
+    const s = scalp(x, y, z);
+    if (s) return s;
+    const ax = Math.abs(x);
+    if (beard === 1 && ax > 0.24 * fw && y < 2.72 && y > 2.5 && z > -0.03 && z < 0.2) return "hair"; // beard up the cheeks
+    if (beard === 4 && ax > 0.24 * fw && y < 2.66 && z > -0.03 && z < 0.2) return "stub";
+    return "skin";
+  };
+  VTX.add(skullC);
+  putT(loft(SKL, SG(32), 0.92), "skin", H, 0, 0, 0, 1, 1, 1, undefined, undefined, skullC);
+  // volume shell: radial scale s (sy vertically) about the skull centre, eased in over `soft` above the hairline
+  const vol = (s: number, sy: number, lo: number, soft: number, cf: CF, bump = 0) =>
     putT(
-      warp(loft(shell(SKL, s, hcy, big ? 1.35 : 1.16), SG(36), 0.95), (v) => {
-        const n = sn(v.x * 3.1, v.y * 3.3, v.z * 3.2) + 0.5 * sn(v.x * 7.7 + 1, v.y * 8.1, v.z * 7.3);
-        const r = Math.hypot(v.x, v.z + 0.04);
-        if (r > 1e-4) (v.x *= 1 + n * 0.035), (v.z = (v.z + 0.04) * (1 + n * 0.035) - 0.04);
-        v.y += n * 0.02;
+      warp(loft(SKL, SG(32), 0.92), (v) => {
+        const t0 = Math.min(1, Math.max(0, hm(v.x, v.y, v.z, lo) / soft)),
+          t = t0 * t0 * (3 - 2 * t0);
+        let k1 = 1 + (s - 1) * t,
+          k2 = 1 + (sy - 1) * t;
+        if (bump) {
+          const n = sn(v.x * 3.1, v.y * 3.3, v.z * 3.2) + 0.5 * sn(v.x * 7.7 + 1, v.y * 8.1, v.z * 7.3);
+          (k1 += n * bump * t), (k2 += n * bump * t);
+        }
+        v.x *= k1;
+        v.z = (v.z + 0.04) * k1 - 0.04;
+        v.y = hcy + (v.y - hcy) * k2;
       }),
       "hair",
       H,
@@ -721,36 +742,40 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       1,
       undefined,
       undefined,
-      (x, y, z) => (big ? (z > 0.12 && y < 3.0 + 0.1 * Math.max(0, z - 0.2)) || (z > -0.1 && y < 2.88 && Math.abs(x) > 0.25) || y < 2.62 ? null : "hair" : y > 3.0 && hline(x, y, z) ? "hair" : null),
+      cf,
     );
-  }
-  if (hair === 7 || hair === 8) {
-    shellH(1.06, (x, y, z) => (hline(x, y, z, 0.03) ? "hair" : null));
-    putT(warp(loft(shell(SKL, 1.12, hcy, 1.14), SG(32), 0.92), (v) => (v.z -= 0.05 * Math.max(0, v.y - 2.9))), "hair", H, 0, 0, 0, 1, 1, 1, undefined, undefined, (x, y, z) => (y > 2.96 && hline(x, y, z) ? "hair" : null)); // swept volume
-    if (hair === 8)
-      for (let d = 0; d < 12; d++) {
-        const a = Math.PI * (0.22 + (d / 11) * 1.56),
-          len = 0.7 + ((LK.h >> d) & 3) * 0.06;
-        putT(loft([0.0, 0, 0, 0, 0, -0.02, 0.045, 0.045, 0.045, 0, -len, 0.035, 0.035, 0.035, 0, -len - 0.02, 0, 0, 0, 0], 6).rotateZ(Math.cos(a) * 0.15), "hair", H, Math.cos(a) * 0.35 * fw, 2.98, -Math.abs(Math.sin(a)) * 0.36 - 0.04);
-      }
-  }
-  // facial hair (on the jaw: opens with it): a shell over the jaw painted / trimmed per style
-  const beard = LK.beard;
+  const inHair = (lo: number, key: string | ((y: number) => string)): CF => (x, y, z) => {
+    return hm(x, y, z, lo) > -0.004 ? (typeof key === "string" ? key : key(y)) : null;
+  };
+  if (hair === 2 || hair === 5) vol(1.035, 1.05, -0.12, 0.05, inHair(-0.12, "hair"));
+  if (hair === 4) vol(1.07, 1.1, 0, 0.09, (x, y, z) => (hm(x, y, z) > -0.004 ? (Math.abs(x - 0.13 * fw) < 0.012 && z > -0.05 && y > 3.0 ? "h2" : "hair") : null));
+  if (hair === 5) putT(loft([2.98, 0.29 * fw, 0.3, 0.32, -0.05, 3.2, 0.31 * fw, 0.31, 0.33, -0.06, 3.42, 0.3 * fw, 0.3, 0.32, -0.06, 3.47, 0.22 * fw, 0.22, 0.24, -0.06, 3.48, 0, 0, 0, -0.06], SG(28), 0.75), "hair", H, 0, 0, 0);
+  if (hair === 6) vol(1.1, 1.14, -0.12, 0.07, inHair(-0.12, "hair"), 0.03);
+  if (hair === 7 || hair === 8) vol(1.09, 1.14, 0.02, 0.12, inHair(0.02, "hair"));
+  if (hair === 9) vol(1.32, 1.36, 0.02, 0.16, inHair(0.02, "hair"), 0.04);
+  if (hair === 8)
+    for (let d = 0; d < 12; d++) {
+      const a = Math.PI * (0.22 + (d / 11) * 1.56),
+        len = 0.7 + ((LK.h >> d) & 3) * 0.06;
+      putT(loft([0.0, 0, 0, 0, 0, -0.02, 0.045, 0.045, 0.045, 0, -len, 0.035, 0.035, 0.035, 0, -len - 0.02, 0, 0, 0, 0], 6).rotateZ(Math.cos(a) * 0.15), "hair", H, Math.cos(a) * 0.36 * fw, 2.98, -Math.abs(Math.sin(a)) * 0.37 - 0.04);
+    }
+  // facial hair: painted onto the jaw (opens with it); a full beard also gets a little volume
   if (beard) {
-    const BL = shell(JLr, beard === 4 ? 1.012 : 1.045, 2.6);
-    const bcf: CF = (x, y, z) => {
-      const ax = Math.abs(x),
-        lipZone = ax < 0.11 && y > 2.47 && z > 0.18;
-      if (y > 2.63 || z < -0.02) return null;
-      if (beard === 1) return lipZone ? null : "hair";
-      if (beard === 4) return lipZone ? null : "stub";
-      if (beard === 3) return (ax > 0.19 || y < 2.4) && !lipZone ? "hair" : null;
+    const lipZone = (ax: number, y: number, z: number) => ax < 0.11 && y > 2.47 && z > 0.17;
+    const bk = (x: number, y: number, z: number): string | null => {
+      const ax = Math.abs(x);
+      if (z < -0.02) return null;
+      if (beard === 1) return lipZone(ax, y, z) ? null : "hair";
+      if (beard === 4) return lipZone(ax, y, z) ? null : "stub";
+      if (beard === 3) return (ax > 0.17 || y < 2.4) && !lipZone(ax, y, z) ? "hair" : null;
       return ax < 0.1 && y < 2.48 && z > 0.12 ? "hair" : null; // goatee
     };
-    putT(loft(BL, SG(24), 0.9), "hair", I.jw, 0, 0, 0, 1, 1, 1, undefined, undefined, bcf);
-    if (beard === 1 || beard === 2 || beard === 5) putT(warp(box(0.2, 0.035, 0.04, 6), (v) => (v.y -= 2.5 * v.x * v.x)), "hair", H, 0, 2.598, 0.36);
-    if (beard === 1) for (const sd of [-1, 1]) putT(box(0.05, 0.16, 0.12), "hair", H, sd * 0.31 * fw, 2.62, 0.05);
+    jawC = (x, y, z) => bk(x, y, z) ?? "skin";
+    VTX.add(jawC);
+    if (beard === 1) putT(loft(shell(JLr, 1.03, 2.6), SG(28), 0.9), "hair", I.jw, 0, 0, 0, 1, 1, 1, undefined, undefined, (x, y, z) => (y < 2.61 && bk(x, y, z) ? "hair" : null));
+    if (beard === 1 || beard === 2 || beard === 5) putT(warp(box(0.2, 0.032, 0.04, 6), (v) => (v.y -= 2.5 * v.x * v.x)), "hair", H, 0, 2.598, 0.36);
   }
+  putT(loft(JLr, SG(28), 0.9), "skin", I.jw, 0, 0, 0, 1, 1, 1, undefined, undefined, jawC);
   if (LK.band) putT(new THREE.TorusGeometry(0.352 * fw, 0.036, 8, SG(36)).rotateX(Math.PI / 2 - 0.12), "band", H, 0, 3.0, -0.035, 1, 1, 1.13);
 
   // ---------------- jersey prints (second skinned mesh, rides the torso weights): curved onto the chest/back
@@ -810,7 +835,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
         keys = (pt as any).keys as string[] | null;
       const pos = g.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < n; i++) {
-        const kk = keys ? keys[(i / 3) | 0] : pt.key,
+        const kk = keys ? keys[keys.length === n ? i : (i / 3) | 0] : pt.key,
           e = C[kk] || C.skin;
         // Color.set already linearizes the hex; the extra sRGB->linear step deepens the palette (richer skin and
         // jersey tones under the bright arena rig) - the game's look since v2, kept on purpose.
@@ -856,6 +881,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     geos.forEach((g) => g.dispose());
     return geo;
   };
+  if (typeof process !== "undefined" && process.env && process.env.RIGDBG) for (const pt of parts) console.log("part", names[pt.bone], pt.key, pt.g.attributes.position.count / 3);
   const geo = build(parts, false);
   const mesh = new THREE.SkinnedMesh(geo, bodyMat());
   mesh.castShadow = true;

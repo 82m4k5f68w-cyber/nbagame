@@ -357,7 +357,7 @@ export function pose3(p: Player) {
     } else if ((kind === "lay" || kind === "roll" || kind === "contact") && k > 0.4 && k < 0.92) {
       // layup hand extends toward the rim around the release
       const w = Math.sin(((k - 0.4) / 0.52) * Math.PI) * 0.75,
-        r1 = armIK(p, cr, hoop(p.tm), HY, 104, 1, 0.5);
+        r1 = armIK(p, cr, hoop(p.tm), HY, 104, 1, 0.5, ln, cx);
       aR += (r1.a - aR) * w;
       eR += (r1.e - eR) * w;
       sz += (r1.ab - sz) * w;
@@ -456,7 +456,7 @@ export function pose3(p: Player) {
     aL = 0.4 + spd * 0.3;
     eL = 1;
     cr = 0.5 - 0.2 * spd; // sitting down over the ball (taller when he runs with it)
-    ln = 0.14 + spd * 0.16;
+    ln = 0.22 + spd * 0.08;
     cx += 0.05; // chest over the ball, head up
     ty = 0;
   } else if (air) {
@@ -558,7 +558,7 @@ export function pose3(p: Player) {
     if (PRO && has && md === "i" && !p.postA) {
       // Dribble hand IK with EITHER hand: whichever side of the body the ball is on (works on guests too: it only
       // needs the ball position). The free arm relaxes, or becomes an arm-bar toward a close defender.
-      const k2 = armIK(p, cr, B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8), 0, 0.6), // hand waits at the hip
+      const k2 = armIK(p, cr, B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 5) - 8), 0, 0.6, ln, cx), // hand waits at the hip
         right = k2.right,
         a2 = k2.a,
         e2 = k2.e,
@@ -756,7 +756,7 @@ export function pose3(p: Player) {
         bx = own ? B.tgx : B.x,
         by = own ? B.tgy : B.y,
         bz = own ? B.tgz : B.z,
-        k5 = armIK(p, cr, bx + Math.sin(fv(p)) * 3 * sd, by - Math.cos(fv(p)) * 3 * sd, bz, sd, 0.9);
+        k5 = armIK(p, cr, bx + Math.sin(fv(p)) * 3 * sd, by - Math.cos(fv(p)) * 3 * sd, bz, sd, 0.9, ln, cx);
       if (sd > 0) (aR = k5.a), (eR = k5.e), (sz = k5.ab);
       else (aL = k5.a), (eL = k5.e), (zL = k5.ab);
     }
@@ -764,7 +764,7 @@ export function pose3(p: Player) {
   }
   // ---- jump ball: the centers reach for the toss ----
   if (PRO && JB && air && (JB.c[0] === p || JB.c[1] === p)) {
-    const kj = armIK(p, cr, B.x, B.y, B.z, 1, 0.6);
+    const kj = armIK(p, cr, B.x, B.y, B.z, 1, 0.6, ln, cx);
     aR = kj.a;
     eR = kj.e;
     sz = kj.ab;
@@ -831,7 +831,7 @@ export function pose3(p: Player) {
   if (PRO && air && !has && md !== "c" && md !== "s" && B.owner && B.owner.tm !== p.tm && (B.owner.mode === "c" || B.owner.mode === "s") && Math.hypot(B.x - p.x, B.y - p.y) < 40) {
     // (aimed a little in front of him and never past straight up: a ball right overhead used to flip the arm over the
     // top and back as it wobbled in front of / behind the shoulder)
-    const k6 = armIK(p, cr, B.x + Math.cos(fv(p)) * 8, B.y + Math.sin(fv(p)) * 8, B.z + 4, 1, 0.8);
+    const k6 = armIK(p, cr, B.x + Math.cos(fv(p)) * 8, B.y + Math.sin(fv(p)) * 8, B.z + 4, 1, 0.8, ln, cx);
     aR = Math.min(armN(k6.a), 3.25);
     eR = k6.e;
     sz = k6.ab;
@@ -847,7 +847,7 @@ export function pose3(p: Player) {
       const w = clamp((70 - bd) / 30, 0, 1),
         tx = p.x + (B.x - p.x) * 0.7,
         ty = p.y + (B.y - p.y) * 0.7,
-        k3 = armIK(p, cr, tx, ty, Math.max(18, B.z + 6), 0, 0.9);
+        k3 = armIK(p, cr, tx, ty, Math.max(18, B.z + 6), 0, 0.9, ln, cx);
       if (k3.right) (aR += (k3.a - aR) * w), (eR += (k3.e - eR) * w), (sz += (k3.ab - sz) * w);
       else (aL += (k3.a - aL) * w), (eL += (k3.e - eL) * w), (zL = (zL ?? sz) + (k3.ab - (zL ?? sz)) * w);
     } else if (!has && !B.owner && (B.mode === "air" || B.mode === "pass") && bd < 45 && B.z > p.z + 30 && B.z < p.z + 150 && (air || B.to === p) && !(B.sh && B.age < 0.5)) {
@@ -856,9 +856,9 @@ export function pose3(p: Player) {
       // past his back is let go, the arms don't swing backwards after it)
       const fw = (Math.cos(fv(p)) * (B.x - p.x) + Math.sin(fv(p)) * (B.y - p.y)) / (bd || 1),
         w = clamp((45 - bd) / 20, 0, 1) * clamp((fw + 0.35) / 0.5, 0, 1);
-      const r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0);
+      const r1 = armIK(p, cr, B.x, B.y, B.z, 1, 1.0, ln, cx);
       (aR += (r1.a - aR) * w), (eR += (r1.e - eR) * w), (sz += (r1.ab - sz) * w);
-      const r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0);
+      const r2 = armIK(p, cr, B.x, B.y, B.z, -1, 1.0, ln, cx);
       (aL += (r2.a - aL) * w), (eL += (r2.e - eL) * w), (zL = (zL ?? sz) + (r2.ab - (zL ?? sz)) * w);
       gL = gR = 0.2;
     }
@@ -881,7 +881,7 @@ export function pose3(p: Player) {
       w = Math.min(1, p.swT * 4) * Math.min(1, (0.7 - p.swT) * 8 + 0.2),
       f = fv(p),
       sd = Math.sin(f) * (m.x - p.x) - Math.cos(f) * (m.y - p.y) > 0 ? 1 : -1,
-      k = armIK(p, cr, m.x, m.y, p.z + p.ht * 7.4, sd, 0.9),
+      k = armIK(p, cr, m.x, m.y, p.z + p.ht * 7.4, sd, 0.9, ln, cx),
       a = Math.min(k.a, 1.7);
     if (sd > 0) (aR += (a - aR) * w), (eR += (0.1 - eR) * w), (sz += (k.ab - sz) * w), (gR = 0.6);
     else (aL += (a - aL) * w), (eL += (0.1 - eL) * w), (zL = (zL ?? sz) + (k.ab - (zL ?? sz)) * w), (gL = 0.6);
@@ -890,7 +890,7 @@ export function pose3(p: Player) {
   if (PRO && (p.hudT || 0) > 0 && !has && !air && p.hcx != null) {
     const zc = p.z + p.ht * 7.6;
     for (const sd of [1, -1]) {
-      const k = armIK(p, cr, p.hcx + Math.sin(fv(p)) * 2 * sd, p.hcy - Math.cos(fv(p)) * 2 * sd, zc, sd, 0.6);
+      const k = armIK(p, cr, p.hcx + Math.sin(fv(p)) * 2 * sd, p.hcy - Math.cos(fv(p)) * 2 * sd, zc, sd, 0.6, ln, cx);
       if (sd > 0) (aR = k.a), (eR = k.e), (sz = k.ab);
       else (aL = k.a), (eL = k.e), (zL = k.ab);
     }
@@ -947,7 +947,7 @@ export function pose3(p: Player) {
       dd = Math.hypot(o.x - p.x, o.y - p.y);
     if (dd < 24 && Math.hypot(o.vx, o.vy) > 140) {
       // hand on the driver's hip
-      const k8 = armIK(p, cr, o.x, o.y, o.z + o.ht * 5, -1, 0.9);
+      const k8 = armIK(p, cr, o.x, o.y, o.z + o.ht * 5, -1, 0.9, ln, cx);
       aL = k8.a;
       eL = k8.e;
       zL = k8.ab;
@@ -982,8 +982,8 @@ export function pose3(p: Player) {
           },
           b2 = pt(B.x, B.y),
           m2 = pt(mk.x, mk.y),
-          kb = armIK(p, cr, b2[0], b2[1], zc, bs, 0.7),
-          km = armIK(p, cr, m2[0], m2[1], zc, -bs, 0.7),
+          kb = armIK(p, cr, b2[0], b2[1], zc, bs, 0.7, ln, cx),
+          km = armIK(p, cr, m2[0], m2[1], zc, -bs, 0.7, ln, cx),
           ab = Math.min(kb.a, 1.3),
           am = Math.min(km.a, 1.2);
         if (bs > 0) {
@@ -1002,7 +1002,7 @@ export function pose3(p: Player) {
           ly = mk.y + (B.y - mk.y) * 0.3,
           f = fv(p),
           bs = Math.sin(f) * (lx - p.x) - Math.cos(f) * (ly - p.y) > 0 ? 1 : -1,
-          kd = armIK(p, cr, lx, ly, p.z + p.ht * 6.2, bs, 0.9),
+          kd = armIK(p, cr, lx, ly, p.z + p.ht * 6.2, bs, 0.9, ln, cx),
           ad = Math.min(kd.a, 1.6);
         if (bs > 0) (aR += (ad - aR) * wd), (eR += (0.25 - eR) * wd), (sz += (kd.ab - sz) * wd), (gR = 0.1);
         else (aL += (ad - aL) * wd), (eL += (0.25 - eL) * wd), (zL = (zL ?? sz) + (kd.ab - (zL ?? sz)) * wd), (gL = 0.1);
@@ -1077,7 +1077,7 @@ export function pose3(p: Player) {
       const d = Math.hypot(o.x - p.x, o.y - p.y);
       const hw = clamp((Math.sin(T * 1.7 + p.k) + 0.3) / 0.25, 0, 1); // (the hand comes on and off his hip, eased)
       if (d < 34 && d > 10 && hw > 0) {
-        const r = armIK(p, cr, o.x - Math.cos(o.f) * 3, o.y - Math.sin(o.f) * 3, o.z + o.ht * 4.4, 0, 0.9),
+        const r = armIK(p, cr, o.x - Math.cos(o.f) * 3, o.y - Math.sin(o.f) * 3, o.z + o.ht * 4.4, 0, 0.9, ln, cx),
           w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0) * hw;
         if (r.right) (aR += (r.a - aR) * w), (eR += (r.e - eR) * w), (sz += (r.ab - sz) * w), (gR = 0.1);
         else (aL += (r.a - aL) * w), (eL += (r.e - eL) * w), (zL = (zL ?? sz) + (r.ab - (zL ?? sz)) * w), (gL = 0.1);
@@ -1224,7 +1224,7 @@ export function pose3(p: Player) {
       // backing down: the ball hand works a low dribble on the far side, the off arm is a bar into the defender
       // (elbow out at chest height, forearm across), the chest turned a little to shield the ball
       // (the sim's dribble hand, not the ball's side: a ball crossing his midline must not swap the arms)
-      const kp = armIK(p, cr, B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 4.4) - 8), (B.dhn || 1) > 0 ? 1 : -1, 0.6);
+      const kp = armIK(p, cr, B.x, B.y, Math.max(B.z, (B.dtop ?? p.z + p.ht * 4.4) - 8), (B.dhn || 1) > 0 ? 1 : -1, 0.6, ln, cx);
       if (kp.right) (aR = kp.a), (eR = kp.e), (sz = kp.ab), (aL = 1.05), (eL = 1.55), (zL = 0.62), (hL = 0.55), (gR = 0.15), (gL = 0.5);
       else (aL = kp.a), (eL = kp.e), (zL = kp.ab), (aR = 1.05), (eR = 1.55), (sz = 0.62), (hR = 0.55), (gL = 0.15), (gR = 0.5);
       cy += kp.right ? 0.18 : -0.18;
@@ -1404,7 +1404,7 @@ export function pose3(p: Player) {
         const f2 = p.helpP;
         if (f2) {
           const pull = e > 0.45 ? (e - 0.45) * 0.6 : 0,
-            k16 = armIK(p, cr, f2.x, f2.y, 18 + pull * 40, 1, 0.95);
+            k16 = armIK(p, cr, f2.x, f2.y, 18 + pull * 40, 1, 0.95, ln, cx);
           aR = m(aR, k16.a);
           eR = m(eR, k16.e);
           sz = m(sz, k16.ab);
@@ -1608,7 +1608,7 @@ export function pose3(p: Player) {
     if (ball) {
       const lx = -Math.sin(p.f),
         ly = Math.cos(p.f),
-        r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9);
+        r2 = armIK(p, cr, ball[0] + lx * 4.2, ball[1] + ly * 4.2, ball[2] + 0.5, -1, 0.9, ln, cx);
       if (r2.over < 0.6) {
         const w = md === "c" ? Math.min(1, p.t / 0.12) : 1;
         // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early, 3 elbow flared out wide,
@@ -1769,7 +1769,7 @@ export function pose3(p: Player) {
       const P0 = p.ctP || (p.ctP = [0, 0, 0, 1]);
       if (B.owner || !p.ctPo) {
         (P0[0] = B.x), (P0[1] = B.y), (P0[2] = Math.max(B.z + 10, p.z + p.ht * 10.6));
-        P0[3] = armIK(p, o.cr, P0[0], P0[1], P0[2], 0, 0.6).right ? 1 : 0;
+        P0[3] = armIK(p, o.cr, P0[0], P0[1], P0[2], 0, 0.6, o.ln, o.cx).right ? 1 : 0;
       }
       p.ctPo = 1;
       const w = clamp((48 - Math.hypot(sh.x - p.x, sh.y - p.y)) / 14, 0, 1);
@@ -1779,7 +1779,7 @@ export function pose3(p: Player) {
       const bz = Math.max(B.z, B.dtop - 8),
         // (around the top of the bounce only: a ball still up at the chest after a catch is the other pose's business)
         wt = clamp((B.z - (B.dtop - 16)) / 8, 0, 1) * clamp((B.dtop + 12 - B.z) / 6, 0, 1);
-      if (armIK(p, o.cr, B.x, B.y, bz, 0, 0.6).right) (wR = wt), (K[6] = B.x), (K[7] = B.y), (K[8] = bz);
+      if (armIK(p, o.cr, B.x, B.y, bz, 0, 0.6, o.ln, o.cx).right) (wR = wt), (K[6] = B.x), (K[7] = B.y), (K[8] = bz);
       else (wL = wt), (K[9] = B.x), (K[10] = B.y), (K[11] = bz);
     } else if (cat) {
       // both hands go out to where the ball will be caught (a quarter second ahead), one on each side of it; a bounce
@@ -1816,7 +1816,7 @@ export function pose3(p: Player) {
     }
     if (p.ctR > 0.01) {
       if (wR > 0) {
-        const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6);
+        const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6, o.ln, o.cx);
         if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
         (K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
       }
@@ -1836,7 +1836,7 @@ export function pose3(p: Player) {
     }
     if (p.ctL > 0.01) {
       if (wL > 0) {
-        const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6);
+        const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6, o.ln, o.cx);
         if (con) o.gL = 0.05;
         (K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
       }
@@ -1998,6 +1998,10 @@ function stepSolve(p: Player, o: any, sp: number) {
     ux = v > 1 ? p.vx / v : cf,
     uy = v > 1 ? p.vy / v : sf;
   let drop = 0;
+  // athletic base: crouched (dribbling, defense, triple threat, box-outs) the hips sit back over the middle of the
+  // feet, so the feet rest a little AHEAD of the hip joints (knees over the toes, not the hips over the heels - which
+  // read as leaning back); fades out with speed
+  const fo = clamp((o.cr + S.drop / 4 - 0.2) * 3.2, 0, 5) * s * (1 - spd);
   // regime change (moving <-> standing): a foot that is mid-air finishes its step from where it is now
   if (reg !== S.reg) {
     for (const F of S.f) if (F && !F.st) (F.sx = F.x), (F.sy = F.y), (F.sz = F.z), (F.u = 0), (F.dur = 0.15);
@@ -2012,7 +2016,7 @@ function stepSolve(p: Player, o: any, sp: number) {
         hx = PSK[P0 * 3],
         hy = PSK[P0 * 3 + 1],
         lat = ((PSK[(P0 + 2) * 3] - hx) * sf - (PSK[(P0 + 2) * 3 + 1] - hy) * cf) * (st === ST.post ? 1.6 : 1) + (st === ST.post ? (k ? 2 : -2) * s : 0),
-        e = gat ? Math.hypot(S.f[k].x - PSK[(P0 + 2) * 3], S.f[k].y - PSK[(P0 + 2) * 3 + 1]) : Math.hypot(S.f[k].x - (hx + sf * lat), S.f[k].y - (hy - cf * lat));
+        e = gat ? Math.hypot(S.f[k].x - PSK[(P0 + 2) * 3], S.f[k].y - PSK[(P0 + 2) * 3 + 1]) : Math.hypot(S.f[k].x - (hx + sf * lat + cf * fo), S.f[k].y - (hy - cf * lat + sf * fo));
       if (e > best && S.last !== k) (best = e), (need = k);
     }
   }
@@ -2029,8 +2033,8 @@ function stepSolve(p: Player, o: any, sp: number) {
     // (posting up: a wide, low base to lean into the defender)
     const lat = ((ax - hx) * sf - (ay - hy) * cf) * (st === ST.post ? 1.6 : 1) + (st === ST.post ? (k ? 2 : -2) * s : 0);
     // (a jumper's gather keeps the clip's stagger too: the shooting foot a little ahead)
-    const restX = gat ? ax : hx + sf * lat,
-      restY = gat ? ay : hy - cf * lat;
+    const restX = gat ? ax : hx + sf * lat + cf * fo,
+      restY = gat ? ay : hy - cf * lat + sf * fo;
     if (reg) {
       // gait schedule: leg phase 0 = touchdown (L lands at ph = pi/2, R at 3pi/2, where the clips swing them forward)
       const ph = (((p.ph - (k ? 1.5 : 0.5) * Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI),
@@ -2286,9 +2290,10 @@ function inert(x0: number, v0: number, tf: number, t: number) {
 }
 /** Two-bone arm IK toward a game-space point (px). side: +1 right arm, -1 left, 0 = the arm on the target's side.
  *  Returns shoulder raise a, elbow e, abduction ab (for zL/sz), and how far the target is beyond reach (dist).
- *  Approximates the chest as square to the pelvis (used for the dribble hand, defenders' hands, rebounds). */
+ *  ln / cx: the pelvis and chest pitch (the shoulder follows a lean); the chest's yaw / roll are approximated as square
+ *  to the pelvis (used for the dribble hand, defenders' hands, rebounds). */
 const IK = { right: true, a: 0, e: 0, ab: 0, over: 0 };
-export function armIK(p: Player, cr: number, x: number, y: number, z: number, side: number, abMax: number) {
+export function armIK(p: Player, cr: number, x: number, y: number, z: number, side: number, abMax: number, ln = 0, cx = 0) {
   const S2 = p.ht / 6.4,
     w = W3(p.x, p.y, p.z),
     b = W3(x, y, z),
@@ -2300,8 +2305,15 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
     lz = (X1 * Math.sin(th) + Z1 * Math.cos(th)) / S2,
     right = side ? side > 0 : lx >= 0,
     tx = right ? lx - RIG.shX * p.bk : lx + RIG.shX * p.bk,
-    ty2 = Y1 / S2 - (RIG.hip + RIG.chest + RIG.sh),
-    tz = lz,
+    // the shoulder rides the pelvis pitch (ln) and the chest pitch (cx): find it, then look at the target from the
+    // chest's frame (a lean used to put every IK hand off its target - the dribble hand, the held ball, catches)
+    L = ln + cx,
+    cL = Math.cos(L),
+    sL = Math.sin(L),
+    dy = Y1 / S2 - (RIG.hip + RIG.chest * Math.cos(ln) + RIG.sh * cL),
+    dz = lz - (RIG.chest * Math.sin(ln) + RIG.sh * sL),
+    ty2 = dy * cL + dz * sL,
+    tz = -dy * sL + dz * cL,
     L1 = 1.02,
     L2 = 1.15,
     raw = Math.hypot(tx, ty2, tz),

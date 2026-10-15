@@ -99,8 +99,8 @@ export function hoop2d(b: number) {
   X.stroke();
 }
 export function net2d(b: number) {
-  // back half of the rim, net strands (shadowed), then the front of the rim on top
-  const c = pr(HXs[b], HY, 100);
+  // back half of the rim, net strands (shadowed), then the front of the rim on top (the rim rides its flex, like the net)
+  const c = pr(HXs[b], HY, 100 - (NETS[b].fz || 0));
   X.lineWidth = 2.6;
   X.strokeStyle = "#b8340f";
   X.beginPath();
@@ -620,6 +620,7 @@ export function drawNet(b: number, pf: (x: number, y: number, z: number) => numb
   X.lineWidth = 1.1;
   X.beginPath();
   for (const c of NETS[b].c) {
+    if (!c[4]) continue; // (cords only: the ring ties just hold the mesh's shape)
     const u = pf(c[0].x, c[0].y, c[0].z),
       v = pf(c[1].x, c[1].y, c[1].z);
     X.moveTo(u[0], u[1]);
