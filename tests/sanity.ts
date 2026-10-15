@@ -50,7 +50,7 @@ import { rapInit } from "../src/core/physics";
       if (hadBall && me) {
         // he had the ball and touched nothing: anything he did is an auto-action
         if ((me.lc || 0) !== lc0 || me.mode === "c" || me.mode === "s" || (me.vz > 0 && z0 <= 0) || me.act === 1 || me.act === 2 || (G.B.mode === "pass" && G.B.pp !== pp0 && G.B.last === me))
-          R.humAct++, process.env.DBG && console.log("humAct", { lc: (me.lc || 0) !== lc0, mode: me.mode, jump: me.vz > 0 && z0 <= 0, act: me.act, pass: G.B.mode === "pass", sv: me.sv, x: me.x | 0, y: me.y | 0, shot: G.shot.toFixed(1), clock: G.clock.toFixed(1), z: me.z | 0 });
+          R.humAct++, process.env.DBG && console.log("humAct " + JSON.stringify({ lc: (me.lc || 0) !== lc0, mode: me.mode, jump: me.vz > 0 && z0 <= 0, act: me.act, pass: G.B.mode === "pass", sv: me.sv, x: me.x | 0, y: me.y | 0, shot: G.shot.toFixed(1), clock: G.clock.toFixed(1), z: me.z | 0 }));
       }
       if (!live) {
         (still = 0), (bc = 0);
