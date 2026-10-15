@@ -317,10 +317,11 @@ namespace Hoops.Core
                 }
                 if (Util.T(B.sc) && B.z > 60 && B.z < 100 && d < RR + 3 && !(RA && phOn())) // (PH2: BallSim's net drags it)
                 {
-                    // the net grabs the ball: horizontal motion dies, the drop slows, then it falls out the bottom
-                    B.vx *= 0.86;
-                    B.vy *= 0.86;
-                    if (B.z > 82) B.vz *= 0.975;
+                    // the net grabs the ball: the sideways motion fades (netSim's strands do the rest: they push it back
+                    // to the middle and drag on the drop, so it falls out the bottom - a hard grab here left it resting on
+                    // the mesh)
+                    B.vx *= 0.96;
+                    B.vy *= 0.96;
                 }
             }
             if (!RA && B.z < BR)

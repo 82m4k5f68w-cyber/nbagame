@@ -34,7 +34,9 @@ namespace Hoops.Core
             fc -= dt;
             if (RPL != null)
             {
+                double rk = RSPD * (Util.T(RPL.k) ? RPL.k : 1);
                 rplStep(dt);
+                netSim(dt * rk, true); // the net moves in replays too (no pull on the replayed ball)
                 return;
             }
             if (S != "play") return;
@@ -87,9 +89,13 @@ namespace Hoops.Core
                         q.@in = a;
                         loose(q, q.tm);
                         q.@in = sv;
-                        sv.dx = sv.dx * 0.4 + a.dx * 0.9;
-                        sv.dy = sv.dy * 0.4 + a.dy * 0.9;
-                        if (!noJ && (a.sd || (q.z <= 0 && B.z > 45 && Hypot(B.x - q.x, B.y - q.y) < 34))) sv.sd = true;
+                        // (only when he is heading the same way: a human running somewhere else keeps his stick)
+                        if (sv.dx * a.dx + sv.dy * a.dy > 0)
+                        {
+                            sv.dx = sv.dx * 0.4 + a.dx * 0.9;
+                            sv.dy = sv.dy * 0.4 + a.dy * 0.9;
+                            if (!noJ && (a.sd || (q.z <= 0 && B.z > 45 && Hypot(B.x - q.x, B.y - q.y) < 34))) sv.sd = true;
+                        }
                     }
                 }
             }

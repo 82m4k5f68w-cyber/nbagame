@@ -95,7 +95,7 @@ namespace Hoops.Core
                 double use = i.sp && sv2 > 150 ? 0.1 : rot ? (sv2 > 60 ? sv2 * 0.00013 : -0.01) : -0.04;
                 p.en = Math.Max(0, Math.Min(1, p.en - dt * use));
             }
-            if (has && p.mode == "i" && p.cd <= 0 && !(p.mvT > 0) && (Util.T(i.dx) || Util.T(i.dy)) && p.li != null && i.dx * p.li[0] + i.dy * p.li[1] < -0.3 && Hypot(p.vx, p.vy) > 110)
+            if (has && p.mode == "i" && p.cd <= 0 && !(p.mvT > 0) && (Util.T(i.dx) || Util.T(i.dy)) && p.li != null && i.dx * p.li[0] + i.dy * p.li[1] < -0.3 && Hypot(p.vx, p.vy) > 110 && (i.dx * ux + i.dy * uy) / D > -0.5 * Hypot(i.dx, i.dy)) // (not a retreat dribble)
             {
                 if (!Util.T(i.mv)) i.mv = cfg.PP != 0 ? 6 : 3; // (Pro Play: flick-to-cross is a crossover)
             }

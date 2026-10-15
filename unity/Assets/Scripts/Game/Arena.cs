@@ -532,12 +532,26 @@ namespace Hoops.Game
             foreach (var N in NETS) foreach (var c in N.c) if (c.draw) nc++;
             netB = new Batch(Gfx.Capsule(5, 1), Gfx.Lit(new Color(0.955f, 0.955f, 0.955f), 0.1f), nc, true, true);
         }
+        /// <summary>Rim flex in px (+ = bent down): the ball engine's when BallSim runs (it feels the real contacts), else
+        /// the sim net's (Sim.NETS[b].fz: dunks, hard hits, a player hanging on it).</summary>
+        static double FlexPx(int b) => Phys.RAP is BallSim ? BallSim.RimFlex[b] : NETS[b].fz;
         void NetUpd()
         {
             netB.n = 0;
-            foreach (var N in NETS)
+            for (int b = 0; b < NETS.Length; b++)
+            {
+                var N = NETS[b];
+                // the sim's rim ring rides N.fz; when BallSim bends the drawn rim instead, the top of the net follows it
+                // (fading out toward the hem)
+                double corr = FlexPx(b) - N.fz;
                 foreach (var c in N.c)
-                    if (c.draw) netB.Seg(PhysXBall.U(c.a.x, c.a.y, c.a.z), PhysXBall.U(c.b.x, c.b.y, c.b.z), 0.022f);
+                    if (c.draw)
+                    {
+                        double za = c.a.z - corr * System.Math.Max(0, System.Math.Min(1, (c.a.z - 80) / 20)),
+                            zb = c.b.z - corr * System.Math.Max(0, System.Math.Min(1, (c.b.z - 80) / 20));
+                        netB.Seg(PhysXBall.U(c.a.x, c.a.y, za), PhysXBall.U(c.b.x, c.b.y, zb), 0.022f);
+                    }
+            }
             netB.Draw();
         }
         static Quaternion flatUp;
@@ -586,7 +600,6 @@ namespace Hoops.Game
         readonly Vector3[] cfP = new Vector3[CFN];
         readonly float[] cfA = new float[CFN], cfS = new float[CFN], cfW = new float[CFN];
         bool cfOn, wasDk;
-        readonly float[] hoopShake = new float[2];
         RenderParams glintRP, fireRP;
 
         void BuildPolish()
@@ -629,23 +642,15 @@ namespace Hoops.Game
         readonly bool[] flexOn = new bool[2];
         void Polish(float dt)
         {
-            // rim shake: a dunk yanks the rim down, the whole stanchion head rings and settles
-            bool dk = Util.T(B.dk);
-            if (dk && !wasDk) hoopShake[B.x > 470 ? 1 : 0] = 1e-6f;
-            wasDk = dk;
+            // rim shake: the physical rim flex (px, + = bent down; FlexPx: a dunk yanks it, a hard hit rings it, a player
+            // hanging on it holds it bent) moves the whole stanchion head; the net's top ring rides the same iron
+            wasDk = Util.T(B.dk);
             for (int b = 0; b < 2; b++)
             {
-                // the physical rim flex from the ball engine (px, + = bent down) rides on top of the dunk shake
-                float flex = Phys.RAP is BallSim ? (float)BallSim.RimFlex[b] * 0.1f : 0f;
-                if (hoopShake[b] <= 0 && Mathf.Abs(flex) < 1e-4f && !flexOn[b]) continue;
+                float flex = (float)FlexPx(b) * 0.1f;
+                if (Mathf.Abs(flex) < 1e-4f && !flexOn[b]) continue;
                 flexOn[b] = Mathf.Abs(flex) >= 1e-4f;
                 float off = -flex;
-                if (hoopShake[b] > 0)
-                {
-                    float t = hoopShake[b] += dt, a = Mathf.Exp(-t * 4.5f);
-                    off += -0.22f * a * Mathf.Cos(t * 24) - 0.12f * Mathf.Exp(-t * 9);
-                    if (a < 0.01f) hoopShake[b] = 0;
-                }
                 foreach (var h in CourtBuilder.HoopParts[b])
                 {
                     var lp = h.t.localPosition;

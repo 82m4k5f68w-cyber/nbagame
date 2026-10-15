@@ -64,7 +64,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     let ready = !GPU;
     const maxAniso = () => {
       try {
-        return GPU ? R.getMaxAnisotropy?.() || 8 : maxAniso();
+        return GPU ? R.getMaxAnisotropy?.() || 8 : R.capabilities.getMaxAnisotropy() || 4; // (was a self-call: WebGL always fell back to 4x)
       } catch (e) {
         return 4;
       }
@@ -942,19 +942,14 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       wasDk = 0;
     const hoopShake = [0, 0];
     function polish(dt: number) {
-      // rim shake: a dunk yanks the rim down, the whole stanchion head rings and settles
-      if (B.dk && !wasDk) hoopShake[B.x > 470 ? 1 : 0] = 1e-6;
+      // rim shake: the sim's rim flex (NETS[b].fz, px down: a dunk yanks it, a hard hit rings it, a player hanging on
+      // it holds it bent) - the net's top ring rides the same iron, so rim and net move together
       wasDk = B.dk ? 1 : 0;
       for (const b of [0, 1]) {
-        if (hoopShake[b] <= 0) continue;
-        const t = (hoopShake[b] += dt),
-          a = Math.exp(-t * 4.5),
-          off = -0.22 * a * Math.cos(t * 24) - 0.12 * Math.exp(-t * 9);
+        const off = -(NETS[b].fz || 0) * 0.1;
+        if (Math.abs(off) < 1e-4 && hoopShake[b] === 0) continue;
+        hoopShake[b] = Math.abs(off) < 1e-4 ? 0 : 1;
         for (const h of hoopParts[b]) h.o.position.y = h.y + off * h.k;
-        if (a < 0.01) {
-          hoopShake[b] = 0;
-          for (const h of hoopParts[b]) h.o.position.y = h.y;
-        }
       }
       // glints
       glints.forEach((g, k) => {
@@ -1006,8 +1001,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         s.tex.needsUpdate = true;
       }
     }
-    // Net strands as instanced thin cylinders, re-posed from the verlet sim every frame.
-    const NC = NETS.reduce((a, N) => a + N.c.length, 0),
+    // Net strands as instanced thin cylinders, re-posed from the verlet sim every frame (only the cords: the soft
+    // ring ties that hold the mesh's shape are not nylon, drawing them caged the net in stiff hoops).
+    const NC = NETS.reduce((a, N) => a + N.c.filter((c: any) => c[4]).length, 0),
       netI = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.022, 0.022, 1, 5, 1, true), M(0xf4f4f4, { roughness: 0.9 }), NC);
     netI.frustumCulled = false;
     netI.castShadow = true;
@@ -1052,6 +1048,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       let i = 0;
       for (const N of NETS)
         for (const c of N.c) {
+          if (!c[4]) continue;
           const a = W3(c[0].x, c[0].y, c[0].z),
             b = W3(c[1].x, c[1].y, c[1].z);
           NA.set(a[0], a[1], a[2]);
@@ -1258,12 +1255,13 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       for (const b of [...bench, ...refs]) {
         S.remove(b.gl.G);
         b.gl.mesh.geometry.dispose();
+        b.gl.pmesh?.geometry.dispose();
         b.gl.extra.forEach((m: any) => (m.map && m.map.dispose(), m.dispose()));
       }
       bench = [];
       refs = [];
       for (let k = 0; k < 2; k++) {
-        const gl = makeRig({ n: "Ref " + k, col: "#b9bec6", skin: ["#c68642", "#e8b88f"][k], hr: 1, bd: k, no: "", ht: 6.2, bk: 1, tm: -1, sg: { gs: 0 } }, TX2);
+        const gl = makeRig({ n: "Ref " + k, col: "#b9bec6", skin: ["#c68642", "#e8b88f"][k], hr: 1, bd: k, no: "", ht: 6.2, bk: 1, tm: -1, sg: { gs: 0 } }, TX2, 0);
         S.add(gl.G);
         refs.push({ gl, x: 470, y: k ? -4 : 120, f: 0, ph: 0, whT: 0 });
       }
@@ -1285,7 +1283,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               tm,
               sg: { gs: 0 },
             };
-          const gl = makeRig(fake, TX2);
+          const gl = makeRig(fake, TX2, 0);
           S.add(gl.G);
           const x = sg * (9 + k * 2.6),
             z = -25.6;
@@ -1405,6 +1403,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       shake = 0;
     V.shake = (a: number) => (shake = Math.max(shake, a));
     V.GL = {
+      netM: () => netI.instanceMatrix.array, // the drawn net strands (tests: they must move)
       dbg: () => ({ refs: refs.map((r) => [Math.round(r.x), Math.round(r.y), r.gl.G.visible]), street: streetOn, cs: !!CS.react }),
       proj(x: number, y: number, z: number) {
         const v = PV.set(x, y, z).project(cam);
@@ -1492,6 +1491,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           if (!p.gl) return;
           S.remove(p.gl.G);
           p.gl.mesh.geometry.dispose();
+          p.gl.pmesh?.geometry.dispose();
           p.gl.extra.forEach((m: any) => (m.map && m.map.dispose(), m.dispose()));
           p.gl = null;
         };
@@ -1499,7 +1499,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           if (pset) pset.forEach(drop);
           if (pslot) pslot.forEach(drop);
           P.forEach((p) => {
-            p.gl = makeRig(p, TX2);
+            p.gl = makeRig(p, TX2, V.QL > 0 ? 1 : 0);
             S.add(p.gl.G);
           });
           pset = P;
@@ -1511,7 +1511,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               drop(pslot[k]);
               const p: any = P[k];
               if (!p.gl) {
-                p.gl = makeRig(p, TX2);
+                p.gl = makeRig(p, TX2, V.QL > 0 ? 1 : 0);
                 S.add(p.gl.G);
               }
               pslot[k] = p;
@@ -1623,8 +1623,14 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           dofF = Math.hypot(tp[0] - sw[0], tp[1] - tl[1], tp[2] - sw[2]);
         } else rpA = Math.random() * 6.283; // pick a fresh angle for the next replay
         fx.setDof(V.FX && QL >= 1 ? dofF : 0);
-        const SO = (V as any).studio as { a: number; d: number } | null;
-        if (SO && p0) {
+        const SO = (V as any).studio as { a: number; d: number } | null,
+          NCM = (V as any).netCam as { b: number; a: number; d: number; h?: number } | null;
+        if (NCM) {
+          // debug / screenshots: a close look at one hoop's net from angle a (rad), distance d (ft)
+          const hx4 = (HXs[NCM.b] - 470) * 0.1;
+          tp = [hx4 + Math.cos(NCM.a) * NCM.d, NCM.h ?? 8.6, Math.sin(NCM.a) * NCM.d];
+          tl = [hx4, 8.9, 0];
+        } else if (SO && p0) {
           // Animation Studio: close orbit around the player
           const pw = W3(p0.x, p0.y, 0);
           const up = p0.z * 0.1; // follow jumps
@@ -1633,7 +1639,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           tp = [pw[0] + Math.cos(SO.a) * SO.d, ah + ((SO as any).dy ?? 1.7) + (fz ? 0 : up), pw[2] + Math.sin(SO.a) * SO.d];
           tl = [pw[0], ah + (fz ? 0 : up), pw[2]];
         }
-        let lerpK = SO ? 1 : RPL && RPK ? 0.35 : 0.1;
+        let lerpK = SO || NCM ? 1 : RPL && RPK ? 0.35 : 0.1;
         if (!SO && !RPL && GS === "over" && sc[0] !== sc[1]) {
           // final buzzer: the camera drifts in to the winners' top scorer (face close-up: the grin, the roar)
           const wt = sc[0] > sc[1] ? 0 : 1;
@@ -1649,7 +1655,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           }
         }
         cam.position.lerp(TV.set(tp[0], tp[1], tp[2]), lerpK);
-        cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO ? 1 : lerpK === 0.03 ? 0.05 : 0.14);
+        cl2.lerp(TV.set(tl[0], tl[1], tl[2]), SO || NCM ? 1 : lerpK === 0.03 ? 0.05 : 0.14);
         cam.lookAt(cl2);
         if (shake > 0.001) {
           cam.position.x += (Math.random() - 0.5) * shake;

@@ -52,6 +52,11 @@ namespace Hoops.Core
         public NetKnot[] p;
         public NetCon[] c;
         public double hx, quiet, ring;
+        /// <summary>fz/fv: rim flex (px, + = bent down) and its rate (the rim ring of knots rides it; renderers move the
+        /// hoop by it); dk: this dunk already yanked it; b*: the ball as the net last saw it (position, velocity; bok 0
+        /// none / 1 position / 2 both); r*: the reaction the net handed the ball; w*: idle-sway oscillators; hold: how
+        /// long a ball has sat slow in the mesh (then the net lets go of it).</summary>
+        public double fz, fv, dk, bx, by, bz, bvx, bvy, bvz, bok, rvx, rvy, rvz, wx, wy, wx2, wy2, hold;
     }
 
     /// <summary>A saved highlight (copy of the replay buffer): label, frame count, frames, quarter, speed.</summary>
@@ -811,11 +816,33 @@ namespace Hoops.Core
         {
             new[] { 7.5, 100 },
             new[] { 6.9, 96.4 },
-            new[] { 6.2, 92.8 },
-            new[] { 5.5, 89.4 },
-            new[] { 4.9, 86.2 },
-            new[] { 4.5, 83.2 },
+            new[] { 6.25, 92.8 },
+            new[] { 5.6, 89.4 },
+            new[] { 5.05, 86.2 },
+            new[] { 4.65, 83.2 }, // (a little wider than the ball at the hem: it hugs a swish, never holds a ball)
         };
+        const double NET_DAMP = 0.984, // velocity kept per 1/60 s tick (nylon + air): a whipped net swings ~2 s before it hangs still
+            NET_STR = 0.4, // strand stretch correction per solver pass: elastic nylon - a swish stretches the mesh, it recoils
+            // (the same stiffness over the 3 passes of a quiet net: 1 - (1 - k)^(7/3), so it hangs exactly as low)
+            NET_STR3 = 0.6963642404913704,
+            NET_HEM3 = 0.8821109920435076,
+            NET_TIE3 = 0.37064021485998855,
+            NET_MAXS = 1.15, // stretch limit: past 15% the nylon is a rope again (fully stiff)
+            NET_MU = 0.45, // ball-strand friction: the share of the ball's slide the touched knots follow (drags the mesh along)
+            NET_RK = 1, // reaction on the ball per px the mesh still pushes back per tick
+            NET_RUP = 0.25, // ... of which its vertical part counts this much
+            NET_RF = 0.35, // ... and per px of mesh it drags along (the momentum it hands the nylon)
+            NET_VCAP = 14, // most the nylon takes off the ball's drop per tick (px/s): a swish keeps ~70% of its speed
+            NET_CK = 900, // centering spring (1/s^2) + damping (1/s) on a ball pressing into the side of the mesh
+            NET_CC = 30,
+            NET_BRZ = 18, // idle sway: arena air on the mesh (px/s^2 at the hem)
+            RIM_W = 24, // rim flex spring (rad/s) + damping ratio: a dunk or a hard hit rings the iron and the net rides it
+            RIM_Z = 0.19,
+            // idle-sway oscillators: (cos, sin) rotated by 0.011 and 0.00625 rad per tick (plain arithmetic: TS == C#)
+            BRC = 0.9999395006100392,
+            BRS = 0.010999778168008754,
+            BRC2 = 0.9999804688135782,
+            BRS2 = 0.006249959309975306;
         static Net[] G_nets;
         /// <summary>One net per hoop (built on first use: partial-class static initializer order across files is not
         /// guaranteed, and this reads HXs).</summary>
@@ -854,142 +881,274 @@ namespace Hoops.Core
                     }
                 for (int k = 0; k < NS; k++) L(gr[NR.Length - 1][k], gr[NR.Length - 1][(k + 1) % NS], 0.6); // bottom hem
                 for (int r = 1; r < NR.Length - 1; r++) for (int k = 0; k < NS; k++) L(gr[r][k], gr[r][(k + 1) % NS], 0.18, 0); // soft hoop ties
-                r0[hi] = new Net { p = p.ToArray(), c = c.ToArray(), hx = hx, quiet = 0, ring = 0 };
+                var N = new Net { p = p.ToArray(), c = c.ToArray(), hx = hx, quiet = 0, ring = 0, wx = 1, wy = 0, wx2 = 0, wy2 = 1 };
+                for (int i = 0; i < 240; i++) netTick(N, 1 / 60.0, 0, 0, 0, 0, 0, 0, false, true); // let it hang: the rest pose is its equilibrium
+                foreach (var q in N.p) { q.px = q.x; q.py = q.y; q.pz = q.z; }
+                r0[hi] = N;
             }
             return r0;
         }
 
         public const double SEGR = BR + 0.45;
+        static double NRX0, NRX1, NRX2;
 
-        /// <summary>Cloth net: verlet knots on nylon ropes (stretch-resistant, slack in compression), real gravity,
-        /// sub-stepped while the ball is inside so a fast swish can't tunnel. Two-way: the strands the ball pushes push
-        /// back (the net grabs and slows a swish), and a ball ringing off the iron shakes the whole mesh.</summary>
-        public static void netSim(double dt)
+        /// <summary>One net step: verlet knots (the rim ring pinned to the flexing iron), elastic strands, and (touch) the
+        /// ball moving x0 -> x1 in sub-steps with push-out + friction. The mesh displacement the ball caused (its reaction)
+        /// -> NRX0..2.</summary>
+        static void netTick(Net N, double dt, double x0, double y0, double z0, double x1, double y1, double z1, bool touch, bool settle)
         {
-            foreach (var N in NETS)
+            int SUB = !touch ? 1 : Hypot(x1 - x0, y1 - y0, z1 - z0) > 4 ? 4 : 2;
+            double h = dt / SUB,
+                damp = SUB == 1 ? NET_DAMP : SUB == 2 ? Math.Sqrt(NET_DAMP) : Math.Sqrt(Math.Sqrt(NET_DAMP)),
+                gz = g * h * h,
+                fzz = 100 - N.fz,
+                ax = settle ? 0 : NET_BRZ * (N.wx * 0.7 + N.wx2 * 0.3) * h * h,
+                ay = settle ? 0 : NET_BRZ * (N.wy * 0.5 + N.wy2 * 0.5) * h * h;
+            int its = touch || N.quiet < 120 ? 7 : 3; // (a net nothing has touched for 2 s only sways: a cheaper solve)
+            NRX0 = NRX1 = NRX2 = 0;
+            for (int sub = 0; sub < SUB; sub++)
             {
-                double dxy = Hypot(B.x - N.hx, B.y - HY);
-                bool near = dxy < 20 && B.z > 70 && B.z < 112 && B.owner == null;
-                if (!near && N.quiet > 90) continue; // fully settled and nothing touching it
-                N.quiet = near ? 0 : N.quiet + 1;
-                // rim hit: the iron vibrates and jerks the loops hanging off it
-                double rd = Hypot(dxy - RR, B.z - 100),
-                    bs = Hypot(B.vx, B.vy, B.vz);
-                if (near && rd < BR + 1.2 && bs > 60 && N.ring <= 0)
+                double u1 = (double)(sub + 1) / SUB,
+                    bx = x0 + (x1 - x0) * u1,
+                    by = y0 + (y1 - y0) * u1,
+                    bz = z0 + (z1 - z0) * u1,
+                    sx = (x1 - x0) / SUB, // the ball's slide this sub-step
+                    sy = (y1 - y0) / SUB,
+                    sz = (z1 - z0) / SUB;
+                foreach (var q in N.p)
                 {
-                    N.ring = 0.12;
-                    double kick = Math.Min(1.6, bs * 0.004);
-                    foreach (var q in N.p)
-                        if (!q.f && q.z > 93)
-                        {
-                            q.px -= (Rng.R() - 0.5) * kick;
-                            q.py -= (Rng.R() - 0.5) * kick;
-                            q.pz += kick * 0.6;
-                        }
-                }
-                if (N.ring > 0) N.ring -= dt;
-                int SUB = near && bs > 150 ? 2 : 1;
-                double h = dt / SUB;
-                double rx = 0,
-                    ry = 0,
-                    rz = 0;
-                for (int sub = 0; sub < SUB; sub++)
-                {
-                    // ball position at this sub-step (it already moved this tick)
-                    double lag = (SUB - 1 - sub) * h,
-                        bx = B.x - B.vx * lag,
-                        by = B.y - B.vy * lag,
-                        bz = B.z - B.vz * lag;
-                    double damp = Math.Pow(0.965, SUB == 1 ? 1 : 0.5);
-                    foreach (var q in N.p)
+                    if (q.f)
                     {
-                        if (q.f) continue;
-                        double vx = (q.x - q.px) * damp,
-                            vy = (q.y - q.py) * damp,
-                            vz = (q.z - q.pz) * damp;
-                        q.px = q.x;
-                        q.py = q.y;
-                        q.pz = q.z;
-                        q.x += vx;
-                        q.y += vy;
-                        q.z += vz - g * h * h;
+                        q.pz = q.z; // the rim ring rides the iron
+                        q.z = fzz;
+                        continue;
                     }
-                    for (int it = 0; it < 7; it++)
+                    double vx = (q.x - q.px) * damp,
+                        vy = (q.y - q.py) * damp,
+                        vz = (q.z - q.pz) * damp,
+                        dep = (100 - q.z) * 0.06; // (the air moves the hem more than the loops at the rim)
+                    q.px = q.x;
+                    q.py = q.y;
+                    q.pz = q.z;
+                    q.x += vx + ax * dep;
+                    q.y += vy + ay * dep;
+                    q.z += vz - gz;
+                }
+                for (int it = 0; it < its; it++)
+                {
+                    foreach (var c in N.c)
                     {
+                        NetKnot a = c.a,
+                            b = c.b;
+                        double dx = b.x - a.x,
+                            dy = b.y - a.y,
+                            dz = b.z - a.z,
+                            d = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                        if (!Util.T(d)) d = 1;
+                        double f;
+                        if (c.k >= 1)
+                        {
+                            // nylon strand: slack in compression, elastic when stretched, a rope again past the stretch limit
+                            if (d <= c.rest) continue;
+                            double lim = c.rest * NET_MAXS,
+                                st = its == 7 ? NET_STR : NET_STR3;
+                            f = d > lim ? ((d - lim + (lim - c.rest) * st) / d) * 0.5 : ((d - c.rest) / d) * 0.5 * st;
+                        }
+                        else f = ((d - c.rest) / d) * 0.5 * (its == 7 ? c.k : c.k > 0.5 ? NET_HEM3 : NET_TIE3);
+                        if (!a.f)
+                        {
+                            a.x += dx * f;
+                            a.y += dy * f;
+                            a.z += dz * f;
+                        }
+                        if (!b.f)
+                        {
+                            b.x -= dx * f;
+                            b.y -= dy * f;
+                            b.z -= dz * f;
+                        }
+                    }
+                    if (touch)
                         foreach (var c in N.c)
                         {
+                            if (!c.draw) continue;
                             NetKnot a = c.a,
                                 b = c.b;
-                            double dx = b.x - a.x,
-                                dy = b.y - a.y,
-                                dz = b.z - a.z,
-                                d = Hypot(dx, dy, dz);
-                            if (!Util.T(d)) d = 1;
-                            // strings resist stretching fully but compress freely (rope, not rods)
-                            if (d < c.rest && c.k >= 1) continue;
-                            double f = ((d - c.rest) / d) * 0.5 * c.k;
-                            if (!a.f)
+                            double ex = b.x - a.x,
+                                ey = b.y - a.y,
+                                ez = b.z - a.z,
+                                l2 = ex * ex + ey * ey + ez * ez;
+                            if (!Util.T(l2)) l2 = 1;
+                            double t = clamp(((bx - a.x) * ex + (by - a.y) * ey + (bz - a.z) * ez) / l2, 0, 1),
+                                cx = a.x + ex * t - bx,
+                                cy = a.y + ey * t - by,
+                                cz = a.z + ez * t - bz,
+                                d = Math.Sqrt(cx * cx + cy * cy + cz * cz);
+                            if (d < SEGR && d > 0)
                             {
-                                a.x += dx * f;
-                                a.y += dy * f;
-                                a.z += dz * f;
-                            }
-                            if (!b.f)
-                            {
-                                b.x -= dx * f;
-                                b.y -= dy * f;
-                                b.z -= dz * f;
-                            }
-                        }
-                        if (near)
-                            foreach (var c in N.c)
-                            {
-                                if (!c.draw) continue;
-                                NetKnot a = c.a,
-                                    b = c.b;
-                                double sx = b.x - a.x,
-                                    sy = b.y - a.y,
-                                    sz = b.z - a.z,
-                                    l2 = sx * sx + sy * sy + sz * sz;
-                                if (!Util.T(l2)) l2 = 1;
-                                double t = clamp(((bx - a.x) * sx + (by - a.y) * sy + (bz - a.z) * sz) / l2, 0, 1),
-                                    cx = a.x + sx * t - bx,
-                                    cy = a.y + sy * t - by,
-                                    cz = a.z + sz * t - bz,
-                                    d = Hypot(cx, cy, cz);
-                                if (d < SEGR && d > 0)
+                                double push = (SEGR - d) / d;
+                                // friction (first pass): the strand follows the ball's slide along it (not the part
+                                // pressing into it) - that drags the mesh down on a swish, and the stretched nylon whips
+                                // it back up when the ball is through
+                                double fx = 0,
+                                    fy = 0,
+                                    fz = 0;
+                                if (it == 0)
                                 {
-                                    double push = (SEGR - d) / d;
-                                    for (int e = 0; e < 2; e++)
-                                    {
-                                        var q = e == 0 ? a : b;
-                                        double w = e == 0 ? 1 - t : t;
-                                        if (q.f) continue;
-                                        double mx = cx * push * w,
-                                            my = cy * push * w,
-                                            mz = cz * push * w + (B.vz < 0 ? B.vz * h * 0.06 * w : 0); // drag the mesh down with a falling ball
-                                        q.x += mx;
-                                        q.y += my;
-                                        q.z += mz;
-                                        if (it == 6 && bz < 99)
-                                        {
-                                            rx += mx;
-                                            ry += my;
-                                            rz += mz;
-                                        }
-                                    }
+                                    double nx = cx / d,
+                                        ny = cy / d,
+                                        nz = cz / d,
+                                        sn = sx * nx + sy * ny + sz * nz;
+                                    fx = (sx - sn * nx) * NET_MU;
+                                    fy = (sy - sn * ny) * NET_MU;
+                                    fz = (sz - sn * nz) * NET_MU;
+                                }
+                                for (int e = 0; e < 2; e++)
+                                {
+                                    var q = e == 0 ? a : b;
+                                    double w = e == 0 ? 1 - t : t;
+                                    if (q.f) continue;
+                                    double mx = (cx * push + fx) * w,
+                                        my = (cy * push + fy) * w,
+                                        mz = (cz * push + fz) * w;
+                                    q.x += mx;
+                                    q.y += my;
+                                    q.z += mz;
+                                    // reaction: the drag (first pass) + what the mesh still pushes back at the end (last pass)
+                                    // (the push holds the ball up or down only weakly: a ball leaning on the funnel of the mesh
+                                    // drops through it - full support left a ball hovering in the net)
+                                    if (bz < 99 && it == 0) { NRX0 += fx * w * NET_RF; NRX1 += fy * w * NET_RF; NRX2 += fz * w * NET_RF; }
+                                    if (bz < 99 && it == 6) { NRX0 += mx; NRX1 += my; NRX2 += mz * NET_RUP; }
                                 }
                             }
+                        }
+                }
+            }
+        }
+
+        /// <summary>Cloth net: verlet knots on elastic nylon strands (slack in compression, stiff past 15% stretch), real
+        /// gravity, the rim ring riding the flexing iron, sub-stepped along the ball's real path while it is inside (no
+        /// tunnelling). Two-way: strands the ball pushes or drags push back (the net grabs and slows a swish, then whips
+        /// back up as the ball drops out); a ball ringing off the iron bends the rim and jerks the loops by the hit (a
+        /// ripple runs down and round the mesh); a dunk yanks the rim down and a player hanging on it holds it there; a
+        /// slight sway at rest. The ball's motion is read from its positions (not B.v*), so replays (rp: no reaction on
+        /// the ball, dt scaled by the replay speed) and online guests drive the net the same way.</summary>
+        public static void netSim(double dt, bool rp = false)
+        {
+            if (!(dt > 0)) return;
+            foreach (var N in NETS)
+            {
+                // the ball's path this tick, from its positions (a teleport - setup, a replay cut - is no motion)
+                double jx = B.x - N.bx,
+                    jy = B.y - N.by,
+                    jz = B.z - N.bz;
+                bool cut = N.bok == 0 || Hypot(jx, jy, jz) > 40;
+                double x0 = cut ? B.x : N.bx,
+                    y0 = cut ? B.y : N.by,
+                    z0 = cut ? B.z : N.bz,
+                    vx = cut ? 0 : jx / dt,
+                    vy = cut ? 0 : jy / dt,
+                    vz = cut ? 0 : jz / dt;
+                bool two = !cut && N.bok > 1;
+                // the hit the ball took this tick: its velocity change beyond gravity and the net's own pull on it
+                double dvx = two ? vx - N.bvx - N.rvx : 0,
+                    dvy = two ? vy - N.bvy - N.rvy : 0,
+                    dvz = two ? vz - N.bvz - N.rvz + g * dt : 0,
+                    J = Hypot(dvx, dvy, dvz);
+                N.bok = cut ? 1 : 2;
+                N.bx = B.x;
+                N.by = B.y;
+                N.bz = B.z;
+                N.bvx = vx;
+                N.bvy = vy;
+                N.bvz = vz;
+                N.rvx = N.rvy = N.rvz = 0;
+                double ox = B.x - N.hx,
+                    oy = B.y - HY,
+                    dxy = Math.Sqrt(ox * ox + oy * oy);
+                bool near = !cut && dxy < 20 && B.z > 66 && B.z < 114,
+                    free = B.owner == null;
+                double rd = Hypot(dxy - RR, B.z - 100);
+                if (near && free && J > 45 && N.ring <= 0)
+                {
+                    if (rd < BR + 2.5)
+                    {
+                        // rim hit: the iron bends (down when hit from above) and the loops by the hit jerk away from it
+                        N.ring = 0.1;
+                        N.fv += clamp(J * 0.05 * ((B.z - 100) / (Util.T(rd) ? rd : 1) + 0.25), -30, 60);
+                        double s0 = Math.Min(2.4, J * 0.008) / J,
+                            ux = dxy > 0 ? ox / dxy : 1,
+                            uy = dxy > 0 ? oy / dxy : 0;
+                        for (int k = NS; k < NS * 3; k++)
+                        {
+                            var q = N.p[k];
+                            double qx = q.x - N.hx,
+                                qy = q.y - HY,
+                                ql = Hypot(qx, qy),
+                                w = (1 + (qx * ux + qy * uy) / (Util.T(ql) ? ql : 1)) * 0.5,
+                                s = s0 * w * w * (k < NS * 2 ? 1 : 0.55);
+                            // (verlet velocity = x - px) the loops jump: away from the ball's kick sideways, and up (the
+                            // nylon is slack that way, so the hit shows) as the ring snaps
+                            q.px += dvx * s;
+                            q.py += dvy * s;
+                            q.pz -= J * s * 0.6;
+                        }
+                    }
+                    else if (Math.Abs(B.x - (N.hx > 470 ? 900 : 40)) < BR + 2.5 && B.z > 93)
+                    {
+                        N.ring = 0.1;
+                        N.fv += Math.Min(12, J * 0.012); // off the glass: the board shakes the iron a little
                     }
                 }
-                // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon)
-                if (near && B.z < 99 && (Util.T(rx) || Util.T(ry) || Util.T(rz)))
+                if (N.ring > 0) N.ring -= dt;
+                // a dunk yanks the iron down (once per dunk); a player hanging on it holds it bent
+                if (Util.T(B.dk) && N.dk == 0 && near && B.z < 106 && dxy < 10) { N.dk = 1; N.fv += 75; }
+                if (!Util.T(B.dk)) N.dk = 0;
+                double hang = 0;
+                foreach (var p in P) if (p.hangT > 0 && p.z > 15 && (p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY) < 26 * 26) hang = 2.2;
+                N.fv += (-RIM_W * RIM_W * (N.fz - hang) - 2 * RIM_Z * RIM_W * N.fv) * dt;
+                N.fz += N.fv * dt;
+                if (N.fz > 4) { N.fz = 4; N.fv = Math.Min(0, N.fv); }
+                if (N.fz < -1.5) { N.fz = -1.5; N.fv = Math.Max(0, N.fv); }
+                // idle sway oscillators (renormalised: no drift)
                 {
-                    double K = 1.4 / dt,
-                        cap = 60;
-                    B.vx -= clamp(rx * K, -cap, cap);
-                    B.vy -= clamp(ry * K, -cap, cap);
-                    B.vz -= clamp(rz * K, -cap, cap);
+                    double a = N.wx * BRC - N.wy * BRS,
+                        b = N.wx * BRS + N.wy * BRC,
+                        l = Math.Sqrt(a * a + b * b),
+                        a2 = N.wx2 * BRC2 - N.wy2 * BRS2,
+                        b2 = N.wx2 * BRS2 + N.wy2 * BRC2,
+                        l2 = Math.Sqrt(a2 * a2 + b2 * b2);
+                    if (!Util.T(l)) l = 1;
+                    if (!Util.T(l2)) l2 = 1;
+                    N.wx = a / l;
+                    N.wy = b / l;
+                    N.wx2 = a2 / l2;
+                    N.wy2 = b2 / l2;
+                }
+                N.quiet = near ? 0 : N.quiet + 1;
+                netTick(N, dt, x0, y0, z0, B.x, B.y, B.z, near, false);
+                // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon); a
+                // ball that sits slow in the mesh for half a second is let go (nothing may hold a live ball forever)
+                bool slow = near && B.z < 99 && dxy < RR && Hypot(vx, vy, vz) < 25;
+                N.hold = slow ? N.hold + dt : 0;
+                if (near && free && !rp && B.z < 99 && N.hold < 0.5 && (Util.T(NRX0) || Util.T(NRX1) || Util.T(NRX2)))
+                {
+                    double K = NET_RK / dt,
+                        cap = 45,
+                        ex = -clamp(NRX0 * K, -cap, cap),
+                        ey = -clamp(NRX1 * K, -cap, cap),
+                        ez = -clamp(NRX2 * K, -NET_VCAP, NET_VCAP); // (the nylon kills the sideways speed but only slows the drop)
+                    // the funnel of the mesh steers a ball pressing into it back to the middle (it falls out of the hem there)
+                    double ux = dxy > 0.3 ? ox / dxy : 0,
+                        uy = dxy > 0.3 ? oy / dxy : 0,
+                        vr = vx * ux + vy * uy,
+                        ac = clamp(-(NET_CK * dxy + NET_CC * vr) * dt, -40, 40);
+                    B.vx += ex + ux * ac;
+                    B.vy += ey + uy * ac;
+                    B.vz += ez;
+                    N.rvx = ex + ux * ac;
+                    N.rvy = ey + uy * ac;
+                    N.rvz = ez;
                 }
             }
         }

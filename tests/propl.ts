@@ -62,6 +62,26 @@ import { rapInit } from "../src/core/physics";
     run(2);
     ok(me.mvk === 6, "flick the stick back at speed = crossover (mvk " + me.mvk + ")");
   }
+  {
+    // bug: reversing the stick to back out (retreat dribble) fired a crossover that drove him back at the rim
+    const me = scene(1, 800, 250);
+    (me.vx = 200), (me.li = [1, 0]);
+    script = () => ({ dx: -1, dy: 0 });
+    run(12);
+    ok(!(me.mvT > 0) && me.vx < 0, "a retreat dribble (stick straight back at speed) is not a crossover: vx " + me.vx.toFixed(0));
+  }
+  {
+    // bug: the rebound assist steered a human who was running the other way (and jumped for him)
+    const me = scene(1, 700, 250);
+    G.B.owner = null;
+    G.B.mode = "air";
+    G.B.sh = 1;
+    G.B.last = G.P[6];
+    (G.B.x = 760), (G.B.y = 250), (G.B.z = 60), (G.B.vx = G.B.vy = 0), (G.B.vz = -50), (G.B.age = 1);
+    script = () => ({ dx: -1, dy: 0 });
+    run(10);
+    ok(me.vx < -100 && me.z <= 0, "a human running away from a loose ball keeps his stick (vx " + me.vx.toFixed(0) + ", no auto-jump)");
+  }
   // ---- 2. move buffer + cancel window: a spin pressed mid-hesitation starts as soon as the window opens ----
   const chain = (pp: number) => {
     const me = scene(pp);

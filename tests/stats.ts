@@ -10,6 +10,7 @@ const NBA = { astr: 63.5, ftr: 0.216, pace: 98.5, pts: 113.8, fga: 89.2, fgp: 47
   let s = +(process.env.SEED || 2024);
   Math.random = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
   Object.assign(G.cfg, { NP: 5, physics: "rapier", hand: true, MYM: 0, DIFF: 2 });
+  if (process.env.PP != null) G.cfg.PP = +process.env.PP; // (A/B the Pro Play pack: PP=0 | 1)
   G.cfg.input = () => ({ dx: 0, dy: 0 });
   const CTX: Record<string, number[]> = {};
   const KS: Record<string, number[]> = {}; // kind: [att, made, cw sum]

@@ -36,6 +36,7 @@ namespace Hoops.Core
         public double upLand; // last landing strength (0..1.3)
         public double tdT; // takeoff time of the last jumper (pose: rise / extension)
         public string upF; // active UP feature this tick (tests bucket their numbers by it)
+        public double gfw; // forward drive speed when the gather / shot started
         public double mvB, mvBT; // buffered move (human): code and press time
         public double stc; // human on-ball defensive stance this tick (host-side)
         public double spT; // seconds of the current sprint press (human): the first .35 s is a burst
@@ -160,6 +161,7 @@ namespace Hoops.Core
         {
             p.gath = 0;
             p.gsu = 0;
+            p.gfw = (p.vx * ux + p.vy * uy) / D; // drive speed at the gather (the charge damps it before the clip is picked)
             p.jg = T - p.catchT < 1.0 && Hypot(p.vx, p.vy) < 60 ? 1 : Hypot(p.vx, p.vy) > 60 ? 2 : 0;
             if (B.owner != p || ftq != null || Util.T(p.postA) || p.upu > 0 || p.fsv != null) return;
             double fw = (p.vx * ux + p.vy * uy) / D;
@@ -206,7 +208,7 @@ namespace Hoops.Core
         public static void upAfterClip(Player p, double D, bool lay)
         {
             p.offH = 0;
-            double hx = hoop(p.tm), dir = hx > 470 ? 1 : -1, fw = p.vx * dir;
+            double hx = hoop(p.tm), dir = hx > 470 ? 1 : -1, fw = Math.Max(p.vx * dir, p.gfw);
             if (p.sv == 10 && (p.ht >= 6.9 || p.i >= 88)) { p.sv = 25; upc("skyHook"); if (isH(p)) txtW("SKY HOOK", p.x, p.y, 100, "#ffd23f"); return; }
             if (!lay && D >= 90 && D < 180 && fw > 60 && (rimProt(p) || p.st == 4) && (p.sv == 21 || p.sv == 8 || p.sv == 22 || p.sv == 0 || p.sv == 1 || p.sv == 4 || p.sv == 20))
             {

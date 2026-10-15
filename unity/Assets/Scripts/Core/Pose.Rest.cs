@@ -160,6 +160,7 @@ namespace Hoops.Core
                 var v = new float[raw.Length];
                 var mean = new float[C];
                 for (int i = 0; i < raw.Length; i++) v[i] = (float)((sbyte)raw[i] / 40.0); // int8 -> rad
+                mcFix(kv.Key, c.n, v);
                 for (int j = 0; j < C; j++)
                 {
                     double s = 0;
@@ -169,6 +170,78 @@ namespace Hoops.Core
                 r[kv.Key] = new Mcc { n = c.n, v = v, mean = mean, speed = c.speed, stride = c.stride, dir = c.dir };
             }
             return r;
+        }
+        /// <summary>Clean a captured cycle in place (TS mcFix): bridge the retarget splice (walk 24, back 4, side 9) with a
+        /// cubic Hermite over 7 frames, make symmetric gaits symmetric (right = left half a cycle later), low-pass each
+        /// channel to its first harmonics (5 legs / crouch, 3 the rest). Same arithmetic order as the TS (float stores).</summary>
+        static void mcFix(string name, int n, float[] v)
+        {
+            const int C = 20;
+            int S = name == "walk" ? 24 : name == "back" ? 4 : name == "side" ? 9 : -1;
+            double At(int i, int j) => v[(((i % n) + n) % n) * C + j];
+            var tmp = new double[n];
+            if (S >= 0)
+                for (int j = 0; j < C; j++)
+                {
+                    double a = At(S - 3, j),
+                        b = At(S + 4, j),
+                        ma = (At(S - 2, j) - At(S - 4, j)) / 2,
+                        mb = (At(S + 5, j) - At(S + 3, j)) / 2;
+                    for (int i = 1; i < 7; i++)
+                    {
+                        double t = i / 7.0,
+                            t2 = t * t,
+                            t3 = t2 * t;
+                        tmp[i] = (2 * t3 - 3 * t2 + 1) * a + (t3 - 2 * t2 + t) * 7 * ma + (-2 * t3 + 3 * t2) * b + (t3 - t2) * 7 * mb;
+                    }
+                    for (int i = 1; i < 7; i++) v[(((S - 3 + i) % n) + n) % n * C + j] = (float)tmp[i];
+                }
+            if (name != "side" && n % 2 == 0)
+            {
+                int h = n / 2;
+                bool arms = name == "walk" || name == "run" || name == "back";
+                int[] PR = arms ? new[] { 0, 1, 2, 3, 4, 5, 13, 14, 15, 16, 17, 18 } : new[] { 0, 1, 2, 3, 4, 5 },
+                    OD = { 7, 9, 10, 12 },
+                    EV = { 6, 8, 11, 19 };
+                var w = new double[n * C];
+                for (int i = 0; i < n * C; i++) w[i] = v[i];
+                double W(int i, int j) => w[((i + n) % n) * C + j];
+                for (int i = 0; i < n; i++)
+                {
+                    for (int k = 0; k < PR.Length; k += 2)
+                    {
+                        int L = PR[k], R = PR[k + 1];
+                        v[i * C + L] = (float)((W(i, L) + W(i + h, R)) / 2);
+                        v[i * C + R] = (float)((W(i, R) + W(i + h, L)) / 2);
+                    }
+                    foreach (int j in OD) v[i * C + j] = (float)((W(i, j) - W(i + h, j)) / 2);
+                    foreach (int j in EV) v[i * C + j] = (float)((W(i, j) + W(i + h, j)) / 2);
+                }
+            }
+            for (int j = 0; j < C; j++)
+            {
+                int H = j <= 5 || j == 19 ? 5 : 3;
+                double m = 0;
+                for (int i = 0; i < n; i++) m += v[i * C + j];
+                m /= n;
+                for (int i = 0; i < n; i++) tmp[i] = m;
+                for (int k = 1; k <= H; k++)
+                {
+                    double re = 0, im = 0;
+                    for (int i = 0; i < n; i++)
+                    {
+                        double a = (2 * Math.PI * k * i) / n;
+                        re += v[i * C + j] * Math.Cos(a);
+                        im += v[i * C + j] * Math.Sin(a);
+                    }
+                    for (int i = 0; i < n; i++)
+                    {
+                        double a = (2 * Math.PI * k * i) / n;
+                        tmp[i] += ((2 * re) / n) * Math.Cos(a) + ((2 * im) / n) * Math.Sin(a);
+                    }
+                }
+                for (int i = 0; i < n; i++) v[i * C + j] = (float)tmp[i];
+            }
         }
         public static readonly Dictionary<string, int> MI = BuildMI();
         static Dictionary<string, int> BuildMI()

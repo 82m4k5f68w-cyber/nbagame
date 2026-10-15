@@ -40,6 +40,7 @@ namespace Hoops.Core
         public double? hd0, svx, svy;
         public double trn, sf, ss, sfv, ssv, hit0;
         public double olf; // one-legged fadeaway forced (Animation Studio)
+        public double lnd0; // landT at the touchdown of the current landing (knee absorption ramps in from it)
     }
 
     public static partial class Pose
@@ -52,6 +53,12 @@ namespace Hoops.Core
             MI_zL = Array.IndexOf(MC_CH, "zL");
         static readonly double[] MJ_tL = MC_JUMP["tL"], MJ_tR = MC_JUMP["tR"], MJ_kL = MC_JUMP["kL"], MJ_kR = MC_JUMP["kR"], MJ_ln = MC_JUMP["ln"], MJ_cx = MC_JUMP["cx"];
 
+        /// <summary>Smoothstep of a clamped 0..1 parameter (TS smooth01).</summary>
+        public static double smooth01(double u)
+        {
+            u = u < 0 ? 0 : u > 1 ? 1 : u;
+            return u * u * (3 - 2 * u);
+        }
         /// <summary>a + (b - a) * k (the TS celebration helper m()).</summary>
         static double Lp(double a, double b, double k) => a + (b - a) * k;
         /// <summary>Mocap layer blend: cur + (MO[i] - cur) * w.</summary>
@@ -84,7 +91,10 @@ namespace Hoops.Core
         /// <summary>Pelvis height helper: vertical extension of a leg (thigh t, knee k).</summary>
         static double Ext(double t, double k) => RIG.L1 * Math.Cos(t) + RIG.L2 * Math.Cos(t - k);
         /// <summary>Blend offset wrap: cr (crouch, channel 9) is a distance, every other channel an angle.</summary>
-        static double Wq(int j, double a) => j == 9 ? a : wrapPi(a);
+        /// <summary>(the shoulder raise channels aL / aR go over the top: an offset up to 4 rad is a real arm path)</summary>
+        static double Wq(int j, double a) => j == 9 ? a : j == 4 || j == 5 ? wrapArm(a) : wrapPi(a);
+        /// <summary>Offset of a shoulder raise channel: plain up to 4 rad, a 2 pi alias beyond (TS wrapArm).</summary>
+        public static double wrapArm(double a) => Math.Abs(a) <= 4 ? a : wrapPi(a);
 
         /// <summary>Write this tick's joint angles into p.q (in place, smoothed when Pro Play is on).</summary>
         public static void pose3(Player p)
@@ -101,20 +111,23 @@ namespace Hoops.Core
             // stride-matched gait: thigh swing sized so the planted foot travels exactly one step (see sim stepLen)
             double legF = (3.18 * p.ht) / 6.4,
                 A = Math.Asin(Math.Min(0.9, (stepLen(sp) / 10 / (2 * legF)) * 0.92)) * Math.Min(1, sp / 30),
-                ksw = 0.45 + 0.95 * spd; // swing-knee flex: heel kick grows with speed
+                ksw = 0.45 + 0.95 * spd, // swing-knee flex: heel kick grows with speed
+                mv = Math.Min(1, sp / 30); // 0 standing .. 1 moving
             double hL = 0, // humeral twist (+ = internal rotation), applied about the upper-arm bone
                 hR = 0;
             double tL = s * A,
                 tR = -s * A,
                 kL = 0.07 + Math.Pow(Math.Max(0, c), 1.5) * ksw * Math.Min(1, sp / 30),
                 kR = 0.07 + Math.Pow(Math.Max(0, -c), 1.5) * ksw * Math.Min(1, sp / 30),
-                aL = -s * (0.2 + 0.65 * spd),
-                aR = s * (0.2 + 0.65 * spd),
-                eL = 0.45 + spd * 1.0,
-                eR = 0.45 + spd * 1.0,
-                sz = 0.1,
-                cr = 0.07 * spd * (1 - Math.Abs(s)), // the body is lowest at mid-stance
-                ln = 0.07 * spd - Or0(p.brk) * 0.3,
+                // (standing: the swing dies out - the arms hang relaxed and a little forward, elbows soft)
+                aL = -s * (0.2 * mv + 0.65 * spd) + 0.07 * (1 - mv),
+                aR = s * (0.2 * mv + 0.65 * spd) + 0.07 * (1 - mv),
+                eL = 0.3 + 0.15 * mv + spd * 1.0,
+                eR = 0.3 + 0.15 * mv + spd * 1.0,
+                sz = 0.13,
+                // the body is lowest at mid-stance; standing, the knees stay soft (an athlete never locks them out)
+                cr = 0.07 * spd * (1 - Math.Abs(s)) + 0.16 * (1 - mv),
+                ln = 0.07 * spd + 0.05 * (1 - mv) - Or0(p.brk) * 0.3,
                 rz = 0,
                 ty = s * 0.18 * spd, // pelvis turns with the forward leg...
                 wR = 0,
@@ -123,8 +136,8 @@ namespace Hoops.Core
             // new joints (animation engine v2)
             double cx = 0.07 * spd, // chest pitch on top of the pelvis lean
                 cy = -s * 0.3 * spd, // ...and the chest counter-rotates (real running)
-                gL = 0.25, // finger curl 0 open .. 1 fist
-                gR = 0.25,
+                gL = 0.35, // finger curl 0 open .. 1 fist (relaxed hands are half curled)
+                gR = 0.35,
                 hs = 0, // asymmetric hip abduction (defensive shuffle)
                 toe = 0, // extra plantar flex (toe-off / pointed in the air), both feet
                 oL = 0, // forearm twist (+ = palm turns inward/up for the right arm)
@@ -388,8 +401,9 @@ namespace Hoops.Core
                 }
                 aL = 0.4 + spd * 0.3;
                 eL = 1;
-                cr = 0.2;
-                ln = 0.08 + spd * 0.2;
+                cr = 0.5 - 0.2 * spd; // sitting down over the ball (taller when he runs with it)
+                ln = 0.14 + spd * 0.16;
+                cx += 0.05; // chest over the ball, head up
                 ty = 0;
             }
             else if (air)
@@ -404,16 +418,20 @@ namespace Hoops.Core
                 st = ST.def;
                 gL = gR = 0.05; // active hands
                 cy = 0;
-                aL = aR = 0.6;
-                eL = eR = 0.9;
-                sz = 1.1 + Math.Sin(Sim.T * 8 + p.k) * 0.1;
-                cr = 0.4;
+                // stance: hips back and down, chest up over the knees, hands out in front and alive (own rhythms)
+                aL = 0.78 + Math.Sin(Sim.T * 7.3 + p.k) * 0.07;
+                aR = 0.78 + Math.Sin(Sim.T * 8.1 + p.k + 1.7) * 0.07;
+                eL = eR = 0.8;
+                sz = 0.82 + Math.Sin(Sim.T * 6.2 + p.k * 2.1) * 0.06;
+                zL = 0.82 + Math.Sin(Sim.T * 5.7 + p.k * 1.3) * 0.06;
+                cr = 0.55;
                 tL = s * 0.5 * spd + 0.35;
                 tR = -s * 0.5 * spd + 0.35;
                 kL = kR = 0.8;
-                ln = 0.18;
+                ln = 0.3;
+                cx = -0.08;
             }
-            double hz = 0;
+            double hz = 0.07 * (1 - mv); // (standing: feet a little outside the hips, an athletic base)
             {
                 double sv = Hypot(p.vx, p.vy);
                 bool def = pos != p.tm && B.owner != null;
@@ -489,6 +507,8 @@ namespace Hoops.Core
                         // pelvis height from the legs: the stance leg (the longer one) stands on the floor
                         double crG = (RIG.L1 + RIG.L2 - Math.Max(Ext(tL, kL), Ext(tR, kR))) / 0.4;
                         cr += (crG - cr) * w;
+                        // a sprinter leans from the ankles into his speed (the capture ran upright)
+                        if (!def && fw > 0.5) { ln += 0.1 * clamp((sv - 150) / 120, 0, 1) * w; cx += 0.04 * clamp((sv - 150) / 120, 0, 1) * w; }
                     }
                 }
                 else if (def && !air) hz = 0.14;
@@ -504,7 +524,8 @@ namespace Hoops.Core
                     // closest defender: arm-bar with the free arm
                     double dd = NearOpp(p);
                     bool bar = dd < 45 && !(p.mvT > 0);
-                    double fa = bar ? 0.62 : 0.4 + spd * 0.3, // arm-bar: upper arm out front, forearm across the chest at belly height
+                    // (the free arm swings with the stride - against its own side's leg)
+                    double fa = bar ? 0.62 : 0.4 + spd * 0.3 + (right ? -s : s) * 0.32 * spd, // arm-bar: upper arm out front, forearm across the chest at belly height
                         fe = bar ? 1.35 : 1,
                         fz = bar ? 0.22 : 0.12;
                     if (right)
@@ -536,10 +557,12 @@ namespace Hoops.Core
                 }
                 if (def && !air && (B.owner.mode == "c" || B.owner.mode == "s") && Hypot(B.owner.x - p.x, B.owner.y - p.y) < 70)
                 {
-                    aR = 2.9;
-                    eR = 0.15;
-                    aL = 1.3;
-                    eL = 0.6;
+                    // a hand up at the shooter: rises as he closes in (eased by the distance)
+                    double w = clamp((70 - Hypot(B.owner.x - p.x, B.owner.y - p.y)) / 18, 0, 1);
+                    aR += (2.9 - aR) * w;
+                    eR += (0.15 - eR) * w;
+                    aL += (1.3 - aL) * w;
+                    eL += (0.6 - eL) * w;
                 }
                 if (p.pT > 0)
                 {
@@ -596,8 +619,11 @@ namespace Hoops.Core
                 }
                 else if (p.mvk == 1)
                 {
-                    cr = e < 0.22 ? 0.55 : 0.1;
-                    ln = e < 0.22 ? -0.12 : 0.35;
+                    // hesitation: sit up and slow ... then explode low and forward (eased, no switch)
+                    double u = smooth01((e - 0.16) / 0.12);
+                    cr = 0.55 + (0.1 - 0.55) * u;
+                    ln = -0.12 + (0.35 + 0.12) * u;
+                    cx += 0.12 * u;
                 }
                 else if (p.mvk == 3)
                 {
@@ -607,8 +633,12 @@ namespace Hoops.Core
                 }
                 else
                 {
+                    // crossover: low, the shoulders dip and turn toward the side the ball goes to
+                    double b = Math.Sin(clamp(e / 0.4, 0, 1) * Math.PI);
                     ln = 0.3;
-                    cr = 0.2;
+                    cr = 0.2 + 0.2 * b;
+                    rz += 0.16 * b * sd;
+                    cy += 0.14 * b * sd;
                 }
             }
             // ---- smarter running: plant-and-cut lean, drive steps out of a standstill, braking stops ----
@@ -700,9 +730,9 @@ namespace Hoops.Core
                 }
                 else if (hold == 3)
                 {
-                    // free-throw routine: square to the rim, ball spun in the fingertips at the chest
-                    cr = 0.1;
-                    kL = kR = 0.25;
+                    // free-throw routine: square to the rim, ball spun in the fingertips at the chest, knees soft
+                    cr = 0.2;
+                    kL = kR = 0.3;
                     tL = tR = 0.1;
                     ln = 0.05;
                 }
@@ -710,6 +740,8 @@ namespace Hoops.Core
             // ---- both hands on the ball: inbounds overhead, and every held-ball state ----
             if (PRO && has && md == "i" && (inb > 0 || Util.T(hold)))
             {
+                // (the inbounder stands tall with the ball overhead - not in the dribbler's crouch)
+                if (inb > 0 && !Util.T(hold)) { cr = Math.Min(cr, 0.12); ln = Math.Min(ln, 0.08); cx = Math.Min(cx, 0.02); }
                 for (int si = 0; si < 2; si++)
                 {
                     double sd = si == 0 ? 1 : -1;
@@ -1009,11 +1041,12 @@ namespace Hoops.Core
             if (PRO && pos == p.tm && !has && B.owner != null && B.owner.tm == p.tm && md == "i" && !air && !(p.setT > 0))
             {
                 double open = NearOpp(p);
-                if (open > 50 && Hypot(B.owner.vx, B.owner.vy) < 120 && Math.Sin(Sim.T * 1.3 + p.k * 2.1) > 0.4)
+                double cw = clamp((Math.Sin(Sim.T * 1.3 + p.k * 2.1) - 0.4) / 0.15, 0, 1); // (eased, never pops)
+                if (open > 50 && Hypot(B.owner.vx, B.owner.vy) < 120 && cw > 0)
                 {
-                    aR = 2.6;
-                    eR = 0.25;
-                    sz = 0.25;
+                    aR += (2.6 - aR) * cw;
+                    eR += (0.25 - eR) * cw;
+                    sz += (0.25 - sz) * cw;
                     gR = 0.05;
                     LOOK.x = B.owner.x;
                     LOOK.y = B.owner.y;
@@ -1077,10 +1110,11 @@ namespace Hoops.Core
                 if (ow != null && ow.tm != p.tm && !air && md == "i" && !(p.hupT > 0) && !(p.celT > 0))
                 {
                     double d = Hypot(ow.x - p.x, ow.y - p.y);
-                    if (d < 34 && d > 10 && Math.Sin(Sim.T * 1.7 + p.k) > -0.3)
+                    double hw = clamp((Math.Sin(Sim.T * 1.7 + p.k) + 0.3) / 0.25, 0, 1); // (on and off his hip, eased)
+                    if (d < 34 && d > 10 && hw > 0)
                     {
                         var r = armIK(p, cr, ow.x - Math.Cos(ow.f) * 3, ow.y - Math.Sin(ow.f) * 3, ow.z + ow.ht * 4.4, 0, 0.9);
-                        double w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0);
+                        double w = clamp((34 - d) / 10, 0, 1) * (r.over < 0.4 ? 1 : 0) * hw;
                         if (r.right) { aR += (r.a - aR) * w; eR += (r.e - eR) * w; sz += (r.ab - sz) * w; gR = 0.1; }
                         else { aL += (r.a - aL) * w; eL += (r.e - eL) * w; zL = (zL ?? sz) + (r.ab - (zL ?? sz)) * w; gL = 0.1; }
                     }
@@ -1215,9 +1249,12 @@ namespace Hoops.Core
             // and players lean into acceleration.
             if (PRO)
             {
+                if (!(p.landT > 0)) p.lnd0 = 0;
+                else if (p.landT > p.lnd0) p.lnd0 = p.landT; // a new landing
                 if (p.landT > 0 && md != "s")
                 {
-                    double k = p.landT / 0.28;
+                    // (the knees take the load over the first 60 ms after touchdown, then rise back)
+                    double k = (p.landT / 0.28) * smooth01((p.lnd0 - p.landT) / 0.06);
                     // landing: feet split (one lands first) and the drift carries the stance sideways
                     tL += 0.22 * k;
                     tR -= 0.12 * k;
@@ -1238,6 +1275,15 @@ namespace Hoops.Core
                 ln = 0.25;
                 sz = 0.8;
                 aL = 1.2;
+                if (PRO && has && md == "i")
+                {
+                    // backing down: low dribble on the far side, the off arm a bar into the defender, chest shielding
+                    // (the sim's dribble hand, not the ball's side: a ball crossing his midline must not swap the arms)
+                    var kp = armIK(p, cr, B.x, B.y, Math.Max(B.z, (B.dtop ?? p.z + p.ht * 4.4) - 8), (Util.T(B.dhn) ? B.dhn : 1) > 0 ? 1 : -1, 0.6);
+                    if (kp.right) { aR = kp.a; eR = kp.e; sz = kp.ab; aL = 1.05; eL = 1.55; zL = 0.62; hL = 0.55; gR = 0.15; gL = 0.5; }
+                    else { aL = kp.a; eL = kp.e; zL = kp.ab; aR = 1.05; eR = 1.55; sz = 0.62; hR = 0.55; gL = 0.15; gR = 0.5; }
+                    cy += kp.right ? 0.18 : -0.18;
+                }
             }
             // Signature celebration (CEL): arms and torso blend into the move while the legs keep running.
             // Hands on knees: catching a breath at dead balls (free throws, after makes) when tired or lined up.
@@ -1515,13 +1561,14 @@ namespace Hoops.Core
                 {
                     // box-out (defense of that basket): sit low and wide, arms out to feel the man behind
                     st = ST.post;
-                    cr = Math.Max(cr, 0.38);
+                    cr = Math.Max(cr, 0.5);
                     hz = Math.Max(hz, 0.3);
                     aL = aR = 0.85;
                     eL = eR = 1.05;
                     sz = 0.9;
                     zL = 0.9;
-                    ln = 0.12;
+                    ln = 0.26; // hips back into him (a hip hinge), chest up, eyes on the ball
+                    cx = -0.1;
                     gL = gR = 0.1;
                 }
                 else if (ob != null && od < 22 && Util.T(ob.postA) && B.owner == ob)
@@ -1534,6 +1581,18 @@ namespace Hoops.Core
                     eL = 1.45;
                     zL = 0.1;
                 }
+            }
+            // ---- standing life: slow, out-of-phase sways (weight from foot to foot, chest settling, shoulder roll), arms
+            // drifting on their own rhythm; per-player phases. Fades out as he starts to move.
+            if (md == "i" && !air && !has && (st == ST.idle || st == ST.rest || st == ST.def) && sp < 30)
+            {
+                double w = (1 - mv) * (st == ST.def ? 0.5 : 1),
+                    k0 = p.k * 1.7;
+                rz += Math.Sin(Sim.T * 0.55 + k0) * 0.035 * w;
+                cy += Math.Sin(Sim.T * 0.37 + k0 * 1.3) * 0.06 * w;
+                ty += Math.Sin(Sim.T * 0.29 + k0 * 0.7) * 0.04 * w;
+                cx += Math.Sin(Sim.T * 0.21 + k0 * 2.1) * 0.025 * w;
+                aL += Math.Sin(Sim.T * 0.8 + k0) * 0.035 * w; aR += Math.Sin(Sim.T * 0.73 + k0 + 2) * 0.035 * w;
             }
             // ---- secondary motion (light ragdoll): a damped spring on the torso. Contact impulses (sized by the hit, so the
             // momentum of the collision carries into the reaction) and the body's own inertia when speeding up, stopping or
@@ -1787,12 +1846,12 @@ namespace Hoops.Core
                     }
                     iz.pv[j] = jump ? 0 : Wq(j, v - iz.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
                     iz.pt[j] = v;
-                    if (j != 9 && Math.Abs(v - iz.b[j]) > Math.PI) iz.b[j] = v; // the filter never runs the long way round (angles)
+                    if (j != 9 && Math.Abs(Wq(j, v - iz.b[j])) != Math.Abs(v - iz.b[j])) iz.b[j] = v; // the filter never runs the long way round (angles)
                     iz.b[j] += (v - iz.b[j]) * (hd ? Math.Min(1, fS * 1.6) : fS);
                     iz.t[j] += DT;
                     oq[j] = iz.b[j] + inert(iz.x[j], iz.v[j], iz.tf[j], iz.t[j]);
                 }
-                iz.lv[j] = (j == 9 ? oq[j] - iz.last[j] : wrapPi(oq[j] - iz.last[j])) / DT;
+                iz.lv[j] = (j == 9 ? oq[j] - iz.last[j] : j == 4 || j == 5 ? wrapArm(oq[j] - iz.last[j]) : wrapPi(oq[j] - iz.last[j])) / DT;
                 iz.last[j] = oq[j];
                 iz.has = 1;
             }
