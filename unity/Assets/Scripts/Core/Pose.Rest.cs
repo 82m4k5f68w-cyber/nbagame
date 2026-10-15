@@ -266,7 +266,7 @@ namespace Hoops.Core
             double f = u - Math.Floor(u);
             for (int j = 0; j < C; j++)
             {
-                double a = c.v[i0 * C + j] + (c.v[i1 * C + j] - c.v[i0 * C + j]) * f;
+                double a = c.v[i0 * C + j] + ((double)c.v[i1 * C + j] - c.v[i0 * C + j]) * f; // (in double, like the TS Float32Array reads)
                 bool swing = j <= 3 || (j >= 13 && j <= 16);
                 @out[j] = (float)(swing ? c.mean[j] + (a - c.mean[j]) * amp : a);
             }
@@ -289,7 +289,7 @@ namespace Hoops.Core
             if (b != null && b.Length > 0 && u > 0)
             {
                 mcSample(b, ph, amp, mirror, MT);
-                for (int j = 0; j < MO.Length; j++) MO[j] = (float)(MO[j] + (MT[j] - MO[j]) * u);
+                for (int j = 0; j < MO.Length; j++) MO[j] = (float)(MO[j] + ((double)MT[j] - MO[j]) * u);
             }
         }
 

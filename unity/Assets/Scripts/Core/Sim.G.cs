@@ -871,7 +871,7 @@ namespace Hoops.Core
                         gr[r].Add(q);
                     }
                 }
-                void L(NetKnot a, NetKnot b, double k, int draw = 1) => c.Add(new NetCon { a = a, b = b, rest = Hypot(a.x - b.x, a.y - b.y, a.z - b.z), k = k, draw = draw != 0 });
+                void L(NetKnot a, NetKnot b, double k, int draw = 1) => c.Add(new NetCon { a = a, b = b, rest = Math.Sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)), k = k, draw = draw != 0 });
                 for (int r = 1; r < NR.Length; r++)
                     for (int k = 0; k < NS; k++)
                     {
@@ -897,7 +897,7 @@ namespace Hoops.Core
         /// -> NRX0..2.</summary>
         static void netTick(Net N, double dt, double x0, double y0, double z0, double x1, double y1, double z1, bool touch, bool settle)
         {
-            int SUB = !touch ? 1 : Hypot(x1 - x0, y1 - y0, z1 - z0) > 4 ? 4 : 2;
+            int SUB = !touch ? 1 : Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0)) > 4 ? 4 : 2; // (TS: Math.sqrt of the sum, not hypot - bit parity)
             double h = dt / SUB,
                 damp = SUB == 1 ? NET_DAMP : SUB == 2 ? Math.Sqrt(NET_DAMP) : Math.Sqrt(Math.Sqrt(NET_DAMP)),
                 gz = g * h * h,
@@ -1042,7 +1042,7 @@ namespace Hoops.Core
                 double jx = B.x - N.bx,
                     jy = B.y - N.by,
                     jz = B.z - N.bz;
-                bool cut = N.bok == 0 || Hypot(jx, jy, jz) > 40;
+                bool cut = N.bok == 0 || Math.Sqrt(jx * jx + jy * jy + jz * jz) > 40;
                 double x0 = cut ? B.x : N.bx,
                     y0 = cut ? B.y : N.by,
                     z0 = cut ? B.z : N.bz,
@@ -1054,7 +1054,7 @@ namespace Hoops.Core
                 double dvx = two ? vx - N.bvx - N.rvx : 0,
                     dvy = two ? vy - N.bvy - N.rvy : 0,
                     dvz = two ? vz - N.bvz - N.rvz + g * dt : 0,
-                    J = Hypot(dvx, dvy, dvz);
+                    J = Math.Sqrt(dvx * dvx + dvy * dvy + dvz * dvz);
                 N.bok = cut ? 1 : 2;
                 N.bx = B.x;
                 N.by = B.y;
@@ -1068,7 +1068,7 @@ namespace Hoops.Core
                     dxy = Math.Sqrt(ox * ox + oy * oy);
                 bool near = !cut && dxy < 20 && B.z > 66 && B.z < 114,
                     free = B.owner == null;
-                double rd = Hypot(dxy - RR, B.z - 100);
+                double rd = Math.Sqrt((dxy - RR) * (dxy - RR) + (B.z - 100) * (B.z - 100));
                 if (near && free && J > 45 && N.ring <= 0)
                 {
                     if (rd < BR + 2.5)
@@ -1084,7 +1084,7 @@ namespace Hoops.Core
                             var q = N.p[k];
                             double qx = q.x - N.hx,
                                 qy = q.y - HY,
-                                ql = Hypot(qx, qy),
+                                ql = Math.Sqrt(qx * qx + qy * qy),
                                 w = (1 + (qx * ux + qy * uy) / (Util.T(ql) ? ql : 1)) * 0.5,
                                 s = s0 * w * w * (k < NS * 2 ? 1 : 0.55);
                             // (verlet velocity = x - px) the loops jump: away from the ball's kick sideways, and up (the
@@ -1129,7 +1129,7 @@ namespace Hoops.Core
                 netTick(N, dt, x0, y0, z0, B.x, B.y, B.z, near, false);
                 // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon); a
                 // ball that sits slow in the mesh for half a second is let go (nothing may hold a live ball forever)
-                bool slow = near && B.z < 99 && dxy < RR && Hypot(vx, vy, vz) < 25;
+                bool slow = near && B.z < 99 && dxy < RR && Math.Sqrt(vx * vx + vy * vy + vz * vz) < 25;
                 N.hold = slow ? N.hold + dt : 0;
                 if (near && free && !rp && B.z < 99 && N.hold < 0.5 && (Util.T(NRX0) || Util.T(NRX1) || Util.T(NRX2)))
                 {

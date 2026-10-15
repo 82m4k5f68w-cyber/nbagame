@@ -9,7 +9,6 @@
 //   N=3 npx tsx tests/sanity.ts
 import * as G from "../src/core/sim";
 import { rapInit } from "../src/core/physics";
-(globalThis as any).TRL = 1;
 (async () => {
   await rapInit();
   let fails = 0;
@@ -35,7 +34,7 @@ import { rapInit } from "../src/core/physics";
       ticks = 0;
     while (G.S !== "over" && ticks < 60 * QL * 6) {
       const me = human ? G.P[0] : null,
-        hadBall = me && G.B.owner === me && me.mode === "i",
+        hadBall = me && G.B.owner === me && me.mode === "i" && G.inb <= 0 && G.rs <= 0 && !G.ftq, // (the automatic inbound pass is by design)
         lc0 = me ? me.lc || 0 : 0,
         z0 = me ? me.vz : 0,
         pp0 = G.B.pp;
@@ -79,9 +78,9 @@ import { rapInit } from "../src/core/physics";
       } else still = 0;
       for (const p of G.P) {
         const lc = p.lc || 0;
-        if (lc !== (lastLc.get(p) ?? lc) && !G.ftq) {
+        if (lc !== (lastLc.get(p) ?? lc) && !G.ftq && G.B.last === p && G.B.sh) {
           R.fga++;
-          const D = Math.hypot(G.hoop(p.tm) - p.x, 250 - p.y);
+          const D = G.B.d0 ?? 0; // (distance at the launch)
           if (!G.isH(p) && D > 360 && G.shot > 5 && G.clock > 5) R.heave++, process.env.DBG && console.log("heave", p.n, "D", D | 0, "shot", G.shot.toFixed(1), "clock", G.clock.toFixed(1), "q", G.q, "mode", p.mode, "sv", p.sv, "x", p.x | 0, "pass?", G.B.mode);
         }
         lastLc.set(p, lc);

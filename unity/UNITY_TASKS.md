@@ -169,3 +169,12 @@ Tests (scripts/unity/cs.sh unity/CoreTests/X.cs UP=0|1): Blend, Limits, FootSlid
 - U2 menus: MyPlayer builder (face/hair/body/ratings, saved), Season / King ladder progress screens, online lobby in
   the same HTML style (create/join, seats, ready, DIRECT/RELAY quality), replay theater (saved highlights), stats
   history, achievements.
+
+## RIG changes (animation pass, Oct 2026)
+- None to `RIG` (pose.ts / Pose.Rest.cs `Rig`): checked against adult male anthropometry at 6.4 ft and kept - hip joint
+  0.50 H (3.2), shoulder joints 0.80 H (5.1), fingertips hanging 0.39 H, biacromial 1.67 ft (shX .836 x2), hip joints
+  0.64 ft apart, thigh 1.58 / shank 1.60. The mannequin look came from the poses (locked knees, poles for arms, feet
+  under the hips), not the skeleton. Mesh work should keep these joint positions (fk.ts checks the rig against them).
+- Pose-side changes the mesh should expect: standing players now keep soft knees (crouch 0.16), elbows ~0.3 rad,
+  hands half curled (g .35), feet slightly wider than the hips; crouched stances put the feet up to 5 px ahead of the
+  hip joints (hips sit back); armIK now follows pelvis + chest pitch (ln, cx).

@@ -1237,7 +1237,6 @@ export const shotRat = (p: Player, D0: number, isFT: boolean) =>
 export function launch(p: Player) {
   p.rl = 1;
   p.lc = (p.lc || 0) + 1; // launch counter (game modes watch it)
-  if ((globalThis as any).TRL && Math.hypot(hoop(p.tm) - p.x, HY - p.y) > 360) console.log("TRL", p.n, p.mode, p.t, p.sv, shot, clock, p.ai && JSON.stringify(p.ai).slice(0, 200), new Error().stack!.split("\n").slice(2, 5).join(" | "));
   p.perf = 0;
   const H = cfg.hand ? handPos(p) : null,
     HK = H && H[2] > 40 && H[2] < 170,

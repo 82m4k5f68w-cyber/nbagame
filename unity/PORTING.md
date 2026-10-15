@@ -38,6 +38,11 @@ The TS stays the reference: same names, same order of operations, same constants
 ## Semantics that bite
 - `Math.random()` -> `Rng.R()` ALWAYS (deterministic parity tests). Call it in the SAME order as the TS
   (watch `a && Math.random() < x`, ternaries, and argument evaluation order).
+- Transcendentals: `Math.sin/cos/tan/atan/atan2/acos/asin/exp` -> `JsMath.Sin/...` (Core/JsMath.cs: V8's fdlibm, bit
+  for bit; System.Math differs in the last bit for 3-18% of arguments and the lockstep traces drifted). `Math.hypot` ->
+  `Hypot` (Util: V8's normalized Kahan sum); where the TS writes `Math.sqrt(x * x + y * y)` keep that exact expression
+  (it is NOT the same double as hypot). `Math.pow(x, 2)` is fine; avoid other powers (x^1.5 = `x * Math.sqrt(x)`).
+  A `float[]` element read is a double in TS: cast before float-float arithmetic (`(double)a[i] - a[j]`).
 - `Math.round` -> `Round` (JS rounds .5 up). `x | 0` -> `I(x)`. `Math.sign` -> `Sign`. `Math.hypot` -> `Hypot`.
   `Math.max(...arr)` -> `Max(arr)`. `>>> 0` -> `uint` math in `unchecked`. `Math.imul` -> `unchecked((int)a * b)`.
 - JS `sort` is stable: use `SortStable(list, (a, b) => Cmp(expr))`. Never `List.Sort`.

@@ -461,9 +461,13 @@ export function pose3(p: Player) {
     cx += 0.05; // chest over the ball, head up
     ty = 0;
   } else if (air) {
-    aL = aR = 3;
-    eL = eR = 0.1;
-    sz = 0.12;
+    // (reaching up: the arms are never two identical poles - one a little higher, elbows soft, fingers spread)
+    aL = 2.85;
+    aR = 3;
+    eL = 0.28;
+    eR = 0.16;
+    sz = 0.14;
+    zL = 0.2;
     gL = gR = 0.1;
   } else if (pos !== p.tm) {
     st = ST.def;
@@ -624,8 +628,10 @@ export function pose3(p: Player) {
       }
       oR = -1.1 * u;
       oL = 1.1 * u;
-      sz = zL = 0.12;
+      // (the elbows flare on the wind-up and tuck in through the push; the knees give a little into the throw)
+      sz = zL = 0.34 - 0.22 * u;
       gL = gR = 0.1;
+      cr = Math.max(cr, 0.18 * Math.sin(u * Math.PI) + 0.12);
     }
     if (B.mode === "pass" && B.to === p && !air) {
       aL = aR = 1.35;
@@ -1465,6 +1471,8 @@ export function pose3(p: Player) {
         HEADX = -0.5 * k; // eyes to the sky
         break;
     }
+    // (the loud ones bounce on their knees with it - the feet stay planted, the hips pump)
+    if (p.cel === 4 || p.cel === 6 || p.cel === 13) cr += 0.14 * Math.max(0, Math.sin(e * 9)) * k;
   }
   // ---- box-outs and post battles: bodies lean into each other ----
   if (md === "i" && !air && !has && !(p.setT > 0) && !(p.celT > 0)) {
