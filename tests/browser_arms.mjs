@@ -51,7 +51,8 @@ for (const Q of [0, 1, 2]) {
   await shot(false); // warm-up (the hidden arena drops out of the first frame)
   const a = await shot(false),
     a2 = await shot(false),
-    c = await shot(true);
+    c = await shot(true),
+    c2 = await shot(true);
   // a pixel belongs to the arms when collapsing them changes it while two identical frames agree on it (the arena's
   // animated lights / shafts flip between frames and are ignored)
   const diff = await pg.evaluate(
@@ -65,10 +66,10 @@ for (const Q of [0, 1, 2]) {
       const px = ims.map((im) => (x.drawImage(im, 0, 0), x.getImageData(0, 0, cv.width, cv.height).data));
       const d = (p, q, i) => Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]);
       let n = 0;
-      for (let i = 0; i < px[0].length; i += 4) if (d(px[0], px[2], i) > 40 && d(px[0], px[1], i) <= 40) n++;
+      for (let i = 0; i < px[0].length; i += 4) if (d(px[0], px[2], i) > 40 && d(px[0], px[1], i) <= 40 && d(px[2], px[3], i) <= 40) n++;
       return n / (px[0].length / 4);
     },
-    [a, a2, c].map((im) => im.toString("base64")),
+    [a, a2, c, c2].map((im) => im.toString("base64")),
   );
   if (process.env.ARMDBG) for (const [n, im] of [["a", a], ["a2", a2], ["c", c]]) (await import("fs")).writeFileSync(process.env.ARMDBG + `/arms_q${Q}_${n}.png`, im);
   console.log(`QL ${Q}: arm pixels ${(diff * 100).toFixed(2)}% of the frame around the player`);
