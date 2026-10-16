@@ -52,29 +52,26 @@ for (const Q of [0, 1, 2]) {
   const a = await shot(false),
     a2 = await shot(false),
     c = await shot(true);
-  const cmp = (a, c) => pg.evaluate(
-    async ([a, c]) => {
+  // a pixel belongs to the arms when collapsing them changes it while two identical frames agree on it (the arena's
+  // animated lights / shafts flip between frames and are ignored)
+  const diff = await pg.evaluate(
+    async (srcs) => {
       const load = (s) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.src = "data:image/png;base64," + s; });
-      const [ia, ic] = await Promise.all([load(a), load(c)]);
+      const ims = await Promise.all(srcs.map(load));
       const cv = document.createElement("canvas");
-      cv.width = ia.width;
-      cv.height = ia.height;
+      cv.width = ims[0].width;
+      cv.height = ims[0].height;
       const x = cv.getContext("2d", { willReadFrequently: true });
-      x.drawImage(ia, 0, 0);
-      const da = x.getImageData(0, 0, cv.width, cv.height).data;
-      x.drawImage(ic, 0, 0);
-      const dc = x.getImageData(0, 0, cv.width, cv.height).data;
+      const px = ims.map((im) => (x.drawImage(im, 0, 0), x.getImageData(0, 0, cv.width, cv.height).data));
+      const d = (p, q, i) => Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]);
       let n = 0;
-      for (let i = 0; i < da.length; i += 4) if (Math.abs(da[i] - dc[i]) + Math.abs(da[i + 1] - dc[i + 1]) + Math.abs(da[i + 2] - dc[i + 2]) > 40) n++;
-      return n / (da.length / 4);
+      for (let i = 0; i < px[0].length; i += 4) if (d(px[0], px[2], i) > 40 && d(px[0], px[1], i) <= 40) n++;
+      return n / (px[0].length / 4);
     },
-    [a.toString("base64"), c.toString("base64")],
+    [a, a2, c].map((im) => im.toString("base64")),
   );
-  // frame-to-frame noise (crowd, flags, lights) is measured with two identical shots and taken off
   if (process.env.ARMDBG) for (const [n, im] of [["a", a], ["a2", a2], ["c", c]]) (await import("fs")).writeFileSync(process.env.ARMDBG + `/arms_q${Q}_${n}.png`, im);
-  const noise = await cmp(a, a2),
-    diff = (await cmp(a, c)) - noise;
-  console.log(`QL ${Q}: arm pixels ${(diff * 100).toFixed(2)}% of the frame around the player (noise ${(noise * 100).toFixed(2)}%)`);
+  console.log(`QL ${Q}: arm pixels ${(diff * 100).toFixed(2)}% of the frame around the player`);
   if (diff < 0.01) fails.push(`QL ${Q}: arms cover only ${(diff * 100).toFixed(2)}%`);
   if (errs.length) fails.push(`QL ${Q}: page errors ${errs.slice(0, 3).join(" | ")}`);
   await pg.close();
