@@ -48,3 +48,38 @@ import { skeleton } from "../src/core/pose";
   console.log("skeleton vs handPos max error:", worst2.toExponential(2), worst2 < 1e-3 ? "OK" : "MISMATCH");
   if (worst2 >= 1e-3) process.exitCode = 1;
 }
+// Arms are drawn: every rig carries a real arm surface skinned to the arm bones (shoulder/elbow/wrist/fingers), with
+// finite positions, weights summing to 1 and an athletic girth (bug report "arms don't show"). Also at the Low LOD.
+{
+  const fails: string[] = [];
+  for (const lod of [1, 0])
+    for (const [n, bk, ht] of [["Arm Check", 1, 6.4], ["Big Man", 1.3, 7.2], ["Little Guard", 0.85, 6.0]] as [string, number, number][]) {
+      const p: any = { n, x: 470, y: 250, z: 0, f: 0, ht, bk, col: "#1d428a", skin: "#8d5524", hr: 1, bd: 0, no: 7, tm: 0, q: null };
+      const m = makeRig(p, null as any, lod),
+        g = m.mesh.geometry,
+        pos = g.attributes.position,
+        si = g.attributes.skinIndex,
+        sw = g.attributes.skinWeight,
+        bones = m.mesh.skeleton.bones,
+        arm = new Set([m.sL, m.sR, m.eL, m.eR, m.wL, m.wR, m.gL, m.gR].map((b) => bones.indexOf(b)));
+      let armV = 0,
+        bad = 0,
+        girth = 0;
+      const sh = new THREE.Vector3().setFromMatrixPosition(m.sR.matrixWorld);
+      for (let i = 0; i < pos.count; i++) {
+        const w = sw.getX(i) + sw.getY(i) + sw.getZ(i) + sw.getW(i);
+        if (!isFinite(pos.getX(i) + pos.getY(i) + pos.getZ(i)) || Math.abs(w - 1) > 1e-4) bad++;
+        if (arm.has(si.getX(i)) && sw.getX(i) > 0.5) {
+          armV++;
+          // right upper arm, mid-way to the elbow: distance from the bone axis
+          const dy = sh.y - pos.getY(i);
+          if (pos.getX(i) > 0 && dy > 0.4 && dy < 0.6) girth = Math.max(girth, Math.hypot(pos.getX(i) - sh.x, pos.getZ(i) - sh.z));
+        }
+      }
+      if (armV < 300) fails.push(`${n} lod ${lod}: only ${armV} arm vertices`);
+      if (bad) fails.push(`${n} lod ${lod}: ${bad} vertices with bad position/weights`);
+      if (girth < 0.15) fails.push(`${n} lod ${lod}: upper arm radius ${girth.toFixed(3)} (too thin)`);
+    }
+  console.log(fails.length ? "ARMS FAIL\n" + fails.join("\n") : "arms: present, weighted, athletic girth OK");
+  if (fails.length) process.exitCode = 1;
+}

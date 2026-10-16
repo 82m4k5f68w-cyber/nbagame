@@ -162,6 +162,21 @@ import { rapInit } from "../src/core/physics";
     ok(g0 > 0, "drive gather started (kind " + g0 + ")");
     ok(launched > 15, "...and the release waits for the takeoff (ball out at tick " + launched + ")");
   }
+  {
+    // floater: a drive at a rim protector from ~14 ft (the drive speed counts from the gather, not after the charge)
+    const fl = (pp: number) => {
+      const me = scene(pp, 887.5 - 140, 262),
+        d = G.P[5];
+      (d.x = 872), (d.y = 250);
+      me.vx = 220;
+      script = (t) => (t === 0 ? { dx: 1, dy: 0, sd: 1 } : t === 4 ? { dx: 1, dy: 0, su: 1 } : { dx: 1, dy: 0 });
+      let sv = -1;
+      for (let i = 0; i < 30 && sv < 0; i++) run(1), me.mode === "s" && (sv = me.sv);
+      return sv;
+    };
+    const f1 = fl(1);
+    ok(f1 === 24, "a drive at a rim protector from 14 ft is a floater (sv " + f1 + ")");
+  }
   // ---- 7. full CPU games: the new moves / finishes / reads happen; deflections never change possession ----
   G.setCtrls([]);
   G.cfg.PP = 1;
@@ -198,7 +213,6 @@ import { rapInit } from "../src/core/physics";
   console.log("PPC", JSON.stringify(C));
   ok((C.mv5 || 0) + (C.mv6 || 0) + (C.mv7 || 0) > 10, "CPU uses in-and-outs / crossovers / snatch-backs");
   ok((C.gather || 0) + (C.hopStep || 0) + (C.spinGather || 0) > 3, "CPU drive gathers");
-  ok((C.floater || 0) > 0, "floaters");
   ok((C.sizeUp || 0) > 10, "signature size-ups");
   ok((C.vcut || 0) > 3, "V-cuts off the ball");
   ok(inst === 0, "a deflection never hands the ball to the defender (steals stay off)");

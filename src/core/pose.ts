@@ -1738,7 +1738,10 @@ export function pose3(p: Player) {
         const quick = (st === ST.shot || st === ST.move) && !hd, // (the head never snaps: a tip-in's look from the ball to the rim)
           big = Math.min(quick ? 0.1 : 0.32, 0.08 + Math.abs(I.x[j]) * (hd ? 0.12 : 0.1));
         // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
-        I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), quick ? (fromReach ? Math.min(0.1, 0.02 + Math.abs(I.x[j]) * 0.05) : 0) : big * 0.75) : big;
+        // (a gather - mode c, not yet the release - carries the arms a few ticks out of a dribble / run swing instead of
+        // snapping a big swing over in 2 ticks; the release itself stays crisp)
+        const qk = quick ? (fromReach ? Math.min(0.1, 0.02 + Math.abs(I.x[j]) * 0.05) : md === "c" && j >= 4 && j <= 8 ? Math.min(0.12, 0.02 + Math.abs(I.x[j]) * 0.04) : 0) : big * 0.75;
+        I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), qk) : big;
         I.b[j] = v;
       }
       I.pv[j] = jump ? 0 : W(v - I.pt[j]) / DT; // a jump is not a velocity: predict from the new target next tick
@@ -1823,16 +1826,19 @@ export function pose3(p: Player) {
       p.ctR = clamp((p.ctR || 0) + p.ctRv * DT, 0, 1);
       p.ctL = clamp((p.ctL || 0) + p.ctLv * DT, 0, 1);
     }
+    // (which kind of fade a contact leaves behind - set for either arm: a left-arm contest used to leave the flag
+    // unset, and its fade then took the catch guard and dropped the raised arm in one tick)
+    if (con) p.ctPl = 1;
+    else if (drib || cat) p.ctPl = 0;
     if (p.ctR > 0.01) {
       if (wR > 0) {
         const k = armIK(p, o.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6, o.ln, o.cx);
         if (con) (o.wR = -0.2), (o.gR = 0.05); // fingers spread, wrist back
         (K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks)), (K[1] += (k.e - K[1]) * ks), (K[2] += (k.ab - K[2]) * ks);
+        if (con) K[0] = armC(K[0]); // (a contest hand goes up and over, never back and down behind him)
       }
       // (contests: the plain difference; fades: wrapped, with an immediate guard below that lets go well before +-pi -
       // a stored catch solution that crossed the wrap made the plain difference swing the arm the long way round)
-      if (con) p.ctPl = 1;
-      else if (drib || cat) p.ctPl = 0;
       const fade = !drib && !cat && !con && !p.ctPl, // (a contest's fade keeps the contest's plain difference)
         da = drib || cat || fade ? wrapPi(K[0] - o.aR) : K[0] - o.aR;
       // (an IK branch flip is not a correction; a fade keeps the last live guard, so a solution that was never shown
@@ -1848,6 +1854,7 @@ export function pose3(p: Player) {
         const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6, o.ln, o.cx);
         if (con) o.gL = 0.05;
         (K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks)), (K[4] += (k.e - K[4]) * ks), (K[5] += (k.ab - K[5]) * ks);
+        if (con) K[3] = armC(K[3]);
       }
       const z0 = o.zL ?? o.sz,
         fadeL = !drib && !cat && !con && !p.ctPl,
@@ -2335,11 +2342,22 @@ export function armIK(p: Player, cr: number, x: number, y: number, z: number, si
   // which would swing the arm backwards (rim right above on a layup). Over the top up to ~150 deg past vertical; the
   // unavoidable seam sits far behind-and-high where no arm can reach (and blending smooths it)
   if (IK.a < -2.6) IK.a += 2 * Math.PI;
+  // ... and inside what a shoulder can do: no more than ~63 deg of hyperextension, over the top no further than ~198 deg.
+  // A target behind him gets the nearer limit, so the remaining seam sits low behind the hip (a hand almost never
+  // aims there) instead of up behind the head, where a ball passing over a defender / a lob over a receiver flipped
+  // the answer between -2.5 and 3.6 rad every few ticks (the arm swung through the floor and back)
+  if (IK.a > 3.45) IK.a = 3.45;
+  else if (IK.a < -1.1) IK.a = IK.a < -1.97 ? 3.45 : -1.1;
   IK.e = Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
   IK.ab = clamp(Math.atan2(right ? tx : -tx, Math.max(0.2, Math.abs(ty2))), -0.4, abMax);
   IK.over = raw - (L1 + L2);
   return IK;
 }
+/** A shoulder raise a real shoulder can reach for a hand up at the ball: hyperextension past -1 rad (the arm swung
+ *  back and down behind him - the IK's answer for a ball overhead and a little behind) is the same direction reached
+ *  over the top, and over the top stops at 3.35 rad. The contest's plain-difference blend toward the raw answer swung
+ *  the arm down through the front and then snapped it up when the answer crossed armIK's seam (3 rad in one tick). */
+const armC = (a: number) => Math.min(a < -1 ? a + 2 * Math.PI : a, 3.35);
 /** A shoulder angle in armIK's range (-2.6 .. 2 pi - 2.6): over the top stays over the top, never drifts by 2 pi. */
 const armN = (a: number) => (a < -2.6 ? a + 2 * Math.PI : a > 2 * Math.PI - 2.6 ? a - 2 * Math.PI : a);
 /** Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release. */

@@ -157,6 +157,8 @@ tall / skilled bigs. CPU: signature dribble packages (formOf dk), snatch-back vs
 putbacks, V-cuts. Defense: slide hips, swipe-downs, hand checks, contest variety; shooters lean away from late
 closeouts. Guide hand: post-blend solve keeps the off palm on the ball until the release.
 Tests (scripts/unity/cs.sh unity/CoreTests/X.cs UP=0|1): Blend, Limits, FootSlide, GuideHand; GameRun ... up=1; Greens.
+Update (v5.3): the SIM side of these moves is shared with the browser now (cfg.PP = 1 in both engines, TS twin in
+sim.ts "Pro Play pack"); cfg.UP gates only Pose.UP.cs + PH2. Trace.cs [N] [hum] stays identical to trace.ts.
 
 ## Wave 2 (start when PH / AP / U are merged)
 - PH2 physics: ball-vs-player full-body contact for loose balls (all skeleton bones as capsules), rebound physics with

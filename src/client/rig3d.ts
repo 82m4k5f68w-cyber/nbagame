@@ -397,6 +397,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       h2: [mixHex(hcol, sk, 0.55), 3],
       h3: [mixHex(hcol, sk, 0.78), 2],
       hw: [shade(hcol, 1.9), 3],
+      hs: [shade(hcol, 1.45), 3],
       stub: [mixHex(sk, hcol, 0.42), 2],
       white: [mixHex("#f4f1ea", sk, 0.08), 5],
       iris: [LK.eye, 5],
@@ -597,7 +598,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       if (y < -UA + 0.07 && y > -UA - 0.07 && z < -0.05) return "dark"; // elbow point
       return "skin";
     };
-    P(sphere(hi ? 14 : 10, hi ? 10 : 8), slv ? "sleeve" : "skin", s2, sd * 0.012, -0.13, 0, 0.19 * ga * (1 + 0.08 * mu), 0.3, 0.21 * ga * (1 + 0.06 * mu), bl(I.ch, 0.08, 0.22, "start", 0.25)); // deltoid
+    P(sphere(hi ? 14 : 10, hi ? 10 : 8), slv ? "sleeve" : "skin", s2, sd * 0.02, -0.2, 0, 0.2 * ga * (1 + 0.08 * mu), 0.27, 0.215 * ga * (1 + 0.06 * mu), bl(I.ch, 0.08, 0.22, "start", 0.25)); // deltoid
     P(loft(RF(ARM, 2), SG(20)), "skin", s2, 0, 0, 0, 1, 1, 1, bl(e, -UA - 0.12, 0.24, "end", 1), bl(I.ch, 0.06, 0.24, "start", 0.3), armC);
     if (LK.wrist & side) P(loft([W + 0.03, 0.093 * ga, 0.07 * ga, 0.075 * ga, 0, W + 0.2, 0.098 * ga, 0.075 * ga, 0.08 * ga, 0, W + 0.2, 0.08 * ga, 0.06 * ga, 0.06 * ga, 0, W + 0.03, 0.08 * ga, 0.06 * ga, 0.06 * ga, 0], SG(16)), "wrist", e, 0, UA, 0); // wristband (thickness)
     // hand: palm + back of hand, four fingers on the finger bone (curl together), thumb off the wrist
@@ -744,14 +745,13 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       undefined,
       cf,
     );
-  const inHair = (lo: number, key: string | ((y: number) => string)): CF => (x, y, z) => {
-    return hm(x, y, z, lo) > -0.004 ? (typeof key === "string" ? key : key(y)) : null;
-  };
+  const inHair = (lo: number, key: string | ((x: number, y: number, z: number) => string)): CF => (x, y, z) => (hm(x, y, z, lo) > -0.004 ? (typeof key === "string" ? key : key(x, y, z)) : null);
   if (hair === 2 || hair === 5) vol(1.035, 1.05, -0.12, 0.05, inHair(-0.12, "hair"));
   if (hair === 4) vol(1.07, 1.1, 0, 0.09, (x, y, z) => (hm(x, y, z) > -0.004 ? (Math.abs(x - 0.13 * fw) < 0.012 && z > -0.05 && y > 3.0 ? "h2" : "hair") : null));
   if (hair === 5) putT(loft([2.98, 0.29 * fw, 0.3, 0.32, -0.05, 3.2, 0.31 * fw, 0.31, 0.33, -0.06, 3.42, 0.3 * fw, 0.3, 0.32, -0.06, 3.47, 0.22 * fw, 0.22, 0.24, -0.06, 3.48, 0, 0, 0, -0.06], SG(28), 0.75), "hair", H, 0, 0, 0);
   if (hair === 6) vol(1.1, 1.14, -0.12, 0.07, inHair(-0.12, "hair"), 0.03);
-  if (hair === 7 || hair === 8) vol(1.09, 1.14, 0.02, 0.12, inHair(0.02, "hair"));
+  // swept / long: strand highlights running back over the crown
+  if (hair === 7 || hair === 8) vol(1.09, 1.14, 0.02, 0.12, inHair(0.02, (x, y, z) => (Math.sin(x * 46 + z * 5) > 0.6 && y > 2.95 ? "hs" : "hair")));
   if (hair === 9) vol(1.32, 1.36, 0.02, 0.16, inHair(0.02, "hair"), 0.04);
   if (hair === 8)
     for (let d = 0; d < 12; d++) {

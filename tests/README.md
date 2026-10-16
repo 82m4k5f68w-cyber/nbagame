@@ -62,3 +62,8 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   of dorsiflexion, the neck out of range; must stay under 0.2% of player-ticks.
 - stats.ts (not in npm test) — realism report vs NBA averages over N full CPU games (`N=4 QL=180 SEED=1 npx tsx
   tests/stats.ts`): assist rate, FT rate, FG/3P%, shot mix and contest by range, shot clock at FGA, ORB%, ORtg.
+- propl.ts — Pro Play pack (cfg.PP): stick-picked move variants, move buffer + cancel window, sprint burst, on-ball
+  stance (slides, auto hand up), contest timing, drive gather + delayed release, floater vs a rim protector, retreat
+  dribble / rebound-assist regressions, and CPU games where the new moves happen and deflections never change possession.
+- sanity.ts (not in `npm test`, ~10 min) — seeded CPU games + a passive human: no dead-ball stalls, frozen handlers,
+  auto-actions by an idle human, needless heaves, backcourt dawdling or bodies passing through each other.

@@ -1726,7 +1726,7 @@ function upAfterClip(p: Player, D: number, lay: boolean) {
     if (isH(p)) txtW("SKY HOOK", p.x, p.y, 100, "#ffd23f");
     return;
   }
-  if (!lay && D >= 90 && D < 180 && fw > 60 && (rimProt(p) || p.st === 4) && (p.sv === 21 || p.sv === 8 || p.sv === 22 || p.sv === 0 || p.sv === 1 || p.sv === 4 || p.sv === 20)) {
+  if (!lay && D >= 90 && D < 180 && fw > 60 && (rimProt(p) || p.st === 4) && (p.sv === 21 || p.sv === 8 || p.sv === 22 || p.sv === 0 || p.sv === 1 || p.sv === 4 || p.sv === 20 || p.sv === 2 || p.sv === 3)) { // (a fade / step-back form while charging the rim = a floater too)
     p.sv = 24;
     ppc("floater");
     return;
@@ -1920,6 +1920,7 @@ function ppDeflect() {
       B.vy = (vy + vx * w) * 0.7;
       B.vz = Math.max(B.vz, 0) + 55;
       o.swpT = 0.3;
+      B.dfl = 2; // (really tipped)
       STAT.defl = (STAT.defl || 0) + 1;
       ppc("deflect");
       if (isH(o) || isH(L)) txtW("DEFLECTED!", o.x, o.y, 95, "#9fe7ff");
@@ -3308,7 +3309,7 @@ export function bstep(dt: number) {
   }
   // a pass that died (rolling slowly on the floor, or stopped against a wall) is a loose ball: anyone can get it.
   // Without this, only its target could catch it and a dead pass in a corner froze the game.
-  if (B.mode === "pass" && !PREDICT && (B.age > 3 || (B.age > 0.5 && B.z < 12 && Math.hypot(B.vx, B.vy) < 45))) {
+  if (B.mode === "pass" && !PREDICT && (B.age > 3 || (B.age > 0.5 && B.z < 12 && Math.hypot(B.vx, B.vy) < 45 && B.dfl !== 2))) { // (a deflected pass keeps homing in on its man until the 3 s fallback: a tip never hands the defense the ball)
     B.mode = "air";
     B.to = null;
     B.sh = 0;

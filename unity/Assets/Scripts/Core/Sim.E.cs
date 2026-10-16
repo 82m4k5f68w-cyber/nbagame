@@ -121,7 +121,7 @@ namespace Hoops.Core
                 B.vy *= 1 - 0.1 * dt;
             }
             // a pass that died (rolling slowly on the floor, or stopped against a wall) is a loose ball: anyone can get it.
-            if (B.mode == "pass" && !Util.T(PREDICT) && (B.age > 3 || (B.age > 0.5 && B.z < 12 && Hypot(B.vx, B.vy) < 45)))
+            if (B.mode == "pass" && !Util.T(PREDICT) && (B.age > 3 || (B.age > 0.5 && B.z < 12 && Hypot(B.vx, B.vy) < 45 && B.dfl != 2))) // (a deflected pass keeps homing in until the 3 s fallback)
             {
                 B.mode = "air";
                 B.to = null;

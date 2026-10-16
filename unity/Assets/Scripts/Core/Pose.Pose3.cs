@@ -1846,7 +1846,8 @@ namespace Hoops.Core
                         bool quick = (st == ST.shot || st == ST.move) && !hd; // (the head never snaps)
                         double big = Math.Min(quick ? 0.1 : 0.32, 0.08 + Math.Abs(iz.x[j]) * (hd ? 0.12 : 0.1));
                         // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
-                        double qk = quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : 0) : big * 0.75;
+                        // (a gather - mode c, not yet the release - carries the arms a few ticks; the release stays crisp)
+                        double qk = quick ? (fromReach ? Math.Min(0.1, 0.02 + Math.Abs(iz.x[j]) * 0.05) : md == "c" && j >= 4 && j <= 8 ? Math.Min(0.12, 0.02 + Math.Abs(iz.x[j]) * 0.04) : 0) : big * 0.75;
                         // (UP: a gather / move out of a sprint carries the arms a few ticks instead of snapping a big swing over)
                         if (cfg.UP != 0 && quick && trans && (md == "c" || st == ST.move)) qk = Math.Max(qk, Math.Min(0.12, 0.02 + Math.Abs(iz.x[j]) * 0.04));
                         iz.tf[j] = trans ? Math.Max(BLEND[st] * (hd ? 0.4 : 0.65), qk) : big;
@@ -1945,6 +1946,9 @@ namespace Hoops.Core
                     p.ctR = clamp(Or0(p.ctR) + p.ctRv * DT, 0, 1);
                     p.ctL = clamp(Or0(p.ctL) + p.ctLv * DT, 0, 1);
                 }
+                // (which kind of fade a contact leaves behind - set for either arm: a left-arm contest left it unset)
+                if (con) p.ctPl = 1;
+                else if (drib || cat) p.ctPl = 0;
                 if (p.ctR > 0.01)
                 {
                     if (cwR > 0)
@@ -1952,13 +1956,12 @@ namespace Hoops.Core
                         var k = armIK(p, oq.cr, K[6], K[7], K[8], 1, cat ? 1 : 0.6, oq.ln, oq.cx);
                         if (con) { oq.wR = -0.2; oq.gR = 0.05; } // fingers spread, wrist back
                         K[0] = armN(K[0] + wrapPi(k.a - K[0]) * ks);
+                        if (con) K[0] = armC(K[0]); // (a contest hand goes up and over, never back and down behind him)
                         K[1] += (k.e - K[1]) * ks;
                         K[2] += (k.ab - K[2]) * ks;
                     }
                     // (contests: the plain difference; fades: wrapped, with an immediate guard below that lets go well before +-pi -
                     // a stored catch solution that crossed the wrap made the plain difference swing the arm the long way round)
-                    if (con) p.ctPl = 1;
-                    else if (drib || cat) p.ctPl = 0;
                     bool fade = !drib && !cat && !con && !Util.T(p.ctPl); // (a contest's fade keeps the contest's plain difference)
                     double da = drib || cat || fade ? wrapPi(K[0] - oq.aR) : K[0] - oq.aR;
                     // (an IK branch flip is not a correction; a fade keeps the last live guard, so a solution that was never shown
@@ -1982,6 +1985,7 @@ namespace Hoops.Core
                         var k = armIK(p, oq.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6, oq.ln, oq.cx);
                         if (con) oq.gL = 0.05;
                         K[3] = armN(K[3] + wrapPi(k.a - K[3]) * ks);
+                        if (con) K[3] = armC(K[3]);
                         K[4] += (k.e - K[4]) * ks;
                         K[5] += (k.ab - K[5]) * ks;
                     }

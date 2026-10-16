@@ -872,12 +872,19 @@ namespace Hoops.Core
             IK.a = ph2 - al;
             // keep the shoulder in its real range (a target straight overhead and a hair behind wraps atan2)
             if (IK.a < -2.6) IK.a += 2 * Math.PI;
+            // ... and inside what a shoulder can do (hyperextension to -1.1, over the top to 3.45); a target behind him gets the
+            // nearer limit, so the remaining seam sits low behind the hip instead of up behind the head (pops)
+            if (IK.a > 3.45) IK.a = 3.45;
+            else if (IK.a < -1.1) IK.a = IK.a < -1.97 ? 3.45 : -1.1;
             IK.e = Math.PI - JsMath.Acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
             IK.ab = clamp(JsMath.Atan2(right ? tx : -tx, Math.Max(0.2, Math.Abs(ty2))), -0.4, abMax);
             IK.over = raw - (L1 + L2);
             return IK;
         }
         /// <summary>A shoulder angle in armIK's range (-2.6 .. 2 pi - 2.6): over the top stays over the top.</summary>
+        /// <summary>Contest shoulder raise in the anatomical range (TS armC): hyperextension past -1 rad is the same
+        /// direction over the top, capped at 3.35.</summary>
+        public static double armC(double a) => Math.Min(a < -1 ? a + 2 * Math.PI : a, 3.35);
         public static double armN(double a) => a < -2.6 ? a + 2 * Math.PI : a > 2 * Math.PI - 2.6 ? a - 2 * Math.PI : a;
         /// <summary>Clip phase (0..1) at which each shot clip's wrist snaps = the ball's release.</summary>
         public static readonly Dictionary<string, double> RELK = new() { ["jump"] = 0.7, ["mshot"] = 0.7, ["upunder"] = 0.7, ["quick"] = 0.46, ["fade"] = 0.7, ["step"] = 0.7, ["float"] = 0.6, ["hop"] = 0.58, ["curry"] = 0.78, ["hook"] = 0.95, ["lay"] = 0.7, ["euro"] = 0.7, ["roll"] = 0.72, ["revlay"] = 0.6, ["contact"] = 0.6, ["leaner"] = 0.68, ["runner"] = 0.66, ["dunk"] = 0.7, ["dunk2"] = 0.72, ["tomahawk"] = 0.76, ["windmill"] = 0.76, ["reverse"] = 0.78, ["d360"] = 0.68, ["hang"] = 1, ["floater"] = 0.6, ["sky"] = 0.95 }; // (floater / sky: Pro Play clips 24 / 25)

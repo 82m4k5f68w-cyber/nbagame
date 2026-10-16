@@ -410,6 +410,37 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   game.ts loop drops sim backlog beyond 2 steps (no catch-up snowball). JS is ~1 ms/frame: lag is GPU (High = mirror
   re-render + SSAO + 4K shadows at 2x DPR). Polygon count is not the bottleneck.
 
+## Pro Play pack (v5.3, `cfg.PP` = 1 in both engines)
+- The Unity-only UP sim moves are shared now: TS "Pro Play pack" block in sim.ts (before `step`) = C# Core/Sim.UP.cs,
+  same names and random-draw order; hooks are `cfg.PP` guarded (C# `cfg.PP != 0`). `cfg.UP` now only gates the
+  Unity-only poses (Pose.UP.cs) and PH2 ball physics. Counters: TS `PPC`, C# `UPC`.
+- Keys unchanged, the stick picks the variant when the move key is pressed: C = hesitation | + stick sideways
+  IN-AND-OUT (mvk 5) | + stick back SNATCH-BACK (7); V = behind the back | + sideways CROSSOVER (6); flick at speed =
+  crossover, again inside .5 s = DOUBLE CROSSOVER; any move inside .5 s of the last chains a combo (HESI CROSS,
+  KILLER CROSS). A flick that points back away from the rim is a retreat dribble (no move). Space driving at the rim from 8-16
+  ft = gather (two-step / hop-step / spin-gather by the defender's spot; `p.gath`, release waits for the takeoff);
+  floater (sv 24, clip "floater") vs a rim protector (drive speed from the gather `p.gfw`); post + C = sky hook (sv 25,
+  "sky") for 6'11"+ / i >= 88; off-hand reverse (`p.offH`); lean-away vs late closeouts; CPU signature move packages
+  (formOf dk), drive gathers, floor putbacks, V-cuts, size-up chains; drive bumps, swipe-downs, hand checks (never steals).
+- Human feel: move buffer + cancel window (`ppBuffer`: a press is kept .25 s, inside the last .15 s of a move it
+  cancels the tail = combo); sprint burst (first .35 s of a sprint press, `p.spT`); on-ball stance (`ppStance`, human
+  guarding the handler within 70 px, no sprint: x1.08 speed, x1.3 accel, auto hand up `hupT` on a shot in his face).
+- Contest timing: an airborne defender already coming down (vz < -90) contests x1.15, not x1.5 (pump fakes pay);
+  `ppRelease` texts GREAT CONTEST / JUMPED EARLY for human defenders and "FORCED IT · X WAS OPEN" for a human's
+  contested early jumper with a teammate open in range (`STAT.badShot`).
+- Deflections (`ppDeflect`, one check per pass, `B.dfl`): a pass past a defender's hands slows/turns but stays a pass to
+  its man (a tipped pass `B.dfl = 2` is exempt from the slow-roll dead-pass rule; 3 s fallback stays). Steals stay OFF.
+- Glass: height counts in rebounding (`(ht - 6.5) * 10` on reach and the scramble roll); `p.boxT` now decays (it used
+  to count forever once set).
+- Bug fixes: the rebound assist no longer steers / jumps for a human pushing the stick another way; a handler's facing
+  no longer flips to the rim on float noise (`sv > 1`: was a TS/C# divergence); pose rT treats "sky" like "hook".
+- Parity: `scripts/unity/trace.ts [N] [hum]` / `Trace.cs [N] [hum]` - `hum` adds a scripted human (arithmetic-only
+  input pattern) so the human-only paths are covered too. Tests: tests/propl.ts (features, PP on/off), tests/sanity.ts
+  (stalls, frozen handlers, passive-human auto-actions, needless heaves, backcourt, bodies through each other);
+  `PP=0|1` env on tests/stats.ts for A/B.
+- Lesson: never end an inserted comment with `//` in the MIDDLE of a TS expression line - it silently commented out
+  the rest (the LD badge multiplier) and only the C# trace caught it.
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
 fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

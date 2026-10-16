@@ -210,7 +210,7 @@ namespace Hoops.Core
             p.offH = 0;
             double hx = hoop(p.tm), dir = hx > 470 ? 1 : -1, fw = Math.Max(p.vx * dir, p.gfw);
             if (p.sv == 10 && (p.ht >= 6.9 || p.i >= 88)) { p.sv = 25; upc("skyHook"); if (isH(p)) txtW("SKY HOOK", p.x, p.y, 100, "#ffd23f"); return; }
-            if (!lay && D >= 90 && D < 180 && fw > 60 && (rimProt(p) || p.st == 4) && (p.sv == 21 || p.sv == 8 || p.sv == 22 || p.sv == 0 || p.sv == 1 || p.sv == 4 || p.sv == 20))
+            if (!lay && D >= 90 && D < 180 && fw > 60 && (rimProt(p) || p.st == 4) && (p.sv == 21 || p.sv == 8 || p.sv == 22 || p.sv == 0 || p.sv == 1 || p.sv == 4 || p.sv == 20 || p.sv == 2 || p.sv == 3)) // (a fade / step-back form while charging the rim = a floater too)
             {
                 p.sv = 24;
                 upc("floater");
@@ -418,6 +418,7 @@ namespace Hoops.Core
                     B.vy = (vy + vx * w) * 0.7;
                     B.vz = Math.Max(B.vz, 0) + 55;
                     o.swpT = 0.3;
+                    B.dfl = 2; // (really tipped)
                     statAdd("defl", 1);
                     upc("deflect");
                     if (isH(o) || isH(L)) txtW("DEFLECTED!", o.x, o.y, 95, "#9fe7ff");
