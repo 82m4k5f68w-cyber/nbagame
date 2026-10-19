@@ -4915,7 +4915,7 @@ export function netSim(dt: number, rp = 0) {
     }
     if (N.ring > 0) N.ring -= dt;
     // a dunk yanks the iron down (once per dunk); a player hanging on it holds it bent
-    if (B.dk && !N.dk && near && B.z < 106 && dxy < 10) (N.dk = 1), (N.fv += 75);
+    if (B.dk && !N.dk && near && B.z < 106 && dxy < 10) (N.dk = 1), (N.fv += 55);
     if (!B.dk) N.dk = 0;
     let hang = 0;
     for (const p of P) if (p.hangT > 0 && p.z > 15 && (p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY) < 26 * 26) hang = 2.2;

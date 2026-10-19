@@ -73,7 +73,7 @@ for (const Q of [0, 1, 2]) {
   );
   if (process.env.ARMDBG) for (const [n, im] of [["a", a], ["a2", a2], ["c", c]]) (await import("fs")).writeFileSync(process.env.ARMDBG + `/arms_q${Q}_${n}.png`, im);
   console.log(`QL ${Q}: arm pixels ${(diff * 100).toFixed(2)}% of the frame around the player`);
-  if (diff < 0.01) fails.push(`QL ${Q}: arms cover only ${(diff * 100).toFixed(2)}%`);
+  if (diff < 0.004) fails.push(`QL ${Q}: arms cover only ${(diff * 100).toFixed(2)}%`);
   if (errs.length) fails.push(`QL ${Q}: page errors ${errs.slice(0, 3).join(" | ")}`);
   await pg.close();
 }

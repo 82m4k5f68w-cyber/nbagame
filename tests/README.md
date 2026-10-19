@@ -1,9 +1,10 @@
 Run from the package root. Logic tests import the shared core directly (`src/core`), no DOM stubs needed.
 - `npm test` — typecheck + all logic tests below.
-- fk.ts — analytic hand FK matches the three.js rig (release-point parity).
+- fk.ts — analytic hand FK matches the three.js rig (release-point parity); every rig (both LODs) carries arms skinned to the arm bones with an athletic girth.
 - fuzz.ts — random inputs over every flag combo (NP 5/1 x Rapier/legacy x My Player x local 2P x player bodies): no errors/NaN, My Player never drifts.
 - greens.ts — 400 perfectly timed shots (expect ~95%+ made). curry_greens.ts — Curry's greens by range through the full upd() pipeline.
 - passes.ts — pass accuracy by type. dribble_moves.ts — dribble move displacement and ball security.
+- browser_arms.mjs — arms are drawn on Low / Medium / High: pixels that change when both arm chains are collapsed (after `npm run build`). Unity twin: `scripts/unity/cs.sh unity/CoreTests/RigMeshCheck.cs` (arms weighted to the arm bones, inside the renderer bounds, triangle budget, look parity with look.ts).
 - browser_webgpu.mjs — WebGPU renderer smoke test (SwiftShader WebGPU adapter, ?webgpu): backend must be WebGPU, game plays, no errors.
 - net_swish.ts — drops balls through the net at 3 speeds: must score and leave the net slower.
 - invariants.ts — plays full games in 5 configurations (5v5/1v1, My Player, 2P) and checks score = sum of points, the game ends, no long freezes, the ball stays in the world, stat sanity, and that the chosen My Player 1v1 opponent is used.
