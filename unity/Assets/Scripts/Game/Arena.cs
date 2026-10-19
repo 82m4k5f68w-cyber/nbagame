@@ -960,7 +960,7 @@ namespace Hoops.Game
                     f.rig?.Destroy();
                     f.p.col = want;
                     if (figRoot == null) figRoot = new GameObject("Figures").transform;
-                    f.rig = PlayerRig.Build(f.p, figRoot);
+                    f.rig = PlayerRig.Build(f.p, figRoot, 0); // bench / refs: low detail
                 }
                 if (!f.rig.go.activeSelf) f.rig.go.SetActive(true);
                 f.rig.ApplyPose(f.p);

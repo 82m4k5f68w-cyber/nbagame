@@ -2,7 +2,8 @@
 // drawing via the three.js or canvas renderer, and the box score.
 import * as G from "../core/sim";
 import { cfg, P, B, CT, MYP, mkT, RO, ALL, nChoices, ovr } from "../core/sim";
-import { TM, PRE, ov2 } from "../core/data";
+import { TM, PRE, ov2, formOf } from "../core/data";
+import { lookOf, faceOf } from "./look";
 import { rapInit } from "../core/physics";
 import { V, CAMN, MN, pr } from "./view";
 import { glInit } from "./render3d";
@@ -172,58 +173,168 @@ const onoff = (k: string, cur: number) => opt("", k, 1, cur ? 1 : 0, "On") + opt
 const keyName = (c: string) => (c || "?").replace(/^Key/, "").replace(/^Digit/, "").replace("ShiftLeft", "L-Shift").replace("ShiftRight", "R-Shift").replace("Space", "Space");
 // ---------------- portraits, records ----------------
 const AV = new Map<string, string>();
-/** Little broadcast-style portrait drawn from the roster data (skin, hair, beard, jersey, number). */
+/** Broadcast-style portrait drawn from the roster data and the player's deterministic look (look.ts: hair style and
+ *  colour, facial hair, eyes, face proportions, headband, team trim) - the same player the 3D rig shows. Drawn at
+ *  192 px (shown at 96) so it stays crisp on high-DPI screens. */
 export function avatar(t: any[], col: string): string {
   const key = t[0] + col;
   let u = AV.get(key);
   if (u) return u;
   const c = document.createElement("canvas");
-  c.width = c.height = 96;
-  const x = c.getContext("2d")!,
-    sk = t[7],
-    hc = sk === "#e8b88f" ? "#4a3320" : "#141414";
-  const g = x.createRadialGradient(48, 30, 4, 48, 48, 60);
-  g.addColorStop(0, col);
-  g.addColorStop(1, "#090b16");
-  x.fillStyle = g;
+  c.width = c.height = 192;
+  const x = c.getContext("2d")!;
+  x.scale(2, 2);
+  const sk = t[7],
+    LK = lookOf({ n: t[0], skin: sk, hr: t[8], bd: t[9], col, sg: formOf(t[0]) }),
+    F = faceOf(LK.h, formOf(t[0])),
+    hc = LK.hc,
+    sec = LK.sec,
+    shadeC = (h: string, k: number) => {
+      const n = parseInt(h.slice(1, 7), 16),
+        f = (v: number) => Math.max(0, Math.min(255, Math.round(v * k)));
+      return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
+    },
+    fw = F.w,
+    hw = 17 * fw; // half head width
+  const bg = x.createRadialGradient(48, 30, 4, 48, 48, 62);
+  bg.addColorStop(0, col);
+  bg.addColorStop(1, "#090b16");
+  x.fillStyle = bg;
   x.fillRect(0, 0, 96, 96);
-  x.fillStyle = col; // jersey + shoulders
+  // shoulders + jersey (tank top: skin at the shoulders, trim piping on the neckline and armholes)
+  x.fillStyle = sk;
   x.beginPath();
-  x.ellipse(48, 104, 44, 34, 0, 0, 6.3);
+  x.ellipse(48, 102, 46, 32, 0, 0, 6.3);
   x.fill();
-  x.strokeStyle = "rgba(255,255,255,.75)";
-  x.lineWidth = 3;
+  x.fillStyle = col;
   x.beginPath();
-  x.arc(48, 70, 12, 0.15 * Math.PI, 0.85 * Math.PI);
+  x.moveTo(22, 96);
+  x.quadraticCurveTo(24, 76, 33, 72);
+  x.lineTo(41, 72);
+  x.lineTo(48, 82);
+  x.lineTo(55, 72);
+  x.lineTo(63, 72);
+  x.quadraticCurveTo(72, 76, 74, 96);
+  x.closePath();
+  x.fill();
+  x.strokeStyle = sec;
+  x.lineWidth = 2;
   x.stroke();
-  x.fillStyle = "#fff";
-  x.font = "900 15px system-ui";
+  x.font = "900 13px 'Arial Black',system-ui";
   x.textAlign = "center";
-  x.fillText(String(t[12]), 48, 92);
-  x.fillStyle = sk; // neck, head, ears
-  x.fillRect(40, 56, 16, 14);
+  x.lineJoin = "round";
+  x.strokeStyle = sec;
+  x.lineWidth = 3;
+  x.strokeText(String(t[12]), 48, 94);
+  x.fillStyle = LK.trim;
+  x.fillText(String(t[12]), 48, 94);
+  // neck with a little shading under the jaw
+  x.fillStyle = sk;
+  x.fillRect(41, 54, 14, 20);
+  x.fillStyle = "rgba(0,0,0,.18)";
+  x.fillRect(41, 54, 14, 5);
+  // afro / locks / high-top volume behind the head
+  x.fillStyle = hc;
+  if (LK.hair === 9) (x.beginPath(), x.arc(48, 32, 27 * fw, 0, 6.3), x.fill());
+  if (LK.hair === 8) for (let i = -5; i <= 5; i++) x.fillRect(48 + i * 3.6 - 1.6, 26, 3.2, 34 + (i & 1) * 4);
+  // ears + head + jaw (jaw width / length from the face)
+  x.fillStyle = sk;
   x.beginPath();
-  x.ellipse(48, 42, 17, 21, 0, 0, 6.3);
+  x.ellipse(48 - hw, 43, 3.6, 6 * F.ea, 0, 0, 6.3);
+  x.ellipse(48 + hw, 43, 3.6, 6 * F.ea, 0, 0, 6.3);
   x.fill();
   x.beginPath();
-  x.ellipse(31, 43, 3.5, 6, 0, 0, 6.3);
-  x.ellipse(65, 43, 3.5, 6, 0, 0, 6.3);
+  x.moveTo(48 - hw, 36);
+  x.bezierCurveTo(48 - hw, 14, 48 + hw, 14, 48 + hw, 36);
+  x.bezierCurveTo(48 + hw, 50, 48 + 9 * F.jw, 60 * (0.94 + 0.06 * F.jl), 48, 61 * (0.94 + 0.06 * F.jl));
+  x.bezierCurveTo(48 - 9 * F.jw, 60 * (0.94 + 0.06 * F.jl), 48 - hw, 50, 48 - hw, 36);
   x.fill();
-  x.fillStyle = hc;
-  if (t[8] === 1) (x.beginPath(), x.ellipse(48, 28, 17.5, 10, 0, Math.PI, 2 * Math.PI), x.fill());
-  if (t[8] === 2) (x.beginPath(), x.ellipse(48, 30, 19, 13, 0, Math.PI, 2 * Math.PI), x.fill(), x.fillRect(29, 28, 6, 26), x.fillRect(61, 28, 6, 26));
-  if (t[8] === 3) (x.beginPath(), x.arc(48, 27, 22, Math.PI * 0.92, Math.PI * 2.08), x.fill());
-  if (t[9]) (x.beginPath(), x.ellipse(48, 56, 14, 9, 0, 0, Math.PI), x.fill());
-  x.fillStyle = "#16110c"; // eyes, brows, mouth
-  x.fillRect(40, 40, 4, 3);
-  x.fillRect(52, 40, 4, 3);
-  x.fillStyle = hc;
-  x.fillRect(38, 35, 8, 2);
-  x.fillRect(50, 35, 8, 2);
-  x.strokeStyle = "rgba(60,20,10,.7)";
-  x.lineWidth = 1.6;
+  // facial hair
+  const bd = LK.beard;
+  if (bd) {
+    x.fillStyle = bd === 4 ? "rgba(20,14,10,.28)" : hc;
+    x.beginPath();
+    if (bd === 2 || bd === 5) x.ellipse(48, 56, 6, 5, 0, 0, 6.3);
+    else if (bd === 3) (x.moveTo(48 - hw, 40), x.quadraticCurveTo(48 - hw + 2, 60, 48, 62), x.quadraticCurveTo(48 + hw - 2, 60, 48 + hw, 40), x.lineTo(48 + hw - 3, 40), x.quadraticCurveTo(48, 62, 48 - hw + 3, 40));
+    else (x.moveTo(48 - hw, 38), x.quadraticCurveTo(48 - hw, 63, 48, 63), x.quadraticCurveTo(48 + hw, 63, 48 + hw, 38), x.lineTo(48 + hw - 4, 40), x.quadraticCurveTo(48, 56, 48 - hw + 4, 40));
+    x.fill();
+    if (bd !== 3 && bd !== 4) (x.beginPath(), x.ellipse(48, 51.5, 6.5, 1.8, 0, 0, 6.3), x.fill()); // mustache
+  }
+  // hair on top (style from the look)
+  const hs = LK.hair;
+  if (hs && hs !== 9) {
+    x.fillStyle = hs === 1 ? shadeC(hc, 1.5) : hc;
+    x.beginPath();
+    const top = hs === 7 || hs === 8 ? 12 : hs === 4 || hs === 6 ? 14 : 17;
+    x.moveTo(48 - hw - 0.5, 36);
+    x.bezierCurveTo(48 - hw - 1, top, 48 + hw + 1, top, 48 + hw + 0.5, 36);
+    x.lineTo(48 + hw - 3, 30);
+    x.quadraticCurveTo(48, 22 + F.fh * 2, 48 - hw + 3, 30);
+    x.closePath();
+    x.fill();
+    if (hs === 5) x.fillRect(48 - 13 * fw, 6, 26 * fw, 14);
+    if (hs === 3) {
+      x.strokeStyle = shadeC(hc, 2.2);
+      x.lineWidth = 0.6;
+      for (let r = 4; r < 16; r += 3) (x.beginPath(), x.arc(48, 30, r, Math.PI * 1.1, Math.PI * 1.9), x.stroke());
+    }
+    if (hs === 2 || hs === 5 || hs === 6) {
+      // fade: the sides blend into the skin
+      const g = x.createLinearGradient(0, 26, 0, 40);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, sk);
+      x.fillStyle = g;
+      x.fillRect(48 - hw - 1, 26, 5, 14);
+      x.fillRect(48 + hw - 4, 26, 5, 14);
+    }
+  }
+  if (LK.band) (x.fillStyle = LK.bandC, x.fillRect(48 - hw, 24, hw * 2, 3.2));
+  // eyes (whites, iris, glint), brows, nose, lips
+  const eg = F.eg * 70,
+    ey = 41;
+  for (const sd of [-1, 1]) {
+    const ex = 48 + sd * eg;
+    x.fillStyle = "#f2efe8";
+    x.beginPath();
+    x.ellipse(ex, ey, 3.4 * F.es, 2.1 * F.es, 0, 0, 6.3);
+    x.fill();
+    x.fillStyle = LK.eye;
+    x.beginPath();
+    x.arc(ex, ey, 1.6 * F.es, 0, 6.3);
+    x.fill();
+    x.fillStyle = "#050505";
+    x.beginPath();
+    x.arc(ex, ey, 0.75, 0, 6.3);
+    x.fill();
+    x.fillStyle = "#fff";
+    x.fillRect(ex + 0.4, ey - 1, 0.8, 0.8);
+    x.strokeStyle = shadeC(sk, 0.55); // upper lid line
+    x.lineWidth = 0.8;
+    x.beginPath();
+    x.ellipse(ex, ey + 0.4, 3.6 * F.es, 2.5 * F.es, 0, Math.PI * 1.08, Math.PI * 1.92);
+    x.stroke();
+    x.strokeStyle = hc;
+    x.lineWidth = F.br * 60;
+    x.beginPath();
+    x.moveTo(ex - sd * 4, ey - 4.5 + sd * 0 - F.ba * 3);
+    x.quadraticCurveTo(ex, ey - 6.2, ex + sd * 4.4, ey - 4.6 + F.ba * 3);
+    x.stroke();
+  }
+  x.strokeStyle = shadeC(sk, 0.62);
+  x.lineWidth = 1;
   x.beginPath();
-  x.arc(48, 50, 5, 0.2 * Math.PI, 0.8 * Math.PI);
+  x.moveTo(48 - 2.8 * F.nw, 48.5);
+  x.quadraticCurveTo(48, 50.5, 48 + 2.8 * F.nw, 48.5);
+  x.stroke();
+  x.fillStyle = shadeC(sk, 0.82);
+  x.beginPath();
+  x.ellipse(48, 54.2, 4.2, 1.1 * F.lp, 0, 0, 6.3);
+  x.fill();
+  x.strokeStyle = shadeC(sk, 0.45);
+  x.lineWidth = 0.8;
+  x.beginPath();
+  x.moveTo(44, 53.6);
+  x.quadraticCurveTo(48, 54.6, 52, 53.6);
   x.stroke();
   u = c.toDataURL();
   AV.set(key, u);

@@ -499,10 +499,14 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     ];
   for (let j = 0; j < LEG.length; j += 5) for (let q = 1; q < 4; q++) LEG[j + q] *= gl;
   const sockTop = A + LK.sockH + 0.12;
-  for (const [t, kn, sd, an, tfb, fb] of [
-    [I.tl, I.kl, -1, I.al, I.tfL, I.flL],
-    [I.tr, I.kr, 1, I.ar, I.tfR, I.flR],
-  ]) {
+  for (let li = 0; li < 2; li++) {
+    // (index loops, not a nested array-literal table: see CLAUDE.md, the artifact publish check)
+    const t = li ? I.tr : I.tl,
+      kn = li ? I.kr : I.kl,
+      sd = li ? 1 : -1,
+      an = li ? I.ar : I.al,
+      tfb = li ? I.tfR : I.tfL,
+      fb = li ? I.flR : I.flL;
     const side = sd < 0 ? 1 : 2;
     const legC: CF = (x, y) => {
       if (y < sockTop) return "sock";
@@ -586,10 +590,12 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
       W - 0.05, 0, 0, 0, 0,
     ];
   for (let j = 0; j < ARM.length; j += 5) for (let q = 1; q < 4; q++) ARM[j + q] *= ga;
-  for (const [s2, e, w, sd, fg] of [
-    [I.sL, I.eL, I.wL, -1, I.gL],
-    [I.sR, I.eR, I.wR, 1, I.gR],
-  ]) {
+  for (let ai = 0; ai < 2; ai++) {
+    const s2 = ai ? I.sR : I.sL,
+      e = ai ? I.eR : I.eL,
+      w = ai ? I.wR : I.wL,
+      sd = ai ? 1 : -1,
+      fg = ai ? I.gR : I.gL;
     const side = sd < 0 ? 1 : 2,
       slv = LK.sleeve & side;
     const armC: CF = (x, y, z) => {
@@ -603,9 +609,8 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     if (LK.wrist & side) P(loft([W + 0.03, 0.093 * ga, 0.07 * ga, 0.075 * ga, 0, W + 0.2, 0.098 * ga, 0.075 * ga, 0.08 * ga, 0, W + 0.2, 0.08 * ga, 0.06 * ga, 0.06 * ga, 0, W + 0.03, 0.08 * ga, 0.06 * ga, 0.06 * ga, 0], SG(16)), "wrist", e, 0, UA, 0); // wristband (thickness)
     // hand: palm + back of hand, four fingers on the finger bone (curl together), thumb off the wrist
     P(warp(box(0.165, 0.2, 0.075), (v) => (v.z += v.z > 0 ? 0 : -0.012 * (1 - (v.x / 0.09) ** 2))), "skin", w, 0, -0.11, 0.012);
-    const fl = [0.148, 0.165, 0.155, 0.125];
-    for (let f = 0; f < 4; f++) {
-      const L = fl[f],
+        for (let f = 0; f < 4; f++) {
+      const L = f === 0 ? 0.148 : f === 1 ? 0.165 : f === 2 ? 0.155 : 0.125,
         r = (0.024 - f * 0.0012) * (0.95 + 0.05 * k),
         fx = -sd * (0.058 - f * 0.039),
         tp = LK.tape && ((sd > 0 && ((f === 0 && LK.tape & 1) || (f === 2 && LK.tape & 2))) || (sd < 0 && f === 0 && LK.tape & 4));
@@ -881,7 +886,6 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     geos.forEach((g) => g.dispose());
     return geo;
   };
-  if (typeof process !== "undefined" && process.env && process.env.RIGDBG) for (const pt of parts) console.log("part", names[pt.bone], pt.key, pt.g.attributes.position.count / 3);
   const geo = build(parts, false);
   const mesh = new THREE.SkinnedMesh(geo, bodyMat());
   mesh.castShadow = true;
@@ -902,7 +906,7 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
   // jersey prints: one atlas per player (crisp: 512 px, mipmapped, anisotropic via tex()), drawn by a second skinned
   // mesh that shares the skeleton, so the lettering bends with the torso
   const pc = document.createElement("canvas");
-  pc.width = pc.height = hi ? PW : PW / 2;
+  pc.width = pc.height = PW; // 512 on every tier: the lettering is what reads as "sharp"
   const x = pc.getContext("2d")!,
     sc = pc.width / PW,
     fill = LK.trim,

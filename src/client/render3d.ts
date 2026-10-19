@@ -1499,7 +1499,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           if (pset) pset.forEach(drop);
           if (pslot) pslot.forEach(drop);
           P.forEach((p) => {
-            p.gl = makeRig(p, TX2, V.QL > 0 ? 1 : 0);
+            p.gl = makeRig(p, TX2, V.QL >= 2 ? 1 : 0);
             S.add(p.gl.G);
           });
           pset = P;
@@ -1511,7 +1511,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               drop(pslot[k]);
               const p: any = P[k];
               if (!p.gl) {
-                p.gl = makeRig(p, TX2, V.QL > 0 ? 1 : 0);
+                p.gl = makeRig(p, TX2, V.QL >= 2 ? 1 : 0);
                 S.add(p.gl.G);
               }
               pslot[k] = p;

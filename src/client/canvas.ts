@@ -4,6 +4,9 @@
 import { P, B, T, pos, PC, HXs, HY, RR, W3, isH, NETS, cfg } from "../core/sim";
 import { skeleton, fv } from "../core/pose";
 import { pr } from "./view";
+import { lookOf } from "./look";
+/** Per-player look (hair, shoes, accessories, team trim), cached on the player object (same as the 3D rig). */
+const lk = (p) => (p._lk && p._lk.n === p.n && p._lk.col === p.col ? p._lk.L : (p._lk = { n: p.n, col: p.col, L: lookOf(p) }).L);
 let X: CanvasRenderingContext2D = null as any;
 export const setCanvasCtx = (x: CanvasRenderingContext2D) => (X = x);
 // ---------------- 2D court ----------------
@@ -152,7 +155,8 @@ export function player2d(p: any) {
     J = Array.from({ length: 20 }, (_, i) => P2(i)),
     depth = (i: number) => SK[i * 3 + 1], // larger game y = nearer the camera
     skin = p.skin,
-    dark = "#1b1b22";
+    LK = lk(p),
+    dark = LK.hc;
   const seg = (a: number, b: number, w: number, col: string) => {
     X.strokeStyle = col;
     X.lineWidth = w;
@@ -162,26 +166,23 @@ export function player2d(p: any) {
     X.stroke();
   };
   X.lineCap = X.lineJoin = "round";
-  const legL = () => {
-      seg(5, 6, 4.2, skin);
-      seg(6, 7, 4.6, "#f4f4f4");
-      seg(4, 5, 5.4, skin);
+  const leg = (h, k, a, t, side) => {
+      seg(k, a, 4.4, LK.knee & side ? LK.kneeC : skin);
+      seg(a, t, 4.8, LK.shoe[0]);
+      seg(a, t, 1.6, LK.shoe[1]);
+      seg(h, k, 5.8, LK.tights ? LK.tightsC : skin);
     },
-    legR = () => {
-      seg(9, 10, 4.2, skin);
-      seg(10, 11, 4.6, "#f4f4f4");
-      seg(8, 9, 5.4, skin);
+    legL = () => leg(4, 5, 6, 7, 1),
+    legR = () => leg(8, 9, 10, 11, 2),
+    arm = (s, e, w, h, side) => {
+      const c = LK.sleeve & side ? LK.sleeveC : skin;
+      seg(s, e, 4.2, c);
+      seg(e, w, 3.6, c);
+      seg(w, h, 3.4, skin);
+      if (LK.wrist & side) seg(w, w, 4.2, LK.wristC);
     },
-    armL = () => {
-      seg(12, 13, 3.6, skin);
-      seg(13, 14, 3.2, skin);
-      seg(14, 15, 3.4, skin);
-    },
-    armR = () => {
-      seg(16, 17, 3.6, skin);
-      seg(17, 18, 3.2, skin);
-      seg(18, 19, 3.4, skin);
-    },
+    armL = () => arm(12, 13, 14, 15, 1),
+    armR = () => arm(16, 17, 18, 19, 2),
     body = () => {
       // shorts: hips to mid-thigh
       X.fillStyle = p.col;
@@ -205,7 +206,7 @@ export function player2d(p: any) {
       X.lineTo(J[12][0] - 1, J[12][1] + 1);
       X.closePath();
       X.fill();
-      X.strokeStyle = "rgba(0,0,0,.25)";
+      X.strokeStyle = LK.sec; // jersey trim
       X.lineWidth = 1;
       X.stroke();
       if (p.no != null) {
@@ -219,10 +220,12 @@ export function player2d(p: any) {
       X.beginPath();
       X.arc(J[3][0], J[3][1], 5.2, 0, 6.3);
       X.fill();
-      X.fillStyle = p.hr ? dark : "rgba(0,0,0,.15)";
+      X.fillStyle = LK.hair ? dark : "rgba(0,0,0,.15)";
       X.beginPath();
-      X.arc(J[3][0], J[3][1] - 1.2, p.hr === 3 ? 6.6 : 5.4, Math.PI * 1.05, Math.PI * 1.95);
+      X.arc(J[3][0], J[3][1] - 1.2, LK.hair === 9 ? 6.8 : LK.hair === 7 || LK.hair === 8 ? 5.8 : 5.4, Math.PI * 1.05, Math.PI * 1.95);
       X.fill();
+      if (LK.hair === 5) X.fillRect(J[3][0] - 3.4, J[3][1] - 9.4, 6.8, 4);
+      if (LK.band) (X.fillStyle = LK.bandC), X.fillRect(J[3][0] - 5.2, J[3][1] - 3.4, 10.4, 1.4);
     };
   // painter's order: far leg/arm, body, near leg/arm
   const lFar = depth(6) < depth(10),
@@ -524,7 +527,8 @@ export function segs3c(p: any, out: any[]) {
     out.push({ z: (A[3] + B2[3]) / 2, A, B: B2, w: wd * S, c: col, n });
   };
   const dk = "#0b0b12",
-    hc = p.skin === "#e8b88f" ? "#4a3320" : "#141414",
+    LK = lk(p),
+    hc = LK.hc,
     back = Math.cos(p.f) * (CP[0] - w[0]) + Math.sin(p.f) * (CP[2] - w[2]) < 0;
   // limbs from the shared FK skeleton (the same joints the 2D view, the server and the 3D rig use - so twisted upper
   // arms, the stepping legs and the root yaw of a spin all show here too)
@@ -541,7 +545,7 @@ export function segs3c(p: any, out: any[]) {
       to = J(7 + si * 4);
     seg(h, kn, 0.44, p.skin);
     seg(kn, an, 0.34, p.skin);
-    seg(an, to, 0.32, "#f2f2f2");
+    seg(an, to, 0.34, LK.shoe[0]);
     seg(h, [(h[0] + kn[0]) / 2, (h[1] + kn[1]) / 2, (h[2] + kn[2]) / 2, (h[3] + kn[3]) / 2], 0.62 * k, p.col);
     const A1 = J(12 + si * 4),
       A2 = J(13 + si * 4),
@@ -557,13 +561,14 @@ export function segs3c(p: any, out: any[]) {
   t([0, 0.5, 0], [0, 2, 0], 1.4 * k, p.col, back ? p.no : null);
   t([0, 2, 0], [0, 2.35, 0], 0.3, p.skin);
   t([0, 2.75, 0], [0, 2.75, 0], 0.88, p.skin);
-  if (p.hr === 1) t([0, 2.92, -0.08], [0, 2.92, -0.08], 0.86, hc);
+  if (p.hr === 1 && LK.hair !== 5) t([0, 2.92, -0.08], [0, 2.92, -0.08], 0.86, hc);
+  if (LK.hair === 5) t([0, 2.9, -0.06], [0, 3.35, -0.06], 0.72, hc);
   if (p.hr === 2) {
     t([0, 2.9, -0.06], [0, 2.9, -0.06], 0.88, hc);
     t([0, 2.8, -0.35], [0, 2.1, -0.6], 0.3, hc);
   }
   if (p.hr === 3) t([0, 2.95, -0.05], [0, 2.95, -0.05], 1.25, hc);
-  if (p.bd) t([0, 2.52, 0.28], [0, 2.52, 0.28], 0.42, hc);
+  if (LK.beard && LK.beard !== 4) t([0, 2.52, 0.28], [0, 2.52, 0.28], LK.beard === 1 ? 0.46 : 0.3, hc);
 }
 export function paint3c(g: any) {
   const a = g.A,

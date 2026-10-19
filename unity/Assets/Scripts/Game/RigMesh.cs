@@ -179,6 +179,21 @@ namespace Hoops.Game
             };
         }
 
+        /// <summary>Rest (bind) position of every bone in model space. Walks each bone's parent chain: the arm bones
+        /// (sL..wR, gL/gR = 6..11, 17, 18) hang from the chest (12), which comes LATER in the index order - summing in
+        /// index order put the whole arm 4.2 ft low in bind space (the Unity "arms don't show" bug).</summary>
+        public static V3[] RestPositions(V3[] off)
+        {
+            var bp = new V3[NB];
+            for (int i = 0; i < NB; i++)
+            {
+                var a = V3.Zero;
+                for (int b = i; b >= 0; b = PARENT[b]) a += off[b];
+                bp[i] = a;
+            }
+            return bp;
+        }
+
         // ---------------------------------------------------------------- geometry (indexed, three conventions)
         public sealed class Geo
         {
@@ -423,6 +438,9 @@ namespace Hoops.Game
         sealed class Part { public Geo g; public string key; public int bone; public Blend b1, b2; public string[] keys; public bool print; }
 
         /// <summary>Builds the player's mesh data (lod 1 = High tier detail, 0 = Low/Medium). `word` = jersey wordmark.</summary>
+        /// <summary>Test hook: (bone, key, triangles) per part.</summary>
+        public static Action<int, string, int> Trace;
+
         public static RigMeshData Build(Player p, int lod)
         {
             double k = p.bk;
@@ -430,8 +448,7 @@ namespace Hoops.Game
             var LK = RigLook.Of(p.n, p.skin, (int)p.hr, (int)p.bd, p.col, p.sg?.hs, p.sg?.face);
             bool hi = lod > 0;
             var off = Offsets(k);
-            var bp = new V3[NB];
-            for (int i = 0; i < NB; i++) bp[i] = (PARENT[i] < 0 ? V3.Zero : bp[PARENT[i]]) + off[i];
+            var bp = RestPositions(off);
             var R = Pose.RIG;
             double L1 = R.L1, L2 = R.L2;
             var parts = new List<Part>();
@@ -466,6 +483,7 @@ namespace Hoops.Game
                     g = o;
                     keys = kl.ToArray();
                 }
+                Trace?.Invoke(bone, key, g.t.Count / 3);
                 g.Move((float)x + bp[bone].X, (float)y + bp[bone].Y, (float)z + bp[bone].Z);
                 list.Add(new Part { g = g, key = key, bone = bone, b1 = b1, b2 = b2, keys = keys, print = list == prints });
             }

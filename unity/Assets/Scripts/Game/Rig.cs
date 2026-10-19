@@ -1,8 +1,9 @@
 // Skinned player model (port of src/client/rig3d.ts): one SkinnedMeshRenderer per player on a bone hierarchy that
 // mirrors the core's joint model exactly (Core Pose.RIG offsets; Pose.handPos stays the true release point).
-// Lathed muscles, sneakers, face parts and jersey prints are merged into one mesh with rig3d's two-bone joint blends.
-// Colours live in one shared palette Texture2D (each part's UVs point at its texel); the jersey fabric is a second
-// submesh with a knit texture; numbers and names are small quads painted from a built-in bitmap font.
+// The geometry (lofted anatomy, painted uniform, face, hair, shoes, prints) comes from RigMesh.cs (UnityEngine-free,
+// tested by unity/CoreTests/RigMeshCheck.cs); here it becomes a Mesh: colours live in one shared palette Texture2D
+// (each vertex's UV points at its texel), one submesh per material class (skin, jersey knit, prints, cloth/hair,
+// leather, gloss), jersey prints from a 512 atlas painted with a built-in bitmap font + outline.
 //
 // Frames: three.js is right-handed (W3 = [(x-470)*.1, z*.1, (y-250)*.1]); here Unity = three with Z flipped
 // (PhysXBall.U). So geometry is built exactly as rig3d builds it (three space, CCW fronts) and mirrored at the end
@@ -54,225 +55,6 @@ namespace Hoops.Game
         }
         static Quaternion EX(float x) => AX(-x);
 
-        // ---------------------------------------------------------------- geometry (three space)
-        sealed class Geo
-        {
-            public readonly List<Vector3> v = new(), n = new();
-            public readonly List<Vector2> uv = new();
-            public readonly List<int> t = new();
-            public Geo Clone()
-            {
-                var g = new Geo();
-                g.v.AddRange(v); g.n.AddRange(n); g.uv.AddRange(uv); g.t.AddRange(t);
-                return g;
-            }
-            public Geo Scale(float sx, float sy, float sz)
-            {
-                for (int i = 0; i < v.Count; i++)
-                {
-                    var a = v[i]; v[i] = new Vector3(a.x * sx, a.y * sy, a.z * sz);
-                    var b = n[i]; n[i] = new Vector3(b.x / sx, b.y / sy, b.z / sz).normalized; // normal matrix
-                }
-                return this;
-            }
-            public Geo Move(float x, float y, float z)
-            {
-                var d = new Vector3(x, y, z);
-                for (int i = 0; i < v.Count; i++) v[i] += d;
-                return this;
-            }
-            public Geo Rot(int ax, float a)
-            {
-                float c = Mathf.Cos(a), s = Mathf.Sin(a);
-                for (int i = 0; i < v.Count; i++) { v[i] = R(v[i]); n[i] = R(n[i]); }
-                return this;
-                Vector3 R(Vector3 q) => ax == 0 ? new Vector3(q.x, q.y * c - q.z * s, q.y * s + q.z * c)
-                    : ax == 1 ? new Vector3(q.x * c + q.z * s, q.y, -q.x * s + q.z * c)
-                    : new Vector3(q.x * c - q.y * s, q.x * s + q.y * c, q.z);
-            }
-            /// <summary>Orient every triangle so its front (CCW) agrees with its vertex normals.</summary>
-            public Geo FixWinding()
-            {
-                for (int i = 0; i < t.Count; i += 3)
-                {
-                    Vector3 a = v[t[i]], b = v[t[i + 1]], c = v[t[i + 2]],
-                        fn = Vector3.Cross(b - a, c - a), vn = n[t[i]] + n[t[i + 1]] + n[t[i + 2]];
-                    if (Vector3.Dot(fn, vn) < 0) { int k = t[i + 1]; t[i + 1] = t[i + 2]; t[i + 2] = k; }
-                }
-                return this;
-            }
-            public void Tri(int a, int b, int c) { t.Add(a); t.Add(b); t.Add(c); }
-            public int Vert(Vector3 p, Vector3 nn, float u = 0, float w = 0) { v.Add(p); n.Add(nn); uv.Add(new Vector2(u, w)); return v.Count - 1; }
-        }
-
-        /// <summary>THREE.SphereGeometry(1, ws, hs).</summary>
-        static Geo Sphere(int ws, int hs)
-        {
-            var g = new Geo();
-            for (int iy = 0; iy <= hs; iy++)
-            {
-                float vv = iy / (float)hs, th = vv * Mathf.PI;
-                for (int ix = 0; ix <= ws; ix++)
-                {
-                    float u = ix / (float)ws, ph = u * 2 * Mathf.PI;
-                    var p = new Vector3(-Mathf.Cos(ph) * Mathf.Sin(th), Mathf.Cos(th), Mathf.Sin(ph) * Mathf.Sin(th));
-                    g.Vert(p, p, u, 1 - vv);
-                }
-            }
-            int W = ws + 1;
-            for (int iy = 0; iy < hs; iy++)
-                for (int ix = 0; ix < ws; ix++)
-                {
-                    int a = iy * W + ix + 1, b = iy * W + ix, c = (iy + 1) * W + ix, d = (iy + 1) * W + ix + 1;
-                    if (iy != 0) g.Tri(a, b, d);
-                    if (iy != hs - 1) g.Tri(b, c, d);
-                }
-            return g.FixWinding();
-        }
-        /// <summary>THREE.LatheGeometry of [radius, y] pairs (normals point outward whichever way the profile runs:
-        /// rig3d's limb profiles run top-down, which three lathes inside out).</summary>
-        static Geo Lathe(float[,] pr, int seg)
-        {
-            int np = pr.GetLength(0);
-            var g = new Geo();
-            var nr = new Vector2[np];
-            float sgn = pr[np - 1, 1] >= pr[0, 1] ? 1 : -1;
-            Vector2 prev = Vector2.zero;
-            for (int j = 0; j < np; j++)
-            {
-                if (j == np - 1) { nr[j] = prev.normalized; break; }
-                float dx = pr[j + 1, 0] - pr[j, 0], dy = pr[j + 1, 1] - pr[j, 1];
-                var cur = new Vector2(dy, -dx) * sgn;
-                nr[j] = (j == 0 ? cur : cur + prev).normalized;
-                prev = cur;
-            }
-            for (int i = 0; i <= seg; i++)
-            {
-                float phi = i / (float)seg * 2 * Mathf.PI, s = Mathf.Sin(phi), c = Mathf.Cos(phi);
-                for (int j = 0; j < np; j++)
-                    g.Vert(new Vector3(pr[j, 0] * s, pr[j, 1], pr[j, 0] * c), new Vector3(nr[j].x * s, nr[j].y, nr[j].x * c).normalized, i / (float)seg, j / (float)(np - 1));
-            }
-            for (int i = 0; i < seg; i++)
-                for (int j = 0; j < np - 1; j++)
-                {
-                    int a = j + i * np, b = a + np, c = a + np + 1, d = a + 1;
-                    g.Tri(a, b, d);
-                    g.Tri(c, d, b);
-                }
-            return g.FixWinding();
-        }
-        /// <summary>THREE.TorusGeometry(R, r, radial, tubular) (ring in the XY plane).</summary>
-        static Geo Torus(float R, float r, int radial, int tubular)
-        {
-            var g = new Geo();
-            for (int j = 0; j <= radial; j++)
-                for (int i = 0; i <= tubular; i++)
-                {
-                    float u = i / (float)tubular * 2 * Mathf.PI, v = j / (float)radial * 2 * Mathf.PI;
-                    var p = new Vector3((R + r * Mathf.Cos(v)) * Mathf.Cos(u), (R + r * Mathf.Cos(v)) * Mathf.Sin(u), r * Mathf.Sin(v));
-                    var c = new Vector3(R * Mathf.Cos(u), R * Mathf.Sin(u), 0);
-                    g.Vert(p, (p - c).normalized);
-                }
-            for (int j = 1; j <= radial; j++)
-                for (int i = 1; i <= tubular; i++)
-                {
-                    int a = (tubular + 1) * j + i - 1, b = (tubular + 1) * (j - 1) + i - 1, c = (tubular + 1) * (j - 1) + i, d = (tubular + 1) * j + i;
-                    g.Tri(a, b, d);
-                    g.Tri(b, c, d);
-                }
-            return g.FixWinding();
-        }
-        /// <summary>THREE.CylinderGeometry(rt, rb, h, radial) with caps.</summary>
-        static Geo Cylinder(float rt, float rb, float h, int radial)
-        {
-            var g = new Geo();
-            float slope = (rb - rt) / h;
-            for (int y = 0; y < 2; y++)
-                for (int i = 0; i <= radial; i++)
-                {
-                    float th = i / (float)radial * 2 * Mathf.PI, r = y == 0 ? rt : rb, s = Mathf.Sin(th), c = Mathf.Cos(th);
-                    g.Vert(new Vector3(r * s, y == 0 ? h / 2 : -h / 2, r * c), new Vector3(s, slope, c).normalized);
-                }
-            for (int i = 0; i < radial; i++) { int a = i, b = i + radial + 1; g.Tri(a, b, a + 1); g.Tri(b, b + 1, a + 1); }
-            for (int y = 0; y < 2; y++)
-            {
-                float yy = y == 0 ? h / 2 : -h / 2, r = y == 0 ? rt : rb;
-                var nn = new Vector3(0, y == 0 ? 1 : -1, 0);
-                int c0 = g.Vert(new Vector3(0, yy, 0), nn);
-                for (int i = 0; i <= radial; i++)
-                {
-                    float th = i / (float)radial * 2 * Mathf.PI;
-                    g.Vert(new Vector3(r * Mathf.Sin(th), yy, r * Mathf.Cos(th)), nn);
-                }
-                for (int i = 0; i < radial; i++) g.Tri(c0, c0 + 1 + i, c0 + 2 + i);
-            }
-            return g.FixWinding();
-        }
-        /// <summary>rig3d roundBox: BoxGeometry(w, h, d, 2, 2, 2) with chamfered edges (r = 28% of the thinnest side) and
-        /// three's computeVertexNormals (each face's 3x3 grid shares its vertices).</summary>
-        static Geo RoundBox(float w, float h, float d)
-        {
-            var g = new Geo();
-            var half = new Vector3(w / 2, h / 2, d / 2);
-            float r = Mathf.Min(w, Mathf.Min(h, d)) * 0.28f;
-            for (int ax = 0; ax < 3; ax++)
-                for (int sd = -1; sd <= 1; sd += 2)
-                {
-                    int ua = (ax + 1) % 3, va = (ax + 2) % 3, b0 = g.v.Count;
-                    for (int j = 0; j <= 2; j++)
-                        for (int i = 0; i <= 2; i++)
-                        {
-                            var p = Vector3.zero;
-                            p[ax] = sd * half[ax];
-                            p[ua] = (i - 1) * half[ua];
-                            p[va] = (j - 1) * half[va];
-                            // chamfer: pull the point onto a sphere of radius r around the clamped inner box
-                            var cc = new Vector3(Mathf.Clamp(p.x, -half.x + r, half.x - r), Mathf.Clamp(p.y, -half.y + r, half.y - r), Mathf.Clamp(p.z, -half.z + r, half.z - r));
-                            var off = p - cc;
-                            if (off.sqrMagnitude > 1e-9f) off = off.normalized * r;
-                            g.Vert(cc + off, Vector3.zero);
-                        }
-                    var outw = Vector3.zero;
-                    outw[ax] = sd;
-                    for (int j = 0; j < 2; j++)
-                        for (int i = 0; i < 2; i++)
-                        {
-                            int a = b0 + j * 3 + i, b = a + 1, c = a + 4, e = a + 3;
-                            // orient by the flat face direction, then accumulate area-weighted normals
-                            Vector3 pa = Flat(a), pb = Flat(b), pc = Flat(c);
-                            bool flip = Vector3.Dot(Vector3.Cross(pb - pa, pc - pa), outw) < 0;
-                            if (flip) { g.Tri(a, c, b); g.Tri(a, e, c); } else { g.Tri(a, b, c); g.Tri(a, c, e); }
-                        }
-                    Vector3 Flat(int k) { int jj = (k - b0) / 3, ii = (k - b0) % 3; var q = Vector3.zero; q[ua] = ii; q[va] = jj; return q; }
-                }
-            for (int i = 0; i < g.t.Count; i += 3)
-            {
-                int a = g.t[i], b = g.t[i + 1], c = g.t[i + 2];
-                var fn = Vector3.Cross(g.v[b] - g.v[a], g.v[c] - g.v[a]);
-                g.n[a] += fn; g.n[b] += fn; g.n[c] += fn;
-            }
-            for (int i = 0; i < g.n.Count; i++) g.n[i] = g.n[i].sqrMagnitude > 1e-12f ? g.n[i].normalized : Vector3.up;
-            return g;
-        }
-        /// <summary>THREE.PlaneGeometry(w, h) (normal +z) with UVs into a rectangle of the decal atlas.</summary>
-        static Geo Plane(float w, float h, Rect uv)
-        {
-            var g = new Geo();
-            var nn = new Vector3(0, 0, 1);
-            g.Vert(new Vector3(-w / 2, -h / 2, 0), nn, uv.xMin, uv.yMin);
-            g.Vert(new Vector3(w / 2, -h / 2, 0), nn, uv.xMax, uv.yMin);
-            g.Vert(new Vector3(w / 2, h / 2, 0), nn, uv.xMax, uv.yMax);
-            g.Vert(new Vector3(-w / 2, h / 2, 0), nn, uv.xMin, uv.yMax);
-            g.Tri(0, 1, 2);
-            g.Tri(0, 2, 3);
-            return g;
-        }
-        static float[,] Pr(params float[] a)
-        {
-            var r = new float[a.Length / 2, 2];
-            for (int i = 0; i < a.Length / 2; i++) { r[i, 0] = a[2 * i]; r[i, 1] = a[2 * i + 1]; }
-            return r;
-        }
 
         // ---------------------------------------------------------------- colours
         /// <summary>three's Color(hex) (linear). Vertex colours then take one more sRGB->linear step on purpose (rig3d):
@@ -282,8 +64,6 @@ namespace Hoops.Game
             if (hex == null || !ColorUtility.TryParseHtmlString(hex, out var c)) c = Color.gray;
             return c.linear;
         }
-        static Color Shade(Color c, float k) => new Color(Mathf.Clamp01(c.r * k), Mathf.Clamp01(c.g * k), Mathf.Clamp01(c.b * k), 1);
-        static bool IsDark(Color c) => c.r * 0.3f + c.g * 0.59f + c.b * 0.11f < 0.45f;
 
         const int PALN = 64;
         static Texture2D palette;
@@ -311,8 +91,10 @@ namespace Hoops.Game
         static bool palDirty;
 
         // ---------------------------------------------------------------- materials
+        // submeshes: 0 skin + lips, 1 jersey knit, 2 prints, 3 cloth / hair / rubber, 4 shoe leather, 5 gloss (eyes, teeth)
+        const int SUBS = 6;
         static Shader lit;
-        static Material bodyMat;
+        static Material skinMat, clothMat, leatherMat, glossMat;
         static Texture2D knitA, knitN;
         static readonly Dictionary<Color32, Material> jerseyMats = new();
         static Material NewLit(float smooth, float metal)
@@ -334,16 +116,18 @@ namespace Hoops.Game
             m.color = c;
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
         }
-        static Material BodyMat()
+        /// <summary>Palette-coloured materials per class (roughness: skin .52, cloth/hair .85, leather .4, gloss .16 - the
+        /// browser's data-texture swatches).</summary>
+        static Material PalMat(ref Material m, string name, float smooth)
         {
-            if (bodyMat == null)
+            if (m == null)
             {
-                bodyMat = NewLit(0.28f, 0.02f); // roughness .72
-                bodyMat.name = "RigBody";
+                m = NewLit(smooth, 0f);
+                m.name = name;
             }
             if (palDirty) { palette.Apply(false); palDirty = false; }
-            SetMap(bodyMat, palette);
-            return bodyMat;
+            SetMap(m, palette);
+            return m;
         }
         /// <summary>Jersey mesh fabric: tiling knit of little ventilation holes (albedo + normal map from the height).</summary>
         static void Knit()
@@ -368,8 +152,8 @@ namespace Hoops.Game
                         }
                     hgt[y * N + x] = hv;
                 }
-            knitA = new Texture2D(N, N, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4, name = "Knit" };
-            knitN = new Texture2D(N, N, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4, name = "KnitN" };
+            knitA = new Texture2D(N, N, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8, name = "Knit" };
+            knitN = new Texture2D(N, N, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 8, name = "KnitN" };
             var a = new Color32[N * N];
             var nm = new Color32[N * N];
             for (int y = 0; y < N; y++)
@@ -380,7 +164,6 @@ namespace Hoops.Game
                     float dx = (hgt[y * N + (x + 1) % N] - hgt[y * N + (x + N - 1) % N]) * 1.6f,
                         dy = (hgt[((y + 1) % N) * N + x] - hgt[((y + N - 1) % N) * N + x]) * 1.6f;
                     var n = new Vector3(-dx, -dy, 1).normalized;
-                    // r = x, g = y, b = z, a = 1: decodes right with both the RGB and the RG-or-AG unpack paths
                     nm[y * N + x] = new Color32((byte)(n.x * 127.5f + 127.5f), (byte)(n.y * 127.5f + 127.5f), (byte)(n.z * 127.5f + 127.5f), 255);
                 }
             knitA.SetPixels32(a);
@@ -393,7 +176,7 @@ namespace Hoops.Game
             Color32 k = lin;
             if (jerseyMats.TryGetValue(k, out var m)) return m;
             Knit();
-            m = NewLit(0.3f, 0.02f);
+            m = NewLit(0.2f, 0.02f);
             m.name = "Jersey";
             SetMap(m, knitA);
             SetCol(m, lin); // = linear(linear(hex)) after Unity's own sRGB->linear on the colour (matches the palette)
@@ -408,7 +191,7 @@ namespace Hoops.Game
         }
         static Material DecalMat(Texture2D t)
         {
-            var m = NewLit(0.25f, 0f);
+            var m = NewLit(0.38f, 0f);
             m.name = "JerseyPrint";
             SetMap(m, t);
             SetCol(m, Color.white);
@@ -419,7 +202,6 @@ namespace Hoops.Game
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
             return m;
         }
-
         // ---------------------------------------------------------------- jersey prints (tiny bitmap font)
         // 5x7 glyphs, one row per entry, bit 4 = leftmost column
         static readonly Dictionary<char, int[]> FONT = new()
@@ -473,91 +255,93 @@ namespace Hoops.Game
                     if (hit > 0) A[y * W + x] = Mathf.Max(A[y * W + x], hit / 16f);
                 }
         }
-        // decal atlas (256 x 256): number = left half of the top half, wordmark = second quarter, name = bottom quarter
-        static readonly Rect UV_NUM = new Rect(0, 0.5f, 0.5f, 0.5f), UV_WORD = new Rect(0, 0.25f, 1, 0.25f), UV_NAME = new Rect(0, 0, 1, 0.25f);
-        static Texture2D PrintTex(string no, string word, string name)
+
+        /// <summary>Jersey print atlas (512 x 512, rig3d's layout): number top-left 256 x 256, wordmark row v .25-.5, name
+        /// row v 0-.25. Fill in the contrast colour with an outline in the team's secondary (dilated alpha), mipmapped +
+        /// anisotropic so the lettering stays crisp.</summary>
+        static Texture2D PrintTex(string no, string word, string name, Color fill, Color outline, int W)
         {
-            const int W = 256;
             var A = new float[W * W];
-            Text(A, W, no, 0, 128, 128, 128, 84, 0);
-            Text(A, W, word, 0, 64, 256, 64, 34, 0.22f);
-            Text(A, W, name, 0, 0, 256, 64, 30, 0);
+            float s = W / 512f;
+            Text(A, W, no, 0, (int)(256 * s), (int)(256 * s), (int)(256 * s), 190 * s, 0);
+            Text(A, W, word, 0, (int)(128 * s), W, (int)(128 * s), 76 * s, 0.22f);
+            Text(A, W, name, 0, 0, W, (int)(128 * s), 64 * s, 0);
+            // outline: max filter of the fill alpha over a disc of radius r
+            int r = Math.Max(2, (int)(6 * s));
+            var O = new float[W * W];
+            var tmp = new float[W * W];
+            for (int y = 0; y < W; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    float m = 0;
+                    for (int d = -r; d <= r; d++) { int xx = x + d; if (xx >= 0 && xx < W) m = Math.Max(m, A[y * W + xx]); }
+                    tmp[y * W + x] = m;
+                }
+            for (int y = 0; y < W; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    float m = 0;
+                    for (int d = -r; d <= r; d++) { int yy = y + d; if (yy >= 0 && yy < W) m = Math.Max(m, tmp[yy * W + x]); }
+                    O[y * W + x] = m;
+                }
             var px = new Color32[W * W];
-            for (int i = 0; i < px.Length; i++) px[i] = new Color32(255, 255, 255, (byte)(A[i] * 255));
-            var t = new Texture2D(W, W, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4, name = "Print " + name };
+            for (int i = 0; i < px.Length; i++)
+            {
+                var c = Color.Lerp(outline, fill, A[i]);
+                c.a = Math.Max(A[i], O[i]);
+                px[i] = c;
+            }
+            var t = new Texture2D(W, W, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 8, name = "Print " + name };
             t.SetPixels32(px);
             t.Apply(true, true);
             return t;
         }
 
         // ---------------------------------------------------------------- build
-        struct Blend { public int to; public float from, len, max; public bool end; public bool on; }
-        static Blend Bl(int to, float from, float len, bool end, float max = 0.5f) => new Blend { to = to, from = from, len = len, end = end, max = max, on = true };
-        sealed class Part { public Geo g; public Color col; public int bone, sub; public Blend b1, b2; }
-
-        static readonly int[] PARENT = { -1, HIPS, HIPS, HIPS, TL, TR, CH, CH, SL, SR, EL, ER, BD, CH, NK, KL, KR, WL, WR, HIPS, HIPS, AL, AR, BD, HD, HD, HD, HD, HD, HD, HD, HD, HD, HD, HD };
         static readonly string[] NAMES = { "hips", "bd", "tl", "tr", "kl", "kr", "sL", "sR", "eL", "eR", "wL", "wR", "ch", "nk", "hd", "al", "ar", "gL", "gR", "flL", "flR", "tfL", "tfR", "hem", "jw", "mi", "mo", "cL", "cR", "brL", "brR", "lL", "lR", "yL", "yR" };
-        /// <summary>Rest offsets of every bone from its parent, in three space (rig3d makeRig).</summary>
-        static Vector3[] Offsets(float k)
-        {
-            var R = RIG;
-            float HB = (float)(R.chest + R.neck + R.head), F0 = 0.12f;
-            Vector3 FB(float x, float y, float z) => new Vector3(x, y - HB, z);
-            return new[]
-            {
-                Vector3.zero, new Vector3(0, (float)R.hip, 0), new Vector3(-(float)R.hipX, (float)R.hip, 0), new Vector3((float)R.hipX, (float)R.hip, 0),
-                new Vector3(0, -L1, 0), new Vector3(0, -L1, 0), new Vector3(-(float)R.shX * k, (float)R.sh, 0), new Vector3((float)R.shX * k, (float)R.sh, 0),
-                new Vector3(0, -(float)R.ua, 0), new Vector3(0, -(float)R.ua, 0), new Vector3(0, -(float)R.fa, 0), new Vector3(0, -(float)R.fa, 0),
-                new Vector3(0, (float)R.chest, 0), new Vector3(0, (float)R.neck, 0), new Vector3(0, (float)R.head, 0),
-                new Vector3(0, -L2, 0), new Vector3(0, -L2, 0), new Vector3(0, -(float)R.fing, 0), new Vector3(0, -(float)R.fing, 0),
-                new Vector3(-(float)R.hipX, (float)R.hip, 0), new Vector3((float)R.hipX, (float)R.hip, 0),
-                new Vector3(0, -0.16f, 0.36f), new Vector3(0, -0.16f, 0.36f), new Vector3(0, -0.05f, 0),
-                FB(0, 2.64f, 0.02f), FB(0, 2.556f, 0.31f), FB(0, 2.565f, 0.365f), FB(-0.08f, 2.562f, 0.36f), FB(0.08f, 2.562f, 0.36f),
-                FB(-F0 - 0.01f, 2.9f, 0.34f), FB(F0 + 0.01f, 2.9f, 0.34f), FB(-F0 - 0.01f, 2.852f, 0.33f), FB(F0 + 0.01f, 2.852f, 0.33f),
-                FB(-F0 - 0.01f, 2.8f, 0.355f), FB(F0 + 0.01f, 2.8f, 0.355f),
-            };
-        }
 
         /// <summary>Cached per-look meshes and print materials (a rematch or a returning sub rebuilds only the bones).</summary>
         sealed class Look { public Mesh mesh; public Material[] mats; }
         static readonly Dictionary<string, Look> looks = new();
 
-        static string Key(Player p) => $"{p.n}|{p.col}|{p.skin}|{p.no}|{p.hr}|{p.bd}|{p.bk}|{(p.tm >= 0 && p.tm < 2 ? Sim.cl[(int)p.tm] : "")}|{p.sg?.hs}";
+        static string Word(Player p) => p.tm >= 0 && p.tm < 2 ? Sim.cl[(int)p.tm] : "";
+        static string Key(Player p, int lod) => $"{p.n}|{p.col}|{p.skin}|{p.no}|{p.hr}|{p.bd}|{p.bk}|{Word(p)}|{p.sg?.hs}|{lod}";
 
-        public static PlayerRig Build(Player p, Transform parent)
+        /// <summary>lod: 1 = High-tier detail, 0 = Low / Medium (about 40% of the triangles); -1 = from Arena.QL.</summary>
+        public static PlayerRig Build(Player p, Transform parent, int lod = -1)
         {
+            if (lod < 0) lod = Arena.QL >= 2 ? 1 : 0;
             var r = new PlayerRig { p = p };
-            float k = (float)p.bk;
-            var off = Offsets(k);
+            var off = RigMesh.Offsets(p.bk);
             r.go = new GameObject("Rig " + p.n);
             r.G = r.go.transform;
             r.G.SetParent(parent, false);
             for (int i = 0; i < NB; i++)
             {
                 var t = new GameObject(NAMES[i]).transform;
-                t.SetParent(PARENT[i] < 0 ? r.G : r.bn[PARENT[i]], false);
+                t.SetParent(RigMesh.PARENT[i] < 0 ? r.G : r.bn[RigMesh.PARENT[i]], false);
                 var o = off[i];
-                t.localPosition = new Vector3(o.x, o.y, -o.z);
+                t.localPosition = new Vector3(o.X, o.Y, -o.Z);
                 r.bn[i] = t;
             }
-            string key = Key(p);
+            string key = Key(p, lod);
             if (!looks.TryGetValue(key, out var look))
             {
                 look = new Look();
-                look.mesh = MakeMesh(p, off, out var jersey, out var print);
+                look.mesh = MakeMesh(p, lod, out var print);
                 var bp = new Matrix4x4[NB];
                 for (int i = 0; i < NB; i++) bp[i] = r.bn[i].worldToLocalMatrix * r.G.localToWorldMatrix;
                 look.mesh.bindposes = bp;
-                look.mats = new[] { BodyMat(), JerseyMat(jersey), DecalMat(print) };
+                look.mats = new[] { PalMat(ref skinMat, "RigSkin", 0.48f), JerseyMat(Lin(p.col)), DecalMat(print), PalMat(ref clothMat, "RigCloth", 0.15f), PalMat(ref leatherMat, "RigLeather", 0.6f), PalMat(ref glossMat, "RigGloss", 0.84f) };
                 looks[key] = look;
             }
-            else BodyMat();
+            else if (palDirty) { palette.Apply(false); palDirty = false; }
             var smr = r.smr = r.go.AddComponent<SkinnedMeshRenderer>();
             smr.sharedMesh = look.mesh;
             smr.bones = r.bn;
             smr.rootBone = r.bn[HIPS];
             smr.sharedMaterials = look.mats;
-            smr.localBounds = new Bounds(new Vector3(0, 3.6f, 0), new Vector3(9, 10, 9));
+            smr.localBounds = new Bounds(new Vector3(0, 3.6f, 0), new Vector3(9, 10, 9)); // RigMeshCheck keeps every vertex inside
             smr.updateWhenOffscreen = false;
             smr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             smr.receiveShadows = true;
@@ -574,227 +358,67 @@ namespace Hoops.Game
             go = null;
         }
 
-        static Mesh MakeMesh(Player p, Vector3[] off, out Color jersey, out Texture2D print)
+        /// <summary>RigMesh (three space) -> Unity Mesh: palette UVs per vertex colour (knit / prints keep their UVs),
+        /// one submesh per material class, z mirrored into Unity's frame (fronts stay fronts: Unity fronts are clockwise).</summary>
+        static Mesh MakeMesh(Player p, int lod, out Texture2D print)
         {
-            float k = (float)p.bk;
-            // bone rest positions (three model space)
-            var bp = new Vector3[NB];
-            for (int i = 0; i < NB; i++) bp[i] = (PARENT[i] < 0 ? Vector3.zero : bp[PARENT[i]]) + off[i];
-            var parts = new List<Part>();
-            void put(Geo g0, Color col, int bone, float x, float y, float z, float sx = 1, float sy = 1, float sz = 1, Blend b1 = default, Blend b2 = default, int sub = 0)
+            var D = RigMesh.Build(p, lod);
+            var LK = D.look;
+            int nv = D.v.Count;
+            var V = new Vector3[nv];
+            var N = new Vector3[nv];
+            var UV = new Vector2[nv];
+            var BW = new BoneWeight[nv];
+            var T = new List<int>[SUBS];
+            for (int s = 0; s < SUBS; s++) T[s] = new List<int>();
+            var palC = new Dictionary<string, Vector2>();
+            int[] sub = new int[nv];
+            for (int i = 0; i < nv; i++)
             {
-                var g = g0.Clone().Scale(sx, sy, sz).Move(x + bp[bone].x, y + bp[bone].y, z + bp[bone].z);
-                parts.Add(new Part { g = g, col = col, bone = bone, b1 = b1, b2 = b2, sub = sub });
-            }
-            // place by the position relative to the PELVIS bone (rig3d putT)
-            void putT(Geo g0, Color col, int bone, float x, float y, float z, float sx = 1, float sy = 1, float sz = 1)
-                => put(g0, col, bone, x - bp[bone].x, y - (bp[bone].y - bp[BD].y), z - bp[bone].z, sx, sy, sz);
-            Geo limb(int seg, params float[] pr) => Lathe(Pr(pr), seg);
-            // spheres: three's 24 x 16 for the big parts, fewer segments for small features (same shapes)
-            Geo s24 = Sphere(24, 16), s16 = Sphere(16, 10), s10 = Sphere(10, 6);
-            Geo sph(float m) => m >= 0.2f ? s24 : m >= 0.08f ? s16 : s10;
-            void putS(Color col, int bone, float x, float y, float z, float sx, float sy, float sz) => putT(sph(Mathf.Max(sx, Mathf.Max(sy, sz))), col, bone, x, y, z, sx, sy, sz);
-            Geo box(float w, float h, float d) => RoundBox(w, h, d);
-            Geo ring(float r2, float t) => Torus(r2, t, 6, 24).Rot(0, Mathf.PI / 2);
-
-            Color sk = Lin(p.skin), col = Lin(p.col);
-            jersey = col;
-            Color hc = Lin(string.Equals(p.skin, "#e8b88f", StringComparison.OrdinalIgnoreCase) ? "#3d2a18" : "#121212");
-            // personal style (deterministic per player, rig3d's name hash)
-            uint h = 0;
-            var nm = p.n ?? "";
-            for (int i = 0; i < nm.Length; i++)
-            {
-                h = unchecked(h * 31 + nm[i]);
-                if (char.IsHighSurrogate(nm[i])) i++; // JS for-of walks code points, charCodeAt(0) = the high surrogate
-            }
-            Color trim = Lin(IsDark(col) ? "#f2f2f2" : "#16161c");
-            uint shoeKind = h % 4;
-            Color shoe = shoeKind == 1 ? col : shoeKind == 2 ? Lin("#141414") : Lin("#f6f6f6"),
-                sole = shoeKind == 2 ? Lin("#202020") : Lin("#f4f4f4"),
-                accent = h % 2 != 0 ? col : Lin("#e8541e"),
-                sock = h % 5 == 0 ? Lin("#141414") : Lin("#f4f4f4"),
-                white = Lin("#f8f8f8");
-            bool headband = h % 7 == 0, hasSleeve = h % 4 == 1;
-            Color sleeve = h % 8 < 4 ? Lin("#141414") : Lin("#f2f2f2");
-
-            // ---- legs ----
-            for (int s = 0; s < 2; s++)
-            {
-                int t = s == 0 ? TL : TR, kn = s == 0 ? KL : KR, fb = s == 0 ? FLL : FLR, an = s == 0 ? AL : AR, tfb = s == 0 ? TFL : TFR;
-                float sd = s == 0 ? -1 : 1;
-                put(limb(16, 0f, 0.05f, 0.25f, 0f, 0.27f, -0.4f, 0.25f, -0.9f, 0.19f, -1.45f, 0.17f, -1.62f, 0f, -1.66f), sk, t, 0, 0, 0, b1: Bl(kn, -L1, 0.45f, true));
-                var flap = Bl(fb, -0.86f, 0.62f, true, 0.85f);
-                put(limb(18, 0f, 0.12f, 0.34f * k, 0.1f, 0.37f * k, -0.4f, 0.39f * k, -0.86f, 0f, -0.88f), col, t, 0, 0, 0, b1: flap);
-                put(box(0.05f, 0.8f, 0.16f), trim, t, sd * 0.37f * k, -0.42f, 0, b1: flap);
-                put(limb(16, 0f, 0.08f, 0.16f, 0.05f, 0.17f, -0.25f, 0.19f, -0.5f, 0.15f, -0.95f, 0.11f, -1.35f, 0f, -1.42f), sk, kn, 0, 0, -0.02f, b1: Bl(t, 0, 0.4f, false));
-                put(limb(12, 0.13f, -1.12f, 0.135f, -1.48f, 0f, -1.5f), sock, kn, 0, 0, 0);
-                put(box(0.39f, 0.27f, 0.82f), shoe, an, 0, 0, 0.14f);
-                put(box(0.41f, 0.07f, 0.85f), sole, an, 0, -0.13f, 0.14f);
-                put(box(0.4f, 0.035f, 0.86f), Shade(sole, 0.55f), an, 0, -0.18f, 0.14f);
-                put(box(0.36f, 0.1f, 0.24f), shoeKind == 3 ? col : Shade(shoe, 0.88f), tfb, 0, 0.12f, 0.11f);
-                put(box(0.06f, 0.13f, 0.46f), shoeKind == 3 ? col : accent, an, sd * 0.2f, 0.02f, 0.12f);
-                put(box(0.22f, 0.16f, 0.07f), accent, an, 0, 0.08f, -0.27f);
-                for (int li = 0; li < 3; li++) put(box(0.2f, 0.025f, 0.035f), white, an, 0, 0.14f - li * 0.012f, 0.26f + li * 0.09f);
-            }
-            // ---- torso (jersey fabric submesh): pelvis below the waist, chest above, hem on its spring bone ----
-            var torso = Lathe(Pr(0f, -0.5f, 0.86f, -0.47f, 0.92f, 0.1f, 0.97f, 0.7f, 1.06f, 1.15f, 1.0f, 1.42f, 0.66f, 1.6f, 0f, 1.64f), 24);
-            for (int i = 0; i < torso.uv.Count; i++) torso.uv[i] = new Vector2(torso.uv[i].x * 40, torso.uv[i].y * 26); // knit tiling
-            put(torso, col, BD, 0, 0.3f, 0, 0.62f * k, 1, 0.42f * k, Bl(CH, 1.25f, 0.6f, false, 1), Bl(HEM, 0.05f, 0.35f, true, 0.7f), 1);
-            putT(ring(0.3f, 0.05f), trim, CH, 0, 1.9f, 0.03f, 1, 1, 0.9f); // collar
-            for (int s = -1; s <= 1; s += 2) put(box(0.05f, 1.55f, 0.3f * k), trim, BD, s * 0.6f * k, 0.75f, 0, b1: Bl(CH, 1.25f, 0.6f, false, 1)); // side panels
-            put(Torus(0.56f * k, 0.06f, 6, 28).Rot(0, Mathf.PI / 2), trim, BD, 0, -0.12f, 0, 1, 1, 0.72f); // waistband
-            for (int s = -1; s <= 1; s += 2) putT(Torus(0.29f * k, 0.045f, 6, 20).Rot(1, Mathf.PI / 2), trim, CH, s * 0.86f * k * 0.95f, 1.78f, 0); // armholes
-            putT(limb(16, 0f, 0f, 0.16f, -0.02f, 0.15f, 0.35f, 0f, 0.38f), sk, NK, 0, 2.02f, 0); // neck
-            // ---- head: per-player face from the name (stylised, no likenesses) ----
-            uint fh = h ^ 0x9e3779b9;
-            float fr() { fh = unchecked((fh ^ (fh >> 15)) * 2246822507u); return fh % 1000 / 1000f; }
-            float Fw = 0.92f + fr() * 0.16f, Fjw = 0.9f + fr() * 0.25f, Fjl = 0.9f + fr() * 0.25f, Fnw = 0.85f + fr() * 0.45f, Fnl = 0.85f + fr() * 0.35f,
-                Feg = 0.12f + fr() * 0.03f, Fbr = 0.03f + fr() * 0.03f, Fba = (fr() - 0.5f) * 0.25f, Fea = 0.85f + fr() * 0.35f, Flp = 0.8f + fr() * 0.5f;
-            var sf = p.sg?.face;
-            if (sf != null)
-            {
-                Fw = (float)(sf.w ?? Fw); Fjw = (float)(sf.jw ?? Fjw); Fjl = (float)(sf.jl ?? Fjl); Fnw = (float)(sf.nw ?? Fnw); Fnl = (float)(sf.nl ?? Fnl);
-                Feg = (float)(sf.eg ?? Feg); Fbr = (float)(sf.br ?? Fbr); Fba = (float)(sf.ba ?? Fba); Fea = (float)(sf.ea ?? Fea); Flp = (float)(sf.lp ?? Flp);
-            }
-            putS(sk, HD, 0, 2.74f, 0, 0.36f * Fw, 0.43f, 0.39f); // skull
-            putS(sk, JW, 0, 2.55f - (Fjl - 1) * 0.05f, 0.08f, 0.27f * Fjw, 0.22f * Fjl, 0.3f); // jaw (opens on its hinge)
-            putS(Lin("#3a1416"), MI, 0, 2.5f, 0.315f, 0.072f, 0.056f, 0.05f); // mouth interior
-            putT(box(0.11f, 0.022f, 0.02f), Lin("#f2efe6"), MI, 0, 2.548f, 0.352f); // upper teeth
-            putT(box(0.1f, 0.02f, 0.02f), Lin("#e8e4da"), MI, 0, 2.452f, 0.345f); // lower teeth
-            for (int s = -1; s <= 1; s += 2)
-            {
-                int yb = s < 0 ? YL : YR;
-                putS(sk, HD, s * 0.36f * Fw, 2.72f, 0, 0.07f * Fea, 0.11f * Fea, 0.07f); // ear
-                putS(white, HD, s * Feg, 2.8f, 0.33f, 0.065f, 0.05f, 0.03f); // eye white
-                putS(Lin("#1a1410"), yb, s * Feg, 2.8f, 0.355f, 0.035f, 0.035f, 0.02f); // iris
-                putS(Lin("#ffffff"), yb, s * Feg + 0.012f, 2.812f, 0.372f, 0.009f, 0.009f, 0.006f); // catchlight
-                putT(box(0.15f, Fbr, 0.05f).Rot(2, -s * Fba), hc, s < 0 ? BRL : BRR, s * Feg, 2.9f, 0.34f); // brow
-                putS(Shade(sk, 0.86f), s < 0 ? LL : LR, s * Feg, 2.8f, 0.338f, 0.072f, 0.056f, 0.036f); // closing lid
-            }
-            putS(Shade(sk, 0.9f), HD, 0, 2.7f, 0.38f, 0.06f * Fnw, 0.09f * Fnl, 0.07f); // nose
-            putT(box(0.13f, 0.03f, 0.03f), Shade(sk, 0.55f), MO, 0, 2.565f, 0.365f); // mouth line
-            for (int s = -1; s <= 1; s += 2) putT(box(0.06f, 0.028f, 0.03f), Shade(sk, 0.5f), s < 0 ? CL : CR, s * 0.085f, 2.563f, 0.36f); // corners
-            putT(box(0.13f, 0.025f * Flp, 0.03f), Shade(sk, 0.75f), JW, 0, 2.54f, 0.36f); // lower lip
-            for (int s = -1; s <= 1; s += 2)
-            {
-                putT(box(0.13f, 0.025f, 0.03f), Shade(sk, 0.78f), HD, s * Feg, 2.835f, 0.335f); // upper eyelid
-                putS(Shade(sk, 1.05f), HD, s * 0.2f * Fw, 2.68f, 0.27f, 0.09f, 0.07f, 0.07f); // cheekbone
-            }
-            putS(Shade(sk, 0.96f), JW, 0, 2.43f - (Fjl - 1) * 0.06f, 0.2f, 0.13f * Fjw, 0.09f, 0.12f); // chin
-            // hair: cap high and back so the hairline frames the forehead
-            int sub = p.sg != null && p.sg.hs.HasValue ? (int)p.sg.hs.Value : ((int)h >> 3) % 3;
-            int hr = (int)p.hr;
-            if (hr == 1)
-            {
-                putS(hc, HD, 0, 2.95f, -0.08f, 0.385f * Fw, 0.3f, 0.415f);
-                if (sub == 0) putS(Shade(hc, 1.35f), HD, 0, 2.78f, -0.1f, 0.37f * Fw, 0.17f, 0.37f); // faded sides
-                if (sub == 1) for (int w = 0; w < 3; w++) putT(ring(0.2f + w * 0.06f, 0.012f), Shade(hc, 1.6f), HD, 0, 3.2f - w * 0.03f, -0.06f + w * 0.01f); // waves
-                if (sub == 2) putT(box(0.02f, 0.03f, 0.3f), Shade(sk, 0.85f), HD, 0.14f, 3.22f, 0); // part line
-            }
-            if (hr == 2)
-            {
-                putS(hc, HD, 0, 2.98f, -0.08f, 0.41f * Fw, 0.34f, 0.44f);
-                putS(hc, HD, 0, 2.82f, -0.2f, 0.4f * Fw, 0.32f, 0.3f); // back volume
-                putT(box(0.5f, 0.08f, 0.1f), hc, HD, 0, 3.08f, 0.22f); // swept fringe
-                if (p.sg != null && p.sg.hs == 1)
+                var v = D.v[i];
+                var n = D.n[i];
+                V[i] = new Vector3(v.X, v.Y, -v.Z);
+                N[i] = new Vector3(n.X, n.Y, -n.Z);
+                int cls = D.cls[i];
+                // the knit submesh is tinted by the jersey colour: other knit-class colours (side panels) use the palette
+                if (cls == 1 && !string.Equals(D.col[i], p.col, StringComparison.OrdinalIgnoreCase)) cls = 0;
+                sub[i] = cls < 0 ? 2 : cls == 1 ? 1 : cls == 2 || cls == 7 ? 0 : cls == 4 ? 4 : cls == 5 ? 5 : 3;
+                if (cls < 0 || cls == 1) UV[i] = new Vector2(D.u[i], D.w[i]);
+                else
                 {
-                    var lk = Cylinder(0.05f, 0.035f, 0.85f, 6);
-                    for (int d = 0; d < 9; d++)
-                    {
-                        float a = Mathf.PI * (0.25f + d / 8f * 1.5f);
-                        putT(lk, hc, HD, Mathf.Cos(a) * 0.36f, 2.5f, -Mathf.Abs(Mathf.Sin(a)) * 0.34f - 0.04f);
-                    }
+                    if (!palC.TryGetValue(D.col[i], out var puv)) palC[D.col[i]] = puv = PalUV(Lin(D.col[i]));
+                    UV[i] = puv;
                 }
+                int b = i * 4;
+                BW[i] = new BoneWeight
+                {
+                    boneIndex0 = D.bi[b], weight0 = D.bw[b],
+                    boneIndex1 = D.bi[b + 1], weight1 = D.bw[b + 1],
+                    boneIndex2 = D.bi[b + 2], weight2 = D.bw[b + 2],
+                };
             }
-            if (hr == 3)
+            void add(List<int> tl)
             {
-                putS(hc, HD, 0, 3.02f, -0.06f, 0.52f * Fw, 0.48f, 0.52f);
-                putS(Shade(hc, 1.15f), HD, 0, 3.16f, -0.04f, 0.42f, 0.3f, 0.42f);
+                for (int f = 0; f < tl.Count; f += 3) { var l = T[sub[tl[f]]]; l.Add(tl[f]); l.Add(tl[f + 1]); l.Add(tl[f + 2]); }
             }
-            if (p.bd != 0)
-            {
-                putS(hc, JW, 0, 2.46f - (Fjl - 1) * 0.05f, 0.16f, 0.29f * Fjw, 0.15f * Fjl, 0.2f); // jawline beard
-                for (int s = -1; s <= 1; s += 2) putS(hc, HD, s * 0.25f * Fjw, 2.6f, 0.14f, 0.07f, 0.14f, 0.14f); // sideburns
-                putT(box(0.22f, 0.045f, 0.05f), hc, HD, 0, 2.61f, 0.37f); // mustache
-            }
-            if (headband) putT(ring(0.375f, 0.05f), accent, HD, 0, 2.94f, 0, 1, 1, 1.05f);
-            // ---- arms ----
-            for (int s = 0; s < 2; s++)
-            {
-                int s2 = s == 0 ? SL : SR, e = s == 0 ? EL : ER, w = s == 0 ? WL : WR, fg = s == 0 ? GL : GR;
-                float sd = s == 0 ? -1 : 1;
-                Color arm = hasSleeve && sd < 0 ? sleeve : sk;
-                put(s24, sk, s2, 0, -0.02f, 0, 0.25f * k, 0.27f, 0.25f * k); // deltoid
-                put(limb(16, 0f, 0f, 0.16f * k, -0.05f, 0.17f * k, -0.4f, 0.13f * k, -0.85f, 0.12f * k, -1.04f, 0f, -1.08f), arm, s2, 0, 0, 0, b1: Bl(e, -1.02f, 0.35f, true));
-                put(limb(16, 0f, 0.04f, 0.13f * k, 0f, 0.14f * k, -0.3f, 0.1f * k, -0.9f, 0f, -0.98f), arm, e, 0, 0, 0, b1: Bl(s2, 0, 0.3f, false));
-                put(box(0.18f, 0.2f, 0.1f), sk, w, 0, -0.12f, 0.02f); // palm
-                put(box(0.17f, 0.16f, 0.07f), Shade(sk, 0.94f), fg, 0, -0.08f, 0.035f); // fingers
-                put(box(0.06f, 0.14f, 0.06f), sk, w, -sd * 0.1f, -0.12f, 0.07f); // thumb
-            }
-            // ---- jersey prints: number back + front, wordmark, name (rigid on the chest bone, chest-local offsets) ----
-            string no = p.no.ToString("0"), word = Plain(p.tm >= 0 && p.tm < 2 ? Sim.cl[(int)p.tm] : ""), last = Plain(nm);
+            foreach (var tl in D.tri) add(tl);
+            add(D.print);
+            // jersey prints
+            string no = p.no.ToString("0"), word = Plain(Word(p)), last = Plain(p.n ?? "");
             int sp = last.LastIndexOf(' ');
             if (sp >= 0) last = last.Substring(sp + 1);
             if (word.Length > 10) word = word.Substring(0, 10);
-            if (last.Length > 11) last = last.Substring(0, 11);
-            print = PrintTex(no, word, last);
-            float cy = -(float)RIG.chest;
-            Color pw = Color.white;
-            put(Plane(0.8f, 0.8f, UV_NUM).Rot(1, Mathf.PI), pw, CH, 0, 1.35f + cy, -0.47f * k, sub: 2);
-            put(Plane(0.95f, 0.24f, UV_WORD), pw, CH, 0, 1.72f + cy, 0.465f * k, sub: 2);
-            put(Plane(0.45f, 0.45f, UV_NUM), pw, CH, 0, 1.4f + cy, 0.47f * k, sub: 2);
-            put(Plane(1.4f, 0.35f, UV_NAME).Rot(1, Mathf.PI), pw, CH, 0, 1.88f + cy, -0.46f * k, sub: 2);
-
-            // ---- merge: skin weights (rig3d's eased two-bone blends), palette UVs, mirror into Unity's frame ----
-            var V = new List<Vector3>();
-            var N = new List<Vector3>();
-            var UV = new List<Vector2>();
-            var BW = new List<BoneWeight>();
-            var T = new[] { new List<int>(), new List<int>(), new List<int>() };
-            foreach (var pt in parts)
-            {
-                int b0 = V.Count;
-                var g = pt.g;
-                Vector2 puv = pt.sub == 0 ? PalUV(pt.col) : Vector2.zero;
-                for (int i = 0; i < g.v.Count; i++)
-                {
-                    float ly = g.v[i].y - bp[pt.bone].y, w2 = 0, w3 = 0;
-                    if (pt.b1.on)
-                    {
-                        var b = pt.b1;
-                        float u = Mathf.Clamp01(b.end ? (b.from + b.len - ly) / b.len : (ly - (b.from - b.len)) / b.len);
-                        w2 = b.max * u * u * (3 - 2 * u);
-                    }
-                    if (pt.b2.on)
-                    {
-                        var b = pt.b2;
-                        float u = Mathf.Clamp01((b.from + b.len - ly) / b.len);
-                        w3 = b.max * u * u * (3 - 2 * u) * (1 - w2);
-                    }
-                    BW.Add(new BoneWeight
-                    {
-                        boneIndex0 = pt.bone, weight0 = 1 - w2 - w3,
-                        boneIndex1 = pt.b1.on ? pt.b1.to : 0, weight1 = w2,
-                        boneIndex2 = pt.b2.on ? pt.b2.to : 0, weight2 = w3,
-                    });
-                    var v = g.v[i];
-                    var n = g.n[i];
-                    V.Add(new Vector3(v.x, v.y, -v.z));
-                    N.Add(new Vector3(n.x, n.y, -n.z));
-                    UV.Add(pt.sub == 0 ? puv : g.uv[i]);
-                }
-                var tl = T[pt.sub];
-                foreach (int ix in g.t) tl.Add(ix + b0);
-            }
-            var mesh = new Mesh { name = "Player " + nm };
-            if (V.Count > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-            mesh.SetVertices(V);
-            mesh.SetNormals(N);
-            mesh.SetUVs(0, UV);
-            mesh.boneWeights = BW.ToArray();
-            mesh.subMeshCount = 3;
-            for (int s = 0; s < 3; s++) mesh.SetTriangles(T[s], s);
+            if (last.Length > 12) last = last.Substring(0, 12);
+            string outline = Math.Abs(RigLook.Lum(LK.trim) - RigLook.Lum(LK.sec)) < 0.25 ? (RigLook.Lum(LK.trim) > 0.5 ? "#16161c" : "#ffffff") : LK.sec;
+            print = PrintTex(no, word, last, ColorUtility.TryParseHtmlString(LK.trim, out var fc) ? fc : Color.white, ColorUtility.TryParseHtmlString(outline, out var oc) ? oc : Color.black, 512);
+            var mesh = new Mesh { name = "Player " + p.n };
+            if (nv > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            mesh.vertices = V;
+            mesh.normals = N;
+            mesh.uv = UV;
+            mesh.boneWeights = BW;
+            mesh.subMeshCount = SUBS;
+            for (int s = 0; s < SUBS; s++) mesh.SetTriangles(T[s], s);
             mesh.RecalculateTangents();
             mesh.RecalculateBounds();
             mesh.UploadMeshData(false);
