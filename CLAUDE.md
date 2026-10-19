@@ -84,6 +84,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Crowd: instanced bodies/heads/arms/towels (stand by excitement threshold, the wave `waveT` after some buckets), 24 canvas
   signs, courtside row on chairs. Replay director camera (nearest player to the ball, low angle at the rim) + DOF.
   Polish: hoop parts shake on dunks (`hoopParts`), glint sprites, confetti when `S==='over'` (final screen waits 4 s).
+- Rig v6 (anatomy pass): each limb is one continuous lofted, skinned surface (chest/lats/biceps/triceps/forearm/quads/calves shaped by build `bk`, tall = leaner), shoulder caps, neck into traps, hands with palm + 4 fingers + thumb; faces with real eyes (iris/pupil/lids), nose, lips, ears; 11 painted hair styles with soft hairline volume (locks only `hs:1`, cornrows `hs:5`), 5 facial-hair styles; tank-top jersey with team-trim piping, shorts stripe/hem, 512 px lettering texture per player; 10 shoe colourways x 3 cuts; deterministic accessories (sleeves, bands, tights, headband, tape). High = ~24k tris, Low/Medium/bench/refs ~9.9k. Unity mirrors it in `Game/RigMesh.cs` (UnityEngine-free, tested by CoreTests/RigMeshCheck.cs). tests: fk.ts arm checks, browser_arms.mjs.
 - Rig extras: sneakers (sole/toe cap/laces/heel tab, `shoeKind`), jersey side panels + waistband + chest wordmark (`cl[p.tm]`),
   per-player face shape from the name hash (`F`: skull/jaw/nose/brows/eyes/ears/lips; SIG `face` + `hs` hair overrides,
   locks only with `hs:1`; no real photos/likenesses), hair caps above the eyes, jawline beards; shorts hems skinned to spring-lagged flap bones (`clothStep`, client only).
@@ -332,6 +333,8 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   speed cap (~400 units/s) and deep threes fell 3 ft short (greens 98% -> 89%).
 - Engine choice: three.js stays (Babylon/PlayCanvas = same class, bigger; Unity/Unreal/Godot can't ship as one
   small HTML file and run worse on Chromebooks).
+- Bone rest positions must walk the parent chain: the arm bones' parent (chest, 12) has a HIGHER index, so an index-order
+  pass built Unity's arms ~4 ft low ("arms don't show"). Anisotropy helper must not call itself (capped textures at 4x).
 - Exponential pose smoothing hid real pops (head target flips, gait kinks) AND lagged everything; measure jerk
   (tests/blend.ts) before tuning blend times by eye.
 
