@@ -9,6 +9,7 @@ using static Hoops.Core.Sim;
 static class Trace
 {
     static string F(double v) => (Math.Floor(v * 1000 + 0.5) / 1000).ToString("F3", CultureInfo.InvariantCulture);
+    static bool MY;
     static Input Hin(int t)
     {
         int ph = t % 240;
@@ -21,6 +22,7 @@ static class Trace
         if (t % 173 == 90) i.pf = true;
         if (t % 97 == 40) i.e = true;
         if (t % 211 == 150) i.sb = true;
+        if (MY && t % 300 >= 200 && t % 300 < 230) i.post = true; // (Pro Play v2: post key - screens / post-ups)
         return i;
     }
     static void Main(string[] a)
@@ -29,12 +31,16 @@ static class Trace
         Rng.Seed(2024);
         cfg.NP = 5; cfg.physics = "legacy"; cfg.MYM = 0; cfg.DIFF = 2;
         // "hum" (2nd arg): the scripted human of trace.ts (team 0) - covers the human-only paths
-        bool hum = a.Length > 1 && a[1] == "hum";
+        // "my": the same scripted human as My Player (Pro Play v2 off-ball paths: call for the ball / a screen, flick cuts)
+        MY = a.Length > 1 && a[1] == "my";
+        bool hum = a.Length > 1 && a[1] == "hum" || MY;
+        if (MY) cfg.MYM = 1;
         int TK = 0;
         cfg.input = hum ? (c => Hin(TK)) : (c => new Input());
         setQtrLen(180);
         setCtrls(hum ? new List<Ctrl> { mkCtrl("h", 0) } : new List<Ctrl>());
         start(0, new StartOpts { j = 3 });
+        bool pose = Environment.GetEnvironmentVariable("POSE") != null;
         var sb = new StringBuilder();
         for (int t = 0; t < N && S != "over"; t++)
         {
@@ -47,6 +53,19 @@ static class Trace
             sb.Append(t);
             foreach (var p in P) sb.Append(' ').Append(F(p.x)).Append(',').Append(F(p.y)).Append(',').Append(F(p.z));
             sb.Append(" | ").Append(F(B.x)).Append(',').Append(F(B.y)).Append(',').Append(F(B.z)).Append(' ').Append(B.mode).Append(' ').Append(sc[0]).Append('-').Append(sc[1]).Append(" r").Append(Rng.N);
+            if (pose)
+            {
+                // POSE=1: + a per-player pose checksum (every joint channel, weighted by its index; trace.ts twin)
+                sb.Append(" q");
+                for (int i = 0; i < P.Count; i++)
+                {
+                    double s = 0;
+                    var q = P[i].q;
+                    if (q != null) for (int j = 0; j < 31; j++) { double v = q[j]; s += (double.IsNaN(v) ? 0 : v) * (j + 1); }
+                    if (i > 0) sb.Append(',');
+                    sb.Append(F(s));
+                }
+            }
             Console.WriteLine(sb.ToString());
         }
     }

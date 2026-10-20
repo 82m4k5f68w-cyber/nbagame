@@ -9,6 +9,13 @@ namespace Hoops.Game
 {
     public sealed class Menus : MonoBehaviour
     {
+        /// <summary>Hollinger game score from our box score (browser twin: game.ts gmSc).</summary>
+        public static double GmSc(Player p)
+        {
+            var s = p.stt;
+            return s.pts + 0.4 * s.fgm - 0.7 * s.fga + 0.7 * s.orb + 0.3 * (s.reb - s.orb) + 0.7 * s.ast + 0.7 * s.blk - 0.4 * p.pf + 0.5 * (s.chg + s.dv + s.sa);
+        }
+
         public static int MyTeam = 0, Opp = 3, Diff = 1, QIdx = 1, Size = 5;
         public static bool Paused;
         /// <summary>Quarter length in seconds from the page (PageBridge); 0 = the QIdx preset.</summary>
@@ -212,11 +219,12 @@ namespace Hoops.Game
                 bool won = sc[0] > sc[1];
                 GUILayout.Label(won ? "VICTORY" : sc[0] == sc[1] ? "FINAL" : "DEFEAT", h1);
                 GUILayout.Label($"{cl[0]} {sc[0]:0}  —  {sc[1]:0} {cl[1]}", h2);
-                // player of the game: the winners' top line (pts + reb + ast)
-                Player pog = null;
-                double best = -1;
+                // player of the game: the best game score on the winners, unless a loser had a monster night (10+ better)
                 int wt = sc[0] >= sc[1] ? 0 : 1;
-                foreach (var p in ROST[wt]) { double v = p.stt.pts + p.stt.reb + p.stt.ast; if (v > best) { best = v; pog = p; } }
+                Player pw = null, pl = null;
+                foreach (var p in ROST[wt]) if (pw == null || GmSc(p) > GmSc(pw)) pw = p;
+                foreach (var p in ROST[1 - wt]) if (pl == null || GmSc(p) > GmSc(pl)) pl = p;
+                Player pog = pw != null && pl != null && GmSc(pl) >= GmSc(pw) + 10 ? pl : pw;
                 if (pog != null) GUILayout.Label($"PLAYER OF THE GAME: {pog.n}  ·  {pog.stt.pts:0} PTS  {pog.stt.reb:0} REB  {pog.stt.ast:0} AST", h2);
                 scroll = GUILayout.BeginScrollView(scroll, GUILayout.Height(260));
                 for (int t = 0; t < 2; t++)

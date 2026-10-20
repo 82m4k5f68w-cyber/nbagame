@@ -21,6 +21,7 @@ const stand = (p: any) => {
   p.hitT = 0;
   p.frT = 0;
   p.tread = 0;
+  if (p._k != null) p.k = p._k; // (a reaction entry borrowed his slot parity to pick its variant)
   if (p.sg && p.sg._o) p.sg = p.sg._o; // undo the studio's left-handed override
   p.landT = 0;
   p.pT = 0;
@@ -558,6 +559,78 @@ export const ANIMS: [string, Setup][] = [
           p.cel = k;
           p.celT = CEL_T - (t % (CEL_T + 0.4));
           if (p.celT < 0) p.celT = 0;
+        },
+      ] as [string, Setup],
+  ),
+  // animation pack v5.4: hip turn (pose.ts turnRun) - too fast for a stance, he opens the hips and runs
+  ["Backpedal, fast (hip turn and run)", (p, t, dt) => (stand(p), move(p, dt, 205, Math.PI))],
+  [
+    "Defense: beaten, hip turn",
+    (p, t, dt) => {
+      stand(p);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      G.setScalars({ pos: o.tm });
+      (o.x = p.x + Math.cos(p.f + 0.9) * 45), (o.y = p.y + Math.sin(p.f + 0.9) * 45), (o.f = p.f + Math.PI), (o.mode = "i");
+      B.owner = o;
+      B.mode = "held";
+      (B.x = o.x), (B.y = o.y), (B.z = 30);
+      move(p, dt, 210, Math.PI / 2);
+    },
+  ],
+  // animation pack v5.4 reactions (pose.ts apPose)
+  ...([
+    [1, 0.42, "Defender bites on a pump fake"],
+    [2, 0.38, "Defender rocked by a jab step"],
+    [0, 0, "On-ball D: alive on his toes"],
+  ] as [number, number, string][]).map(
+    ([act, T0, name]) =>
+      [
+        name,
+        (p: any, t: number) => {
+          stand(p);
+          const o = P.find((q) => q.tm !== p.tm)!;
+          G.setScalars({ pos: o.tm });
+          (o.x = p.x + Math.cos(p.f) * 36), (o.y = p.y + Math.sin(p.f) * 36), (o.f = p.f + Math.PI), (o.mode = "i");
+          o.act = act;
+          o.actT = act ? Math.max(0, T0 - (t % 1.1)) : 0;
+          o.ttT = 0.6;
+          B.owner = o;
+          B.mode = "held";
+          (B.x = o.x + Math.cos(o.f) * 6), (B.y = o.y + Math.sin(o.f) * 6), (B.z = o.z + 40 + (act === 1 ? 30 * Math.sin(Math.min(1, 1 - o.actT / T0) * Math.PI) : 0));
+          pose3(o);
+        },
+      ] as [string, Setup],
+  ),
+  ...([
+    [0, 0, "Teammate's big play: fist pump"],
+    [1, 0, "Teammate's big play: claps"],
+    [0, 1, "Opponent's big play: deflated"],
+  ] as [number, number, string][]).map(
+    ([v, opp, name]) =>
+      [
+        name,
+        (p: any, t: number) => {
+          stand(p);
+          const q = P.find((o) => o !== p && (opp ? o.tm !== p.tm : o.tm === p.tm));
+          if (!q) return; // (needs a teammate: 2v2 or bigger)
+          p._k ??= p.k;
+          p.k = p._k - (p._k % 2) + v;
+          (q.x = p.x + Math.cos(p.f + 0.6) * 90), (q.y = p.y + Math.sin(p.f + 0.6) * 90), (q.mode = "i");
+          q.cel = 4;
+          q.celT = Math.max(0, CEL_T - (t % (CEL_T + 0.4)));
+          pose3(q);
+        },
+      ] as [string, Setup],
+  ),
+  ...["head shake", "frustrated clap", "hands on the head"].map(
+    (n, v) =>
+      [
+        "Missed shot: " + n,
+        (p: any, t: number) => {
+          stand(p);
+          p._k ??= p.k;
+          p.k = p._k - (p._k % 3) + v;
+          p.frT = Math.max(0, 1.8 - (t % 1.9));
         },
       ] as [string, Setup],
   ),

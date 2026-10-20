@@ -16,6 +16,7 @@ import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, dra
 import { NET } from "./net/session";
 import { openStudio, studioPose } from "./animview";
 import { M as MODE, stopMode } from "../core/modes";
+import { awardXP, capOf, xpBar, myBadges, BREQ } from "./career";
 import { bindModes, setModeCtx, modeHud, modeEvent, modeStrip, bindStrip, replayMode, seasonResult, seasonScreen, openMode } from "./modesui";
 
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
@@ -565,7 +566,7 @@ export function menu() {
 function edMy() {
   const d = MYP.d,
     SKN = ["#f1c27d", "#c68642", "#8d5524", "#6b4226", "#e8b88f"],
-    CAP = 380,
+    CAP = capOf(d), // (grows with My Player's level: career.ts)
     ST = ["Standard", "Quick", "Fadeaway", "Step-back", "Touch"],
     HR = ["Bald", "Short", "Long", "Afro"],
     re = () => {
@@ -578,11 +579,15 @@ function edMy() {
     .map((k) => `<button data-pre="${k}">${k}</button>`)
     .join(
       "",
-    )}</div><div class="opts ed">${sl("c", "3PT")}${sl("i", "INSIDE")}${sl("s", "SPEED")}${sl("d", "DEFENSE")}${sl("j", "JUMP")}<div id="pts"></div></div>
+    )}</div>${xpBar(d)}${d.car && d.car.gp ? `<p class="hint">Career: ${d.car.gp} games · ${d.car.w} wins · ${(d.car.pts / d.car.gp).toFixed(1)} PPG · ${(d.car.reb / d.car.gp).toFixed(1)} RPG · ${(d.car.ast / d.car.gp).toFixed(1)} APG · career high ${d.car.hi}</p>` : `<p class="hint">Play games as My Player to earn XP: every level adds 3 attribute points.</p>`}<div class="opts ed">${sl("c", "3PT")}${sl("i", "INSIDE")}${sl("s", "SPEED")}${sl("d", "DEFENSE")}${sl("j", "JUMP")}<div id="pts"></div><div id="bdg" class="bdg"></div></div>
 <div class="opts"><b>SHOT FORM</b>${ST.map((n, i) => `<button data-st="${i}" class="${d.st === i ? "on" : ""}">${n}</button>`).join("")}<b>LOOK</b>${SKN.map((c) => `<button data-sk="${c}" style="background:${c};width:34px;height:34px;padding:0;${d.sk === c ? "outline:3px solid #ffd23f" : ""}"></button>`).join("")}${HR.map((n, i) => `<button data-hr="${i}" class="${d.hr === i ? "on" : ""}">${n}</button>`).join("")}<button data-bd="1" class="${d.bd ? "on" : ""}">Beard</button>
 <label>Height <b id="vh">${d.ht.toFixed(1)}</b> ft<input type="range" min="6" max="7.3" step=".1" value="${d.ht}" data-h="ht"></label><label>Build<input type="range" min=".9" max="1.3" step=".05" value="${d.bk}" data-h="bk"></label><label>Number<input id="mno" type="number" min="0" max="99" value="${d.no}"></label></div><button class="big" id="done">SAVE ▶</button>`;
   const up = () => {
     $("#pts").textContent = "Points " + (CAP - (d.c + d.i + d.s + d.d + d.j)) + " left · OVR " + ovr({ n: "x", c: d.c, i: d.i });
+    const bg = myBadges(d);
+    $("#bdg").innerHTML = Object.keys(BREQ)
+      .map((k) => `<span class="${bg.includes(k) ? "on" : ""}" title="${esc(BREQ[k])}">${bg.includes(k) ? "★ " : ""}${esc(G.BADGE[k][0])}${bg.includes(k) ? "" : " · " + esc(BREQ[k])}</span>`)
+      .join("");
   };
   up();
   ov.querySelectorAll<HTMLInputElement>("input[data-k]").forEach(
@@ -681,7 +686,7 @@ function scouting() {
       const k = G.TS.sk[t],
         cpu = !CT.some((c) => c.tm === t);
       return `<h3 style="margin:10px 0 4px;color:${G.PC[t]}">${esc(G.cl[t])}${cpu ? " (CPU)" : ""}</h3>
-      <p class="hint" style="margin:2px 0">${cpu ? `Game plan: <b>${G.GPN[G.TS.gp[t]]}</b> · ` : ""}Play: <b>${G.PCN[G.TS.pc[t]]}</b> · Defense: <b>${G.DSN[G.TS.ds[t]]}</b>${cpu ? ` · Pick-and-roll: <b>${G.TS.cov[t] ? "HEDGE" : "DROP"}</b>${G.TS.dbl[t] >= 0 && P[G.TS.dbl[t]] ? ` · Doubling <b>${esc(P[G.TS.dbl[t]].n)}</b>` : ""}` : ""}<br>Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
+      <p class="hint" style="margin:2px 0">${cpu ? `Game plan: <b>${G.GPN[G.TS.gp[t]]}</b> · ` : ""}Play: <b>${G.PCN[G.TS.pc[t]]}</b> · Defense: <b>${G.DSN[G.TS.ds[t]]}</b>${cpu ? ` · Pick-and-roll: <b>${G.COVN[G.TS.cov[t]] || "DROP"}</b> · Coach IQ <b>${["ROOKIE", "PRO", "ALL-STAR", "HALL OF FAME"][G.cpuIQ(t)]}</b>${G.TS.dbl[t] >= 0 && P[G.TS.dbl[t]] ? ` · Doubling <b>${esc(P[G.TS.dbl[t]].n)}</b>` : ""}` : ""}<br>Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
       <table class="bx" style="max-width:640px">${[...Array(NP).keys()]
         .map((j) => {
           const p = P[t * NP + j];
@@ -963,6 +968,17 @@ function dribSound() {
   dbV = v;
   dbZ = B.z;
 }
+/** Hollinger game score from our box score (no steals / turnovers / free-throw lines tracked per player): PTS + .4 FGM
+ *  - .7 FGA + .7 OREB + .3 DREB + .7 AST + .7 BLK - .4 PF + .5 hustle plays. */
+export const gmSc = (p: any) => {
+  const s = p.stt;
+  return s.pts + 0.4 * s.fgm - 0.7 * s.fga + 0.7 * (s.orb || 0) + 0.3 * (s.reb - (s.orb || 0)) + 0.7 * s.ast + 0.7 * s.blk - 0.4 * (p.pf || 0) + 0.5 * ((s.chg || 0) + (s.dv || 0) + (s.sa || 0));
+};
+/** Headline for a stat line: triple-double / double-double / a big scoring night. */
+export const lineTag = (s: any) => {
+  const n = [s.pts, s.reb, s.ast, s.blk].filter((v) => v >= 10).length;
+  return n >= 3 ? "TRIPLE-DOUBLE" : n === 2 ? "DOUBLE-DOUBLE" : s.pts >= 30 ? s.pts + "-POINT NIGHT" : s.fga >= 5 && s.fgm === s.fga ? "PERFECT FROM THE FIELD" : "";
+};
 function endGame() {
   const sc = G.sc,
     cl = G.cl;
@@ -974,6 +990,9 @@ function endGame() {
     sum = (t: number, k: string) => tm(t).reduce((a, p) => a + p.stt[k], 0),
     pct = (m: number, a: number) => (a ? Math.round((100 * m) / a) : 0);
   const inSeason = !NET.role && seasonResult(w);
+  // My Player career XP (offline games vs the CPU)
+  const myp = !NET.role && !IN.MP2 && cfg.MYM && G.gameLike() ? tm(me).find((p) => p.my) : null,
+    xpr = myp ? awardXP(myp, w) : null;
   // record (offline games vs the CPU only)
   if (!NET.role && !IN.MP2) {
     const r = rec.get();
@@ -981,9 +1000,14 @@ function endGame() {
     else (r.l++, (r.st = 0));
     rec.put(r);
   }
-  // player of the game: best line on the winning side
+  // player of the game: the best game score (Hollinger) on the winning side - unless somebody on the losing side had
+  // a monster night (10+ better)
   const wt = sc[0] >= sc[1] ? 0 : 1,
-    pog = tm(wt).sort((a, b) => b.stt.pts + b.stt.reb * 1.2 + b.stt.ast * 1.5 + b.stt.blk * 2 - (a.stt.pts + a.stt.reb * 1.2 + a.stt.ast * 1.5 + a.stt.blk * 2))[0];
+    best = (t: number) => tm(t).slice().sort((a, b) => gmSc(b) - gmSc(a))[0],
+    pw = best(wt),
+    pl2 = best(1 - wt),
+    pog = pw && pl2 && gmSc(pl2) >= gmSc(pw) + 10 ? pl2 : pw,
+    pogTag = pog ? lineTag(pog.stt) : "";
   const rows: [string, number, number][] = [
     ["FG%", pct(sum(0, "fgm"), sum(0, "fga")), pct(sum(1, "fgm"), sum(1, "fga"))],
     ["3P%", pct(sum(0, "tpm"), sum(0, "tpa")), pct(sum(1, "tpm"), sum(1, "tpa"))],
@@ -1008,7 +1032,8 @@ function endGame() {
    <div class="logo" style="font-size:44px;animation:none;color:${NET.role || IN.MP2 ? "#fff" : w ? "#ffd23f" : "#ff8a6b"}">${NET.role || IN.MP2 ? "FINAL" : w ? "VICTORY" : "DEFEAT"}</div>
    <div class="sc"><span style="--c:${G.PC[0]}">${esc(cl[0])}</span><b>${sc[0]}</b><i>—</i><b>${sc[1]}</b><span style="--c:${G.PC[1]}">${esc(cl[1])}</span></div>
    ${NET.role ? NET.rate() : ""}${!NET.role && !IN.MP2 ? `<p class="hint">Record ${r.w}W · ${r.l}L${r.st > 1 ? " · 🔥 " + r.st + " straight" : ""}${r.best > 1 ? " · best streak " + r.best : ""}</p>` : ""}
-   ${pog ? `<div class="pog"><img alt="" src="${avatar([pog.n, pog.c, pog.i, pog.s, pog.d, pog.j, pog.st, pog.skin, pog.hr, pog.bd, pog.ht, pog.bk, pog.no], pog.col)}"><div><small>PLAYER OF THE GAME</small><b>${esc(pog.n)}</b><span>${pog.stt.pts} PTS · ${pog.stt.reb} REB · ${pog.stt.ast} AST${pog.stt.blk ? " · " + pog.stt.blk + " BLK" : ""}</span></div></div>` : ""}
+   ${xpr ? `${xpBar(MYP.d)}<p class="hint">My Player +${xpr.xp} XP${xpr.lv1 > xpr.lv0 ? ` · <span class="lvup">LEVEL UP! ${xpr.lv0} → ${xpr.lv1}: +${xpr.pts} attribute points</span>` : ""}</p>` : ""}
+   ${pog ? `<div class="pog"><img alt="" src="${avatar([pog.n, pog.c, pog.i, pog.s, pog.d, pog.j, pog.st, pog.skin, pog.hr, pog.bd, pog.ht, pog.bk, pog.no], pog.col)}"><div><small>PLAYER OF THE GAME${pogTag ? " · " + pogTag : ""}</small><b>${esc(pog.n)}</b><span>${pog.stt.pts} PTS · ${pog.stt.reb} REB · ${pog.stt.ast} AST${pog.stt.blk ? " · " + pog.stt.blk + " BLK" : ""} · ${pog.stt.fgm}-${pog.stt.fga} FG · GmSc ${gmSc(pog).toFixed(1)}</span></div></div>` : ""}
    <div class="cmp">${rows
      .map(([k, a2, b2]) => {
        const t = a2 + b2 || 1;

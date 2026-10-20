@@ -66,5 +66,11 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - propl.ts — Pro Play pack (cfg.PP): stick-picked move variants, move buffer + cancel window, sprint burst, on-ball
   stance (slides, auto hand up), contest timing, drive gather + delayed release, floater vs a rim protector, retreat
   dribble / rebound-assist regressions, and CPU games where the new moves happen and deflections never change possession.
+- propl2.ts — Pro Play v2 (cfg.PP = 2): defender reads on dribble moves (wrong-footed vs already there, spin off contact,
+  a read costs the handler), hesi pull-ups in rhythm, jumper balance in the green window (off balance / fading / on the
+  move / created space), stick-picked fadeaway + leaner, catch-and-shoot buffer, side-steps, post battles by strength +
+  human body-up, drive cut-offs vs bump-offs, block timing, charges read from set feet (never vs a defender stepping in),
+  My Player call for the ball (fed / DENIED), called ball screen, flick cut + backdoor; CPU games: reads, rare ankle
+  breakers, no steals, no NaN.
 - sanity.ts (not in `npm test`, ~10 min) — seeded CPU games + a passive human: no dead-ball stalls, frozen handlers,
   auto-actions by an idle human, needless heaves, backcourt dawdling or bodies passing through each other.

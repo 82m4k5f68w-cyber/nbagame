@@ -1,6 +1,6 @@
 // Broadcast presentation: center banners (runs, clutch time, timeouts, violations), play-by-play commentary captions
 // (+ optional speech), the tip-off intro card, momentum / timeouts / play-call bug, gamepad rumble.
-import { P, sc, q, clock, cl, PC, TS, DSN, PCN, JB, BENCH, CT, badgesOf, BADGE, ovr, cfg, gameLike, type Player } from "../core/sim";
+import { P, sc, q, clock, cl, PC, TS, DSN, PCN, JB, BENCH, CT, badgesOf, BADGE, ovr, cfg, gameLike, PLAY, T, type Player } from "../core/sim";
 import { V } from "./view";
 import { KMAP } from "./input";
 const kn = (id: string) => (KMAP[id] || "?").replace(/^Key|^Digit/, "");
@@ -51,6 +51,15 @@ const LINES: Record<string, ((n: string, n2: string) => string)[]> = {
   intfoul: [(n) => `They're going to foul to stop the clock — ${n} grabs him.`],
   tip: [(a, b) => `Welcome in, everybody. ${a} and ${b}, and we are ready for the tip.`, (a, b) => `It's ${a} against ${b} tonight. Here's the jump ball.`],
   half: [(a) => `That's the half. Let's look back at the best of it.`],
+  // team play pack (v5.4)
+  set: [(t, s) => `The ${t} run ${s}.`, (t, s) => `Here's the set from the ${t} — ${s}.`, (t, s) => `${s} for the ${t}.`],
+  ato: [(t, s) => `Out of the timeout, the ${t} have drawn one up: ${s}.`, (t, s) => `Here's the play from the huddle — ${s}.`],
+  ice: [(t) => `The ${t} are icing the pick-and-roll — sending everything baseline.`, (t) => `ICE coverage from the ${t}: keep him out of the middle.`],
+  blitz: [(t, n) => `The ${t} blitz every pick-and-roll${n ? ` — two on ${n}` : ""}! Somebody else has to beat them.`, (t, n) => `Here comes the trap off the screen${n ? ` on ${n}` : ""}!`],
+  boxone: [(t, n) => `A box-and-one from the ${t}! One man chasing ${n} everywhere.`, (t, n) => `Junk defense — the ${t} go box-and-one on ${n}.`],
+  foultrouble: [(n) => `${n} picks up another one — he has to sit with foul trouble.`, (n) => `Foul trouble for ${n}, he heads to the bench.`],
+  closers: [(t) => `Winning time: the ${t} put their closers back on the floor.`, (t) => `The ${t} starters are back in to finish it.`],
+  bonus: [(t) => `That puts the ${t} in the bonus.`, (t) => `The ${t} are shooting free throws on every foul now.`],
 };
 const CAP: { s: string; t: number }[] = [];
 // two-part play-by-play: the call as he rises, then the result on the same caption ("Curry pulls up... BANG!")
@@ -397,6 +406,14 @@ export function drawBug(me: number) {
       X.fillStyle = k < TS.to[t] ? "#ffd23f" : "rgba(255,255,255,.18)";
       X.fillRect((t ? 590 : 310) + k * 16, 62, 11, 3);
     }
+  // the bonus: the other side fouled into it - this team shoots two on every foul
+  X.font = "800 9px system-ui";
+  X.textAlign = "center";
+  for (let t = 0; t < 2; t++)
+    if (TS.bon[1 - t]) {
+      X.fillStyle = "#ffd23f";
+      X.fillText("BONUS", t ? 650 : 310, 74);
+    }
   // momentum
   const m = TS.mom;
   X.fillStyle = "rgba(0,0,0,.6)";
@@ -415,6 +432,17 @@ export function drawBug(me: number) {
     X.font = "700 11px system-ui";
     X.textAlign = "left";
     X.fillStyle = "rgba(255,255,255,.75)";
+    // the other side's set, as the defense would call it out ("HORNS!") - for a few seconds after it starts
+    const op = PLAY[1 - me];
+    if (op && op.nm && T - op.t0 < 3.5) {
+      X.font = "900 12px system-ui";
+      X.textAlign = "center";
+      X.fillStyle = "#9fe7ff";
+      X.fillText("THEY'RE RUNNING: " + op.nm, 480, 104);
+      X.font = "700 11px system-ui";
+      X.textAlign = "left";
+      X.fillStyle = "rgba(255,255,255,.75)";
+    }
     X.fillText(`DEF ${DSN[TS.ds[me]]} · PLAY ${PCN[TS.pc[me]]}  [${kn("ds")}]   TIMEOUT [${kn("to")}] · CHALLENGE [${kn("ch")}]${TS.call && TS.call.t === me && TS.chal[me] > 0 ? " ← available!" : ""}`, 12, 506);
   }
 }

@@ -274,36 +274,146 @@ function clutchScreen() {
   $("#mme").onclick = () => SH.menu();
 }
 // ---------------- Season ----------------
-type Season = { np: number; team: number; teams: number[]; w: number[]; l: number[]; sched: { opp: number; my?: number; op?: number }[]; round: number; po?: any; champ?: number };
+// Schedule (everyone once), standings with points for / against and streaks, league leaders (your games' real box
+// scores + generated lines for the simulated games), playoffs (top 4, best-of-3 semifinals and final), awards.
+type PS = { n: string; t: number; gp: number; pts: number; reb: number; ast: number; blk: number };
+type Season = {
+  np: number;
+  team: number;
+  teams: number[];
+  w: number[];
+  l: number[];
+  sched: { opp: number; my?: number; op?: number }[];
+  round: number;
+  po?: any;
+  champ?: number;
+  pf?: number[];
+  pa?: number[];
+  stk?: number[]; // + win streak / - losing streak per team
+  ps?: Record<string, PS>; // player season totals, key "team:name"
+  aw?: string[]; // awards (at the end)
+};
 const SKEY = () => "h2k_season_" + cfg.NP;
 const tName = (i: number) => RO(i)[2];
 const tOvr = (i: number) => {
   const pl = RO(i)[1];
   return pl.reduce((a, p) => a + ov2(p), 0) / pl.length;
 };
+/** Old saves: fill in the v5.4 fields. */
+function fixSeason(S: Season) {
+  const z = () => S.teams.map(() => 0);
+  S.pf = S.pf || z();
+  S.pa = S.pa || z();
+  S.stk = S.stk || z();
+  S.ps = S.ps || {};
+  return S;
+}
 function newSeason(): Season {
   const N = nChoices(),
     me = SH.sel();
   let teams = [...Array(N).keys()];
   if (N > 8) teams = [me, ...teams.filter((t) => t !== me).sort(() => Math.random() - 0.5).slice(0, 7)];
   const opps = teams.filter((t) => t !== me);
-  return { np: cfg.NP, team: me, teams, w: teams.map(() => 0), l: teams.map(() => 0), sched: opps.map((o) => ({ opp: o })), round: 0 };
+  return fixSeason({ np: cfg.NP, team: me, teams, w: teams.map(() => 0), l: teams.map(() => 0), sched: opps.map((o) => ({ opp: o })), round: 0 });
 }
+/** Points scale of a simulated game: the same length as the games you play (quarter length). */
+const ptsK = () => Math.min(1.1, Math.max(0.15, (G.QTRLEN / 180) * 0.52));
+/** Record a result in the standings (scores, streaks). */
+function result(S: Season, a: number, b: number, pa: number, pb: number) {
+  const ia = S.teams.indexOf(a),
+    ib = S.teams.indexOf(b),
+    wa = pa > pb;
+  if (ia < 0 || ib < 0) return;
+  (wa ? S.w : S.l)[ia]++;
+  (wa ? S.l : S.w)[ib]++;
+  S.pf![ia] += pa;
+  S.pa![ia] += pb;
+  S.pf![ib] += pb;
+  S.pa![ib] += pa;
+  S.stk![ia] = wa ? Math.max(1, S.stk![ia] + 1) : Math.min(-1, S.stk![ia] - 1);
+  S.stk![ib] = wa ? Math.min(-1, S.stk![ib] - 1) : Math.max(1, S.stk![ib] + 1);
+}
+/** Generated box score for a simulated game: the team's points shared by rating, boards by size, assists by quickness. */
+function simLines(S: Season, t: number, pts: number) {
+  const pl = RO(t)[1],
+    w = (f: (p: any) => number) => {
+      const v = pl.map((p) => Math.max(0.05, f(p)) * (0.7 + Math.random() * 0.6)),
+        s = v.reduce((a, b) => a + b, 0) || 1;
+      return v.map((x) => x / s);
+    },
+    wp = w((p) => Math.pow(Math.max(1, ov2(p) - 62), 1.6)),
+    wr = w((p) => (p[10] - 5.8) * (p[2] / 80) + (p[4] / 400)),
+    wa = w((p) => Math.pow(p[3] / 80, 3) * (p[10] < 6.6 ? 1.5 : 0.7)),
+    reb = Math.round(pts * 0.42),
+    ast = Math.round(pts * 0.24);
+  pl.forEach((p, k) => addLine(S, t, p[0], { pts: Math.round(pts * wp[k]), reb: Math.round(reb * wr[k]), ast: Math.round(ast * wa[k]), blk: Math.random() < (p[10] - 6.4) * 0.5 ? 1 : 0 }));
+}
+function addLine(S: Season, t: number, n: string, s: any) {
+  const k = t + ":" + n,
+    o = (S.ps![k] = S.ps![k] || { n, t, gp: 0, pts: 0, reb: 0, ast: 0, blk: 0 });
+  o.gp++;
+  o.pts += s.pts || 0;
+  o.reb += s.reb || 0;
+  o.ast += s.ast || 0;
+  o.blk += s.blk || 0;
+}
+/** A simulated game: the better team usually wins (logistic on the rating gap); the score scales with quarter length. */
 function simGame(S: Season, a: number, b: number) {
   const pa = 1 / (1 + Math.exp(-(tOvr(a) - tOvr(b)) / 3)),
-    ia = S.teams.indexOf(a),
-    ib = S.teams.indexOf(b);
-  if (Math.random() < pa) (S.w[ia]++, S.l[ib]++);
-  else (S.w[ib]++, S.l[ia]++);
+    aw = Math.random() < pa,
+    base = (100 + Math.random() * 22) * ptsK(),
+    mg = Math.max(1, Math.round((2 + Math.random() * 14) * ptsK() * 1.6)),
+    hi = Math.round(base + mg / 2),
+    lo = Math.min(hi - 1, Math.round(base - mg / 2)),
+    sa = aw ? hi : lo,
+    sb = aw ? lo : hi;
+  result(S, a, b, sa, sb);
+  simLines(S, a, sa);
+  simLines(S, b, sb);
+  return aw;
+}
+/** Best-of-3 series between two other teams (playoffs you are not in). */
+function simSeries(S: Season, a: number, b: number) {
+  let wa = 0,
+    wb = 0;
+  while (wa < 2 && wb < 2) simGame(S, a, b) ? wa++ : wb++;
+  return { w: wa > wb ? a : b, s: Math.max(wa, wb) + "-" + Math.min(wa, wb) };
 }
 function standings(S: Season) {
-  return S.teams.map((t, i) => ({ t, w: S.w[i], l: S.l[i] })).sort((a, b) => b.w - a.w || a.l - b.l || tOvr(b.t) - tOvr(a.t));
+  return S.teams.map((t, i) => ({ t, w: S.w[i], l: S.l[i], pf: S.pf![i], pa: S.pa![i], st: S.stk![i] })).sort((a, b) => b.w - a.w || a.l - b.l || b.pf - b.pa - (a.pf - a.pa) || tOvr(b.t) - tOvr(a.t));
+}
+/** League leaders (per game; at least half of the most games played). */
+function leaders(S: Season, k: "pts" | "reb" | "ast", n = 5) {
+  const all = Object.values(S.ps!),
+    mx = all.reduce((a, o) => Math.max(a, o.gp), 0),
+    min = Math.max(1, Math.floor(mx / 2));
+  return all
+    .filter((o) => o.gp >= min)
+    .sort((a, b) => b[k] / b.gp - a[k] / a.gp)
+    .slice(0, n);
+}
+/** End-of-season awards: MVP (production on a winning team), the scoring title, the champion. */
+function awards(S: Season) {
+  const all = Object.values(S.ps!).filter((o) => o.gp >= 2),
+    wp = (t: number) => {
+      const i = S.teams.indexOf(t);
+      return i < 0 ? 0.5 : S.w[i] / Math.max(1, S.w[i] + S.l[i]);
+    },
+    val = (o: PS) => ((o.pts + 0.6 * o.reb + 0.8 * o.ast + o.blk) / o.gp) * (0.6 + wp(o.t)),
+    mvp = all.slice().sort((a, b) => val(b) - val(a))[0],
+    sco = all.slice().sort((a, b) => b.pts / b.gp - a.pts / a.gp)[0],
+    out: string[] = [];
+  if (S.champ != null) out.push("🏆 Champions: " + tName(S.champ));
+  if (mvp) out.push(`MVP: ${mvp.n} (${tName(mvp.t)}) · ${(mvp.pts / mvp.gp).toFixed(1)} PPG · ${(mvp.reb / mvp.gp).toFixed(1)} RPG · ${(mvp.ast / mvp.gp).toFixed(1)} APG`);
+  if (sco) out.push(`Scoring title: ${sco.n} (${tName(sco.t)}) · ${(sco.pts / sco.gp).toFixed(1)} PPG`);
+  return out;
 }
 export function seasonScreen() {
   stopMode();
   G.setS("menu");
   let S: Season = lsGet(SKEY(), null);
   if (!S || S.np !== cfg.NP) S = newSeason();
+  fixSeason(S);
   lsPut(SKEY(), S);
   const ov = SH.ov,
     E = SH.esc,
@@ -313,17 +423,26 @@ export function seasonScreen() {
   let next = "";
   if (S.champ != null) next = `<p class="big-n">${S.champ === S.team ? "🏆 CHAMPIONS!" : "Season over — " + E(tName(S.champ)) + " won the title."}</p>`;
   else if (reg) next = `<p class="hint">Game ${S.round + 1} of ${S.sched.length}: vs <b>${E(tName(S.sched[S.round].opp))}</b></p>`;
-  else if (po) next = `<p class="hint">${po.stage === 0 ? "Semifinal" : "Final"}: vs <b>${E(tName(po.opp))}</b></p>`;
+  else if (po) next = `<p class="hint">${po.stage === 0 ? "Semifinal" : "Final"} (best of 3, ${po.sw || 0}-${po.sl || 0}): vs <b>${E(tName(po.opp))}</b></p>`;
+  const ld = (k: "pts" | "reb" | "ast", h: string) =>
+    `<table class="bx"><tr><th>${h}</th><th></th></tr>${leaders(S, k)
+      .map((o) => `<tr${o.t === S.team ? ' style="color:#ffd23f"' : ""}><td>${E(o.n)} <small>${E(tName(o.t))}</small></td><td>${(o[k] / o.gp).toFixed(1)}</td></tr>`)
+      .join("")}</table>`;
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
   ov.innerHTML = `<div class="fin season"><div class="logo" style="font-size:36px;animation:none">SEASON</div>
-   <p class="hint">${E(tName(S.team))} · ${S.sched.length}-game schedule, then the top 4 make the playoffs</p>${next}
-   <div class="sg"><table class="bx"><tr><th>#</th><th>TEAM</th><th>W</th><th>L</th></tr>${st
-     .map((r, i) => `<tr${r.t === S.team ? ' style="color:#ffd23f"' : ""}><td>${i + 1}${i === 3 ? " ·" : ""}</td><td>${E(tName(r.t))}</td><td>${r.w}</td><td>${r.l}</td></tr>`)
+   <p class="hint">${E(tName(S.team))} · ${S.sched.length}-game schedule, then the top 4 make the playoffs (best of 3)</p>${next}
+   ${S.aw && S.aw.length ? `<div class="pog" style="flex-direction:column;align-items:flex-start;gap:2px">${S.aw.map((a) => `<span>${E(a)}</span>`).join("")}</div>` : ""}
+   <div class="sg"><table class="bx"><tr><th>#</th><th>TEAM</th><th>W</th><th>L</th><th title="points per game for / against">PF</th><th>PA</th><th>STRK</th></tr>${st
+     .map((r) => {
+       const g = Math.max(1, r.w + r.l);
+       return `<tr${r.t === S.team ? ' style="color:#ffd23f"' : ""}><td>${st.indexOf(r) + 1}${st.indexOf(r) === 3 ? " ·" : ""}</td><td>${E(tName(r.t))}</td><td>${r.w}</td><td>${r.l}</td><td>${(r.pf / g).toFixed(1)}</td><td>${(r.pa / g).toFixed(1)}</td><td>${r.st > 0 ? "W" + r.st : r.st < 0 ? "L" + -r.st : "—"}</td></tr>`;
+     })
      .join("")}</table>
    <table class="bx"><tr><th>SCHEDULE</th><th>RESULT</th></tr>${S.sched
      .map((g) => `<tr><td>vs ${E(tName(g.opp))}</td><td>${g.my == null ? "—" : (g.my > g.op! ? "W " : "L ") + g.my + "-" + g.op}</td></tr>`)
      .join("")}${po && po.res ? po.res.map((r: string) => `<tr><td colspan="2">${E(r)}</td></tr>`).join("") : ""}</table></div>
+   ${Object.keys(S.ps!).length ? `<h3 style="margin:6px 0 0;font:900 13px system-ui;letter-spacing:2px">LEAGUE LEADERS</h3><div class="sg">${ld("pts", "POINTS")}${ld("reb", "REBOUNDS")}${ld("ast", "ASSISTS")}</div>` : ""}
    <div class="row">${S.champ == null ? `<button class="big" id="snx">▶ PLAY NEXT GAME</button>` : ""}<button class="ghost" id="srs">New season</button><button class="ghost" id="mme">Menu</button></div></div>`;
   const nx = document.getElementById("snx");
   if (nx)
@@ -340,22 +459,24 @@ export function seasonScreen() {
   if (nx) nx.focus();
 }
 export const SEASON = { on: 0 };
-/** Called by the shell when a game ends: records the result, sims the rest of the league, advances the playoffs. */
+/** Called by the shell when a game ends: records the result and both box scores, sims the rest of the league,
+ *  advances the playoffs (best-of-3 series). */
 export function seasonResult(won: boolean) {
   if (!SEASON.on) return false;
   SEASON.on = 0;
   const S: Season = lsGet(SKEY(), null);
   if (!S) return false;
+  fixSeason(S);
   const my = G.sc[0],
-    op = G.sc[1];
+    op = G.sc[1],
+    opp = S.round < S.sched.length ? S.sched[S.round].opp : S.po ? S.po.opp : -1;
+  // your game: the real box scores
+  for (let t = 0; t < 2; t++) for (const p of G.ROST[t] || []) if (p.stt.min > 0 || p.stt.pts || p.stt.reb) addLine(S, t ? opp : S.team, p.n, p.stt);
   if (S.round < S.sched.length) {
     const g = S.sched[S.round];
     g.my = my;
     g.op = op;
-    const im = S.teams.indexOf(S.team),
-      io = S.teams.indexOf(g.opp);
-    if (won) (S.w[im]++, S.l[io]++);
-    else (S.w[io]++, S.l[im]++);
+    result(S, S.team, g.opp, won ? Math.max(my, op + 1) : my, won ? op : Math.max(op, my + 1));
     // the rest of the league plays this round too
     const rest = S.teams.filter((t) => t !== S.team && t !== g.opp).sort(() => Math.random() - 0.5);
     for (let i = 0; i + 1 < rest.length; i += 2) simGame(S, rest[i], rest[i + 1]);
@@ -363,26 +484,47 @@ export function seasonResult(won: boolean) {
     if (S.round >= S.sched.length) {
       const st = standings(S),
         seed = st.findIndex((r) => r.t === S.team);
-      if (seed < 4) S.po = { stage: 0, opp: st[3 - seed].t, res: [`Playoffs: #${seed + 1} seed vs #${4 - seed} ${tName(st[3 - seed].t)}`], seeds: st.slice(0, 4).map((r) => r.t) };
+      if (seed < 4) S.po = { stage: 0, opp: st[3 - seed].t, sw: 0, sl: 0, res: [`Playoffs: #${seed + 1} seed vs #${4 - seed} ${tName(st[3 - seed].t)}`], seeds: st.slice(0, 4).map((r) => r.t) };
       else {
         // missed the playoffs: the top 4 play it out
         const s4 = st.slice(0, 4).map((r) => r.t),
-          f1 = Math.random() < 0.5 ? s4[0] : s4[3],
-          f2 = Math.random() < 0.5 ? s4[1] : s4[2];
-        S.champ = Math.random() < 0.5 ? f1 : f2;
-        S.po = { res: [`Missed the playoffs (#${seed + 1}).`] };
+          a = simSeries(S, s4[0], s4[3]),
+          b = simSeries(S, s4[1], s4[2]),
+          f = simSeries(S, a.w, b.w);
+        S.champ = f.w;
+        S.po = { res: [`Missed the playoffs (#${seed + 1}).`, `Semifinals: ${tName(a.w)} ${a.s}, ${tName(b.w)} ${b.s}`, `Final: ${tName(f.w)} wins ${f.s}`] };
+        S.aw = awards(S);
       }
     }
   } else if (S.po) {
     const p = S.po;
-    p.res.push(`${p.stage === 0 ? "Semifinal" : "Final"} vs ${tName(p.opp)}: ${won ? "W" : "L"} ${my}-${op}`);
-    if (!won) {
-      S.champ = p.stage === 0 ? p.seeds.filter((t: number) => t !== S.team && t !== p.opp)[(Math.random() * 2) | 0] : p.opp;
-    } else if (p.stage === 0) {
-      const o = p.seeds.filter((t: number) => t !== S.team && t !== p.opp);
-      p.stage = 1;
-      p.opp = o[Math.random() < 0.5 ? 0 : 1];
-    } else S.champ = S.team;
+    result(S, S.team, p.opp, won ? Math.max(my, op + 1) : my, won ? op : Math.max(op, my + 1));
+    p.sw = (p.sw || 0) + (won ? 1 : 0);
+    p.sl = (p.sl || 0) + (won ? 0 : 1);
+    p.res.push(`${p.stage === 0 ? "Semifinal" : "Final"} game ${p.sw + p.sl} vs ${tName(p.opp)}: ${won ? "W" : "L"} ${my}-${op} (series ${p.sw}-${p.sl})`);
+    if (p.sl >= 2) {
+      // eliminated: the bracket plays out without you
+      if (p.stage === 0) {
+        const o = p.seeds.filter((t: number) => t !== S.team && t !== p.opp),
+          a = simSeries(S, o[0], o[1]),
+          f = simSeries(S, p.opp, a.w);
+        p.res.push(`Final: ${tName(f.w)} wins ${f.s}`);
+        S.champ = f.w;
+      } else S.champ = p.opp;
+      S.aw = awards(S);
+    } else if (p.sw >= 2) {
+      if (p.stage === 0) {
+        const o = p.seeds.filter((t: number) => t !== S.team && t !== p.opp),
+          a = simSeries(S, o[0], o[1]);
+        p.res.push(`Other semifinal: ${tName(a.w)} wins ${a.s}`);
+        p.stage = 1;
+        p.opp = a.w;
+        p.sw = p.sl = 0;
+      } else {
+        S.champ = S.team;
+        S.aw = awards(S);
+      }
+    }
   }
   lsPut(SKEY(), S);
   return true;

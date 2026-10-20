@@ -441,7 +441,7 @@ namespace Hoops.Core
                 snd(150, 0.2, "square", 0.12);
                 return;
             }
-            if (fd == null && blk != null && blk.z > 10 && Hypot(blk.x - p.x, blk.y - p.y) < 24 && Rng.R() < 0.025 + (ct * 0.13 * blk.d) / 100)
+            if (fd == null && blk != null && blk.z > 10 && Hypot(blk.x - p.x, blk.y - p.y) < 24 && Rng.R() < (0.025 + (ct * 0.13 * blk.d) / 100) * (cfg.PP >= 2 ? pp2BlkT(blk) : 1)) // (Pro Play v2: block timing)
             {
                 // three kinds of block: a control block tipped to himself or a teammate (good defenders keep it - it starts the
                 // break), a volleyball swat into the stands, or the plain swat that pops it loose
@@ -497,7 +497,8 @@ namespace Hoops.Core
             }
             bool rap = useRap();
             if (dunkMiss && hum) txtW("MISSED DUNK!", p.x, p.y, 120, "#ff6b4a");
-            bool mk = dunkMiss ? false : lay ? Rng.R() < Clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) : gr && (Util.T(p.perf) || Rng.R() < 0.98 - cx * 0.25);
+            // (Pro Play v2: contact knocks a fouled shot off - layups x.5, CPU jumpers x.35; a human's green still counts)
+            bool mk = dunkMiss ? false : lay ? Rng.R() < Clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd != null && cfg.PP >= 2 ? 0.5 : 1) : gr && (Util.T(p.perf) || Rng.R() < (0.98 - cx * 0.25) * (fd != null && cfg.PP >= 2 && !hum ? 0.35 : 1));
             double a = Rng.R() * 6.28,
                 off = mk ? (rap ? 0.3 : 1.2) : 9 + Rng.R() * 7,
                 tx = hx + JsMath.Cos(a) * off,

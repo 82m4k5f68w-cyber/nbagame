@@ -13,7 +13,7 @@ using static Hoops.Core.Pose;
 namespace Hoops.Core
 {
     /// <summary>Half-court play (sim.ts Play). kind "pnr" | "pin" | "flare"; ph "go" | "set" | "out".</summary>
-    public sealed class Play
+    public sealed partial class Play
     {
         public string kind;
         public double t0;
@@ -148,8 +148,11 @@ namespace Hoops.Core
                 if (sh == null || w > sk) { sh = q; sk = w; }
             }
             double r = Rng.R();
+            if (pc >= 5 && cfg.NP >= 3 && Hypot(hoop(t) - h.x, HY - h.y) > 330) return null; // (a called set starts in the half court)
+            var tp = tpSet(t, h, ms, big, sh, pc); // (named sets: horns, Spain pick-and-roll, stagger, zipper, post entry, ATO)
+            if (tp != null) return tp;
             // Curry-style shooters get pindowns/flares; otherwise pick-and-roll is the bread and butter
-            string kind = pc == 1 ? "pnr" : pc == 2 ? "pin" : pc == 3 ? "flare" : sh.c >= 82 && sh != big && r < 0.5 ? (r < 0.3 ? "pin" : "flare") : "pnr";
+            string kind = pc == 1 || pc >= 5 ? "pnr" : pc == 2 ? "pin" : pc == 3 ? "flare" : sh.c >= 82 && sh != big && r < 0.5 ? (r < 0.3 ? "pin" : "flare") : "pnr";
             Player scr;
             if (kind == "pnr") scr = big;
             else
@@ -164,7 +167,8 @@ namespace Hoops.Core
                 }
             }
             var use = kind == "pnr" ? h : sh;
-            return new Play { kind = kind, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0 };
+            // (fa: called in the backcourt - re-called once the ball crosses into the half court)
+            return new Play { kind = kind, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0, fa = cfg.NP >= 3 && cpuIQ(t) >= 1 && Hypot(hoop(t) - h.x, HY - h.y) > 330 ? 1 : 0 };
         }
 
         public static readonly SpaState SPA = new SpaState();
@@ -221,10 +225,12 @@ namespace Hoops.Core
             }
             bool iso = isoNow(t);
             Play pl = iso ? null : PLAY[ti];
-            if (!iso && (pl == null || T - pl.t0 > 5.5 || pl.use.tm != t || (pl.kind == "pnr" && pl.use != h) || pl.scr == h)) pl = PLAY[ti] = newPlay(t);
+            if (!iso && (pl == null || T - pl.t0 > (TP_v(pl) ? 6.5 : 5.5) || (Util.T(pl.fa) && pl.ph == "go" && h != null && Hypot(hx - h.x, HY - h.y) <= 330) || pl.use.tm != t || (pl.kind == "pnr" && pl.use != h) || pl.scr == h || (pl.s2 != null && (pl.s2 == h || pl.s2.tm != t)))) pl = PLAY[ti] = newPlay(t);
             if (iso) PLAY[ti] = null;
             OFFS[ti] = null;
             if (pl == null && !iso) return false;
+            // post entry delivered: he goes to work on the block
+            if (pl != null && pl.v == "post" && h == pl.use && !Util.T(pl.fed)) { pl.fed = 1; h.ai.post = 1; h.ai.pw = 0; statAdd("postFed", 1); }
             Player scr = pl != null ? pl.scr : null,
                 use = pl != null ? pl.use : null,
                 def = pl != null ? (pl.def = manOf(use)) : null;
@@ -240,6 +246,7 @@ namespace Hoops.Core
                         pl.sx = def.x + dir * 6;
                         pl.sy = def.y + mid * 13;
                     }
+                    else if (TP_v(pl)) tpSpot(pl, hx, dir);
                     else if (pl.kind == "pin")
                     {
                         pl.sx = hx + dir * 120;
@@ -264,7 +271,7 @@ namespace Hoops.Core
                             double cov = TS.cov[1 - ti],
                                 ds = TS.ds[1 - ti],
                                 r = Rng.R();
-                            pl.rd = (cov == 1 || TS.dbl[1 - ti] == P.IndexOf(use)) && r < 0.45 ? 1 : ds == 3 && p.c >= 78 && r < 0.5 ? 2 : 0;
+                            pl.rd = (cov == 1 || cov == 3 || TS.dbl[1 - ti] == P.IndexOf(use)) && r < 0.45 ? 1 : ds == 3 && p.c >= 78 && r < 0.5 ? 2 : 0;
                         }
                         if (Util.T(pl.rd) && Hypot(p.x - pl.sx, p.y - pl.sy) < 26)
                         {
@@ -275,7 +282,7 @@ namespace Hoops.Core
                             return true;
                         }
                         mv(p, pl.sx, pl.sy, 1.2);
-                        if (Hypot(p.x - pl.sx, p.y - pl.sy) < 7 || T - pl.t0 > 2.6)
+                        if (Hypot(p.x - pl.sx, p.y - pl.sy) < 7 || T - pl.t0 > (TP_v(pl) ? 1.8 : 2.6))
                         {
                             pl.ph = "set";
                             pl.setAt = T;
@@ -287,7 +294,7 @@ namespace Hoops.Core
                         p.vx *= 0.5;
                         p.vy *= 0.5;
                         p.setT = 0.25;
-                        if (T - pl.setAt > (pl.kind == "pnr" ? 1.25 : 1.5)) pl.ph = "out";
+                        if (T - pl.setAt > (TP_v(pl) ? tpSetLen(pl) : pl.kind == "pnr" ? 1.25 : 1.5)) pl.ph = "out"; // (named sets run quicker)
                     }
                     else
                     {
@@ -298,6 +305,7 @@ namespace Hoops.Core
                         bool pop = pl.rd == 2 || (pl.rd != 1 && (cov == 1 ? false : scr.c >= (cov == 0 && !ctHas(1 - t) ? 74 : 80) && scr.i < 85));
                         double gx = pop ? hx + dir * 225 : hx + dir * 30,
                             gy = pop ? HY + side * -60 : HY + side * 14;
+                        pl.pop = pop ? 1 : 0;
                         mv(p, gx, gy, 1.2);
                         var mo = manOf(p);
                         if (!pop && Hypot(p.x - hx, p.y - HY) < 90 && Hypot(mo.x - p.x, mo.y - p.y) > 30) OFFS[ti] = p;
@@ -305,9 +313,11 @@ namespace Hoops.Core
                     }
                     return true;
                 }
+                if (pl.s2 != null && p == pl.s2) return tpS2(p, pl, t, hx, dir);
                 if (p == use && pl.kind != "pnr")
                 {
                     p.br = "use";
+                    if (TP_v(pl)) return tpUse(p, pl, t, hx, dir);
                     if (pl.ph == "go") mv(p, hx + dir * 28, HY + side * 60, 1); // set up low
                     else
                     {
@@ -343,7 +353,8 @@ namespace Hoops.Core
             // spacing + backdoor cuts for everyone else
             var ms = G_ms;
             ms.Clear();
-            foreach (var q in P) if (q.tm == t && q != h && q != scr && q != use) ms.Add(q);
+            Player s2 = pl != null ? pl.s2 : null;
+            foreach (var q in P) if (q.tm == t && q != h && q != scr && q != use && q != s2) ms.Add(q);
             G_spX[0] = hx + dir * 15; G_spY[0] = HY - 230;
             G_spX[1] = hx + dir * 15; G_spY[1] = HY + 230;
             G_spX[2] = hx + dir * 190; G_spY[2] = HY - 175;
@@ -371,7 +382,7 @@ namespace Hoops.Core
                         G_cost[k, j] =
                             Hypot(sx - q.x, sy - q.y) +
                             (Hypot(sx - B.x, sy - B.y) < 90 || Hypot(sx - bx, sy - by) < 120 ? 400 : 0) +
-                            (G_nearBusy(sx, sy, scr, use, h, t) ? 300 : 0) +
+                            (G_nearBusy(sx, sy, scr, use, h, t) || (s2 != null && s2.tm == t && Hypot(s2.x - sx, s2.y - sy) < 80) ? 300 : 0) +
                             (q.ai.spj == j ? -45 : 0);
                     }
                 }
@@ -593,7 +604,7 @@ namespace Hoops.Core
                 if (o.z > 4) c += hs > 50 ? 0.3 : 0.03; // flying in vs. straight up
                 if (d < 15) c += 0.14; // already chest to chest
                 if (lay && d < 22) c += 0.1 + (p.i - 60) / 400 + (p.bk - 1) * 0.2 + (hasB(p, "PZ") ? 0.08 : 0);
-                c *= (1.2 - o.d / 220) * 0.42; // (x.42: calibrated to NBA free-throw rate, ~0.22 FTA per possession)
+                c *= (1.2 - o.d / 220) * (cfg.PP >= 2 ? 0.52 : 0.42); // (x.42: calibrated to NBA free-throw rate; Pro Play v2: x.52 with fewer and-ones)
                 if (c > bp)
                 {
                     bp = c;
@@ -649,7 +660,8 @@ namespace Hoops.Core
         public static (double, Player) contestOf(Player p)
         {
             var (ct, o2) = contestRaw(p);
-            return (Math.Min(1, ct * (p.sbw > 0 ? 0.25 : 1)), o2);
+            // (Pro Play v2: a stick-picked fadeaway / leaner creates separation - here, so the meter shows it while charging)
+            return (Math.Min(1, ct * (p.sbw > 0 ? 0.25 : 1) * (cfg.PP >= 2 && Util.T(p.fade) && (p.mode == "c" || p.mode == "s") ? (p.fade == 1 ? 0.82 : 0.9) : 1)), o2);
         }
 
         public static void collide()
@@ -786,7 +798,7 @@ namespace Hoops.Core
                                         // (no charge in the restricted area under the rim; a help defender who got there
                                         // and set his feet draws it more often)
                                         bool ra = Hypot(o.x - hoop(h.tm), o.y - HY) < 40;
-                                        if (!ra && Hypot(o.vx, o.vy) < 70 && Hypot(h.vx, h.vy) > 170 && Rng.R() < (o.helpT > 0 ? 0.62 : 0.5))
+                                        if (cfg.PP >= 2 ? pp2Charge(o, h, ra) : !ra && Hypot(o.vx, o.vy) < 70 && Hypot(h.vx, h.vy) > 170 && Rng.R() < (o.helpT > 0 ? 0.62 : 0.5)) // (Pro Play v2: read from position)
                                         {
                                             txtW("CHARGE!", h.x, h.y, 95, "#ff6b4a");
                                             o.act = 3; // took the charge: on the floor
@@ -801,7 +813,7 @@ namespace Hoops.Core
                                             whistle(h, o, 0.55);
                                             setup(o.tm);
                                         }
-                                        else if (Rng.R() < (sh ? 0.2 : 0.05) * (hit > 240 ? 1.6 : 1)) foul(o, h, sh ? "SHOOTING" : "BLOCKING", sh ? 1 : 0, 0); // (blocking: calibrated to NBA personal-foul rates)
+                                        else if (Rng.R() < (sh ? 0.2 : 0.05) * (hit > 240 ? 1.6 : 1) * (cfg.PP >= 2 ? pp2BlkK(o) : 1)) foul(o, h, sh ? "SHOOTING" : "BLOCKING", sh ? 1 : 0, 0); // (blocking: calibrated to NBA personal-foul rates)
                                     }
                                 }
                             }
@@ -1196,7 +1208,7 @@ namespace Hoops.Core
                 REC[b] = (float)p.x;
                 REC[b + 1] = (float)p.y;
                 REC[b + 2] = (float)p.z;
-                REC[b + 3] = (float)p.f;
+                REC[b + 3] = (float)(p.f + p.ry); // (the drawn facing: hip turns and spins replay too - Pose fv)
                 var qq = p.q;
                 for (int j = 0; j < QK.Length; j++) REC[b + 4 + j] = qq != null ? (float)qq[j] : float.NaN;
             }
@@ -1218,6 +1230,7 @@ namespace Hoops.Core
                 p.y = REC[b + 1];
                 p.z = REC[b + 2];
                 p.f = REC[b + 3];
+                p.ry = 0; // (the recorded facing already carries it)
                 if (!float.IsNaN(REC[b + 4]))
                 {
                     if (p.q == null) p.q = new Q();

@@ -221,6 +221,8 @@ namespace Hoops.Core
                     TS.qs.Add(new[] { sc[0], sc[1] });
                     q++;
                     tf = new double[] { 0, 0 };
+                    TS.l2[0] = TS.l2[1] = TS.bon[0] = TS.bon[1] = 0;
+                    if (q > 4 && gameLike()) TS.to[0] = TS.to[1] = 2; // two timeouts per overtime
                     foreach (var p in P) p.en = Math.Min(1, p.en + 0.25); // quarter break (TS: p.en ?? 1; en starts at 1)
                     if (q == 3 && !Util.T(TS.half))
                     {
@@ -403,12 +405,20 @@ namespace Hoops.Core
             snd(120, 0.3, "sawtooth", 0.1);
             B.sh = 0;
             B.ft = 0;
-            double n = F_on(cfg.HALF) ? 0 : Util.T(sh) ? (Util.T(th) ? 3 : 2) : tf[(int)d.tm] >= 5 ? 2 : 0;
+            // the bonus: the 5th team foul of a quarter (4th in overtime), or the 2nd in the last two minutes of the period
+            int dt0 = (int)d.tm;
+            if (bcast() < 120) TS.l2[dt0]++;
+            bool bon = tf[dt0] >= (q > 4 ? 4 : 5) || TS.l2[dt0] >= 2;
+            double n = F_on(cfg.HALF) ? 0 : Util.T(sh) ? (Util.T(th) ? 3 : 2) : bon ? 2 : 0;
+            if (bon && !Util.T(TS.bon[dt0]) && !F_on(cfg.HALF))
+            {
+                TS.bon[dt0] = 1;
+                if (!Util.T(sh) && !Util.T(flag)) { txt("BONUS", 480, 230, "#ffd23f"); cm("bonus", cl[1 - dt0]); }
+            }
             if (Util.T(n))
             {
                 startFT(o, n, Util.T(flag) ? o.tm : 0, 0);
                 if (Util.T(flag)) ftq.keep = 1;
-                if (!Util.T(flag) && tf[(int)d.tm] == 5 && !Util.T(sh)) txt("BONUS", 480, 230, "#ffd23f");
             }
             else
             {

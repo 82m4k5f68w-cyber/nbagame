@@ -93,6 +93,11 @@ namespace Hoops.Core
                 }
                 return;
             }
+            if (cfg.PP >= 2)
+            {
+                pp2Read(p, d, dist, mvq, Sd, ux, uy, D, u); // (v5.4: the defender's read decides it)
+                return;
+            }
             double bon = mvq == 5 ? 0.06 : mvq == 6 ? 0.04 : 0;
             if (dist < 60 && Rng.R() < 0.5 + (p.s - d.d) / 250 + (hasB(p, "AB") ? 0.12 : 0) + (p.combo - 1) * 0.12 + bon)
             {
@@ -321,6 +326,11 @@ namespace Hoops.Core
                 if (p.mode != "s") p.lnA = Math.Max(0, p.lnA - dt * 5);
                 if (p.mode == "i") { if (p.z <= 0) p.offH = 0; if (p.gath > 0 || p.z <= 0) p.gath = 0; }
                 if (p.mode == "s" && p.t < 0.02) p.tdT = T;
+                if (cfg.PP >= 2)
+                {
+                    p.stillT = p.z <= 0 && Hypot(p.vx, p.vy) < 45 ? p.stillT + dt : 0; // (feet set: charges)
+                    if (p.cutT > -1) p.cutT -= dt;
+                }
             }
             var o = B.owner;
             if (o != null && B.hold != o) o.catchT = T;
@@ -335,8 +345,15 @@ namespace Hoops.Core
                 double nx = dx / dd, ny = dy / dd, f = (o.bk * o.ht) / (d.bk * d.ht);
                 o.hitT = 0.18; o.hitX = -nx; o.hitY = -ny;
                 d.hitT = 0.22; d.hitX = nx; d.hitY = ny;
-                o.vx *= 0.86; o.vy *= 0.86;
-                d.x += nx * 2.5 * f; d.y += ny * 2.5 * f;
+                if (cfg.PP >= 2)
+                {
+                    if (pp2Bump(o, d, nx, ny, dd)) return; // (v5.4: cut off by a set defender - maybe a charge - or bumps a beaten one off)
+                }
+                else
+                {
+                    o.vx *= 0.86; o.vy *= 0.86;
+                    d.x += nx * 2.5 * f; d.y += ny * 2.5 * f;
+                }
                 upc("bump");
             }
             // on-ball defender swipes down at the ball on the drive (never a steal: steals are off by design)

@@ -1,4 +1,4 @@
-// Unity-only Pro Play animation upgrades (cfg.UP = 1), one pose layer called from pose3 before the additive/feet/head
+// Pro Play animation upgrades (cfg.UP = 1 in Unity; shared with the TS pose.ts since v5.4 as cfg.AP = 1), one pose layer called from pose3 before the additive/feet/head
 // layers (so the stepping, blending, limits and contact passes all still run after it). Sim side: Sim.UP.cs.
 // Shots: gather -> dip -> rise -> set -> release -> follow-through by form (dp/k/ft/gs/lk), catch-and-shoot 1-2 step vs
 // hop gather off the dribble, elbow under the ball, leg drive + toe extension, landing knees by jump height, contest
@@ -30,6 +30,8 @@ namespace Hoops.Core
     public static partial class Pose
     {
         public static readonly UPV UQ = new UPV();
+        /// <summary>This pose layer is on: Unity's cfg.UP, or the shared animation pack cfg.AP (TS pose.ts runs the same code).</summary>
+        public static bool upA => cfg.UP != 0 || cfg.AP != 0;
         static bool upReg;
         /// <summary>UP clip names for sv 24 (floater) and 25 (sky hook); registers their clips on first use.</summary>
         static string upCK(int sv)
@@ -80,6 +82,9 @@ namespace Hoops.Core
             int sig = upSig(p);
             bool curry = p.sv == 9 || (g != null && Util.T(g.cl));
             double hx = hoop(p.tm), D = Hypot(hx - p.x, HY - p.y);
+            // (both hands are on the ball - triple threat, fakes, inbounds: the two-hand IK was solved for this crouch and lean,
+            // so the body dips below would pull the palms off the ball)
+            bool held = has && md == "i" && (hold != 0 || inb > 0);
             // ================= shots =================
             if (md == "c" && has)
             {
@@ -216,15 +221,15 @@ namespace Hoops.Core
                     u.st = ST.move;
                 }
             }
-            else if (md == "i" && p.mvEnd != null && Sim.T - p.mvEnd.Value < 0.3 && !air)
+            else if (md == "i" && p.mvEnd != null && Sim.T - p.mvEnd.Value < 0.3 && !air && !held)
             {
                 // follow-through / settle out of the move
                 double w = 1 - (Sim.T - p.mvEnd.Value) / 0.3;
                 u.cr += 0.1 * w * w; u.ln += 0.05 * w;
             }
-            if (md == "i" && p.fsT > 0.22 && !air) { double a = Bump((0.28 - p.fsT) / 0.06); u.cr += 0.08 * a; u.ln -= 0.04 * a; } // counter-dip into the first step
+            if (md == "i" && p.fsT > 0.22 && !air && !held) { double a = Bump((0.28 - p.fsT) / 0.06); u.cr += 0.08 * a; u.ln -= 0.04 * a; } // counter-dip into the first step
             // ================= landings flow into the next action =================
-            if (p.landT > 0 && md == "i" && !air && sp > 80)
+            if (p.landT > 0 && md == "i" && !air && sp > 80 && !held)
             {
                 double k = p.landT / 0.28, w = Math.Min(1, (sp - 80) / 140);
                 u.cr -= 0.2 * k * w; u.kL -= 0.25 * k * w; u.kR -= 0.25 * k * w; u.ln += 0.08 * k * w; // run out of it
@@ -526,6 +531,215 @@ namespace Hoops.Core
             c[6 + i] += (om * om * (target - c[i]) - 2 * om * c[6 + i]) * DT;
             c[i] += c[6 + i] * DT;
             return c[i];
+        }
+    }
+}
+
+namespace Hoops.Core
+{
+    public partial class Player
+    {
+        public double? shV; // per-shot variety draw (set at the gather)
+        public string apM; // pose mode at the last apPose (to spot a new gather)
+    }
+    public static partial class Pose
+    {
+        /// <summary>Additive head yaw for this tick (a frustrated head shake), consumed by the head layer like HEADX.</summary>
+        public static double HEADY = 0;
+        /// <summary>Big celebrations that draw a reaction from the players around.</summary>
+        static bool bigCel(double c) => c >= 1 && c <= 8 || c == 13 || c == 14;
+
+        /// <summary>Animation pack v5.4 additions (cfg.AP; TS twin apPose in pose.ts, same order): defenders read the fakes,
+        /// on-ball bounce, the floor reacts to big plays, shooter frustration, shot-to-shot follow-through variety.</summary>
+        public static void apPose(Player p, UPV u, string md, bool has, bool air, double sp)
+        {
+            var ow = B.owner;
+            bool free = md == "i" && !air && !has && !(p.celT > 0) && !Util.T(p.postA) && !(p.setT > 0);
+            // ---- defenders read the fakes: a pump fake brings the ones who stayed down up out of their stance; a jab rocks
+            //      the man in front back on his heels
+            if (ow != null && ow.tm != p.tm && free && (ow.act == 1 || ow.act == 2) && ow.actT > 0)
+            {
+                double d = Hypot(ow.x - p.x, ow.y - p.y);
+                if (d < 75)
+                {
+                    double prox = clamp((75 - d) / 30, 0, 1);
+                    if (ow.act == 1)
+                    {
+                        double b = Bump((0.42 - ow.actT) / 0.34) * prox * clamp((100 - (Util.T(p.d) ? p.d : 70)) / 40, 0.4, 1);
+                        u.cr -= 0.3 * b; u.kL -= 0.3 * b; u.kR -= 0.3 * b; u.toe += 0.3 * b;
+                        u.aR += (2.75 - u.aR) * b; u.eR += (0.3 - u.eR) * b; u.aL += (2.1 - u.aL) * b; u.eL += (0.45 - u.eL) * b;
+                        u.ln -= 0.12 * b;
+                        HEADX -= 0.2 * b; // eyes follow the ball up
+                    }
+                    else
+                    {
+                        double b = Bump((0.38 - ow.actT) / 0.32) * prox;
+                        u.ln -= 0.2 * b; u.cr += 0.1 * b; u.cx -= 0.06 * b; u.aL -= 0.25 * b; u.aR -= 0.25 * b;
+                    }
+                }
+            }
+            // ---- on-ball defender standing his man up: alive on the balls of his feet, a small bounce ----
+            if (ow != null && ow.tm != p.tm && free && sp < 25 && u.st == ST.def)
+            {
+                double d = Hypot(ow.x - p.x, ow.y - p.y);
+                if (d < 70)
+                {
+                    double w = clamp((70 - d) / 25, 0, 1) * (1 - sp / 25);
+                    u.cr += 0.04 * (0.5 + 0.5 * JsMath.Sin(Sim.T * 9 + p.k * 1.9)) * w;
+                    u.toe += 0.12 * w;
+                }
+            }
+            // ---- the floor reacts to a big play: teammates pump a fist or clap, the other side sags ----
+            if (free && sp < 200)
+            {
+                Player cq = null;
+                double cd = 260;
+                foreach (var q in P)
+                    if (q != p && !Util.T(q.off) && q.celT > 0 && bigCel(q.cel))
+                    {
+                        double d = Hypot(q.x - p.x, q.y - p.y);
+                        if (d < cd) { cd = d; cq = q; }
+                    }
+                if (cq != null)
+                {
+                    double e = CEL_T - cq.celT - 0.07 * (p.k % 4),
+                        w = clamp(Math.Min(e / 0.3, (cq.celT - 0.2) / 0.4), 0, 1);
+                    if (w > 0 && cq.tm == p.tm)
+                    {
+                        if (p.k % 2 == 0)
+                        {
+                            double pm = Math.Max(0, JsMath.Sin(e * 11)); // fist pump (twice)
+                            u.aR += (1.85 + 0.5 * pm - u.aR) * w; u.eR += (1.95 - 0.55 * pm - u.eR) * w; u.sz += (0.3 - u.sz) * w; u.gR += (1 - u.gR) * w;
+                        }
+                        else
+                        {
+                            double cl = Math.Abs(JsMath.Sin(e * 9)); // claps in front of the chest
+                            u.aL += (1.3 - u.aL) * w; u.aR += (1.3 - u.aR) * w; u.eL += (1.0 - u.eL) * w; u.eR += (1.0 - u.eR) * w;
+                            u.sz += (-0.1 + 0.45 * cl - u.sz) * w; u.ZL(u.zL + (-0.1 + 0.45 * cl - u.zL) * w);
+                            u.gL = u.gR = 0.1;
+                        }
+                    }
+                    else if (w > 0)
+                    {
+                        // deflated: hands on the hips, head drops
+                        u.aL += (-0.15 - u.aL) * w; u.aR += (-0.15 - u.aR) * w; u.eL += (1.55 - u.eL) * w; u.eR += (1.55 - u.eR) * w;
+                        u.sz += (0.62 - u.sz) * w; u.ZL(u.zL + (0.62 - u.zL) * w); u.hL += (1.25 - u.hL) * w; u.hR += (1.25 - u.hR) * w;
+                        HEADX += 0.22 * w;
+                    }
+                }
+            }
+            // ---- the shooter after his miss is rebounded: a head shake, a frustrated clap, or both hands to the head ----
+            if (free && p.frT > 0.55 && sp < 260)
+            {
+                double e = 1.8 - p.frT, w = clamp(Math.Min(e / 0.2, (p.frT - 0.55) / 0.3), 0, 1), v = p.k % 3;
+                if (v == 0) { HEADY += 0.32 * JsMath.Sin(e * 13) * w; HEADX += 0.2 * w; }
+                else if (v == 1)
+                {
+                    double cl = Bump((e - 0.05) / 0.35);
+                    u.aL += (1.2 - u.aL) * w; u.aR += (1.2 - u.aR) * w; u.eL += (1.1 - u.eL) * w; u.eR += (1.1 - u.eR) * w;
+                    u.sz += (0.5 - 0.62 * cl - u.sz) * w; u.ZL(u.zL + (0.5 - 0.62 * cl - u.zL) * w);
+                    HEADX += 0.15 * w;
+                }
+                else
+                {
+                    u.aL += (2.45 - u.aL) * w; u.aR += (2.45 - u.aR) * w; u.eL += (2.2 - u.eL) * w; u.eR += (2.2 - u.eR) * w;
+                    u.sz += (0.72 - u.sz) * w; u.ZL(u.zL + (0.72 - u.zL) * w);
+                    HEADX -= 0.18 * w;
+                }
+            }
+            // ---- shot-to-shot variety inside each player's form (after the release only: the release point never moves) ----
+            if (md == "c" && p.apM != "c") p.shV = ((Math.Floor(Sim.T * 60) * 2654435761.0 + p.k * 40503) % 1000) / 1000;
+            if (md == "s" && has && p.shV != null)
+            {
+                string kind = CKofP(p.sv);
+                if (!IsLaySv(I(Or0(p.sv))) && kind != "hang" && kind != "hook" && kind != "sky")
+                {
+                    double k = upK(p, kind), rk = kind != null && RELK.TryGetValue(kind, out var rr) ? rr : 0.7,
+                        post = k > rk ? Math.Min(1, (k - rk) / Math.Max(0.05, 1 - rk)) : 0;
+                    if (post > 0)
+                    {
+                        double v = p.shV.Value, v2 = v * 7 % 1, v3 = v * 13 % 1, kk = SS((k - 0.55) / 0.25) * (0.06 + 0.12 * v3);
+                        u.aR += (v - 0.5) * 0.16 * post; u.wR += (v2 - 0.5) * 0.22 * post; u.tR -= kk; u.kR += kk * 1.3;
+                    }
+                }
+            }
+            p.apM = md;
+        }
+    }
+}
+
+namespace Hoops.Core
+{
+    public partial class Player
+    {
+        public double trY, trV, trS; // hip turn: root yaw offset, its velocity, the side chosen (pose.ts turnRun)
+    }
+    public static partial class Pose
+    {
+        /// <summary>Hip turn (cfg.AP; TS twin turnRun): a player backpedaling or sliding faster than a stance allows opens his
+        /// hips and runs - the drawn root (p.ry, via fv) turns toward the run while the sim facing, the chest (partly) and the
+        /// head stay on the play. Straight back he opens toward the ball. Critically damped spring; held in the air.</summary>
+        public static double turnRun(Player p)
+        {
+            double sp = Hypot(p.vx, p.vy), tgt = 0;
+            if (p.z > 1) tgt = p.trY;
+            else if (p.mode == "i" && B.owner != p && !Util.T(p.postA) && !(p.setT > 0) && !(p.actT > 0 && (p.act == 3 || p.act == 4)) && sp > 140)
+            {
+                double rel = wrapPi(JsMath.Atan2(p.vy, p.vx) - p.f), ar = Math.Abs(rel),
+                    w = clamp((sp - 150) / 60, 0, 1) * clamp((ar - 1.25) / 0.45, 0, 1);
+                if (w > 0)
+                {
+                    if (ar < 2.2 || (!Util.T(p.trS) && ar < 2.4)) p.trS = rel > 0 ? 1 : -1;
+                    else if (!Util.T(p.trS)) p.trS = JsMath.Sin(p.f) * (B.x - p.x) - JsMath.Cos(p.f) * (B.y - p.y) > 0 ? -1 : 1;
+                    tgt = p.trS * (ar - 0.55) * w;
+                }
+            }
+            if (tgt == 0 && Math.Abs(p.trY) < 0.05) p.trS = 0;
+            const double om = 11;
+            p.trV += (om * om * (tgt - p.trY) - 2 * om * p.trV) * DT;
+            p.trY += p.trV * DT;
+            return p.trY;
+        }
+    }
+}
+
+namespace Hoops.Core
+{
+    public static partial class Pose
+    {
+        /// <summary>(AP) A ball holder who has to be on his feet - inbounding, triple threat, fakes, the FT routine: a fall /
+        /// dive left over from before he got the ball is not drawn (TS twin upGot).</summary>
+        public static bool upGot(Player p)
+        {
+            if (cfg.AP == 0 || !(p.act == 3 || p.act == 4) || B.owner != p || p.mode != "i") return false;
+            double h = heldBall(p);
+            return inb > 0 || (h > 0 && h != 4);
+        }
+    }
+}
+
+namespace Hoops.Core
+{
+    public partial class Player
+    {
+        public double? rfP, rfX, rfY; // root yaw continuity: last sim facing / position seen by faceLag
+        public double rfO, rfV; // facing-snap offset and its velocity
+    }
+    public static partial class Pose
+    {
+        /// <summary>Root yaw continuity (AP; TS twin faceLag): more than 0.3 rad of facing change in one tick is drawn as a
+        /// quick turn - the excess goes into an offset that decays on a critically damped spring. A teleport resets it.</summary>
+        public static double faceLag(Player p)
+        {
+            bool tele = p.rfX != null && Hypot(p.x - p.rfX.Value, p.y - p.rfY.Value) > 30;
+            double df = p.rfP == null || tele ? 0 : wrapPi(p.f - p.rfP.Value);
+            p.rfP = p.f; p.rfX = p.x; p.rfY = p.y;
+            if (tele) { p.rfO = 0; p.rfV = 0; }
+            if (Math.Abs(df) > 0.3) p.rfO = wrapPi(p.rfO - (df - (df > 0 ? 0.3 : -0.3)));
+            double om = (p.mode == "c" || p.mode == "s") && B.owner == p ? 40 : 24;
+            p.rfV += (-om * om * p.rfO - 2 * om * p.rfV) * DT;
+            p.rfO += p.rfV * DT;
+            return p.rfO;
         }
     }
 }

@@ -677,6 +677,15 @@
     var row = function (t) { return "<tr><td>" + esc(cl[t]) + "</td>" + cols.map(function (c) { return "<td>" + c[t] + "</td>"; }).join("") + "<td><b>" + sc[t] + "</b></td></tr>"; };
     return '<table class="bx qtr"><tr><th></th>' + hd + "<th>T</th></tr>" + row(0) + row(1) + "</table>";
   }
+  /** Hollinger game score from the box score (browser twin: game.ts gmSc). */
+  function gmSc(p) {
+    var orb = p.orb || 0;
+    return (p.pts || 0) + 0.4 * (p.fgm || 0) - 0.7 * (p.fga || 0) + 0.7 * orb + 0.3 * ((p.reb || 0) - orb) + 0.7 * (p.ast || 0) + 0.7 * (p.blk || 0) - 0.4 * (p.pf || 0) + 0.5 * (p.hus || 0);
+  }
+  function lineTag(s) {
+    var n = [s.pts, s.reb, s.ast, s.blk].filter(function (v) { return v >= 10; }).length;
+    return n >= 3 ? "TRIPLE-DOUBLE" : n === 2 ? "DOUBLE-DOUBLE" : s.pts >= 30 ? s.pts + "-POINT NIGHT" : s.fga >= 5 && s.fgm === s.fga ? "PERFECT FROM THE FIELD" : "";
+  }
   function final(F) {
     scr = "final";
     playing(false);
@@ -691,8 +700,10 @@
       rec.put(r0);
     }
     if (last && last.mode === "clutch" && w) { var cc = lsGet("h2k_cc", {}); cc[last.arg] = 1; lsPut("h2k_cc", cc); }
-    var wt = sc[0] >= sc[1] ? 0 : 1, val = function (p) { return p.pts + p.reb * 1.2 + p.ast * 1.5 + p.blk * 2; };
-    var pog = (box[wt] || []).slice().sort(function (a, b) { return val(b) - val(a); })[0];
+    // player of the game: best game score (Hollinger) on the winners, unless a loser had a monster night (10+ better)
+    var wt = sc[0] >= sc[1] ? 0 : 1, val = gmSc;
+    var best = function (t) { return (box[t] || []).slice().sort(function (a, b) { return val(b) - val(a); })[0]; };
+    var pw = best(wt), pl2 = best(1 - wt), pog = pw && pl2 && val(pl2) >= val(pw) + 10 ? pl2 : pw, pogTag = pog ? lineTag(pog) : "";
     var rows = [
       ["FG%", pct(sum(0, "fgm"), sum(0, "fga")), pct(sum(1, "fgm"), sum(1, "fga"))],
       ["3P%", pct(sum(0, "tpm"), sum(0, "tpa")), pct(sum(1, "tpm"), sum(1, "tpa"))],
@@ -710,7 +721,7 @@
     var pogCard = "";
     if (pog) {
       var pt = BYNAME[pog.n], bd = pt ? pt[14] || [] : [], fg = pog.fga ? Math.round((100 * pog.fgm) / pog.fga) + "% FG" : "";
-      pogCard = '<div class="pog" tabindex="0"' + (pt ? ' data-pn="' + esc(pog.n) + '" data-col="' + pc[wt] + '"' : "") + ' style="--c:' + pc[wt] + '"><img alt="" src="' + avatar([pog.n, 0, 0, 0, 0, 0, 0, pog.sk, pog.hr, pog.bd, 0, 0, pog.no], pog.col || pc[wt]) + '"><div><small>PLAYER OF THE GAME</small><b>' + esc(pog.n) + "</b>" +
+      pogCard = '<div class="pog" tabindex="0"' + (pt ? ' data-pn="' + esc(pog.n) + '" data-col="' + pc[wt] + '"' : "") + ' style="--c:' + pc[wt] + '"><img alt="" src="' + avatar([pog.n, 0, 0, 0, 0, 0, 0, pog.sk, pog.hr, pog.bd, 0, 0, pog.no], pog.col || pc[wt]) + '"><div><small>PLAYER OF THE GAME' + (pogTag ? " · " + pogTag : "") + "</small><b>" + esc(pog.n) + "</b>" +
         '<div class="pgs"><span><b>' + pog.pts + "</b>PTS</span><span><b>" + pog.reb + "</b>REB</span><span><b>" + pog.ast + "</b>AST</span>" + (pog.blk ? "<span><b>" + pog.blk + "</b>BLK</span>" : "") + "</div>" +
         '<small class="pgl">' + pog.fgm + "-" + pog.fga + (fg ? " · " + fg : "") + " · " + pog.tpm + "-" + pog.tpa + " 3P" + (bd.length ? " · " + bd.map(function (b) { return D.BADGE[b] || b; }).join(" · ") : "") + "</small></div></div>";
     }

@@ -25,7 +25,10 @@ const N = +(process.argv[2] || 3000);
 Object.assign(G.cfg, { NP: 5, physics: "legacy", MYM: 0, DIFF: 2 });
 // "hum" (3rd arg): a scripted human on team 0 (arithmetic-only pattern, same in Trace.cs) covers the human-only paths
 // (move buffer / cancel window, stance, sprint burst, release feedback, passes, fakes, step-backs).
-const HUM = process.argv[3] === "hum";
+// "my": the same scripted human as My Player (Pro Play v2 off-ball paths: call for the ball / a screen, flick cuts)
+const MY = process.argv[3] === "my",
+  HUM = process.argv[3] === "hum" || MY;
+if (MY) G.cfg.MYM = 1;
 let TK = 0;
 const hin = (t: number) => {
   const ph = t % 240,
@@ -38,6 +41,7 @@ const hin = (t: number) => {
   if (t % 173 === 90) i.pf = 1;
   if (t % 97 === 40) i.e = 1;
   if (t % 211 === 150) i.sb = 1;
+  if (MY && t % 300 >= 200 && t % 300 < 230) i.post = 1; // (Pro Play v2: post key - screens / post-ups)
   return i;
 };
 G.cfg.input = HUM ? () => hin(TK) : () => ({ dx: 0, dy: 0 });
@@ -52,5 +56,7 @@ for (let t = 0; t < N && G.S !== "over"; t++) {
   G.FX.length = 0;
   if (G.S === "half") G.setS("play");
   if (process.env.DBG && t >= 178 && t <= 181) { const o: any = G.B.owner; console.error(t, o && o.n, o && o.mode, o && G.heldBall(o), G.inb, o && o.q && o.q.wR, o && o.act, o && o.actT, G.B.z, G.B.tgz); }
-  console.log(t + " " + G.P.map((p) => f(p.x) + "," + f(p.y) + "," + f(p.z)).join(" ") + " | " + f(G.B.x) + "," + f(G.B.y) + "," + f(G.B.z) + " " + G.B.mode + " " + G.sc.join("-") + " r" + RN);
+  // POSE=1: + a per-player pose checksum (every joint channel, weighted by its index) - pose parity, not just positions
+  const qs = process.env.POSE ? " q" + G.P.map((p) => { let s = 0; const q: any = p.q || {}; for (let j = 0; j < G.QK.length; j++) s += (q[G.QK[j]] || 0) * (j + 1); return f(s); }).join(",") : "";
+  console.log(t + " " + G.P.map((p) => f(p.x) + "," + f(p.y) + "," + f(p.z)).join(" ") + " | " + f(G.B.x) + "," + f(G.B.y) + "," + f(G.B.z) + " " + G.B.mode + " " + G.sc.join("-") + " r" + RN + qs);
 }

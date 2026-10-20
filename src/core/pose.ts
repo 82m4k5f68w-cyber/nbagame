@@ -128,7 +128,7 @@ function mcBlend(a: string, b: string | null, u: number, ph: number, amp: number
     for (let j = 0; j < MO.length; j++) MO[j] += (MT[j] - MO[j]) * u;
   }
 }
-import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, guardOf, g as GRAV, type Player } from "./sim";
+import { P, B, pos, T, DT, cfg, W3, clamp, CEL_T, QK, stepLen, ftq, rs, inb, hoop, HY, JB, heldBall, S, sc, guardOf, g as GRAV, BR, CW, CH, type Player } from "./sim";
 
 function smp(a: number[] | undefined, k: number) {
   if (!a) return null;
@@ -181,7 +181,12 @@ export function clip(p: Player, k: number) {
 export const fv = (p: Player) => p.f + (p.ry || 0);
 /** Write this tick's joint angles into p.q (in place, smoothed when Pro Play is on). */
 export function pose3(p: Player) {
-  if (!(p.mvT > 0 && p.mvk === 2)) p.ry = 0;
+  // (AP: the hip turn - a backpedal / slide faster than a stance allows opens the hips and runs - is a root yaw too)
+  // (AP: and a facing snap - more than 0.3 rad in one tick - turns the drawn body over ~0.2 s instead of one frame)
+  const tY = cfg.AP !== 0 && cfg.PRO ? turnRun(p) : 0,
+    turned = Math.abs(tY) > 0.5,
+    rY = cfg.AP !== 0 && cfg.PRO ? tY + faceLag(p) : 0;
+  if (!(p.mvT > 0 && p.mvk === 2)) p.ry = rY;
   const PRO = cfg.PRO,
     has = B.owner === p,
     air = p.z > 2,
@@ -469,7 +474,7 @@ export function pose3(p: Player) {
     sz = 0.14;
     zL = 0.2;
     gL = gR = 0.1;
-  } else if (pos !== p.tm) {
+  } else if (pos !== p.tm && !turned) {
     st = ST.def;
     gL = gR = 0.05; // active hands
     cy = 0;
@@ -490,10 +495,11 @@ export function pose3(p: Player) {
   let hz = 0.07 * (1 - mv); // (standing: feet a little outside the hips, an athletic base - not heels together)
   {
     const sv = Math.hypot(p.vx, p.vy),
-      def = pos !== p.tm && B.owner;
+      def = pos !== p.tm && B.owner && !turned;
     if (md === "i" && !air && sv > 25) {
-      const cf = Math.cos(p.f),
-        sf = Math.sin(p.f),
+      // (relative to the drawn hips: a hip-turned runner runs forward in his own frame)
+      const cf = Math.cos(p.f + rY),
+        sf = Math.sin(p.f + rY),
         fw = (p.vx * cf + p.vy * sf) / sv,
         sd2 = (-p.vx * sf + p.vy * cf) / sv;
       if (!def && !(p.mvT > 0)) {
@@ -760,8 +766,10 @@ export function pose3(p: Player) {
       // each hand on its own side of the ball (the right side is (sin f, -cos f))
       // (aim for where the ball is going - B.tg*, set by the host's bstep - not the ball, which rides in these hands)
       const own = B.tgo === p,
-        bx = own ? B.tgx : B.x,
-        by = own ? B.tgy : B.y,
+        // (clamped like bstep clamps the ball into the world: an inbounder behind the line reaches over it - his hands
+        // used to stay out past the wall while the ball sat a foot inside the court)
+        bx = own ? (cfg.AP !== 0 ? clamp(B.tgx, 6, CW - 6) : B.tgx) : B.x,
+        by = own ? (cfg.AP !== 0 ? clamp(B.tgy, 6, CH - 6) : B.tgy) : B.y,
         bz = own ? B.tgz : B.z,
         k5 = armIK(p, cr, bx + Math.sin(fv(p)) * 3 * sd, by - Math.cos(fv(p)) * 3 * sd, bz, sd, 0.9, ln, cx);
       if (sd > 0) (aR = k5.a), (eR = k5.e), (sz = k5.ab);
@@ -779,7 +787,7 @@ export function pose3(p: Player) {
     eL = 0.8;
   }
   // ---- one-shot actions (sim p.act / p.actT; synced online) ----
-  if (PRO && p.actT > 0) {
+  if (PRO && p.actT > 0 && !upGot(p)) {
     const a = p.act,
       T0 = a === 3 ? 1.2 : a === 4 ? 0.75 : a === 5 ? 0.5 : a === 6 ? 0.45 : 0.4,
       e = T0 - p.actT, // elapsed
@@ -967,7 +975,7 @@ export function pose3(p: Player) {
       eL = eR = 1.7;
       sz = -0.2;
       zL = -0.2;
-    } else if (!(p.helpT > 0) && !(p.rotT > 0) && !(p.hdgT > 0) && Math.hypot(o.vx, o.vy) < 260) {
+    } else if (!(p.helpT > 0) && !(p.rotT > 0) && !(p.hdgT > 0) && Math.hypot(o.vx, o.vy) < 260 && !turned) {
       // help side "pistols": away from the ball, one hand points at the ball, the other at his man (eased in with the
       // distance, so it never switches on with a pop)
       const bd = Math.hypot(B.x - p.x, B.y - p.y),
@@ -1038,7 +1046,7 @@ export function pose3(p: Player) {
     // closeout: a defender flying at the ball handler gets a hand up on the way, then breaks down with short choppy
     // steps (butt low, weight back) so he can't be blown by; the high hand takes the shot side, the low hand the drive
     const o = B.owner;
-    if (o && o.tm !== p.tm && !air && md === "i" && !(p.hupT > 0) && !(p.celT > 0)) {
+    if (o && o.tm !== p.tm && !air && md === "i" && !(p.hupT > 0) && !(p.celT > 0) && !turned) {
       const dx = o.x - p.x,
         dy = o.y - p.y,
         d = Math.hypot(dx, dy) || 1,
@@ -1564,6 +1572,20 @@ export function pose3(p: Player) {
       tR += p.sf * 0.5;
     }
   }
+  // ---- animation pack (cfg.AP; C# Pose.UP.cs): shots, moves, gathers, defense, off-ball ----
+  const AP = cfg.AP !== 0;
+  if (AP && PRO) {
+    const U = UQ;
+    (U.tL = tL), (U.tR = tR), (U.kL = kL), (U.kR = kR), (U.aL = aL), (U.aR = aR), (U.eL = eL), (U.eR = eR), (U.sz = sz), (U.cr = cr), (U.ln = ln), (U.rz = rz), (U.ty = ty), (U.wR = wR), (U.wL = wL), (U.hz = hz), (U.cx = cx), (U.cy = cy), (U.hs = hs), (U.gL = gL), (U.gR = gR), (U.oL = oL), (U.oR = oR), (U.hL = hL), (U.hR = hR), (U.toe = toe), (U.st = st);
+    U.zL = zL ?? sz;
+    U.zSet = false;
+    upPose(p, U, md, has, air, sp, hold);
+    apPose(p, U, md, has, air, sp);
+    (tL = U.tL), (tR = U.tR), (kL = U.kL), (kR = U.kR), (aL = U.aL), (aR = U.aR), (eL = U.eL), (eR = U.eR), (sz = U.sz), (cr = U.cr), (ln = U.ln), (rz = U.rz), (ty = U.ty), (wR = U.wR), (wL = U.wL), (hz = U.hz), (cx = U.cx), (cy = U.cy), (hs = U.hs), (gL = U.gL), (gR = U.gR), (oL = U.oL), (oR = U.oR), (hL = U.hL), (hR = U.hR), (toe = U.toe), (st = U.st);
+    if (U.zSet) zL = U.zL;
+  }
+  // (hip turn: the chest stays a little toward where he was facing - the head looks back over the shoulder for the rest)
+  if (turned) cy -= clamp(0.3 * tY, -0.5, 0.5);
   // ---- additive layer: breathing (deeper when tired) ----
   {
     const tired = 1 - (p.en ?? 1);
@@ -1599,7 +1621,7 @@ export function pose3(p: Player) {
       dy = LOOK.y - p.y,
       dist = Math.hypot(dx, dy);
     if (dist > 6) {
-      const d = Math.atan2(Math.sin(Math.atan2(dy, dx) - p.f), Math.cos(Math.atan2(dy, dx) - p.f)),
+      const d = Math.atan2(Math.sin(Math.atan2(dy, dx) - p.f - rY), Math.cos(Math.atan2(dy, dx) - p.f - rY)),
         hz2 = p.z + p.ht * 9.3;
       hyT = -d - ty - cy;
       hpT = Math.atan2(hz2 - LOOK.z, dist) - (ln + cx) * 0.9 - nk;
@@ -1608,8 +1630,10 @@ export function pose3(p: Player) {
       hy *= 1 - 0.6 * clamp((Math.abs(hyT) - 1.8) / 0.6, 0, 1); // target behind: don't owl-turn (eases in, no snap)
     }
     hp += HEADX;
+    hy += HEADY;
     LOOK.on = 0;
     HEADX = 0;
+    HEADY = 0;
   }
   // ---- guide hand: on the side of the ball from the gather until the release, then it peels away ----
   if (PRO && has && (md === "c" || md === "s") && !p.postA && (!isLaySv(p.sv || 0) || p.sv === 11 || p.sv === 14 || p.sv === 15 || md === "c")) {
@@ -1623,7 +1647,7 @@ export function pose3(p: Player) {
         // guide-hand style: 0 classic, 1 thumb flick at the release, 2 drops away early, 3 elbow flared out wide,
         // 4 rides high with the ball after the release, 5 old-school two-hand push (both wrists snap)
         const gs = (p.sg && p.sg.gs) || 0,
-          k7 = md === "s" ? p.t / 0.4 : 0,
+          k7 = md === "s" && !AP ? p.t / 0.4 : 0, // (AP: the guide hand stays on until the release; its style plays after it, upPose)
           off = gs === 2 && k7 > 0.6 ? Math.min(1, (k7 - 0.6) / 0.15) : 0;
         aL += (r2.a - aL) * w * (1 - off);
         eL += (r2.e - eL) * w * (1 - off);
@@ -1643,7 +1667,8 @@ export function pose3(p: Player) {
   // ---- left-handed shooters: the whole shot is mirrored across the body (shooting arm, guide hand, legs, twist).
   // Everything above was solved for a right-hander (guide-hand IK included); mirroring is exact, and handPos follows
   // the left hand while q.mir is set, so the release point and the 3D ball stay in the shooting hand.
-  const mir = !!(p.sg && p.sg.lh) && (md === "s" || (md === "c" && has));
+  // (AP: an off-hand finish - p.offH, a reverse with the left hand - mirrors the shot too)
+  const mir = !!(p.sg && p.sg.lh) !== (AP && !!p.offH && md === "s") && (md === "s" || (md === "c" && has));
   if (mir) {
     let t = aL;
     (aL = aR), (aR = t), (t = eL), (eL = eR), (eR = t);
@@ -1740,7 +1765,9 @@ export function pose3(p: Player) {
         // (into a shot: crisp, but the arms coming down from a catch / rebound reach still get a few ticks, never 2)
         // (a gather - mode c, not yet the release - carries the arms a few ticks out of a dribble / run swing instead of
         // snapping a big swing over in 2 ticks; the release itself stays crisp)
-        const qk = quick ? (fromReach ? Math.min(0.1, 0.02 + Math.abs(I.x[j]) * 0.05) : md === "c" && j >= 4 && j <= 8 ? Math.min(0.12, 0.02 + Math.abs(I.x[j]) * 0.04) : 0) : big * 0.75;
+        let qk = quick ? (fromReach ? Math.min(0.1, 0.02 + Math.abs(I.x[j]) * 0.05) : md === "c" && j >= 4 && j <= 8 ? Math.min(0.12, 0.02 + Math.abs(I.x[j]) * 0.04) : 0) : big * 0.75;
+        // (AP: a gather / move out of a sprint carries the arms a few ticks instead of snapping a big swing over)
+        if (AP && quick && trans && (md === "c" || st === ST.move)) qk = Math.max(qk, Math.min(0.12, 0.02 + Math.abs(I.x[j]) * 0.04));
         I.tf[j] = trans ? Math.max(BLEND[st] * (hd ? 0.4 : 0.65), qk) : big;
         I.b[j] = v;
       }
@@ -1847,8 +1874,9 @@ export function pose3(p: Player) {
       const gR = drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctRg ?? 1;
       p.ctRg = (p.ctRg ?? gR) + (gR - (p.ctRg ?? gR)) * Math.min(1, DT * 14);
       const w = p.ctR * (fade ? Math.min(p.ctRg ?? 1, clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1)) : p.ctRg ?? 1);
-      (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
-    }
+      if (AP) (o.aR += upCt(p, 0, da * w)), (o.eR += upCt(p, 1, (K[1] - o.eR) * w)), (o.sz += upCt(p, 2, (K[2] - o.sz) * w));
+      else (o.aR += da * w), (o.eR += (K[1] - o.eR) * w), (o.sz += (K[2] - o.sz) * w);
+    } else if (AP) (o.aR += upCt(p, 0, 0)), (o.eR += upCt(p, 1, 0)), (o.sz += upCt(p, 2, 0));
     if (p.ctL > 0.01) {
       if (wL > 0) {
         const k = armIK(p, o.cr, K[9], K[10], K[11], -1, cat ? 1 : 0.6, o.ln, o.cx);
@@ -1862,11 +1890,13 @@ export function pose3(p: Player) {
       const gL2 = drib || cat ? clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1) : con ? 1 : p.ctLg ?? 1;
       p.ctLg = (p.ctLg ?? gL2) + (gL2 - (p.ctLg ?? gL2)) * Math.min(1, DT * 14);
       const w = p.ctL * (fadeL ? Math.min(p.ctLg ?? 1, clamp(1 - (Math.abs(da) - 0.8) / 0.6, 0, 1)) : p.ctLg ?? 1);
-      (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
-    }
+      if (AP) (o.aL += upCt(p, 3, da * w)), (o.eL += upCt(p, 4, (K[4] - o.eL) * w)), (o.zL = z0 + upCt(p, 5, (K[5] - z0) * w));
+      else (o.aL += da * w), (o.eL += (K[4] - o.eL) * w), (o.zL = z0 + (K[5] - z0) * w);
+    } else if (AP) (o.aL += upCt(p, 3, 0)), (o.eL += upCt(p, 4, 0)), (o.zL += upCt(p, 5, 0));
   }
   if (PRO && cfg.PLANT !== 0) plantFeet(p, o, sp);
   if (PRO && cfg.AVOID !== 0) avoidBodies(p, o);
+  if (AP && PRO) upGuide(p, o, md, has); // (AP: guide palm on the side of the ball until the release)
   face(p, st, hyT, hpT);
 }
 /** Body avoidance: an elbow, hand or shoulder that ends up inside a nearby player's torso (capsule pelvis -> neck,
@@ -1971,8 +2001,8 @@ function stepSolve(p: Player, o: any, sp: number) {
   const md = p.mode,
     st = p.anS,
     // (+ the gather of a jumper: the feet stay planted - or take the hop into the clip's stance - while the hips dip)
-    gat = md === "c" && st === ST.shot && !p.hk && !isLaySv(p.sv || 0) && !isDunkSv(p.sv || 0),
-    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 3 || p.act === 4 || p.act === 5)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.air && md === "i") || (st === ST.cel && sp > 25));
+    gat = md === "c" && st === ST.shot && ((!p.hk && !isLaySv(p.sv || 0) && !isDunkSv(p.sv || 0)) || (cfg.AP !== 0 && !!p.gath)), // (AP: drive gathers step too)
+    ok = p.z < 1 && (md === "i" || gat) && !(p.actT > 0 && (p.act === 3 || p.act === 4 || p.act === 5) && !upGot(p)) && (st === ST.idle || st === ST.run || st === ST.def || st === ST.drib || st === ST.scr || st === ST.cat || st === ST.rest || st === ST.post || st === ST.move || gat || (st === ST.air && md === "i") || (st === ST.cel && sp > 25));
   const S = p.stp || (p.stp = { w: 0, f: [] as FootS[], drop: 0, last: -1 });
   S.w += ((ok ? 1 : 0) - S.w) * Math.min(1, DT * (ok ? 8 : 14));
   skeleton(p, PSK);
@@ -1983,7 +2013,7 @@ function stepSolve(p: Player, o: any, sp: number) {
     cf = Math.cos(fv(p)),
     sf = Math.sin(fv(p));
   // lying on the floor (a dive, knocked down): nothing may sink through it - lift the whole body by the deepest point
-  if (p.actT > 0 && (p.act === 3 || p.act === 4) && p.z < 2) {
+  if (p.actT > 0 && (p.act === 3 || p.act === 4) && p.z < 2 && !upGot(p)) {
     let m = 0;
     for (const j of LYJ) m = Math.min(m, PSK[j * 3 + 2]);
     if (m < 0) o.cr += m / 4; // (cr lowers the root by 4 px per unit)
@@ -2547,4 +2577,795 @@ export function skeleton(p: Player, out: Float32Array) {
     put(j + 3, pt(wr, 0, -0.32, 0.05));
   }
   return out;
+}
+
+// ==== Animation pack (cfg.AP, v5.4): the pose layer that was Unity-only (C# twin: unity Core/Pose.UP.cs, which runs it
+// under Unity's cfg.UP or cfg.AP) - same names, same order of operations, so the lockstep traces stay byte-identical.
+// Shots: gather -> dip -> rise -> set -> release -> follow-through by form (dp/k/ft/gs/lk), catch-and-shoot 1-2 step vs
+// hop gather off the dribble, elbow under the ball, leg drive + toe extension, landing knees by jump height, contest
+// lean-away, signature forms (one-motion, high release, push shot, step-back, slow set), FT set, layup gathers (plant
+// foot, ball protect, off-arm shield, full reach), two-foot floaters. Moves: in-and-out, crossover, snatch-back with
+// anticipation and settle. Defense: slide hip turn, swipe-down, hand check, contest variety (one hand high /
+// verticality / late flail). Off ball: cut lean, V-cut plant, screen brace + roll turn, alley-oop catch hands. Landings
+// flow into the next action. Post-blend: the guide palm sits on the side of the ball until the release (upGuide), and
+// contact corrections ride a damped spring (upCt).
+/** The pose3 locals the layer may change (copied in and out around upPose). */
+const UQ = { tL: 0, tR: 0, kL: 0, kR: 0, aL: 0, aR: 0, eL: 0, eR: 0, sz: 0, cr: 0, ln: 0, rz: 0, ty: 0, wR: 0, wL: 0, zL: 0, hz: 0, cx: 0, cy: 0, hs: 0, gL: 0, gR: 0, oL: 0, oR: 0, hL: 0, hR: 0, toe: 0, zSet: false, st: 0 };
+type UV = typeof UQ;
+const ZLs = (u: UV, v: number) => ((u.zL = v), (u.zSet = true));
+function SS(u: number) {
+  u = clamp(u, 0, 1);
+  return u * u * (3 - 2 * u);
+}
+const Bump = (u: number) => (u <= 0 || u >= 1 ? 0 : Math.sin(u * Math.PI));
+/** Clip phase of the current shot (same mapping as pose3). */
+function upK(p: Player, kind: string | undefined) {
+  const rT = isLaySv(p.sv || 0) || kind === "hook" || kind === "sky" ? 0.28 : p.st === 1 ? 0.3 : 0.4;
+  return Math.min(1, (p.t / rT) * (kind != null && RELK[kind] != null ? RELK[kind] : 0.7));
+}
+// signature form ids (by roster name; motion only - no likenesses)
+const upSig = (p: Player) => (p.n === "Curry" ? 1 : p.n === "Durant" ? 2 : p.n === "Jokic" ? 3 : p.n === "Doncic" ? 4 : p.n === "Antetokounmpo" ? 5 : 0);
+function upPose(p: Player, u: UV, md: string, has: boolean, air: boolean, sp: number, hold: number) {
+  const g = p.sg,
+    dp = g ? g.dp || 0 : 0,
+    fk = g ? g.k || 0 : 0,
+    ft = g ? g.ft || 0 : 0,
+    lk = g ? g.lk || 0 : 0,
+    gs = g ? g.gs || 0 : 0;
+  const sig = upSig(p),
+    curry = p.sv === 9 || !!(g && g.cl);
+  const hx = hoop(p.tm),
+    D = Math.hypot(hx - p.x, HY - p.y),
+    // (both hands are on the ball - triple threat, fakes, inbounds: the two-hand IK above was solved for this crouch and
+    // lean, so the body dips below would pull the palms off the ball)
+    held = has && md === "i" && (hold !== 0 || inb > 0);
+  // ================= shots =================
+  if (md === "c" && has) {
+    if (p.gath) upGatherPose(p, u);
+    else if (ftq && ftq.s === p) {
+      // FT: the routine flows into a gentle set - ball to the chest, knees soften, dip, up
+      const d = Bump(Math.min(1, p.t / 0.35));
+      u.aR = 1.15 - 0.35 * d;
+      u.aL = 1.1 - 0.3 * d;
+      u.eR = u.eL = 1.75;
+      u.cr = 0.22 + 0.18 * d;
+      u.kL = u.kR = 0.45 + 0.35 * d;
+      u.tL = u.tR = 0.22 + 0.15 * d;
+      u.ln = 0.08;
+    } else if (D >= 95) {
+      // jumper gather -> dip: depth / speed from the form; catch-and-shoot 1-2 step or a hop off the dribble
+      const td = curry ? 0.1 : sig === 5 ? 0.32 : 0.16 + dp * 0.18,
+        depth = curry ? 0.12 : 0.18 + dp * 0.45 + fk * 0.6 + (sig === 5 ? 0.15 : 0),
+        dk = p.t < td ? Math.sin(((p.t / td) * Math.PI) / 2) : 1 - 0.25 * SS((p.t - td) / 0.12); // dip, then a slight rise into the set
+      u.aR -= 0.35 * depth * dk * 2;
+      u.aL -= 0.3 * depth * dk * 2;
+      u.cr += 0.35 * depth * dk;
+      u.kL += 0.6 * depth * dk;
+      u.kR += 0.6 * depth * dk;
+      u.sz = u.sz + (0.03 - u.sz) * 0.6; // elbow under the ball
+      if (p.jg === 1) {
+        // 1-2 step into the catch: inside foot then outside foot
+        const s1 = Bump(p.t / 0.12),
+          s2 = Bump((p.t - 0.08) / 0.12);
+        u.tL += 0.3 * s1;
+        u.kL += 0.25 * s1;
+        u.tR += 0.3 * s2;
+        u.kR += 0.25 * s2;
+      } else if (p.jg === 2) {
+        // hop gather off the dribble: both feet off together, landing loaded
+        const h = Bump(p.t / 0.14);
+        u.kL += 0.35 * h;
+        u.kR += 0.35 * h;
+        u.tL += 0.25 * h;
+        u.tR += 0.25 * h;
+        u.toe += 0.3 * h;
+      }
+      if (curry) (u.cr = Math.min(u.cr, 0.32)), (u.aR = Math.max(u.aR, 0.75)); // shallow load, the ball never drops below the chest
+    }
+  } else if (md === "s" && has) {
+    const kind = CK[p.sv],
+      k = upK(p, kind),
+      rk = kind != null && RELK[kind] != null ? RELK[kind] : 0.7,
+      pre = Math.min(1, k / rk),
+      post = k > rk ? Math.min(1, (k - rk) / Math.max(0.05, 1 - rk)) : 0;
+    const lay = isLaySv(p.sv || 0) || kind === "sky" || kind === "hook";
+    if (!lay && kind !== "hang") {
+      // rise: legs drive (knees extend into the jump), elbow under the ball, toes point at the release
+      if (p.z > 1 && p.vz > 0) {
+        const e = SS(pre);
+        u.kL *= 1 - 0.6 * e;
+        u.kR *= 1 - 0.6 * e;
+        u.toe += 0.35 + 0.3 * e;
+      }
+      if (p.z > 1 && p.vz <= 0) (u.toe += 0.25), (u.kL += 0.15 * post), (u.kR += 0.15 * post); // reaching for the floor
+      if (!curry && g && (g.f || 0) < 0.05) u.sz += (0.02 - u.sz) * 0.5 * (1 - post);
+      // follow-through held by form: wrist snapped, fingers at the rim, arm up
+      if (post > 0) {
+        u.gR = 0.05;
+        u.wR += 0.15 + 0.25 * ft;
+        u.aR = Math.max(u.aR, 2.75 + 0.15 * ft - 0.3 * post * (1 - ft));
+        // guide hand release styles, readable
+        if (gs === 1) (u.oL = 0.9), (u.wL = 0.75);
+        else if (gs === 2) (u.aL += (0.9 - u.aL) * post), (u.eL += (1.0 - u.eL) * post);
+        else if (gs === 3) ZLs(u, u.zL + 0.3 * post);
+        else if (gs === 5) u.wL = 0.9;
+      }
+      // legs kick / split by style (st 2 fade splits, quick shooters stay tight)
+      const kick = (lk + (p.st === 2 ? 0.15 : 0) + (Math.hypot(p.vx, p.vy) > 70 ? 0.1 : 0)) * SS((k - 0.55) / 0.25);
+      u.tR -= 0.6 * kick;
+      u.kR += 0.8 * kick;
+      u.tL += 0.25 * kick;
+      // signature forms
+      if (sig === 2) (u.aR += 0.18 * pre), (u.eR *= 1 - 0.25 * pre); // high release, all arms
+      else if (sig === 3 && kind !== "fade") {
+        // two-hand push from low
+        const w = 1 - post;
+        u.aL += (u.aR - 0.1 - u.aL) * 0.6 * w;
+        u.eL += (u.eR - u.eL) * 0.5 * w;
+        u.aR -= 0.2 * (1 - pre);
+      } else if (sig === 4 && p.sbw > 0) (u.ln -= 0.15), (u.tR -= 0.3 * pre), (u.kR += 0.35 * pre); // deep step-back lean, trail leg kicks
+      else if (sig === 5) {
+        // slow, deliberate set
+        const hd = Bump(Math.min(1, k / 0.55));
+        u.aR -= 0.3 * hd;
+        u.cr += p.z < 2 ? 0.1 * hd : 0;
+      }
+      if (curry) {
+        // low-load quick one-motion (identity kept: no held set, release on the way up): ball straight up the midline,
+        // soft high snap with the fingers at the rim held a beat, guide hand off early, kick/split on deep or moving threes
+        u.sz += (0.0 - u.sz) * 0.7 * (1 - post);
+        u.oR += (-0.25 - u.oR) * 0.5 * pre;
+        if (post > 0) (u.wR += 0.25), (u.gR = 0), (u.aR = Math.max(u.aR, 2.95));
+        if (k > 0.62) {
+          const w = SS((k - 0.62) / 0.15);
+          u.aL += (1.05 - u.aL) * w;
+          u.eL += (0.9 - u.eL) * w;
+        }
+        if (D > 260 || Math.hypot(p.vx, p.vy) > 60) {
+          const w = SS((k - 0.6) / 0.2);
+          u.tR -= 0.35 * w;
+          u.kR += 0.45 * w;
+          u.tL += 0.12 * w;
+        }
+      }
+    }
+    if (lay && kind !== "hang") {
+      // finishing: ball protected with both hands on the way up, then the off arm shields, the shot arm reaches all the
+      // way to the rim
+      const dunk = isDunkSv(p.sv || 0);
+      if (k < 0.3 && !dunk) {
+        const w = 1 - SS(k / 0.3);
+        u.aL += (u.aR - 0.15 - u.aL) * w;
+        u.eL += (u.eR + 0.1 - u.eL) * w;
+      } else if (!dunk && kind !== "sky") {
+        const w = Bump((k - 0.3) / 0.6);
+        u.aL += (1.35 - u.aL) * w;
+        u.eL += (0.9 - u.eL) * w;
+        ZLs(u, u.zL + (0.55 - u.zL) * w);
+        u.gL = 0.1;
+      }
+      if ((kind === "lay" || kind === "roll" || kind === "contact" || kind === "euro" || kind === "revlay" || kind === "upunder") && k > 0.4 && k < 0.92) {
+        const w = Bump((k - 0.4) / 0.52) * (kind === "lay" || kind === "roll" || kind === "contact" ? 0.3 : 0.85),
+          r1 = armIK(p, u.cr, hx, HY, 108, 1, 0.5, u.ln, u.cx);
+        u.aR += (r1.a - u.aR) * w;
+        u.eR += (r1.e - u.eR) * w;
+        u.sz += (r1.ab - u.sz) * w;
+      }
+    }
+    // a late closeout: lean / fade away from his hand, release a touch higher
+    if (p.lnA > 0) {
+      const w = p.lnA * (1 - 0.5 * post);
+      u.ln -= 0.25 * w;
+      u.rz += 0.22 * p.lnS * w;
+      u.aR += 0.1 * w;
+      u.eR -= 0.1 * w;
+    }
+    if (kind === "floater" && g && g.fr >= 0.5) (u.tL = u.tR = 0.35), (u.kL = u.kR = 0.6); // two-foot floater
+    // soft landing at the end of the shot: knees flex with the jump height
+    if (p.z < 2 && k > 0.7 && !lay) {
+      const w = Math.min(1.3, (p.upLand || 0) + 0.3) * SS((k - 0.7) / 0.15);
+      u.kL += 0.25 * w;
+      u.kR += 0.25 * w;
+      u.cr += 0.1 * w;
+    }
+  }
+  // ================= moves =================
+  if (p.mvT > 0 && md === "i" && p.mvk !== 4) {
+    const e = p.mvE || 0,
+      sd = p.mvS || 1;
+    // anticipation: a short counter-dip before every explosive move
+    if (e < 0.07) {
+      const a = Bump(e / 0.07);
+      u.cr += 0.12 * a;
+      u.ln -= 0.06 * a;
+    }
+    if (p.mvk === 5) {
+      if (e < 0.16) {
+        const w = Bump(e / 0.16);
+        u.rz -= 0.22 * sd * w;
+        u.ty -= 0.35 * sd * w;
+        u.cr = Math.max(u.cr, 0.3);
+      } else if (e < 0.24) u.cr = Math.max(u.cr, 0.38);
+      else (u.ln += 0.3), (u.rz += 0.12 * sd);
+      u.st = ST.move;
+    } else if (p.mvk === 6) {
+      if (e < 0.1) u.rz -= 0.12 * sd * Bump(e / 0.1);
+      else {
+        const w = SS((e - 0.1) / 0.12);
+        u.rz += 0.2 * sd * w;
+        u.ln += 0.25 * w;
+        u.cr = Math.max(u.cr, 0.3);
+      }
+      u.st = ST.move;
+    } else if (p.mvk === 7) {
+      if (e < 0.24) {
+        const w = Bump(e / 0.24);
+        u.ln -= 0.25 * w;
+        u.cr = Math.max(u.cr, 0.38);
+        u.kL += 0.2 * w;
+        u.kR += 0.2 * w;
+      } else u.ln += 0.12;
+      u.st = ST.move;
+    }
+  } else if (md === "i" && p.mvEnd != null && T - p.mvEnd < 0.3 && !air && !held) {
+    // follow-through / settle out of the move
+    const w = 1 - (T - p.mvEnd) / 0.3;
+    u.cr += 0.1 * w * w;
+    u.ln += 0.05 * w;
+  }
+  if (md === "i" && p.fsT > 0.22 && !air && !held) {
+    const a = Bump((0.28 - p.fsT) / 0.06);
+    u.cr += 0.08 * a;
+    u.ln -= 0.04 * a;
+  } // counter-dip into the first step
+  // ================= landings flow into the next action =================
+  if (p.landT > 0 && md === "i" && !air && sp > 80 && !held) {
+    const k = p.landT / 0.28,
+      w = Math.min(1, (sp - 80) / 140);
+    u.cr -= 0.2 * k * w;
+    u.kL -= 0.25 * k * w;
+    u.kR -= 0.25 * k * w;
+    u.ln += 0.08 * k * w; // run out of it
+  }
+  // ================= defense =================
+  const ow = B.owner;
+  if (md === "i" && !air && pos !== p.tm && ow && !has) {
+    if (sp > 40 && u.st === ST.def) {
+      // slides: the hips open toward where he is going
+      const lat = (-p.vx * Math.sin(p.f) + p.vy * Math.cos(p.f)) / sp,
+        w = Math.min(1, sp / 150);
+      u.ty += 0.3 * lat * w;
+      u.hs += 0.08 * lat * w;
+    }
+    if (p.swpT > 0) {
+      const s = 1 - p.swpT / 0.36; // high to low through the ball, no reach-in foul, no steal
+      u.aR = 2.3 - 2.0 * SS(s);
+      u.eR = 0.3;
+      u.sz = 0.25;
+      u.gR = 0.05;
+      u.ln += 0.1 * Bump(s);
+    } else if (p.hcT > 0) {
+      // hand check: the near hand jabs out to the handler's hip and comes straight back (forearm, palm flat)
+      const w = Bump(1 - p.hcT / 0.3),
+        r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7, u.ln, u.cx);
+      if (r.right) (u.aR += (r.a - u.aR) * w), (u.eR += (Math.max(0.25, r.e) - u.eR) * w), (u.sz += (r.ab - u.sz) * w), (u.wR -= 0.4 * w);
+      else (u.aL += (r.a - u.aL) * w), (u.eL += (Math.max(0.25, r.e) - u.eL) * w), ZLs(u, u.zL + (r.ab - u.zL) * w), (u.wL -= 0.4 * w);
+      u.cr += 0.06 * w;
+    }
+  }
+  {
+    const sh = ow && ow.tm !== p.tm && (ow.mode === "c" || ow.mode === "s") ? ow : B.sh && !ow && B.age < 0.4 && B.last && B.last.tm !== p.tm && !B.ft ? B.last : null;
+    if (sh && !has && md === "i") {
+      const d = Math.hypot(sh.x - p.x, sh.y - p.y),
+        Ds = Math.hypot(hoop(sh.tm) - sh.x, HY - sh.y);
+      if (d < 48) {
+        const w = clamp((48 - d) / 14, 0, 1),
+          front = Math.hypot(hoop(sh.tm) - p.x, HY - p.y) < Ds;
+        if (!ow && sp > 100) (u.aL += (2.2 + 0.5 * Math.sin(T * 18 + p.k) - u.aL) * w), ZLs(u, u.zL + (0.7 - u.zL) * w); // late: flailing
+        else if (p.ht >= 6.8 && front && Ds < 140) {
+          // verticality
+          u.aL += (3.05 - u.aL) * w;
+          u.aR += (3.05 - u.aR) * w;
+          u.eL += (0.08 - u.eL) * w;
+          u.eR += (0.08 - u.eR) * w;
+          u.sz += (0.08 - u.sz) * w;
+          ZLs(u, u.zL + (0.08 - u.zL) * w);
+        } else (u.aL += (1.0 - u.aL) * w), ZLs(u, u.zL + (0.55 - u.zL) * w); // one hand high, the other out wide
+      }
+    }
+  }
+  // ================= off the ball =================
+  if (md === "i" && !air && !has) {
+    if ((p.br === "cut" || p.br === "use" || p.br === "vcut") && sp > 110) (u.ln += 0.08), (u.rz += clamp(p.trn * 0.04, -0.2, 0.2));
+    if (p.vcT > 0.35 && p.vcT < 0.47) {
+      const w = Bump((0.47 - p.vcT) / 0.12);
+      u.cr += 0.2 * w;
+      u.ln -= 0.05 * w;
+    } // V-cut plant
+    const setT = p.setT || 0;
+    if (setT > 0) {
+      // screen: brace for the hit
+      let nd = 1e9;
+      for (const o of P) if (o.tm !== p.tm) nd = Math.min(nd, Math.hypot(o.x - p.x, o.y - p.y));
+      if (nd < 22) {
+        const w = clamp((22 - nd) / 8, 0, 1);
+        u.cr += 0.12 * w;
+        u.cx -= 0.05 * w;
+        u.hz += 0.1 * w;
+      }
+    } else if (setT > -0.45 && ow && ow.tm === p.tm) {
+      // rolling out of the screen: open up toward the ball
+      const s = (setT + 0.45) / 0.45;
+      let a = Math.atan2(ow.y - p.y, ow.x - p.x) - p.f;
+      a = Math.atan2(Math.sin(a), Math.cos(a));
+      u.ty += clamp(a, -0.6, 0.6) * Bump(s);
+    }
+    if (B.mode === "pass" && B.to === p && p.z > 10) {
+      // alley-oop catch: both hands up to where the ball is going, one each side
+      const fx = B.x + B.vx * 0.08,
+        fy = B.y + B.vy * 0.08,
+        fz = B.z + B.vz * 0.08,
+        w = clamp(1 - Math.hypot(fx - p.x, fy - p.y) / 90, 0, 1);
+      let r = armIK(p, u.cr, fx, fy, fz, 1, 0.8, u.ln, u.cx);
+      u.aR += (r.a - u.aR) * w;
+      u.eR += (r.e - u.eR) * w;
+      u.sz += (r.ab - u.sz) * w;
+      r = armIK(p, u.cr, fx, fy, fz, -1, 0.8, u.ln, u.cx);
+      u.aL += (r.a - u.aL) * w;
+      u.eL += (r.e - u.eL) * w;
+      ZLs(u, u.zL + (r.ab - u.zL) * w);
+      u.gL = u.gR = 0.1;
+    }
+  }
+}
+/** Drive gather (mode c): two long strides with the plant foot set for the finishing hand, a hop-step with both feet,
+ *  or a spin around the defender (root yaw); the ball is ripped to the chest with both hands. */
+function upGatherPose(p: Player, u: UV) {
+  const kind = Math.abs(p.gath),
+    dur = kind === 3 ? 0.4 : kind === 2 ? 0.36 : 0.32,
+    gg = clamp(p.gathT / dur, 0, 1);
+  u.aL = u.aR = 1.15;
+  u.eL = u.eR = 1.75;
+  ZLs(u, -0.05);
+  u.sz = -0.05;
+  u.wR = u.wL = -0.3;
+  u.ln = 0.25;
+  u.cr = 0.22;
+  if (kind === 2 && gg > 0.4 && gg < 0.8) {
+    const h = Bump((gg - 0.4) / 0.4);
+    u.tL = u.tR = 0.4 * h + 0.1;
+    u.kL = u.kR = 0.5 + 0.6 * h;
+    u.toe += 0.4 * h;
+    u.cr = 0.22 + 0.15 * h;
+  } else {
+    const s1 = Bump(gg / 0.5),
+      s2 = Bump((gg - 0.45) / 0.55);
+    u.tR = -0.2 + 0.55 * s1 - 0.3 * s2;
+    u.kR = 0.45 + 0.3 * s1;
+    u.tL = -0.2 + 0.6 * s2;
+    u.kL = 0.5 + 0.35 * s2; // the plant (left) foot lands last: right-hand finish
+  }
+  if (kind === 3) p.ry = SS(gg) * 2 * Math.PI * (p.gSd || 1);
+}
+// ---- guide palm (post-blend) ----
+const GDT = [0, 0, 0],
+  GDC = [0, 0, 0],
+  R0 = [0, 0, 0],
+  R1 = [0, 0, 0],
+  R2 = [0, 0, 0],
+  R3 = [0, 0, 0],
+  JA = [0, 0, 0],
+  JE = [0, 0, 0],
+  JZ = [0, 0, 0],
+  GS = [0, 0, 0];
+const Dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+/** Palm point (0, -0.62, 0.1) of the guide (non-shooting) wrist for the current p.q. */
+function guidePalm(p: Player, q: any, o: number[]) {
+  const m = q.mir;
+  q.mir = m !== 0 ? 0 : 1;
+  const h = handPos(p)!;
+  q.mir = m;
+  (o[0] = h[0]), (o[1] = h[1]), (o[2] = h[2]);
+}
+/** Guide palm miss (target GDT - palm) for candidate guide-arm angles; returns its length. */
+function gdRes(p: Player, oq: any, mir: boolean, a: number, e: number, ab: number, r: number[]) {
+  if (mir) (oq.aR = a), (oq.eR = e), (oq.sz = ab);
+  else (oq.aL = a), (oq.eL = e), (oq.zL = ab);
+  guidePalm(p, oq, GDC);
+  (r[0] = GDT[0] - GDC[0]), (r[1] = GDT[1] - GDC[1]), (r[2] = GDT[2] - GDC[2]);
+  return Math.sqrt(Dot(r, r));
+}
+/** Damped Gauss-Newton on the guide arm (shoulder raise, elbow, abduction) against the exact palm FK (target GDT), from a
+ *  start pose. Leaves the arm at the start values; the best arm goes to GS; returns the best miss (px). */
+function gdSolve(p: Player, oq: any, mir: boolean, sa: number, se: number, sz: number, iters: number) {
+  let xa = sa,
+    xe = clamp(se, 0.05, 2.7),
+    xz = clamp(sz, -1.5, 1.2),
+    best = 1e9;
+  (GS[0] = xa), (GS[1] = xe), (GS[2] = xz);
+  for (let it = 0; it < iters; it++) {
+    const er = gdRes(p, oq, mir, xa, xe, xz, R0);
+    if (er < best) (best = er), (GS[0] = xa), (GS[1] = xe), (GS[2] = xz);
+    if (er < 0.03) break;
+    const h = 1e-3;
+    gdRes(p, oq, mir, xa + h, xe, xz, R1);
+    gdRes(p, oq, mir, xa, xe + h, xz, R2);
+    gdRes(p, oq, mir, xa, xe, xz + h, R3);
+    // J columns = d(palm)/dx = -(dR)/h ; normal equations (J'J + lambda I) dx = J' r
+    for (let k = 0; k < 3; k++) (JA[k] = (R0[k] - R1[k]) / h), (JE[k] = (R0[k] - R2[k]) / h), (JZ[k] = (R0[k] - R3[k]) / h);
+    const lam = 3,
+      m00 = Dot(JA, JA) + lam,
+      m01 = Dot(JA, JE),
+      m02 = Dot(JA, JZ),
+      m11 = Dot(JE, JE) + lam,
+      m12 = Dot(JE, JZ),
+      m22 = Dot(JZ, JZ) + lam,
+      b0 = Dot(JA, R0),
+      b1 = Dot(JE, R0),
+      b2 = Dot(JZ, R0),
+      det = m00 * (m11 * m22 - m12 * m12) - m01 * (m01 * m22 - m12 * m02) + m02 * (m01 * m12 - m11 * m02);
+    if (Math.abs(det) < 1e-9) break;
+    let da = (b0 * (m11 * m22 - m12 * m12) - m01 * (b1 * m22 - m12 * b2) + m02 * (b1 * m12 - m11 * b2)) / det,
+      de = (m00 * (b1 * m22 - m12 * b2) - b0 * (m01 * m22 - m12 * m02) + m02 * (m01 * b2 - b1 * m02)) / det,
+      dz = (m00 * (m11 * b2 - b1 * m12) - m01 * (m01 * b2 - b1 * m02) + b0 * (m01 * m12 - m11 * m02)) / det;
+    const sl = Math.max(Math.abs(da), Math.max(Math.abs(de), Math.abs(dz)));
+    if (sl > 0.5) (da *= 0.5 / sl), (de *= 0.5 / sl), (dz *= 0.5 / sl);
+    xa += da;
+    xe = clamp(xe + de, 0.05, 2.7);
+    xz = clamp(xz + dz, -1.5, 1.2);
+  }
+  return best;
+}
+/** One damped least-squares step of the shooting arm (a, e, ab) that moves the ball centre so the guide palm's best
+ *  reachable point lands on its surface; accumulated into the assist offsets o (rate- and size-limited). */
+function upAssist(p: Player, oq: any, mir: boolean, ga: number, ge: number, gz: number, cx: number, cy: number, cz: number, o: number[]) {
+  gdRes(p, oq, mir, ga, ge, gz, R0); // guide palm at its best -> GDC
+  const vx = GDC[0] - cx,
+    vy = GDC[1] - cy,
+    vz = GDC[2] - cz,
+    vl = Math.sqrt(vx * vx + vy * vy + vz * vz);
+  if (vl < 1e-6) return;
+  const k = 1 - BR / vl;
+  (R0[0] = vx * k), (R0[1] = vy * k), (R0[2] = vz * k); // wanted ball move
+  const sa = mir ? oq.aL : oq.aR,
+    se = mir ? oq.eL : oq.eR,
+    ss = mir ? oq.zL : oq.sz,
+    h = 1e-3;
+  for (let j = 0; j < 3; j++) {
+    const J = j === 0 ? JA : j === 1 ? JE : JZ;
+    if (mir) (oq.aL = sa + (j === 0 ? h : 0)), (oq.eL = se + (j === 1 ? h : 0)), (oq.zL = ss + (j === 2 ? h : 0));
+    else (oq.aR = sa + (j === 0 ? h : 0)), (oq.eR = se + (j === 1 ? h : 0)), (oq.sz = ss + (j === 2 ? h : 0));
+    const hp = handPos(p)!;
+    (J[0] = (hp[0] - cx) / h), (J[1] = (hp[1] - cy) / h), (J[2] = (hp[2] - cz) / h);
+  }
+  if (mir) (oq.aL = sa), (oq.eL = se), (oq.zL = ss);
+  else (oq.aR = sa), (oq.eR = se), (oq.sz = ss);
+  const lam = 120,
+    m00 = Dot(JA, JA) + lam,
+    m01 = Dot(JA, JE),
+    m02 = Dot(JA, JZ),
+    m11 = Dot(JE, JE) + lam,
+    m12 = Dot(JE, JZ),
+    m22 = Dot(JZ, JZ) + lam,
+    b0 = Dot(JA, R0),
+    b1 = Dot(JE, R0),
+    b2 = Dot(JZ, R0),
+    det = m00 * (m11 * m22 - m12 * m12) - m01 * (m01 * m22 - m12 * m02) + m02 * (m01 * m12 - m11 * m02);
+  if (Math.abs(det) < 1e-9) return;
+  const da = (b0 * (m11 * m22 - m12 * m12) - m01 * (b1 * m22 - m12 * b2) + m02 * (b1 * m12 - m11 * b2)) / det,
+    de = (m00 * (b1 * m22 - m12 * b2) - b0 * (m01 * m22 - m12 * m02) + m02 * (m01 * b2 - b1 * m02)) / det,
+    dz = (m00 * (m11 * b2 - b1 * m12) - m01 * (m01 * b2 - b1 * m02) + b0 * (m01 * m12 - m11 * m02)) / det;
+  o[0] = clamp(o[0] + clamp(da * 0.6, -0.05, 0.05), -0.35, 0.35);
+  o[1] = clamp(o[1] + clamp(de * 0.6, -0.05, 0.05), -0.35, 0.35);
+  o[2] = clamp(o[2] + clamp(dz * 0.6, -0.05, 0.05), -0.35, 0.35);
+}
+/** Guide hand (post-blend, after every other pass): from the set until the release the off hand's palm sits on the side
+ *  of the ball (the ball centre is the shooting palm). The contact point slides from the ball's side toward its
+ *  underside-back as the ball rises above the guide shoulder. Warm-started from last tick's solution; the correction
+ *  eases in over the gather and rides a critically damped weight, so it fades out after the release. */
+function upGuide(p: Player, oq: any, md: string, has: boolean) {
+  const d = p.gdD || (p.gdD = [0, 0, 0, 0, 0, 0]),
+    mir = oq.mir !== 0,
+    sv = (p.sv || 0) | 0;
+  const on = has && B.mode === "held" && !p.postA && (md === "c" || (md === "s" && !p.rl && sv !== 10 && sv !== 25 && (!isLaySv(sv) || sv === 11 || sv === 14 || sv === 15) && !(p.hk && sv !== 11 && sv !== 14 && sv !== 15)));
+  let wt = on ? (md === "c" ? SS(p.t / 0.1) : 1) : 0;
+  const warm = p.gdErr >= 0;
+  p.gdErr = -1;
+  // shooting-arm assist (pre-release): where the guide arm can't reach the ball, the shooting arm eases the ball a little
+  // toward it; applied with the lock's weight, so it fades out with it after the release
+  const o = p.gdO || (p.gdO = [0, 0, 0]),
+    wa = on ? wt : p.gdW || 0;
+  if (wa > 0 && (o[0] !== 0 || o[1] !== 0 || o[2] !== 0)) {
+    if (mir) (oq.aL += o[0] * wa), (oq.eL = clamp(oq.eL + o[1] * wa, -0.05, 2.75)), (oq.zL += o[2] * wa);
+    else (oq.aR += o[0] * wa), (oq.eR = clamp(oq.eR + o[1] * wa, -0.05, 2.75)), (oq.sz += o[2] * wa);
+  }
+  if (!on && (p.gdW || 0) < 0.002) o[0] = o[1] = o[2] = 0;
+  if (on) {
+    const c = handPos(p)!,
+      cx = c[0],
+      cy = c[1],
+      cz = c[2],
+      f = fv(p),
+      fx = Math.cos(f),
+      fy = Math.sin(f),
+      lx = -fy,
+      ly = fx,
+      sd = mir ? -1 : 1,
+      s = p.ht / 6.4,
+      // guide shoulder (approximate: upright chest) and the ball's height above it
+      shx = p.x + lx * sd * RIG.shX * p.bk * s * 10,
+      shy = p.y + ly * sd * RIG.shX * p.bk * s * 10,
+      shz = p.z + (RIG.hip + RIG.chest + RIG.sh) * s * 10 - oq.cr * 4,
+      ux = shx - cx,
+      uy = shy - cy,
+      uz = shz - cz,
+      ul = Math.max(1e-6, Math.sqrt(ux * ux + uy * uy + uz * uz)),
+      k = clamp((cz - shz) / 16, 0, 1.4);
+    // the side of the ball, a touch behind it (thumb toward the shooter) - the classic guide position
+    const nx = lx * sd * 0.97 - fx * 0.2 + (k * ux) / ul,
+      ny = ly * sd * 0.97 - fy * 0.2 + (k * uy) / ul,
+      nz = 0.12 + (k * uz) / ul,
+      nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    GDT[0] = cx + (nx / nl) * BR;
+    GDT[1] = cy + (ny / nl) * BR;
+    GDT[2] = cz + (nz / nl) * BR;
+    const a0 = mir ? oq.aR : oq.aL,
+      e0 = mir ? oq.eR : oq.eL,
+      z0 = mir ? oq.sz : oq.zL;
+    let ba = a0,
+      be = e0,
+      bz = z0,
+      best = 1e9;
+    if (warm) (best = gdSolve(p, oq, mir, d[3], d[4], d[5], 6)), (ba = GS[0]), (be = GS[1]), (bz = GS[2]);
+    if (best > 0.3) {
+      const best2 = gdSolve(p, oq, mir, a0, e0, z0, 10);
+      if (best2 < best - 0.2) (best = best2), (ba = GS[0]), (be = GS[1]), (bz = GS[2]);
+    }
+    // preferred spot out of reach (a set point far across / overhead): settle on the nearest reachable part of the ball's
+    // surface instead - re-target to the surface point under the best palm, a couple of rounds
+    for (let rr = 0; rr < 3 && best > 0.25; rr++) {
+      gdRes(p, oq, mir, ba, be, bz, R0);
+      const px = GDC[0] - cx,
+        py = GDC[1] - cy,
+        pz = GDC[2] - cz,
+        pl = Math.sqrt(px * px + py * py + pz * pz);
+      if (pl < 1e-6) break;
+      const sdist = Math.abs(pl - BR);
+      if (sdist < 0.2) {
+        best = sdist;
+        break;
+      }
+      GDT[0] = cx + (px / pl) * BR;
+      GDT[1] = cy + (py / pl) * BR;
+      GDT[2] = cz + (pz / pl) * BR;
+      const b3 = gdSolve(p, oq, mir, ba, be, bz, 6);
+      if (b3 < sdist) (best = b3), (ba = GS[0]), (be = GS[1]), (bz = GS[2]);
+      else {
+        best = sdist;
+        break;
+      }
+    }
+    if (best > 0.4) upAssist(p, oq, mir, ba, be, bz, cx, cy, cz, o);
+    else for (let j = 0; j < 3; j++) o[j] *= 1 - Math.min(1, DT * 5); // not needed: leak back to the clip's arm
+    if (mir) (oq.aR = a0), (oq.eR = e0), (oq.sz = z0);
+    else (oq.aL = a0), (oq.eL = e0), (oq.zL = z0);
+    if (best < 20) {
+      d[0] = wrapPi(ba - a0);
+      d[1] = be - e0;
+      d[2] = bz - z0;
+      (d[3] = ba), (d[4] = be), (d[5] = bz);
+      p.gdErr = best;
+    } else wt = 0;
+  }
+  // weight: eased by the gather ramp while on (exact), a critically damped fade once off
+  if (on && wt > 0) (p.gdW = wt), (p.gdV = 0);
+  else {
+    const om = 26;
+    p.gdV = (p.gdV || 0) + (om * om * (0 - (p.gdW || 0)) - 2 * om * (p.gdV || 0)) * DT;
+    p.gdW = Math.max(0, (p.gdW || 0) + p.gdV * DT);
+  }
+  if (p.gdW < 0.002) {
+    p.gdW = 0;
+    p.gdV = 0;
+    return;
+  }
+  const w = p.gdW;
+  if (mir) (oq.aR += d[0] * w), (oq.eR = clamp(oq.eR + d[1] * w, -0.05, 2.75)), (oq.sz += d[2] * w), (oq.gR = Math.min(oq.gR, 0.15));
+  else (oq.aL += d[0] * w), (oq.eL = clamp(oq.eL + d[1] * w, -0.05, 2.75)), (oq.zL += d[2] * w), (oq.gL = Math.min(oq.gL, 0.15));
+}
+/** The post-blend contact correction (dribble / catch / contest arm IK) rides a critically damped spring, so an IK branch
+ *  flip or a contact switching on can't pop the arm (it lands ~2-3 ticks later). */
+function upCt(p: Player, i: number, target: number) {
+  const c = p.upCs || (p.upCs = new Float64Array(12)),
+    om = 38;
+  c[6 + i] += (om * om * (target - c[i]) - 2 * om * c[6 + i]) * DT;
+  c[i] += c[6 + i] * DT;
+  return c[i];
+}
+// ==== Animation pack v5.4 additions (cfg.AP; C# twin apPose in Pose.UP.cs, same order): reactions and life ====
+/** Additive head yaw for this tick (a frustrated head shake), consumed by the head layer like HEADX. */
+let HEADY = 0;
+/** Big celebrations that draw a reaction from the players around (not daps, held follow-throughs, misses, arguing). */
+const bigCel = (c: number) => (c >= 1 && c <= 8) || c === 13 || c === 14;
+function apPose(p: Player, u: UV, md: string, has: boolean, air: boolean, sp: number) {
+  const ow = B.owner,
+    free = md === "i" && !air && !has && !(p.celT > 0) && !p.postA && !((p.setT || 0) > 0);
+  // ---- defenders read the fakes: a pump fake brings the ones who stayed down up out of their stance (onto the toes,
+  //      hands flying up after the ball - weaker defenders bite harder); a jab rocks the man in front back on his heels
+  if (ow && ow.tm !== p.tm && free && (ow.act === 1 || ow.act === 2) && ow.actT > 0) {
+    const d = Math.hypot(ow.x - p.x, ow.y - p.y);
+    if (d < 75) {
+      const prox = clamp((75 - d) / 30, 0, 1);
+      if (ow.act === 1) {
+        const b = Bump((0.42 - ow.actT) / 0.34) * prox * clamp((100 - (p.d || 70)) / 40, 0.4, 1);
+        u.cr -= 0.3 * b;
+        u.kL -= 0.3 * b;
+        u.kR -= 0.3 * b;
+        u.toe += 0.3 * b;
+        u.aR += (2.75 - u.aR) * b;
+        u.eR += (0.3 - u.eR) * b;
+        u.aL += (2.1 - u.aL) * b;
+        u.eL += (0.45 - u.eL) * b;
+        u.ln -= 0.12 * b;
+        HEADX -= 0.2 * b; // eyes follow the ball up
+      } else {
+        const b = Bump((0.38 - ow.actT) / 0.32) * prox;
+        u.ln -= 0.2 * b;
+        u.cr += 0.1 * b;
+        u.cx -= 0.06 * b;
+        u.aL -= 0.25 * b;
+        u.aR -= 0.25 * b;
+      }
+    }
+  }
+  // ---- on-ball defender standing his man up: alive on the balls of his feet, a small bounce ----
+  if (ow && ow.tm !== p.tm && free && sp < 25 && u.st === ST.def) {
+    const d = Math.hypot(ow.x - p.x, ow.y - p.y);
+    if (d < 70) {
+      const w = clamp((70 - d) / 25, 0, 1) * (1 - sp / 25);
+      u.cr += 0.04 * (0.5 + 0.5 * Math.sin(T * 9 + p.k * 1.9)) * w;
+      u.toe += 0.12 * w;
+    }
+  }
+  // ---- the floor reacts to a big play: teammates pump a fist or clap, the other side sags (hands on the hips, head
+  //      down); staggered per player so a group never moves in unison ----
+  if (free && sp < 200) {
+    let cq: Player | null = null,
+      cd = 260;
+    for (const q of P)
+      if (q !== p && !q.off && q.celT > 0 && bigCel(q.cel)) {
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < cd) (cd = d), (cq = q);
+      }
+    if (cq) {
+      const e = CEL_T - cq.celT - 0.07 * (p.k % 4),
+        w = clamp(Math.min(e / 0.3, (cq.celT - 0.2) / 0.4), 0, 1);
+      if (w > 0 && cq.tm === p.tm) {
+        if (p.k % 2 === 0) {
+          // fist pump (twice)
+          const pm = Math.max(0, Math.sin(e * 11));
+          u.aR += (1.85 + 0.5 * pm - u.aR) * w;
+          u.eR += (1.95 - 0.55 * pm - u.eR) * w;
+          u.sz += (0.3 - u.sz) * w;
+          u.gR += (1 - u.gR) * w;
+        } else {
+          // claps in front of the chest
+          const cl = Math.abs(Math.sin(e * 9));
+          u.aL += (1.3 - u.aL) * w;
+          u.aR += (1.3 - u.aR) * w;
+          u.eL += (1.0 - u.eL) * w;
+          u.eR += (1.0 - u.eR) * w;
+          u.sz += (-0.1 + 0.45 * cl - u.sz) * w;
+          ZLs(u, u.zL + (-0.1 + 0.45 * cl - u.zL) * w);
+          u.gL = u.gR = 0.1;
+        }
+      } else if (w > 0) {
+        // deflated: hands on the hips, head drops
+        u.aL += (-0.15 - u.aL) * w;
+        u.aR += (-0.15 - u.aR) * w;
+        u.eL += (1.55 - u.eL) * w;
+        u.eR += (1.55 - u.eR) * w;
+        u.sz += (0.62 - u.sz) * w;
+        ZLs(u, u.zL + (0.62 - u.zL) * w);
+        u.hL += (1.25 - u.hL) * w;
+        u.hR += (1.25 - u.hR) * w;
+        HEADX += 0.22 * w;
+      }
+    }
+  }
+  // ---- the shooter after his miss is rebounded: a head shake, a frustrated clap, or both hands to the head ----
+  if (free && (p.frT || 0) > 0.55 && sp < 260) {
+    const e = 1.8 - p.frT,
+      w = clamp(Math.min(e / 0.2, (p.frT - 0.55) / 0.3), 0, 1),
+      v = p.k % 3;
+    if (v === 0) {
+      HEADY += 0.32 * Math.sin(e * 13) * w;
+      HEADX += 0.2 * w;
+    } else if (v === 1) {
+      const cl = Bump((e - 0.05) / 0.35);
+      u.aL += (1.2 - u.aL) * w;
+      u.aR += (1.2 - u.aR) * w;
+      u.eL += (1.1 - u.eL) * w;
+      u.eR += (1.1 - u.eR) * w;
+      u.sz += (0.5 - 0.62 * cl - u.sz) * w;
+      ZLs(u, u.zL + (0.5 - 0.62 * cl - u.zL) * w);
+      HEADX += 0.15 * w;
+    } else {
+      u.aL += (2.45 - u.aL) * w;
+      u.aR += (2.45 - u.aR) * w;
+      u.eL += (2.2 - u.eL) * w;
+      u.eR += (2.2 - u.eR) * w;
+      u.sz += (0.72 - u.sz) * w;
+      ZLs(u, u.zL + (0.72 - u.zL) * w);
+      HEADX -= 0.18 * w;
+    }
+  }
+  // ---- shot-to-shot variety inside each player's form: a per-shot draw (set at the gather) varies the follow-through
+  //      height, the wrist snap and the leg kick a little - after the release only, so the release point never moves ----
+  if (md === "c" && p.apM !== "c") p.shV = ((Math.floor(T * 60) * 2654435761 + p.k * 40503) % 1000) / 1000;
+  if (md === "s" && has && p.shV != null) {
+    const kind = CK[p.sv];
+    if (!isLaySv(p.sv || 0) && kind !== "hang" && kind !== "hook" && kind !== "sky") {
+      const k = upK(p, kind),
+        rk = kind != null && RELK[kind] != null ? RELK[kind] : 0.7,
+        post = k > rk ? Math.min(1, (k - rk) / Math.max(0.05, 1 - rk)) : 0;
+      if (post > 0) {
+        const v = p.shV,
+          v2 = (v * 7) % 1,
+          v3 = (v * 13) % 1,
+          kk = SS((k - 0.55) / 0.25) * (0.06 + 0.12 * v3);
+        u.aR += (v - 0.5) * 0.16 * post;
+        u.wR += (v2 - 0.5) * 0.22 * post;
+        u.tR -= kk;
+        u.kR += kk * 1.3;
+      }
+    }
+  }
+  p.apM = md;
+}
+/** Hip turn (cfg.AP): a player backpedaling or sliding faster than a stance allows (> ~15 ft/s, more than ~70 deg off his
+ *  facing) opens his hips and runs - the drawn root (p.ry, via fv) turns toward the run while the sim facing, the chest
+ *  (partly) and the head stay on the play. Straight back, he opens toward the ball (it stays over a shoulder). Rides a
+ *  critically damped spring (p.trY / p.trV), so the swivel takes ~0.3 s; held in the air; never the ball handler. */
+function turnRun(p: Player) {
+  const sp = Math.hypot(p.vx, p.vy);
+  let tgt = 0;
+  if (p.z > 1) tgt = p.trY || 0;
+  else if (p.mode === "i" && B.owner !== p && !p.postA && !((p.setT || 0) > 0) && !(p.actT > 0 && (p.act === 3 || p.act === 4)) && sp > 140) {
+    const rel = wrapPi(Math.atan2(p.vy, p.vx) - p.f),
+      ar = Math.abs(rel),
+      w = clamp((sp - 150) / 60, 0, 1) * clamp((ar - 1.25) / 0.45, 0, 1);
+    if (w > 0) {
+      // side: toward the run; straight back (no side chosen yet): toward the ball; a choice is kept while he runs back
+      if (ar < 2.2 || (!p.trS && ar < 2.4)) p.trS = rel > 0 ? 1 : -1;
+      else if (!p.trS) p.trS = Math.sin(p.f) * (B.x - p.x) - Math.cos(p.f) * (B.y - p.y) > 0 ? -1 : 1;
+      tgt = p.trS * (ar - 0.55) * w;
+    }
+  }
+  if (tgt === 0 && Math.abs(p.trY || 0) < 0.05) p.trS = 0;
+  const om = 11;
+  p.trV = (p.trV || 0) + (om * om * (tgt - (p.trY || 0)) - 2 * om * (p.trV || 0)) * DT;
+  p.trY = (p.trY || 0) + p.trV * DT;
+  return p.trY;
+}
+/** (AP) A ball holder who has to be on his feet - inbounding, triple threat, fakes, the FT routine: a fall / dive left over
+ *  from before he got the ball is not drawn (he used to inbound sitting on the floor, the ball floating above him). */
+function upGot(p: Player) {
+  if (cfg.AP === 0 || !(p.act === 3 || p.act === 4) || B.owner !== p || p.mode !== "i") return false;
+  const h = heldBall(p);
+  return inb > 0 || (h > 0 && h !== 4);
+}
+/** Root yaw continuity (AP): the sim may snap a player's facing (squaring up on a catch, a pivot) - more than 0.3 rad in
+ *  one tick is drawn as a quick turn instead: the excess goes into an offset (p.rfO) that decays on a critically damped
+ *  spring (~0.2 s; ~0.12 s for a shooter, whose release comes from the drawn hand). A teleport resets it. */
+function faceLag(p: Player) {
+  const tele = p.rfX != null && Math.hypot(p.x - p.rfX, p.y - p.rfY) > 30,
+    df = p.rfP == null || tele ? 0 : wrapPi(p.f - p.rfP);
+  (p.rfP = p.f), (p.rfX = p.x), (p.rfY = p.y);
+  if (tele) (p.rfO = 0), (p.rfV = 0);
+  if (Math.abs(df) > 0.3) p.rfO = wrapPi((p.rfO || 0) - (df - (df > 0 ? 0.3 : -0.3)));
+  const om = (p.mode === "c" || p.mode === "s") && B.owner === p ? 40 : 24;
+  p.rfV = (p.rfV || 0) + (-om * om * (p.rfO || 0) - 2 * om * (p.rfV || 0)) * DT;
+  p.rfO = (p.rfO || 0) + p.rfV * DT;
+  return p.rfO;
 }

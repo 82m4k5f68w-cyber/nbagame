@@ -116,6 +116,11 @@ namespace Hoops.Core
                 if (hum && has && p.mode == "i") ppBuffer(p, i);
                 ppStance(p, i, has, hum);
                 p.spT = hum && i.sp ? p.spT + dt : 0;
+                if (cfg.PP >= 2 && hum)
+                {
+                    if (i.post && !Util.T(p.postA)) pp2Screen(p, has, D); // (post key away from the post: call a screen)
+                    pp2Cut(p, i, has, ux, uy, D);
+                }
             }
             if (p.mvT > 0)
             {
@@ -341,8 +346,12 @@ namespace Hoops.Core
                     double nx = (d.x - p.x) / (Util.T(dist) ? dist : 1),
                         ny = (d.y - p.y) / (Util.T(dist) ? dist : 1),
                         f = (p.bk * p.ht) / (d.bk * d.ht);
-                    d.x += nx * 3 * f;
-                    d.y += ny * 3 * f;
+                    if (cfg.PP >= 2) pp2Backdown(p, d, nx, ny); // (v5.4: strength vs strength)
+                    else
+                    {
+                        d.x += nx * 3 * f;
+                        d.y += ny * 3 * f;
+                    }
                     d.hitT = 0.16;
                     d.hitX = nx;
                     d.hitY = ny;
@@ -359,6 +368,7 @@ namespace Hoops.Core
                 p.cd = 1.6;
                 p.bx = -ux / D;
                 p.by = -uy / D;
+                if (cfg.PP >= 2) pp2SideStep(p, i, ux, uy, D); // (stick held sideways: a side-step)
                 if (PREDICT == 0)
                 {
                     Player d = P[(int)nearest(1 - p.tm, p.x, p.y)];
@@ -370,7 +380,7 @@ namespace Hoops.Core
                         if (hum) txtW("SHOOK HIM!", d.x, d.y, 95, "#ff6b6b");
                     }
                 }
-                if (hum) txtW(p.bn > 1 ? "DOUBLE STEP-BACK!" : "STEP-BACK!", p.x, p.y, 95, "#ffd23f");
+                if (hum) txtW(cfg.PP >= 2 && Util.T(p.bsd) ? "SIDE-STEP!" : p.bn > 1 ? "DOUBLE STEP-BACK!" : "STEP-BACK!", p.x, p.y, 95, "#ffd23f");
             }
             if (p.mode == "b")
             {
@@ -383,6 +393,7 @@ namespace Hoops.Core
                     p.mode = "c";
                     p.t = 0;
                     p.sbw = 0.9;
+                    if (cfg.PP >= 2) { p.sqn = 0; p.fade = 0; } // (a step-back jumper is balanced by definition: its own rhythm)
                 }
                 else if (p.t >= (p.bn > 1 ? 0.4 : 0.2))
                 {
@@ -391,6 +402,7 @@ namespace Hoops.Core
                     p.vx = p.vy = 0;
                 }
             }
+            if (cfg.PP >= 2 && hum) pp2CsCatch(p, i, has); // (a shot pressed as the pass arrived goes up on the catch)
             if (p.mode == "i")
             {
                 if (i.sd)
@@ -401,9 +413,11 @@ namespace Hoops.Core
                         p.t = 0;
                         if (Util.T(TEMPO)) i.su = true;
                         if (cfg.PP != 0) upGatherStart(p, ux, uy, D);
+                        if (cfg.PP >= 2) pp2Gather(p, i, ux, uy, D, hum); // (pull-up out of a move; balance of the jumper; stick-picked fade / leaner)
                     }
-                    else if (!has && p.z <= 0)
+                    else if (!has && p.z <= 0 && !(cfg.PP >= 2 && pp2CsBuf(p, hum)))
                     {
+                        // (Pro Play v2: not with a pass about to arrive - that press is a catch-and-shoot)
                         p.vz = 126 + p.j * 0.9;
                         // jumping at a shot that's already gone: he lands off balance
                         if (Util.T(B.sh) && B.last != null && B.last.tm != p.tm && B.age > 0.12 && Hypot(B.last.x - p.x, B.last.y - p.y) < 40) p.lateJ = 1;
@@ -423,8 +437,9 @@ namespace Hoops.Core
                     bool lobIt = !i.lob && !isH(p) && r != null && (fronted || (r.j >= (astar ? 45 : 55) && Hypot(hoop(r.tm) - r.x, HY - r.y) < (astar ? 140 : 100) && Rng.R() < (astar ? 0.92 : 0.6)));
                     if (r != null && PREDICT == 0) pass(p, r, i.lob || lobIt ? 2 : (double?)null);
                 }
-                else if (i.e && p.cd <= 0)
+                else if (i.e && !(cfg.PP >= 2 && pp2Call(p, hum)) && p.cd <= 0)
                 {
+                    // (Pro Play v2: off the ball on offense the pass key calls for the ball)
                     p.cd = 0.8; // steals are OFF by design (user request): reach-ins do nothing
                 }
             }
@@ -455,7 +470,7 @@ namespace Hoops.Core
                     p.react = 0;
                     p.dcl = 0;
                     bool lay = D < 90 && ftq == null;
-                    double k = p.st == 2 ? 70 : p.st == 3 ? 110 : 0;
+                    double k = cfg.PP >= 2 && p.fade == 1 ? 95 : p.st == 2 ? 70 : p.st == 3 ? 110 : 0; // (Pro Play v2: a fadeaway drifts back)
                     bool pro = C_on(cfg.PRO);
                     p.sv = pro
                         ? pickClip(p, D, lay)
@@ -525,7 +540,8 @@ namespace Hoops.Core
                         (has ? 0.96 : 1) *
                         (i.sp ? 1.2 : 1) *
                         (p.z > 0 ? 0.5 : 1) *
-                        (Util.T(p.stc) ? 1.08 : 1), // (Pro Play: a human in his defensive stance slides a little quicker)
+                        (Util.T(p.stc) ? 1.08 : 1) * // (Pro Play: a human in his defensive stance slides a little quicker)
+                        (p.cutT > 0 ? 1.1 : 1), // (Pro Play v2: an off-ball flick cut)
                     k = Math.Min(1, dt * (p.z > 0 ? 1.5 : 9));
                 if (C_on(cfg.PRO) && p.z <= 0)
                 {
@@ -535,7 +551,7 @@ namespace Hoops.Core
                         cur = Hypot(p.vx, p.vy);
                     bool brk = cur > 40 && dx * p.vx + dy * p.vy < 0,
                         first = p.fsT > 0;
-                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * dt, // (+ stance slides / sprint burst)
+                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : 1) * dt, // (+ stance slides / sprint burst / cut)
                         mm = Math.Min(dl, ac);
                     // a hard cut at speed: plant the outside foot (two-three steps to stop), and sometimes slip
                     if (brk && cur > 170 && !(p.plantT > 0) && !(p.brk > 0.5))

@@ -21,7 +21,8 @@ namespace Hoops.Core
         public int AVOID = 1; // arms/shoulders kept out of other players' torsos (0 = off, A/B tests)
         public int PLANT = 1; // stance feet pinned to the floor in the core pose (0 = off)
         public int INZ = 1; // inertialized animation blending (0 = old exponential smoothing)
-        public int PP = 1; // Pro Play pack v5.3 (Sim.UP.cs sim side, shared with the TS sim: cfg.PP); 0 = the v5.2 game
+        public int AP = 1; // animation pack v5.4 (shared with TS cfg.AP): the Pose.UP.cs pose layer runs with AP or UP; 0 = v5.3 poses
+        public int PP = 2; // Pro Play level (shared with the TS sim: cfg.PP): 2 = v5.4 (Sim.PP2.cs: reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (Sim.UP.cs), 0 = the v5.2 game
         public int UP = 0; // Unity Pro Play upgrades (Sim.UP.cs / Pose.UP.cs): new moves, finishes, reactions. 0 = TS parity
         public double PHYS = 0.5; // ball physics feel with UP (Sim.PH.cs / BallSim): 0 arcade .. 1 sim (restitution, spin, contact strength)
         public string physics = "rapier"; // "rapier" | "legacy"
@@ -122,7 +123,7 @@ namespace Hoops.Core
     }
 
     /// <summary>Team state (sim.ts TS).</summary>
-    public sealed class TeamState
+    public sealed partial class TeamState
     {
         public double[] to = { 4, 4 };
         public double[] ds = { 0, 0 }; // 0 normal, 1 sag, 2 tight / deny, 3 switch everything, 4 2-3 zone (5v5)
@@ -590,8 +591,10 @@ namespace Hoops.Core
         public static readonly TeamState TS = new TeamState();
         public static Scout scoutNew() => new Scout();
         public static readonly string[] GPN = { "BALANCED", "ATTACK THE PAINT", "MID-RANGE & POST", "LET IT FLY", "FEED THE HOT HAND" };
-        public static readonly string[] DSN = { "NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING", "2-3 ZONE" },
-            PCN = { "AUTO", "PICK & ROLL", "PINDOWN", "FLARE", "ISOLATION" };
+        public static readonly string[] DSN = { "NORMAL", "SAG / PROTECT PAINT", "TIGHT / DENY", "SWITCH EVERYTHING", "2-3 ZONE", "BOX-AND-ONE" },
+            PCN = { "AUTO", "PICK & ROLL", "PINDOWN", "FLARE", "ISOLATION", "HORNS", "SPAIN PICK & ROLL", "POST UP" },
+            // CPU pick-and-roll coverages (TS.cov)
+            COVN = { "DROP", "HEDGE", "ICE", "BLITZ" };
         /// <summary>CT.some(c => c.tm === t), allocation-free.</summary>
         static bool ctHas(double t)
         {
@@ -625,6 +628,12 @@ namespace Hoops.Core
             TS.dbl = new double[] { -1, -1 };
             TS.xs = new Splits();
             TS.orbP = new double[] { 0, 0 };
+            TS.ato = new double[] { 0, 0 };
+            TS.l2 = new double[] { 0, 0 };
+            TS.bon = new double[] { 0, 0 };
+            TS.box = new double[] { -1, -1 };
+            TS.cls = new double[] { 0, 0 };
+            TS.setN = new double[] { 0, 0 };
             for (int t = 0; t < 2; t++) if (!ctHas(t)) TS.mu[t] = autoMatch(t);
         }
         /// <summary>Commentary hook (captions + optional voice) and broadcast banners.</summary>
@@ -654,6 +663,7 @@ namespace Hoops.Core
             if (D0 > 265 && hasB(p, "DR")) add(1.08, "DEEP RANGE");
             if (p.hzm != null && p.hzm[zoneOf(p, D0)] >= 2) add(1.12, "HOT ZONE");
             if ((p.mvEnd != null && T - p.mvEnd.Value < 0.45) || p.sbw > 0.4) add(1.1, "RHYTHM");
+            if (cfg.PP >= 2 && Util.T(p.sqn) && (p.mode == "c" || p.mode == "s")) add(p.sq, SQN[(int)p.sqn]); // (Pro Play v2: balance at the gather)
             if (p.cold >= 3) add(0.9, "COLD");
             if (clutchTime() && hasB(p, "CL")) add(1.15, "CLUTCH");
             double mo = T(p.tm) ? -TS.mom : TS.mom;
@@ -731,26 +741,36 @@ namespace Hoops.Core
         {
             if (ctHas(tt) || cfg.NP < 2 || !gameLike() || cfg.ASTAR != 0) return;
             int t = (int)tt;
-            if (++TS.gpT[t] < 4) return;
+            double lv = cpuIQ(t);
+            if (++TS.gpT[t] < 6 - lv) return; // (smarter coaches re-read the game sooner: every 6 .. 3 possessions)
             // defense reads the other side's sheet: they live at the rim -> sag; they're raining threes -> run them off the line
             var o = TS.sk[1 - t];
             bool rimHot = pps(o, 0) > 1.35 && o.a[0] >= 4;
-            // they live at the rim and can't shoot it: pack the paint with a zone (5v5), or at least sag
-            double ds = pps(o, 2) > 1.2 && o.a[2] >= 4 ? 2 : rimHot ? (cfg.NP == 5 && pps(o, 2) < 1.0 ? 4 : 1) : TS.ds[t] == 3 ? 3 : 0;
+            int bx = lv >= 2 ? boxTarget(t) : -1;
+            // they live at the rim and can't shoot it: pack the paint with a zone (5v5), or at least sag; one shooter on
+            // fire and nobody else hurting them: box-and-one
+            double ds = bx >= 0 ? 5 : pps(o, 2) > 1.2 && o.a[2] >= 4 ? 2 : rimHot ? (cfg.NP == 5 && pps(o, 2) < 1.0 ? 4 : 1) : TS.ds[t] == 3 ? 3 : 0;
+            TS.box[t] = bx;
             if (ds != TS.ds[t])
             {
                 TS.ds[t] = ds;
                 if (ds == 4) { ban("2-3 ZONE", cl[t].ToUpperInvariant() + " PACK THE PAINT", PC[t]); cm("zone", cl[t]); }
+                else if (ds == 5) { ban("BOX-AND-ONE", cl[t].ToUpperInvariant() + " CHASE " + P[bx].n.ToUpperInvariant(), PC[t]); cm("boxone", cl[t], P[bx].n); statAdd("boxone", 1); }
                 else if (T(ds)) txt(cl[t].ToUpperInvariant() + " DEFENSE: " + DSN[(int)ds], 480, 170, "#9fe7ff");
             }
-            // pick-and-roll coverage: hedge out on a handler who punishes a big sitting back, otherwise drop
+            // pick-and-roll coverage: hedge out on a handler who punishes a big sitting back, otherwise drop; smarter
+            // coaches blitz a star who is cooking and ICE a team that lives at the rim
             {
                 var st = starOf(1 - t);
                 double cov = (st != null && st.c >= 86) || (pps(o, 1) > 1.0 && o.a[1] >= 4) ? 1 : 0;
+                if (lv >= 2 && cov == 1 && st != null && hotNow(st)) cov = 3;
+                else if (lv >= 1 && cov == 0 && rimHot) cov = 2;
+                if (lv == 0) cov = 0; // (a rookie coach drops every time)
                 if (cov != TS.cov[t])
                 {
                     TS.cov[t] = cov;
-                    txt(cl[t].ToUpperInvariant() + (T(cov) ? " HEDGE THE PICK-AND-ROLL" : " DROP ON THE PICK-AND-ROLL"), 480, 150, "#9fe7ff");
+                    txt(cl[t].ToUpperInvariant() + (cov == 1 ? " HEDGE THE PICK-AND-ROLL" : cov == 2 ? " ICE THE PICK-AND-ROLL" : cov == 3 ? " BLITZ THE PICK-AND-ROLL" : " DROP ON THE PICK-AND-ROLL"), 480, 150, "#9fe7ff");
+                    if (cov >= 2) cm(cov == 2 ? "ice" : "blitz", cl[t], st != null ? st.n : "");
                 }
             }
             // a scorer who is on fire gets doubled when he catches it (and the double comes off when he cools down)
@@ -763,7 +783,7 @@ namespace Hoops.Core
                     double v = q.heat >= 3 ? 10 + q.stt.pts / 4 : 0;
                     if (v > hv) { hv = v; hi = (1 - t) * cfg.NP + j; }
                 }
-                if (cfg.NP < 3 || cfg.ASTAR != 0) hi = -1;
+                if (cfg.NP < 3 || cfg.ASTAR != 0 || lv == 0 || TS.ds[t] == 5) hi = -1; // (no doubles from a rookie coach / in the box-and-one)
                 if (hi != TS.dbl[t])
                 {
                     TS.dbl[t] = hi;
@@ -875,6 +895,7 @@ namespace Hoops.Core
             if (!dead) pend = t;
             rs = 3.2;
             TS.hud = 3.2; // both teams huddle in front of their benches (deadBall)
+            if (!ctHas(t) && cpuIQ(t) >= 1 && cfg.NP >= 3) TS.ato[t] = 1; // the coach draws up a play (ATO)
             RQ = 0;
             if (q >= 4 && bcast() < 120 && pend == t && cfg.NP > 1)
             {
@@ -919,10 +940,15 @@ namespace Hoops.Core
                 cm("foulout", d.n);
             }
         }
-        /// <summary>Substitutions at dead balls (5v5): tired or fouled-out players go to the bench, rested ones come back.</summary>
+        /// <summary>Substitutions at dead balls (5v5): tired or fouled-out players go to the bench, rested ones come back.
+        /// Rotation rules (v5.4): foul trouble sits a starter until the next quarter (q + 1 fouls); the starters close
+        /// (clutch time / overtime); garbage time (4th quarter, last 4 broadcast minutes, 20+ points) empties the bench.</summary>
+        public static bool ftrb(Player p) => !T(p.fo) && q <= 4 && p.pf >= q + 1; // in foul trouble for this quarter
         public static void subs()
         {
             if (cfg.SUBS == 0 || cfg.NP < 2 || T(PREDICT) || BENCH[0] == null) return; // (online too: the host publishes the lineup)
+            bool close = TS.clutch > 0 || q > 4,
+                blow = q >= 4 && bcast() < 240 && Math.Abs(sc[0] - sc[1]) >= 20 && gameLike() && cfg.ASTAR == 0;
             for (int t = 0; t < 2; t++)
             {
                 var bn = BENCH[t];
@@ -935,21 +961,42 @@ namespace Hoops.Core
                     if (!skip) foreach (var c in CT) if (c.fixed_ && c.idx == idx) { skip = true; break; }
                     if (skip) continue;
                     bool fresh = T - p.inAt < 25; // nobody gets yanked right after checking in
-                    bool tired = (p.en < 0.5 && !fresh) || T(p.fo);
-                    if (!tired)
+                    bool tired = (p.en < (close ? 0.3 : 0.5) && !fresh) || T(p.fo),
+                        st = p.rid < 5, // a starter
+                        ftr = !close && st && ftrb(p),
+                        garb = blow && st;
+                    if (!tired && !ftr && !garb)
                     {
-                        // a rested starter checks back in for his sub
-                        if (p.sub != null && !T(p.fo))
+                        if (close && !st)
+                        {
+                            // closing time: a reserve on the floor makes way for a starter who can still go
+                            Player c0 = null;
+                            foreach (var b in bn) if (b.rid < 5 && !T(b.fo) && b.en > 0.35 && (c0 == null || Math.Abs(b.ht - p.ht) < Math.Abs(c0.ht - p.ht))) c0 = b;
+                            if (c0 != null)
+                            {
+                                swap(t, k, c0);
+                                statAdd("closer", 1);
+                                if (!T(TS.cls[t])) { TS.cls[t] = 1; cm("closers", cl[t]); }
+                            }
+                            continue;
+                        }
+                        // a rested starter checks back in for his sub (not in foul trouble, not with the game out of reach)
+                        if (p.sub != null && !T(p.fo) && !blow)
                         {
                             Player s0 = null;
-                            foreach (var b in bn) if (b == p.sub && b.en > 0.85 && !T(b.fo)) { s0 = b; break; }
-                            if (s0 != null && p.en < 0.8 && !fresh) swap(t, k, s0);
+                            foreach (var b in bn) if (b == p.sub && b.en > 0.85 && !T(b.fo) && !(!close && ftrb(b))) { s0 = b; break; }
+                            if (s0 != null && (p.en < 0.8 || T(s0.ftS)) && !fresh) { s0.ftS = 0; swap(t, k, s0); }
                         }
                         continue;
                     }
                     Player best = null;
-                    foreach (var b in bn) if (!T(b.fo) && b.en > 0.7 && (best == null || Math.Abs(b.ht - p.ht) < Math.Abs(best.ht - p.ht))) best = b;
-                    if (best != null) swap(t, k, best);
+                    foreach (var b in bn) if (!T(b.fo) && b.en > (ftr || garb ? 0.45 : 0.7) && !(ftr && ftrb(b)) && !(garb && b.rid < 5) && (best == null || Math.Abs(b.ht - p.ht) < Math.Abs(best.ht - p.ht))) best = b;
+                    if (best != null)
+                    {
+                        swap(t, k, best);
+                        if (ftr) { p.ftS = 1; statAdd("ftrSit", 1); cm("foultrouble", p.n); }
+                        if (garb) statAdd("garbage", 1);
+                    }
                 }
             }
         }

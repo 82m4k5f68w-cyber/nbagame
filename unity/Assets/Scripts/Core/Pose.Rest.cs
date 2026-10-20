@@ -467,8 +467,8 @@ namespace Hoops.Core
             string md = p.mode;
             double st = p.anS;
             // (+ the gather of a jumper: the feet stay planted - or take the hop into the clip's stance - while the hips dip)
-            bool gat = md == "c" && st == ST.shot && (!Util.T(p.hk) && !IsLaySv(I(Or0(p.sv))) && !IsDunkSv(I(Or0(p.sv))) || cfg.UP != 0 && p.gath != 0), // (UP: drive gathers step too)
-                ok = p.z < 1 && (md == "i" || gat) && !(p.actT > 0 && (p.act == 3 || p.act == 4 || p.act == 5)) && (st == ST.idle || st == ST.run || st == ST.def || st == ST.drib || st == ST.scr || st == ST.cat || st == ST.rest || st == ST.post || st == ST.move || gat || (st == ST.air && md == "i") || (st == ST.cel && sp > 25));
+            bool gat = md == "c" && st == ST.shot && (!Util.T(p.hk) && !IsLaySv(I(Or0(p.sv))) && !IsDunkSv(I(Or0(p.sv))) || upA && p.gath != 0), // (UP / AP: drive gathers step too)
+                ok = p.z < 1 && (md == "i" || gat) && !(p.actT > 0 && (p.act == 3 || p.act == 4 || p.act == 5) && !upGot(p)) && (st == ST.idle || st == ST.run || st == ST.def || st == ST.drib || st == ST.scr || st == ST.cat || st == ST.rest || st == ST.post || st == ST.move || gat || (st == ST.air && md == "i") || (st == ST.cel && sp > 25));
             var S = p.stp ?? (p.stp = new StepState());
             S.w += ((ok ? 1 : 0) - S.w) * Math.Min(1, DT * (ok ? 8 : 14));
             skeleton(p, PSK);
@@ -479,7 +479,7 @@ namespace Hoops.Core
                 cf = JsMath.Cos(fv(p)),
                 sf = JsMath.Sin(fv(p));
             // lying on the floor (a dive, knocked down): nothing may sink through it - lift the whole body by the deepest point
-            if (p.actT > 0 && (p.act == 3 || p.act == 4) && p.z < 2)
+            if (p.actT > 0 && (p.act == 3 || p.act == 4) && p.z < 2 && !upGot(p))
             {
                 double m = 0;
                 for (int i = 0; i < LYJ.Length; i++) m = Math.Min(m, PSK[LYJ[i] * 3 + 2]);

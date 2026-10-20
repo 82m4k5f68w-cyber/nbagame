@@ -99,13 +99,19 @@ namespace Hoops.Core
                     return;
                 }
                 if (p.mode != "i") return;
+                if (cfg.PP >= 2 && pp2Feed(p, i)) return; // (a human teammate called for it)
                 Player dn = P[nearest(1 - t, p.x, p.y)];
                 double D0 = Hypot(oh - p.x, HY - p.y);
                 // step-back: a weapon to create space once the possession has developed (or the clock is running out)
                 {
                     double pf0 = clamp((QTRLEN - 30) / 150, 0, 1),
                         el0 = 24 - shot;
-                    if (p.cd <= 0 && D0 > 150 && Hypot(dn.x - p.x, dn.y - p.y) < 38 && (el0 > 3 + 8 * pf0 || shot < 8) && Rng.R() < dt * 4 * tendOf(p)[5]) i.sb = true;
+                    if (p.cd <= 0 && D0 > 150 && Hypot(dn.x - p.x, dn.y - p.y) < 38 && (el0 > 3 + 8 * pf0 || shot < 8) && Rng.R() < dt * 4 * tendOf(p)[5])
+                    {
+                        i.sb = true;
+                        // (Pro Play v2: a third of them are side-steps, away from the defender's side)
+                        if (cfg.PP >= 2 && Rng.R() < 0.35) p.ssq = (dn.x - p.x) * -(HY - p.y) + (dn.y - p.y) * (oh - p.x) >= 0 ? -1 : 1;
+                    }
                 }
                 // the clock is about to run out (quarter or shot clock): get it up from wherever he is - a heave if he must
                 if (!isH(p) && p.cd <= 0 && gameLike() && cfg.HALF == 0 && Math.Min(clock, shot) < 1.25 && (D0 < 520 || clock < 1.25))
@@ -554,7 +560,7 @@ namespace Hoops.Core
             }
             else if (B.owner != null)
             {
-                bool zone = TS.ds[ti] == 4 && NP == 5 && cfg.HALF == 0;
+                bool zone = (TS.ds[ti] == 4 || (TS.ds[ti] == 5 && p != boxCh(t))) && NP == 5 && cfg.HALF == 0; // (box-and-one: four in the zone)
                 Player zo = zone ? zoneMan(p, t, dh) : null;
                 Player o = zo ?? (p.manT > 0 && p.man != null ? P[(int)p.man.Value] : guardOf(p));
                 double ds = TS.ds[ti],
@@ -564,6 +570,7 @@ namespace Hoops.Core
                 double ou = (B.owner == o ? 22 : 26) * cpuK(p, D_K_OU) * (cfg.ASTAR != 0 ? 1.6 : 1); // tighter on-ball defense on harder levels (All-Star: nobody plays D)
                 if (ds == 1) ou = B.owner == o ? ou + 8 : ou * 1.6; // sag: go under screens, wall off the paint
                 else if (ds == 2) ou = B.owner == o ? ou * 0.82 : ou * 0.6; // tight: pressure and deny
+                else if (ds == 5 && NP == 5 && !zone) ou *= 0.62; // box-and-one: the chaser face-guards his man everywhere
                 if (cpu && cfg.BADGES != 0 && od > 220 && o.c < 72 && B.owner != o) ou += 34; // sag off a non-shooter
                 if (cpu && hotO) ou *= 0.78; // stay attached to the hot hand
                 // the CPU scouts his man (human or not): where does he score? take that away, give him the other thing
@@ -617,7 +624,8 @@ namespace Hoops.Core
                 else if (pnrBig)
                 {
                     double dir = dh > 470 ? -1 : 1;
-                    if (TS.cov[ti] == 1 && (opl.ph == "set" || T - opl.setAt < 0.55))
+                    if (TS.cov[ti] >= 2) tpBig(p, t, o, hb, opl, dh); // ICE / blitz
+                    else if (TS.cov[ti] == 1 && (opl.ph == "set" || T - opl.setAt < 0.55))
                     {
                         // hedge: jump out above the screen into the handler's path, then get back to the roller
                         mv(p, hb.x + (dh - hb.x) * 0.12 + (hb.y - HY) * -0.05, hb.y + (HY - hb.y) * 0.12, 1.2);
@@ -641,6 +649,10 @@ namespace Hoops.Core
                     if (!Util.T(lm)) lm = 1;
                     mv(p, m.x + ((dh - m.x) / lm) * 18, m.y + ((HY - m.y) / lm) * 18, 1.1);
                     i.sp = true;
+                }
+                else if (!zone && cpu && tpTag(p, t, opl, dh))
+                {
+                    // (blitz: the low man tags the roller the trap left open)
                 }
                 else if (zone && hh < 140 && nearest(t, hb.x, hb.y) == ti * NP + (int)p.k) mv(p, hb.x + (dh - hb.x) * 0.35, hb.y + (HY - hb.y) * 0.35, 1.1);
                 else if (zone)
@@ -671,6 +683,17 @@ namespace Hoops.Core
                             uy = (HY - o.y) / l;
                         tx += -uy * sh * -1;
                         ty += ux * sh * -1;
+                    }
+                    // ICE: the handler's man gets over the top of a side pick-and-roll and sends him away from the screen
+                    if (cpu && B.owner == o && TS.cov[ti] == 2 && opl != null && opl.kind == "pnr" && opl.use == o && opl.ph != "out" && Math.Abs(o.y - HY) > 60)
+                    {
+                        double sx = opl.scr.x - o.x,
+                            sy = opl.scr.y - o.y,
+                            sl = Hypot(sx, sy);
+                        if (!Util.T(sl)) sl = 1;
+                        tx += (sx / sl) * 12;
+                        ty += (sy / sl) * 12;
+                        if (!Util.T(opl.ic)) { opl.ic = 1; statAdd("ice", 1); }
                     }
                     // fronting the post: a smaller man on a big who is sealing on the block gets between him and the ball
                     if (cpu && B.owner != o && o.br == "seal" && o.ht - p.ht >= 0.3 && od < 120)
@@ -752,7 +775,7 @@ namespace Hoops.Core
                     if (d < rd) { rd = d; r = qq; }
                 }
             }
-            if (r != null && rd < 260)
+            if (r != null && rd < 260 && cpuIQ(t) >= 1) // (a rookie defense never rotates behind the help)
             {
                 HPL.r = r;
                 HPL.m = m;
@@ -789,6 +812,17 @@ namespace Hoops.Core
             }
             int r = -1;
             for (int k = 0; k < ZR.Length; k++) if (ZR[k] == p.k) { r = k; break; }
+            if (TS.ds[ti] == 5)
+            {
+                // box-and-one: the chaser is out of the zone - the other four make a box
+                Player ch = boxCh(t);
+                if (ch != null)
+                {
+                    int rc = -1;
+                    for (int k = 0; k < ZR.Length; k++) if (ZR[k] == ch.k) { rc = k; break; }
+                    if (rc < r) r--;
+                }
+            }
             double side = r == 0 || r == 2 ? -1 : 1,
                 by = clamp(B.y - HY, -160, 160),
                 bx = Math.Abs(B.x - dh);

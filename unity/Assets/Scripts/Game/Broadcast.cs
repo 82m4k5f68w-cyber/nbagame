@@ -97,6 +97,15 @@ namespace Hoops.Game
             ["intfoul"] = new Line[] { (n, a) => $"They're going to foul to stop the clock — {n} grabs him." },
             ["tip"] = new Line[] { (a, b) => $"Welcome in, everybody. {a} and {b}, and we are ready for the tip.", (a, b) => $"It's {a} against {b} tonight. Here's the jump ball." },
             ["half"] = new Line[] { (a, b) => "That's the half. Let's look at the numbers." },
+            // team play pack (v5.4)
+            ["set"] = new Line[] { (t, s) => $"The {t} run {s}.", (t, s) => $"Here's the set from the {t} — {s}.", (t, s) => $"{s} for the {t}." },
+            ["ato"] = new Line[] { (t, s) => $"Out of the timeout, the {t} have drawn one up: {s}.", (t, s) => $"Here's the play from the huddle — {s}." },
+            ["ice"] = new Line[] { (t, a) => $"The {t} are icing the pick-and-roll — sending everything baseline.", (t, a) => $"ICE coverage from the {t}: keep him out of the middle." },
+            ["blitz"] = new Line[] { (t, n) => $"The {t} blitz every pick-and-roll{(string.IsNullOrEmpty(n) ? "" : " — two on " + n)}! Somebody else has to beat them.", (t, n) => $"Here comes the trap off the screen{(string.IsNullOrEmpty(n) ? "" : " on " + n)}!" },
+            ["boxone"] = new Line[] { (t, n) => $"A box-and-one from the {t}! One man chasing {n} everywhere.", (t, n) => $"Junk defense — the {t} go box-and-one on {n}." },
+            ["foultrouble"] = new Line[] { (n, a) => $"{n} picks up another one — he has to sit with foul trouble.", (n, a) => $"Foul trouble for {n}, he heads to the bench." },
+            ["closers"] = new Line[] { (t, a) => $"Winning time: the {t} put their closers back on the floor.", (t, a) => $"The {t} starters are back in to finish it." },
+            ["bonus"] = new Line[] { (t, a) => $"That puts the {t} in the bonus.", (t, a) => $"The {t} are shooting free throws on every foul now." },
         };
         static readonly Dictionary<string, Func<string, string>[]> RISE = new()
         {
@@ -515,7 +524,8 @@ namespace Hoops.Game
         static string GradeStr(string g) => grades.TryGetValue(g, out var s) ? s : grades[g] = "GRADE " + g;
 
         /// <summary>Under the score bug: timeouts left (dots), momentum meter, your defense / play call / keys.</summary>
-        static string bugS, momS0, momS1;
+        static string bugS, momS0, momS1, setS;
+        static Play setP;
         static long bugK = -1;
         public static void DrawBug(int me)
         {
@@ -524,6 +534,9 @@ namespace Hoops.Game
             for (int t = 0; t < 2; t++)
                 for (int k = 0; k < 4; k++)
                     Ui.Fill(Ui.X((t != 0 ? 590 : 310) + k * 16), Ui.Y(62), 11 * s, 3 * s, k < TS.to[t] ? GOLD : new Color(1, 1, 1, 0.18f));
+            // the bonus: the other side fouled into it - this team shoots two on every foul
+            for (int t = 0; t < 2; t++)
+                if (TS.bon[1 - t] > 0) Ui.Text("BONUS", Ui.X(t != 0 ? 650 : 310), Ui.Y(74), 9, GOLD);
             float m = Mathf.Clamp((float)TS.mom, -1, 1);
             Ui.Fill(Ui.X(400), Ui.Y(70), 160 * s, 6 * s, new Color(0, 0, 0, 0.6f));
             var mc = Ui.Hex(m >= 0 ? PC[0] : PC[1]);
@@ -538,6 +551,13 @@ namespace Hoops.Game
             }
             if (me >= 0 && CT.Count > 0 && cfg.NP > 1)
             {
+                // the other side's set for a few seconds after it starts ("HORNS!")
+                var op = PLAY[1 - me];
+                if (op != null && !string.IsNullOrEmpty(op.nm) && T - op.t0 < 3.5)
+                {
+                    if (op != setP) { setP = op; setS = "THEY'RE RUNNING: " + op.nm; }
+                    Ui.Text(setS, Ui.X(480), Ui.Y(104), 12, Ui.Hex("#9fe7ff"));
+                }
                 bool av = TS.call != null && TS.call.t == me && TS.chal[me] > 0;
                 long k = (long)TS.ds[me] * 100 + (long)TS.pc[me] * 10 + (av ? 1 : 0);
                 if (k != bugK)
