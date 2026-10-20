@@ -272,13 +272,13 @@ namespace Hoops.Core
             }
             if (pl.v == "spain")
             {
-                if (pl.ph != "out")
+                if (pl.ph == "go")
                 {
                     mv(p, hx + dir * 235, HY + sd * 40, 1); // up top, behind the screen
                     return true;
                 }
                 Player r = manOf(scr);
-                if (!Util.T(pl.st) && !Util.T(pl.pop) && T - pl.setAt < 2.6 && r != null)
+                if (!Util.T(pl.st) && T - pl.setAt < 2.6 && r != null)
                 {
                     // back screen on the roller's man as he steps up to meet the roll
                     double l = Hypot(hx - r.x, HY - r.y);

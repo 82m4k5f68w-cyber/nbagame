@@ -2133,12 +2133,15 @@ function stepSolve(p: Player, o: any, sp: number) {
         F.ty += (ny - F.ty) * ke;
         // swing profile: leaves with some speed (doesn't trail out of the leg's reach behind the body), lands at zero
         // speed relative to the floor (no stop-dead at touchdown): e(0)=0, e'(0)=a, e(1)=1, e'(1)=0
+        // (AP: a sideways step travels only while the foot is up - pick up, step, plant - not along the floor)
         const a = SWA,
-          e = sw * (a + sw * (3 - 2 * a + sw * (a - 2)));
+          swh = cfg.AP !== 0 ? clamp((sw - 0.16 * side) / (1 - 0.32 * side), 0, 1) : sw,
+          e = swh * (a + swh * (3 - 2 * a + swh * (a - 2)));
         F.x = F.sx + (F.tx - F.sx) * e;
         F.y = F.sy + (F.ty - F.sy) * e;
         // arc with no vertical kick at lift-off / touchdown; sideways steps (slides) stay low - a shuffle, not a kick
-        F.z = F.sz * (1 - e) + (2.5 + 9 * spd) * (1 - 0.7 * side) * s * 16 * sw * sw * (1 - sw) * (1 - sw);
+        // (AP: a slide step still picks the foot up ~3 px - push off, step, never drag it along the floor)
+        F.z = F.sz * (1 - e) + (cfg.AP !== 0 ? Math.max(3.2, (2.5 + 9 * spd) * (1 - 0.7 * side)) : (2.5 + 9 * spd) * (1 - 0.7 * side)) * s * 16 * sw * sw * (1 - sw) * (1 - sw);
       }
     } else {
       // standing: feet stay planted; a shuffle step when the body turned or drifted away from this foot (one at a time)

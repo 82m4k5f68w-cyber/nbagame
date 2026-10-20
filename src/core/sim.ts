@@ -5118,13 +5118,13 @@ function tpS2(p: Player, pl: Play, t: number, hx: number, dir: number) {
     return true;
   }
   if (pl.v === "spain") {
-    if (pl.ph !== "out") {
+    if (pl.ph === "go") {
       mv(p, hx + dir * 235, HY + sd * 40, 1); // up top, behind the screen
       return true;
     }
     const r = manOf(scr);
-    if (!pl.st && !pl.pop && T - pl.setAt < 2.6 && r) {
-      // back screen on the roller's man as he steps up to meet the roll
+    if (!pl.st && T - pl.setAt < 2.6 && r) {
+      // back screen on the roller's man as the screen is set and he steps up to meet the roll
       const l = Math.hypot(hx - r.x, HY - r.y) || 1,
         bx = r.x + ((hx - r.x) / l) * 12,
         by = r.y + ((HY - r.y) / l) * 12;
