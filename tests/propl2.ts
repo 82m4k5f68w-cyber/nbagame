@@ -239,6 +239,37 @@ import { rapInit } from "../src/core/physics";
     ok(set.v < mov.v * 0.8, "cut off: the drive loses its speed into him (" + mov.v.toFixed(0) + " -> " + set.v.toFixed(0) + " px/s)");
     G.cfg.FOULS = 1;
   }
+  // ---- 6b. human D: the stance bends a slide toward the cut-off point; pushing at the handler from range = closeout ----
+  {
+    const ang = (pp: number) => {
+      const h = scene(600, 250, { two: true, pp }),
+        d = G.P.find((q: any) => q.tm === 1 && G.guardOf(q) === h);
+      let inp: any = null;
+      script = (id) => (id === "p1" ? { dx: 0, dy: 0 } : (inp = { dx: 0, dy: 1 }));
+      run(1, () => {
+        (h.x = 600), (h.y = 250), (h.vx = 0), (h.vy = 200), (d.x = 650), (d.y = 250), (d.vx = d.vy = 0);
+        G.CT[1].idx = G.P.indexOf(d);
+      });
+      return inp.dx;
+    };
+    const a2 = ang(2),
+      a1 = ang(1);
+    ok(a2 < -0.15 && a1 === 0, "stance slide bent toward the cut-off point (stick dx 0 -> " + a2.toFixed(2) + ")");
+    const close = (pp: number) => {
+      const h = scene(600, 250, { two: true, pp }),
+        d = G.P.find((q: any) => q.tm === 1 && G.guardOf(q) === h);
+      script = (id) => (id === "p1" ? { dx: 0, dy: 0 } : { dx: -1, dy: 0 });
+      run(9, () => {
+        (h.x = 600), (h.y = 250), (h.vx = h.vy = 0);
+        if (tk === 0) (d.x = 720), (d.y = 250), (d.vx = d.vy = 0);
+        G.CT[1].idx = G.P.indexOf(d);
+      });
+      return Math.abs(d.vx);
+    };
+    const k2 = close(2),
+      k1 = close(1);
+    ok(k2 > k1 * 1.1 && C("closeout") > 0, "closeout burst at the handler: " + k1.toFixed(0) + " -> " + k2.toFixed(0) + " px/s");
+  }
   // ---- 7. block timing ----
   ok(G.pp2BlkT({ vz: 0 }) === 1.3 && G.pp2BlkT({ vz: -200 }) === 0.55 && G.pp2BlkT({ vz: 160 }) < 0.6, "block timing: at the top of the jump x1.3, rising early / coming down x0.55");
   // ---- 8. charges read from position: set feet square in the chest vs stepping into the driver ----

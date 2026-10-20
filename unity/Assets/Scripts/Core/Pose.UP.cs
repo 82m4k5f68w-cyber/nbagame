@@ -736,9 +736,11 @@ namespace Hoops.Core
             p.rfP = p.f; p.rfX = p.x; p.rfY = p.y;
             if (tele) { p.rfO = 0; p.rfV = 0; }
             if (Math.Abs(df) > 0.3) p.rfO = wrapPi(p.rfO - (df - (df > 0 ? 0.3 : -0.3)));
-            double om = (p.mode == "c" || p.mode == "s") && B.owner == p ? 40 : 24;
-            p.rfV += (-om * om * p.rfO - 2 * om * p.rfV) * DT;
-            p.rfO += p.rfV * DT;
+            // (exact critically damped step - stable at any stiffness)
+            double om = (p.mode == "c" || p.mode == "s") && B.owner == p ? 30 : 22,
+                x = p.rfO, v = p.rfV, j = v + om * x, e = JsMath.Exp(-om * DT);
+            p.rfO = (x + j * DT) * e;
+            p.rfV = (v - om * j * DT) * e;
             return p.rfO;
         }
     }

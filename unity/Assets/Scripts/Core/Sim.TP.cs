@@ -87,6 +87,8 @@ namespace Hoops.Core
             statAdd("set_" + v, 1);
             if (ato == 1 || TS.setN[ti]++ % 3 == 0) cm(ato == 1 ? "ato" : "set", cl[ti], nm.ToLowerInvariant());
             if (ato == 1) txtW(nm, use.x, use.y, 110, "#9fe7ff");
+            // a CPU handler runs the play: a beat more patience before he looks for his own shot
+            if (!ctHas(t) && Util.T(h.ai.r)) h.ai.w = Math.Min(h.ai.w, v == "spain" ? -0.8 : -0.5);
             return new Play { kind = kind, v = v, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0, s2 = x2, sd = (v == "post" ? h.y : use.y) < HY ? -1 : 1, st = 0, stT = T, nm = nm, ato = ato };
         }
 
@@ -272,11 +274,11 @@ namespace Hoops.Core
             {
                 if (pl.ph != "out")
                 {
-                    mv(p, hx + dir * 270, HY + sd * 40, 1); // up top, behind the screen
+                    mv(p, hx + dir * 235, HY + sd * 40, 1); // up top, behind the screen
                     return true;
                 }
                 Player r = manOf(scr);
-                if (!Util.T(pl.st) && !Util.T(pl.pop) && T - pl.setAt < 2.2 && r != null)
+                if (!Util.T(pl.st) && !Util.T(pl.pop) && T - pl.setAt < 2.6 && r != null)
                 {
                     // back screen on the roller's man as he steps up to meet the roll
                     double l = Hypot(hx - r.x, HY - r.y);
@@ -285,7 +287,7 @@ namespace Hoops.Core
                         by = r.y + ((HY - r.y) / l) * 12;
                     mv(p, bx, by, 1.25);
                     p.@in.sp = true;
-                    if (Hypot(p.x - bx, p.y - by) < 9) { pl.st = 1; pl.stT = T; statAdd("spain", 1); }
+                    if (Hypot(p.x - bx, p.y - by) < 18) { pl.st = 1; pl.stT = T; statAdd("spain", 1); }
                     return true;
                 }
                 if (pl.st == 1 && T - pl.stT < 0.5)

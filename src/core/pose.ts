@@ -3364,8 +3364,13 @@ function faceLag(p: Player) {
   (p.rfP = p.f), (p.rfX = p.x), (p.rfY = p.y);
   if (tele) (p.rfO = 0), (p.rfV = 0);
   if (Math.abs(df) > 0.3) p.rfO = wrapPi((p.rfO || 0) - (df - (df > 0 ? 0.3 : -0.3)));
-  const om = (p.mode === "c" || p.mode === "s") && B.owner === p ? 40 : 24;
-  p.rfV = (p.rfV || 0) + (-om * om * (p.rfO || 0) - 2 * om * (p.rfV || 0)) * DT;
-  p.rfO = (p.rfO || 0) + p.rfV * DT;
+  // (exact critically damped step - stable at any stiffness; explicit Euler at om dt ~ .7 dumped the offset in a tick)
+  const om = (p.mode === "c" || p.mode === "s") && B.owner === p ? 30 : 22,
+    x = p.rfO || 0,
+    v = p.rfV || 0,
+    j = v + om * x,
+    e = Math.exp(-om * DT);
+  p.rfO = (x + j * DT) * e;
+  p.rfV = (v - om * j * DT) * e;
   return p.rfO;
 }

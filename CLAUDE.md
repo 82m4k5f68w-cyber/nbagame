@@ -413,7 +413,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   game.ts loop drops sim backlog beyond 2 steps (no catch-up snowball). JS is ~1 ms/frame: lag is GPU (High = mirror
   re-render + SSAO + 4K shadows at 2x DPR). Polygon count is not the bottleneck.
 
-## Pro Play pack (v5.3, `cfg.PP` = 1 in both engines)
+## Pro Play pack (v5.3, `cfg.PP` >= 1 in both engines)
 - The Unity-only UP sim moves are shared now: TS "Pro Play pack" block in sim.ts (before `step`) = C# Core/Sim.UP.cs,
   same names and random-draw order; hooks are `cfg.PP` guarded (C# `cfg.PP != 0`). `cfg.UP` now only gates the
   Unity-only poses (Pose.UP.cs) and PH2 ball physics. Counters: TS `PPC`, C# `UPC`.
@@ -443,6 +443,84 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   `PP=0|1` env on tests/stats.ts for A/B.
 - Lesson: never end an inserted comment with `//` in the MIDDLE of a TS expression line - it silently commented out
   the rest (the LD badge multiplier) and only the C# trace caught it.
+
+## Animation pack (v5.4, `cfg.AP` = 1 in both engines; 0 = v5.3 poses for A/B)
+- The Unity-only pose layer (Pose.UP.cs) is shared now: pose.ts `upPose` / `upGatherPose` / `upGuide` (damped
+  Gauss-Newton guide palm on the ball's side until the release) / `upCt` (contact corrections on a spring) = C# same
+  names; C# runs them when `upA` (= cfg.UP || cfg.AP). Shot loads + follow-through by form, 1-2 step vs hop gather
+  (`p.jg`), drive gathers (`p.gath`, stepping too), layup protect/shield/reach, two-foot floaters, off-hand finishes
+  mirror the shot (`p.offH`), move anticipation + settle, slide hip opening, swipe/hand-check poses, contest variety,
+  cut lean, V-cut plant, screen brace/roll, alley-oop hands. Body dips are skipped while both hands hold the ball.
+- `apPose` (after upPose, same order in C#): defenders flinch on pump fakes (weaker defenders more) and rock back on
+  jabs; on-ball D bounces on his toes; teammates of a big celebration (`bigCel`) fist-pump / clap, opponents sag
+  (hands on hips) - staggered by slot; shooter frustration on `p.frT` (head shake via `HEADY`, clap, hands on head);
+  per-shot follow-through variety (`p.shV`, drawn at the gather, post-release only: release point untouched).
+- Root yaw `p.ry` (drawn facing `fv`) = `turnRun` (hip turn: backpedal/slide > ~15 ft/s and > 70 deg off facing opens
+  the hips and runs; straight back he opens toward the ball; spring `p.trY`; `turned` drops the stance/pistol/closeout
+  layers, gait + head use the drawn frame, chest counter-turns 30%) + `faceLag` (a sim facing snap > 0.3 rad/tick is
+  absorbed into `p.rfO`, exact critically damped decay ~0.2 s). Drawn yaw max 3.14 -> 0.89 rad/tick.
+  Replays record `p.f + p.ry` and clear `p.ry` on playback (spins/hip turns replay right).
+- Fixes: the inbounder's two-hand IK aims at the in-world (clamped) ball - he stands behind the line, the ball is
+  clamped to x 6..934 (hands used to stay 1-2 ft from the ball); a holder who must stand (inbound, triple threat,
+  fakes, FT) is never drawn in a left-over fall/dive (`upGot`).
+- Traces: `POSE=1` adds a per-player pose checksum (all 31 channels) to trace.ts / Trace.cs - pose parity, not just
+  positions. Studio: hip turn, fake reactions, big-play reactions, miss frustration entries.
+
+## Pro Play v2 (v5.4, `cfg.PP` = 2 default; 1 = v5.3 pack, 0 = v5.2 - A/B in stats.ts `PP=`)
+- TS block "Pro Play v2" in sim.ts (before `step`) = C# `Core/Sim.PP2.cs`, same names / random-draw order, every hook
+  `cfg.PP >= 2`. Counters in `PPC` (C# `UPC`). Tests: tests/propl2.ts. Trace modes: `trace.ts N [hum|my]` / `Trace.cs`
+  (`my` = the scripted human as My Player + post-key presses: covers the off-ball calls).
+- Reads (`pp2Read`, replaces the ankle roll in upMoveStart): odds from s vs d, AB, combo, fatigue, the defender's
+  lateral momentum vs the move side (wrong-footed +.2 / already there -.2), per-move counters (hesi vs a retreating or
+  charging man, spin off contact, crosses vs hard closeouts), human stance -.08. One draw r: r < .14c (wrong-footed /
+  combo) = ANKLE BREAKER (act 3 fall), < .6c CROSSED UP (stumble), < c BLOW-BY, else STAYED IN FRONT / READ IT! (handler
+  cd .75). `p.beatT` = just beat his man.
+- Shots (`pp2Gather` at i->c): a shot out of a move is a pull-up (move ends -> RHYTHM); balance `p.sq/p.sqn` (SQN:
+  OFF BALANCE .84, FADING .9, ON THE MOVE .93, CREATED SPACE 1.08, FADEAWAY .94, LEANER .96) multiplies the window in
+  `winMul` (meter and launch agree; only in c/s). Humans: stick away from the rim at the shot = FADEAWAY (fsv 2, drifts
+  back 95 px/s), sideways inside the arc = LEANER (fsv 20); their separation (x.82 / x.9) lives in `contestOf` so the
+  meter shows it. Catch-and-shoot buffer (`pp2CsBuf/pp2CsCatch`): shoot pressed with a non-lob pass arriving < .45 s
+  doesn't jump; the jumper starts on the catch. Side-step = step-back key + stick sideways (`pp2SideStep`, CPU via `p.ssq`).
+- Post (`pp2Backdown`): strength bk*ht*(.75+i/400) vs bk*ht*(.75+d/400) (x1.25 for a human defender holding the stick
+  into him): the stronger moves him, a weak post man is pushed back (HOLDS HIS GROUND / BODIED UP).
+- Contact: drive bump (`pp2Bump`) - a set defender (ahead, slow / in stance) CUTS OFF the drive (its speed into him x
+  .25-.75 by strength) and that contact is where a charge is read (collide would only see the slowed driver);
+  a moving one is BUMPED OFF. `pp2Charge`: no RA, the driver's own pre-contact speed (`pvx`) >= 150, square to his
+  facing, set feet `p.stillT` (> .3 s .72, > .12 .45, else .15), never vs a defender who stepped in. `pp2BlkK`: blocking
+  fouls x.6 set / x1.3 moving. Block timing `pp2BlkT` (apex x1.3 .. x.55). And-ones: a fouled shot goes in less (layup
+  x.5, CPU jumper x.35; human greens and dunks unchanged), shooting-foul rate x.52 (was .42).
+- Human D: stance slides bend 30% toward the cut-off point (`pp2Angle`); stick at the handler from 45-160 px = closeout
+  burst (`pp2Close`, `p.coT`). Off-ball offense (My Player): pass key = BALL! (`pp2Call` -> CPU handler `pp2Feed` passes
+  if the lane is open, else DENIED); post key away from the post = SCREEN! (with the ball beyond 19 ft: pnr from the best
+  big) / PIN-DOWN! (off the ball) (`pp2Screen`, sets PLAY; a user-called iso still clears it); stick flick = cut burst
+  (`pp2Cut`, `p.cutT`), BACKDOOR! past a denying defender. All host+prediction safe (no new synced state, PROTO unchanged).
+
+## Team play pack (v5.4; sim.ts "Team play pack" block after `cut()` = C# Core/Sim.TP.cs)
+- Coach IQ `cpuIQ(t)` = cfg.DIFF for CPU teams (a human's AI teammates: 2). Gates: named sets (Pro+: horns, post entry,
+  zipper; All-Star+: Spain, stagger, end-of-quarter), ATO plays (Pro+), doubles (Pro+), blitz / box-and-one (All-Star+),
+  rotations behind the help (Pro+), gamePlan cadence (every 6-lv possessions). Rookie = drop, no sets, no doubles.
+- Sets (`tpSet`, called from newPlay; Play gains v/s2/sd/st/stT/pop/nm/ato/fed/ic/bl/cal/fa): pnr variants `horns`
+  (s2 = other big at the elbow: dives if the screener pops, lifts if he rolls), `spain` (s2 back-screens the roller's
+  man, plants .5 s, pops to the top); pin variants `stagger` (use runs off scr then s2 to the wing), `zip` (down screen,
+  catch at the top), `post` (cross screen, seal on the ball-side block, entry -> `ai.post`). Named sets start only within
+  330 px of the rim (a base play called in the backcourt has `fa` and is re-called there); screener timings shorter
+  (`tpSetLen`); the CPU handler waits a beat (`ai.w` -0.5/-0.8) and `tpCall` points him at the featured man.
+  Human play calls PCN 5-7 = HORNS / SPAIN / POST UP (PCN/DSN stay <= 8 entries: 3-bit online packing, no PROTO bump).
+- ATO: a CPU `callTO` sets `TS.ato[t]`; the next half-court set is the star's (spain/horns if he has it, post, floppy,
+  zipper). End of quarter (clock < shot clock, < 12 s): horns/zipper for the star.
+- Coverage `TS.cov` (COVN): 0 drop, 1 hedge, 2 ICE (on-ball man shades the screen side, big sits low baseline side;
+  vs rim-hot teams), 3 blitz (screener's man traps with the on-ball man, `tpTag`: nearest other defender tags the roller;
+  vs a hot pull-up star). Box-and-one `TS.ds` 5 (`boxTarget`: lone hot shooter with 35%+ of their points; `boxCh` =
+  manOf(target) face-guards, the other four in zoneMan's box).
+- Rotations (`subs`): foul trouble (`ftrb`: pf >= q+1 sits a starter, `p.ftS` brings him back next quarter), closers
+  (clutch / OT: starters replace reserves, en > .35), garbage time (Q4, < 4 broadcast min, 20+: starters sit).
+- Rules: bonus = 5th team foul (4th in OT) or 2nd in the last 2 broadcast minutes (`TS.l2`, `TS.bon` -> HUD "BONUS");
+  2 timeouts per overtime. Commentary keys set/ato/ice/blitz/boxone/foultrouble/closers/bonus (broadcast.ts +
+  Unity Broadcast.cs); HUD "THEY'RE RUNNING: <set>" for the human's defense.
+- Client: POG = best Hollinger game score on the winners unless a loser is 10+ better (`gmSc`, `lineTag`: game.ts, ui.js,
+  Menus.cs); My Player career (`client/career.ts`: XP per game, levels raise the builder cap +3, badge requirements);
+  Season v2 (modesui.ts: PF/PA, streaks, league leaders from real + generated box scores, best-of-3 playoffs, awards).
+- tests/teamplay.ts. Parity: trace.ts vs Trace.cs identical for the whole 46000-tick game (normal) and 3000 (hum).
 
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,

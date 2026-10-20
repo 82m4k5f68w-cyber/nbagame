@@ -302,7 +302,7 @@ namespace Hoops.Core
                         // in drop leaves the arc open for any decent shooter; a hedge leaves the rim open, so everybody
                         // dives; a ghost always pops)
                         double cov = TS.cov[1 - ti];
-                        bool pop = pl.rd == 2 || (pl.rd != 1 && (cov == 1 ? false : scr.c >= (cov == 0 && !ctHas(1 - t) ? 74 : 80) && scr.i < 85));
+                        bool pop = pl.rd == 2 || (pl.rd != 1 && pl.v != "spain" && (cov == 1 ? false : scr.c >= (cov == 0 && !ctHas(1 - t) ? 74 : 80) && scr.i < 85));
                         double gx = pop ? hx + dir * 225 : hx + dir * 30,
                             gy = pop ? HY + side * -60 : HY + side * 14;
                         pl.pop = pop ? 1 : 0;

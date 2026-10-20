@@ -330,6 +330,7 @@ namespace Hoops.Core
                 {
                     p.stillT = p.z <= 0 && Hypot(p.vx, p.vy) < 45 ? p.stillT + dt : 0; // (feet set: charges)
                     if (p.cutT > -1) p.cutT -= dt;
+                    if (p.coT > -1) p.coT -= dt;
                 }
             }
             var o = B.owner;
@@ -412,6 +413,7 @@ namespace Hoops.Core
             p.stc = hum && !has && o != null && o.tm != p.tm && !i.sp && p.z <= 0 && p.mode == "i" && !(p.actT > 0) && Hypot(o.x - p.x, o.y - p.y) < 70 ? 1 : 0;
             // a shooter gathering right in front of him: the hand goes up by itself (a contest without leaving his feet)
             if (Util.T(p.stc) && (o.mode == "c" || o.mode == "s") && Hypot(o.x - p.x, o.y - p.y) < 42 && !(p.hupT > 0)) p.hupT = 0.5;
+            if (cfg.PP >= 2 && Util.T(p.stc)) pp2Angle(p, i, o);
         }
 
         /// <summary>A pass in flight past a defender's hands can be tipped: it slows and wobbles, but stays a pass to its

@@ -56,6 +56,9 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - contact.ts — contact QA on a seeded 5v5 stretch: the dribble hand meets the ball at the top of the bounce (p50 < 6,
   p90 < 22 px), a ball held in both hands sits between the palms (p90 < 6 px, one tick behind), toes never sink more
   than 4 px into the floor (lying after a dive included).
+- teamplay.ts — team play pack (v5.4): named sets run and complete (horns / Spain back screens / staggers / zipper /
+  post entries), Rookie coaches know none, play calls 5-7, ATO for the star, coverages by IQ (hedge / ICE / blitz / drop),
+  box-and-one chaser, rotations (foul trouble, closers, garbage time), bonus rules (last 2 minutes, OT) and OT timeouts.
 - help.ts — help defense: a beaten man draws a helper into the lane, a second defender rotates onto the helper's
   man, the kick-out is caught and closed out; a CPU game has help, rotations and kick-outs (STAT.help/rot/kick);
   spot inbounds (baseline / sideline / backcourt) come from the right line and are caught.

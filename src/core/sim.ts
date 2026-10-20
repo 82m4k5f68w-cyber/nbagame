@@ -2288,7 +2288,7 @@ function pp2Close(p: Player, i: Input, has: boolean) {
     dy = o.y - p.y,
     d = Math.hypot(dx, dy),
     sl = Math.hypot(i.dx, i.dy);
-  if (d < 45 || d > 160 || sl < 0.6 || (i.dx * dx + i.dy * dy) / (d * sl) < 0.6 || (p.coT || 0) > -0.5) return;
+  if (d < 45 || d > 160 || sl < 0.6 || (i.dx * dx + i.dy * dy) / (d * sl) < 0.6 || p.coT > -0.5) return; // (one per second)
   p.coT = 0.5;
   ppc("closeout");
 }
@@ -4744,10 +4744,11 @@ function offBall(p: Player, t: number) {
       p.setT = 0.25;
       if (T - pl.setAt > (pl.v ? tpSetLen(pl) : pl.kind === "pnr" ? 1.25 : 1.5)) pl.ph = "out"; // (named sets run quicker)
     } else {
+      // (Spain: the screener always rolls - the back screen springs him)
       // roll hard to the rim, or pop to the arc if he can shoot (read the coverage: a big sitting back in drop leaves
       // the arc open for any decent shooter; a hedge leaves the rim open, so everybody dives; a ghost always pops)
       const cov = TS.cov[1 - t],
-        pop = pl.rd === 2 || (pl.rd !== 1 && (cov === 1 ? false : scr.c >= (cov === 0 && !CT.some((c) => c.tm === 1 - t) ? 74 : 80) && scr.i < 85)),
+        pop = pl.rd === 2 || (pl.rd !== 1 && pl.v !== "spain" && (cov === 1 ? false : scr.c >= (cov === 0 && !CT.some((c) => c.tm === 1 - t) ? 74 : 80) && scr.i < 85)),
         g = pop ? [hx + dir * 225, HY + side * -60] : [hx + dir * 30, HY + side * 14];
       pl.pop = pop ? 1 : 0;
       mv(p, g[0], g[1], 1.2);
@@ -4983,6 +4984,8 @@ function tpSet(t: number, h: Player, ms: Player[], big: Player, sh: Player, pc: 
     STAT["set_" + v] = (STAT["set_" + v] || 0) + 1;
     if (ato === 1 || TS.setN[t]++ % 3 === 0) cm(ato === 1 ? "ato" : "set", cl[t], nm.toLowerCase());
     if (ato === 1) txtW(nm, use.x, use.y, 110, "#9fe7ff");
+    // a CPU handler runs the play: a beat more patience before he looks for his own shot (Spain needs the longest)
+    if (cpu && h.ai.r) h.ai.w = Math.min(h.ai.w, v === "spain" ? -0.8 : -0.5);
     return { kind, v, t0: T, scr, use, def: manOf(use), ph: "go", sx: 0, sy: 0, setAt: 0, s2: x2, sd: (v === "post" ? h.y : use.y) < HY ? -1 : 1, st: 0, stT: T, nm, ato };
   };
   // the human's play calls
@@ -5116,18 +5119,18 @@ function tpS2(p: Player, pl: Play, t: number, hx: number, dir: number) {
   }
   if (pl.v === "spain") {
     if (pl.ph !== "out") {
-      mv(p, hx + dir * 270, HY + sd * 40, 1); // up top, behind the screen
+      mv(p, hx + dir * 235, HY + sd * 40, 1); // up top, behind the screen
       return true;
     }
     const r = manOf(scr);
-    if (!pl.st && !pl.pop && T - pl.setAt < 2.2 && r) {
+    if (!pl.st && !pl.pop && T - pl.setAt < 2.6 && r) {
       // back screen on the roller's man as he steps up to meet the roll
       const l = Math.hypot(hx - r.x, HY - r.y) || 1,
         bx = r.x + ((hx - r.x) / l) * 12,
         by = r.y + ((HY - r.y) / l) * 12;
       mv(p, bx, by, 1.25);
       p.in.sp = 1;
-      if (Math.hypot(p.x - bx, p.y - by) < 9) (pl.st = 1), (pl.stT = T), (STAT.spain = (STAT.spain || 0) + 1);
+      if (Math.hypot(p.x - bx, p.y - by) < 18) (pl.st = 1), (pl.stT = T), (STAT.spain = (STAT.spain || 0) + 1);
       return true;
     }
     if (pl.st === 1 && T - (pl.stT || 0) < 0.5) {

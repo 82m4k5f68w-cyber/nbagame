@@ -27,6 +27,7 @@ namespace Hoops.Core
         public double scrCall = -9; // called for a screen at
         public double fade; // stick-picked jumper: 1 fadeaway, 2 leaner
         public double csB = -9; // catch-and-shoot buffer: shoot pressed (pass on its way) at
+        public double coT = -9; // closeout burst timer (TS: undefined)
     }
 
     public static partial class Sim
@@ -294,6 +295,41 @@ namespace Hoops.Core
 
         /// <summary>Blocking-foul odds factor: a defender moving into the driver fouls more, a set one less.</summary>
         public static double pp2BlkK(Player o) => o.stillT > 0.3 ? 0.6 : Hypot(o.vx, o.vy) > 90 ? 1.3 : 1;
+
+        /// <summary>On-ball stance (human): a stick pushed roughly toward the handler's line is bent 30% toward the cut-off
+        /// point - a step in front of where he will be in a quarter second.</summary>
+        public static void pp2Angle(Player p, Input i, Player o)
+        {
+            double sl = Hypot(i.dx, i.dy);
+            if (sl < 0.3) return;
+            double hx = hoop(o.tm),
+                rlh = Hypot(hx - o.x, HY - o.y),
+                rl = Util.T(rlh) ? rlh : 1,
+                ax = o.x + o.vx * 0.25 + ((hx - o.x) / rl) * 22 - p.x,
+                ay = o.y + o.vy * 0.25 + ((HY - o.y) / rl) * 22 - p.y,
+                al = Hypot(ax, ay);
+            if (al < 4 || (i.dx * ax + i.dy * ay) / (sl * al) < 0.3) return;
+            double nx = i.dx * 0.7 + (ax / al) * sl * 0.3,
+                ny = i.dy * 0.7 + (ay / al) * sl * 0.3,
+                nlh = Hypot(nx, ny),
+                nl = Util.T(nlh) ? nlh : 1;
+            i.dx = (nx / nl) * sl;
+            i.dy = (ny / nl) * sl;
+        }
+
+        /// <summary>Closeout (human defender): pushing the stick at the ball handler from 45-160 px is a closeout burst.</summary>
+        public static void pp2Close(Player p, Input i, bool has)
+        {
+            var o = B.owner;
+            if (has || o == null || o.tm == p.tm || p.mode != "i" || p.z > 0 || p.coT > 0) return;
+            double dx = o.x - p.x,
+                dy = o.y - p.y,
+                d = Hypot(dx, dy),
+                sl = Hypot(i.dx, i.dy);
+            if (d < 45 || d > 160 || sl < 0.6 || (i.dx * dx + i.dy * dy) / (d * sl) < 0.6 || p.coT > -0.5) return;
+            p.coT = 0.5;
+            upc("closeout");
+        }
 
         /// <summary>Off the ball on offense (human): the pass key calls for the ball (the CPU handler feeds him if the lane is open).</summary>
         public static bool pp2Call(Player p, bool hum)

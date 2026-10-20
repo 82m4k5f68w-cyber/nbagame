@@ -120,6 +120,7 @@ namespace Hoops.Core
                 {
                     if (i.post && !Util.T(p.postA)) pp2Screen(p, has, D); // (post key away from the post: call a screen)
                     pp2Cut(p, i, has, ux, uy, D);
+                    pp2Close(p, i, has);
                 }
             }
             if (p.mvT > 0)
@@ -541,7 +542,7 @@ namespace Hoops.Core
                         (i.sp ? 1.2 : 1) *
                         (p.z > 0 ? 0.5 : 1) *
                         (Util.T(p.stc) ? 1.08 : 1) * // (Pro Play: a human in his defensive stance slides a little quicker)
-                        (p.cutT > 0 ? 1.1 : 1), // (Pro Play v2: an off-ball flick cut)
+                        (p.cutT > 0 || p.coT > 0 ? 1.1 : 1), // (Pro Play v2: an off-ball flick cut / a closeout)
                     k = Math.Min(1, dt * (p.z > 0 ? 1.5 : 9));
                 if (C_on(cfg.PRO) && p.z <= 0)
                 {
@@ -551,7 +552,7 @@ namespace Hoops.Core
                         cur = Hypot(p.vx, p.vy);
                     bool brk = cur > 40 && dx * p.vx + dy * p.vy < 0,
                         first = p.fsT > 0;
-                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : 1) * dt, // (+ stance slides / sprint burst / cut)
+                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : p.coT > 0 ? 1.35 : 1) * dt, // (+ stance slides / sprint burst / cut / closeout)
                         mm = Math.Min(dl, ac);
                     // a hard cut at speed: plant the outside foot (two-three steps to stop), and sometimes slip
                     if (brk && cur > 170 && !(p.plantT > 0) && !(p.brk > 0.5))
