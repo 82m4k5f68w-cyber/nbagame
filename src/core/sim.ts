@@ -491,6 +491,19 @@ export function winMul(p: Player, D0: number, note?: string[]) {
   if (TS.clutch && p.tm === 0 && cfg.GM === "game") add(1.05, "HOME CROWD");
   return m;
 }
+/** The green-window factor of a contest (0..1): open = the full window, a light contest (.3) -30%, heavy / smothered
+ *  (.75+) -75%. (Was 1 - .45 c: players didn't feel it.) */
+export const cwin = (cx: number) => Math.max(0.25, 1 - cx);
+/** The contest a human's window uses: measured live while he charges the shot (contestOf + body contact), locked at the
+ *  release (p.cw, lag-compensated online). Launch, the HUD meter (and Unity Hud.cs) and the auto-release all read it. */
+export function shotContest(p: Player) {
+  return p.mode === "s" && p.cw != null ? p.cw : Math.min(1, contestOf(p)[0] + (p.bmp || 0) * 0.5);
+}
+/** The green window (s; x1.2 with tempo) from the shot rating, the contest, fatigue and winMul's factor wm0. The one
+ *  formula launch and the meter share, so what the meter shows is what the release is judged on. */
+export function greenWin(p: Player, rat: number, cx: number, wm0: number) {
+  return (0.07 + (rat / 100) * 0.05) * cwin(cx) * (0.85 + 0.15 * (p.en == null ? 1 : p.en)) * wm0;
+}
 /** Make/miss bookkeeping for hot zones and cold streaks. */
 function zoneRes(p: Player, D0: number, made: boolean) {
   if (!p || !p.hzm || D0 == null) return;
@@ -1321,7 +1334,7 @@ export function launch(p: Player) {
     rat = shotRat(p, D0, isFT),
     notes: string[] = [],
     wm0 = lay && !isFT ? 1 : winMul(p, D0, notes),
-    win = (0.07 + (rat / 100) * 0.05) * (1 - 0.45 * cx) * (0.85 + 0.15 * (p.en == null ? 1 : p.en)) * wm0,
+    win = greenWin(p, rat, cx, wm0), // (shared with the HUD meter: the contest shrinks it live)
     rT = lay ? 0.28 : p.st === 1 ? 0.3 : 0.4;
   let gr;
   B.d0 = isFT ? null : D0;
@@ -1400,6 +1413,7 @@ export function launch(p: Player) {
   B.abv = -1;
   B.wv = [0, 0, 0];
   B.gt = B.gtc = 0;
+  B.gd = 0; // (green guide: set below for an intended green make)
   const fd = isFT ? null : shootingFoul(p, lay);
   if (fd) {
     p.hitT = 0.4; // the shooter wears the contact
@@ -1500,7 +1514,7 @@ export function launch(p: Player) {
     _dm = dunkMiss && hum ? txtW("MISSED DUNK!", p.x, p.y, 120, "#ff6b4a") : 0,
     // (Pro Play v2: contact knocks a fouled shot off - layups x.5, CPU jumpers x.35 - so and-ones are ~a fifth of the
     // shooting fouls like the NBA, not a third; a human's green still counts, and dunks went through above)
-    mk = dunkMiss ? false : lay ? Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd && cfg.PP >= 2 ? 0.5 : 1) : gr && (p.perf || Math.random() < (0.98 - cx * 0.25) * (fd && cfg.PP >= 2 && !hum ? 0.35 : 1)),
+    mk = dunkMiss ? false : lay ? (gr && hum) || Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd && cfg.PP >= 2 ? 0.5 : 1) : gr && (p.perf || hum || Math.random() < (0.98 - cx * 0.25) * (fd && cfg.PP >= 2 && !hum ? 0.35 : 1)), // (a human's green is a make: the contest already shrank his window)
     a = Math.random() * 6.28,
     off = mk ? (rap ? 0.3 : 1.2) : 9 + Math.random() * 7,
     tx = hx + Math.cos(a) * off,
@@ -1586,6 +1600,8 @@ export function launch(p: Player) {
     }
   }
   B.gn = gr;
+  B.gd = gr && mk ? 1 : 0; // an intended green make: greenGuide (bstep) sees it through the iron, bodies and spin drift
+  B.ghx = hx;
   if (gr && hum) txtW("GREEN!", p.x, p.y, 95, "#2ecc71");
   if (gr && !PREDICT && !(p.celT > 0)) {
     // knows it's good: holds the follow-through through the landing (pose CEL 10)
@@ -3699,6 +3715,17 @@ function dribHand(o: Player, dt: number): [number, number] {
   return [lat, fwd];
 }
 const SORTP: Player[] = [];
+/** Green guide: a green release that was meant to go in (B.gd: not blocked, launch's make) is re-aimed at the middle
+ *  of the rim on its way down, every half step, from .9 s out - the ballistic time to rim height, so drag, Magnus drift,
+ *  aim rounding (legacy), a brush with a body and Unity's PhysX all wash out and nothing but a block can miss it. The
+ *  corrections are a few px/s (invisible); a ball that clips something is steered back into the cylinder. */
+function greenGuide(dt: number) {
+  if (!B.gd || !B.sh || B.sc || B.mode !== "air" || B.vz >= 0 || B.z <= 100) return;
+  const tt = (B.vz + Math.sqrt(B.vz * B.vz + 2 * g * (B.z - 100))) / g;
+  if (tt < dt || tt > 0.9) return;
+  B.vx = (B.ghx - B.x) / tt;
+  B.vy = (HY - B.y) / tt;
+}
 export function bstep(dt: number) {
   const o = B.owner;
   if (o) {
@@ -3792,6 +3819,7 @@ export function bstep(dt: number) {
     B.vy += ((dy / ds) * sp - B.vy) * Math.min(1, dt * 2.5);
   }
   if (cfg.PP && B.mode === "pass" && B.to && !PREDICT && !B.dfl && B.age > 0.08 && !ftq && inb <= 0) ppDeflect();
+  greenGuide(dt);
   const pz = B.z;
   if (RA) rapStep(dt, B);
   else {
@@ -4022,6 +4050,9 @@ export function bstep(dt: number) {
   }
   if (B.sc) return;
   if (ftq) return;
+  // a green on its way in (B.gd) is nobody's to touch: only launch's block roll could have stopped it (a rebounder
+  // leaping at a heave 2 ft in front of the rim snatched ~1.5% of them)
+  if (B.sh && B.gd && B.mode === "air" && B.z > 60) return;
   // Cylinder rule: nobody may touch a live shot in the imaginary cylinder above either rim (no goaltending / basket
   // interference), so a green that rattles or drops in can't be snatched out of the net by a jumping rebounder.
   if (B.sh && B.mode === "air" && B.z > 55 && (Math.hypot(B.x - HXs[0], B.y - HY) < 22 || Math.hypot(B.x - HXs[1], B.y - HY) < 22)) {
@@ -4985,7 +5016,7 @@ function tpSet(t: number, h: Player, ms: Player[], big: Player, sh: Player, pc: 
     if (ato === 1 || TS.setN[t]++ % 3 === 0) cm(ato === 1 ? "ato" : "set", cl[t], nm.toLowerCase());
     if (ato === 1) txtW(nm, use.x, use.y, 110, "#9fe7ff");
     // a CPU handler runs the play: a beat more patience before he looks for his own shot (Spain needs the longest)
-    if (cpu && h.ai.r) h.ai.w = Math.min(h.ai.w, v === "spain" ? -0.8 : -0.5);
+    if (cpu && h.ai.r) (h.ai.w = Math.min(h.ai.w, v === "spain" ? -0.8 : -0.5)), (h.ai.pt = Math.max(h.ai.pt, v === "stagger" ? 1.2 : 0.7)); // (tpCall cuts the pass timer when the man comes open)
     return { kind, v, t0: T, scr, use, def: manOf(use), ph: "go", sx: 0, sy: 0, setAt: 0, s2: x2, sd: (v === "post" ? h.y : use.y) < HY ? -1 : 1, st: 0, stT: T, nm, ato };
   };
   // the human's play calls
@@ -5067,8 +5098,9 @@ function tpUse(p: Player, pl: Play, t: number, hx: number, dir: number) {
     }
     return true;
   }
-  // stagger (floppy): up from the baseline off the first screen, then the second, out to the wing
-  if (pl.ph === "go") {
+  // stagger (floppy): up from the baseline off the first screen, then the second, out to the wing (he starts as soon as
+  // the first screener is nearly there)
+  if (pl.ph === "go" && Math.hypot(scr.x - pl.sx, scr.y - pl.sy) > 30) {
     mv(p, hx + dir * 20, HY + sd * 85, 1);
     return true;
   }

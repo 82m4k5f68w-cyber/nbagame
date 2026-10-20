@@ -7,7 +7,7 @@ Object.assign(G.cfg, { NP: 5, physics: "rapier", hand: true, MYM: 0 });
 let ev: any = {};
 G.cfg.input = () => { const i = { dx: 0, dy: 0, ...ev }; ev = {}; return i; };
 G.setCtrls([G.mkCtrl("p1", 0)]);
-let made = 0, snatched = 0; const n = 80;
+let made = 0, snatched = 0, greens = 0, gMade = 0; const n = 80;
 for (let i = 0; i < n; i++) {
   G.start(1); const P = G.P, p = P[0]; G.setup(0); G.setInb(0);
   p.x = 887.5 - 240 + Math.random() * 20; p.y = 200 + Math.random() * 100; p.vx = p.vy = 0;
@@ -25,6 +25,7 @@ for (let i = 0; i < n; i++) {
     G.upd(1 / 60); T += 1 / 60; if (B.owner && B.owner !== p) break;
   }
   if (B.sc) made++; else if (green && B.owner && B.z > 50) snatched++;
+  if (green) (greens++, B.sc && gMade++);
 }
-console.log("crowded greens made", made + "/" + n, "snatched above rim", snatched);
-if (made / n < 0.85) process.exit(1);
+console.log("crowded greens made", made + "/" + n, "greens", gMade + "/" + greens, "snatched above rim", snatched);
+if (gMade < greens || greens < n * 0.9) process.exit(1); // (every green goes in, even with bodies leaping at it under the rim)

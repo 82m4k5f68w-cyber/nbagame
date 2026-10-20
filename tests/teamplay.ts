@@ -5,6 +5,7 @@
 // trouble sits a starter until the next quarter, the starters close, garbage time empties the bench); the bonus (5th
 // team foul, 2nd in the last two minutes, 4th in overtime) and two timeouts per overtime.
 import * as G from "../src/core/sim";
+import { gameXP, awardXP, capOf } from "../src/client/career";
 let fails = 0;
 const ok = (c: boolean, m: string) => {
   console.log((c ? "ok   " : "FAIL ") + m);
@@ -37,7 +38,7 @@ const play = (ticks: number) => {
   G.setQtrLen(180);
   clearStat();
   const tot: Record<string, number> = {};
-  for (let g = 0; g < 2; g++) {
+  for (let g = 0; g < 3; g++) {
     G.start(g * 3, { j: g * 3 + 4 });
     play(60 * 60 * 15);
     for (const k in G.STAT) tot[k] = (tot[k] || 0) + G.STAT[k];
@@ -46,8 +47,62 @@ const play = (ticks: number) => {
   const sets = ["horns", "spain", "stagger", "zip", "post"].map((v) => [v, tot["set_" + v] || 0]);
   console.log("sets", JSON.stringify(sets), "spain back screens", tot.spain || 0, "staggers run", tot.stagger || 0, "post entries", tot.postFed || 0, "screens", tot.screens);
   ok(sets.filter(([, n]) => +n > 0).length >= 4, "CPU teams run at least four kinds of named sets");
-  ok((tot.spain || 0) > 0, "Spain back screens get planted");
-  ok((tot.stagger || 0) > 0, "shooters run all the way through stagger screens");
+  // the stagger itself (rarer in games: a shooter off the ball plus two bigs): a human holds the ball up top while the
+  // AI teammates run a floppy for Curry - he must come off both screens to the wing
+  let stg = 0;
+  G.setCtrls([G.mkCtrl("p1", 0)]);
+  for (let k = 0; k < 3; k++) {
+    G.start(1, { j: 6 });
+    G.setJB(null);
+    G.setup(0);
+    G.setInb(0);
+    const gr = G.P.find((p) => p.n === "Green"),
+      cu = G.P.find((p) => p.n === "Curry"),
+      hx = G.hoop(0),
+      sp = [[-30, 85], [-270, 0], [-200, -170], [-200, 170], [-20, -230]];
+    G.B.owner = gr;
+    G.P.filter((p) => p.tm === 0).forEach((p, j) => {
+      const s2 = p === gr ? sp[1] : p === cu ? sp[0] : sp[[2, 3, 4][j % 3]];
+      (p.x = hx + s2[0]), (p.y = 250 + s2[1] + k * 6);
+    });
+    for (const d of G.P) if (d.tm === 1) { const m = G.guardOf(d); (d.x = m.x + 20), (d.y = m.y); }
+    const bigs = G.P.filter((p) => p.tm === 0 && p !== gr && p !== cu).sort((a, b) => b.ht - a.ht);
+    G.PLAY[0] = { kind: "pin", v: "stagger", t0: G.T, scr: bigs[0], use: cu, def: G.guardOf(cu), ph: "go", sx: 0, sy: 0, setAt: 0, s2: bigs[1], sd: 1, st: 0, stT: G.T, nm: "FLOPPY" } as any;
+    clearStat();
+    for (let n = 0; n < 60 * 6 && G.B.owner === gr; n++) {
+      G.upd(1 / 60);
+      if (G.RPL) G.skipReplay();
+      G.FX.length = 0;
+    }
+    if (G.STAT.stagger) stg++;
+  }
+  ok(stg >= 2, "a shooter runs all the way through the stagger screens (" + stg + "/3)");
+  // Spain: the human handler waits up top, the big sets the ball screen and rolls, the shooter back-screens his man
+  let spn = 0;
+  for (let k = 0; k < 3; k++) {
+    G.start(0, { j: 6 });
+    G.setJB(null);
+    G.setup(0);
+    G.setInb(0);
+    const dn = G.P.find((p) => p.n === "Doncic"),
+      hx = G.hoop(0),
+      big = G.P.find((p) => p.n === "Kessler"),
+      sh = G.P.find((p) => p.n === "Reaves");
+    G.B.owner = dn;
+    const sp: Record<string, number[]> = { Doncic: [-260, 30], Kessler: [-120, -60], Reaves: [-250, -160], LaRavia: [-20, 230], Mamukelashvili: [-20, -230] };
+    for (const p of G.P) if (p.tm === 0) (p.x = hx + sp[p.n][0]), (p.y = 250 + sp[p.n][1] + k * 6);
+    for (const d of G.P) if (d.tm === 1) { const m = G.guardOf(d); (d.x = m.x + 20), (d.y = m.y); }
+    G.PLAY[0] = { kind: "pnr", v: "spain", t0: G.T, scr: big, use: dn, def: G.guardOf(dn), ph: "go", sx: 0, sy: 0, setAt: 0, s2: sh, sd: 1, st: 0, stT: G.T, nm: "SPAIN" } as any;
+    clearStat();
+    for (let n = 0; n < 60 * 5 && G.B.owner === dn; n++) {
+      G.upd(1 / 60);
+      if (G.RPL) G.skipReplay();
+      G.FX.length = 0;
+    }
+    if (G.STAT.spain) spn++;
+  }
+  G.setCtrls([]);
+  ok(spn >= 2, "Spain: the shooter plants a back screen on the roller's man (" + spn + "/3; in games " + (tot.spain || 0) + ")");
   ok((tot.postFed || 0) > 0, "post entries get delivered to the block");
   ok(tot.screens >= 20, "screens still connect (" + tot.screens + ")");
 }
@@ -262,6 +317,22 @@ const play = (ticks: number) => {
     if (G.S === "over") fin++;
   }
   ok(fin === 2, "Hall of Fame games finish (" + fin + "/2)");
+}
+// ---- 10. My Player career XP (client/career.ts): a game pays, levels raise the attribute cap
+{
+  const d = G.MYP.d;
+  d.xp = 0;
+  d.lv = 0;
+  const cap0 = capOf(d),
+    me = { stt: { pts: 30, reb: 8, ast: 6, blk: 1, fgm: 12, fga: 20, chg: 0, dv: 0, sa: 0 }, pf: 2 };
+  const x1 = gameXP(me.stt, true, 2, 180),
+    x0 = gameXP({ pts: 0, reb: 0, ast: 0, blk: 0, fgm: 0, fga: 6 }, false, 0, 180);
+  let r: any = null;
+  for (let k = 0; k < 4; k++) r = awardXP(me as any, true);
+  ok(x1 > x0 && x0 >= 25, "XP: a big win pays more than a quiet loss (" + x1 + " vs " + x0 + ")");
+  ok(d.lv >= 1 && capOf(d) === cap0 + 3 * d.lv && r.xp === x1, "levels raise the builder cap (level " + d.lv + ", cap " + capOf(d) + ")");
+  d.xp = d.lv = 0;
+  delete d.car;
 }
 if (fails) {
   console.log(fails + " FAILED");

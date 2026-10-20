@@ -252,8 +252,10 @@ namespace Hoops.Core
                 else if (p.hcT > 0)
                 {
                     // hand check: the near hand jabs out to the handler's hip and comes straight back (forearm, palm flat)
-                    double w = Bump(1 - p.hcT / 0.3);
-                    var r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7, u.ln, u.cx);
+                    // (AP: the arm is picked once, when the jab starts; a hip behind him fades the jab out)
+                    if (cfg.AP != 0 && (p.hcT > p.hcP + 0.01 || !Util.T(p.hcS))) p.hcS = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7, u.ln, u.cx).right ? 1 : -1;
+                    var r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, cfg.AP != 0 ? p.hcS : 0, 0.7, u.ln, u.cx);
+                    double w = Bump(1 - p.hcT / 0.3) * (cfg.AP != 0 ? clamp((r.a + 0.6) / 0.4, 0, 1) * clamp((3.0 - r.a) / 0.4, 0, 1) : 1);
                     if (r.right) { u.aR += (r.a - u.aR) * w; u.eR += (Math.Max(0.25, r.e) - u.eR) * w; u.sz += (r.ab - u.sz) * w; u.wR -= 0.4 * w; }
                     else { u.aL += (r.a - u.aL) * w; u.eL += (Math.Max(0.25, r.e) - u.eL) * w; u.ZL(u.zL + (r.ab - u.zL) * w); u.wL -= 0.4 * w; }
                     u.cr += 0.06 * w;
@@ -541,6 +543,11 @@ namespace Hoops.Core
     {
         public double? shV; // per-shot variety draw (set at the gather)
         public string apM; // pose mode at the last apPose (to spot a new gather)
+        public double? celV; // celebration variant draw (set at its start)
+        public double apC; // celT at the last apPose (to spot a new celebration)
+        public double? apS, apL; // last tick in a shot / time of the last touchdown (dunk landings)
+        public double apLT; // landT at the last apPose (to spot a new landing)
+        public double hcP, hcS; // hand check: hcT at the last apPose (new jab), the arm picked for it (+1 right, -1 left)
     }
     public static partial class Pose
     {
@@ -604,7 +611,14 @@ namespace Hoops.Core
                 {
                     double e = CEL_T - cq.celT - 0.07 * (p.k % 4),
                         w = clamp(Math.Min(e / 0.3, (cq.celT - 0.2) / 0.4), 0, 1);
-                    if (w > 0 && cq.tm == p.tm)
+                    if (w > 0 && cq.tm == p.tm && cd < 75 && Util.T(cq.skelOk) && cq.skel[59] > cq.z + cq.ht * 9)
+                    {
+                        // close enough and his hand is up: go up and slap it (high five)
+                        var r = armIK(p, u.cr, cq.skel[57], cq.skel[58], cq.skel[59], 1, 0.8, u.ln, u.cx);
+                        u.aR += (Math.Min(r.a, 3.2) - u.aR) * w; u.eR += (r.e - u.eR) * w; u.sz += (r.ab - u.sz) * w;
+                        u.gR = 0; u.wR -= 0.3 * w;
+                    }
+                    else if (w > 0 && cq.tm == p.tm)
                     {
                         if (p.k % 2 == 0)
                         {
@@ -647,6 +661,73 @@ namespace Hoops.Core
                     HEADX -= 0.18 * w;
                 }
             }
+            // ---- celebration variety: each celebration draws its own variant (p.celV, at its start) ----
+            if (p.celT > p.apC + 0.01) p.celV = ((Math.Floor(Sim.T * 60) * 40503 + p.k * 2654435761.0) % 997) / 997;
+            p.apC = p.celT;
+            if (p.celT > 0 && Util.T(p.cel) && md == "i" && !has && !air && !Util.T(p.postA) && p.celV != null)
+            {
+                double e = CEL_T - p.celT, k = Math.Min(1, Math.Min(e / 0.2, p.celT / 0.35)), v = p.celV.Value;
+                if (p.cel == 4 && v < 0.5) { u.aL += (0.35 - u.aL) * k; u.eL += (0.6 - u.eL) * k; } // three up with one arm
+                else if (p.cel == 1 && v >= 0.5) u.rz += JsMath.Sin(e * 25) * 0.07 * k; // the shimmy gets the hips too
+                else if (p.cel == 6 && v < 0.5) { u.aL += (1.15 - u.aL) * k; u.aR += (1.15 - u.aR) * k; u.eL += (2.3 - u.eL) * k; u.eR += (2.3 - u.eR) * k; u.gL = u.gR = 1; } // roar, fists at the chest
+                else if (p.cel == 8 && v < 0.4) { u.aL += (2.9 - u.aL) * k; u.eL += (0.15 - u.eL) * k; } // both hands to the sky
+                else if (p.cel == 3 && v < 0.5) { u.aL += (0.25 - u.aL) * k; u.eL += (0.5 - u.eL) * k; u.hL += (0 - u.hL) * k; } // one-arm flex
+            }
+            // ---- contested jumper: in the air the legs tuck and kick through (they hang off the root: the release point does
+            //      not move); after the release he falls away from the hand ----
+            if (md == "s" && p.z > 2 && !IsLaySv(I(Or0(p.sv))))
+            {
+                string kind = CKofP(p.sv);
+                if (kind != "hang" && kind != "hook" && kind != "sky")
+                {
+                    double c = 0, cf = JsMath.Cos(p.f), sf = JsMath.Sin(p.f);
+                    foreach (var q in P)
+                        if (q.tm != p.tm && !Util.T(q.off))
+                        {
+                            double dx = q.x - p.x, dy = q.y - p.y, d = Hypot(dx, dy);
+                            if (d < 60)
+                            {
+                                double fr = (dx * cf + dy * sf) / (Util.T(d) ? d : 1);
+                                c = Math.Max(c, clamp((60 - d) / 30, 0, 1) * clamp((fr - 0.2) / 0.4, 0, 1) * (q.z > 4 ? 1 : 0.7));
+                            }
+                        }
+                    if (c > 0)
+                    {
+                        u.tL += 0.3 * c; u.kL += 0.4 * c; u.tR += 0.2 * c; u.kR += 0.45 * c; u.toe += 0.12 * c;
+                        if (!has) { u.ln -= 0.14 * c; u.cx -= 0.06 * c; u.aL += (1.5 - u.aL) * 0.6 * c; u.eL += (0.9 - u.eL) * 0.6 * c; } // falls away, off arm up
+                    }
+                }
+            }
+            // ---- rebound read: while a shot is up, the players around that rim (not boxing out) sit into a ready stance ----
+            if (free && B.owner == null && Util.T(B.sh) && !Util.T(B.ft) && B.z > 20 && B.last != null && u.st != ST.post)
+            {
+                double dh = Hypot(hoop(B.last.tm) - p.x, HY - p.y);
+                if (dh < 170)
+                {
+                    double w = clamp((170 - dh) / 50, 0, 1) * clamp((B.age - 0.12) / 0.25, 0, 1) * clamp(1 - sp / 260, 0, 1);
+                    u.cr = Math.Max(u.cr, 0.38 * w);
+                    u.aL += (1.1 - u.aL) * w; u.aR += (1.2 - u.aR) * w; u.eL += (1.5 - u.eL) * w; u.eR += (1.4 - u.eR) * w;
+                    u.sz += (0.45 - u.sz) * w; u.ZL(u.zL + (0.45 - u.zL) * w);
+                    u.toe += 0.1 * w;
+                    if (w > 0.3) u.gL = u.gR = 0.15;
+                }
+            }
+            // ---- dunk landings: each player comes down his own way, held ~0.7 s after touchdown ----
+            if (md == "s") p.apS = Sim.T;
+            if (p.landT > p.apLT + 0.01) p.apL = Sim.T;
+            p.apLT = p.landT;
+            if (md == "i" && !air && !has && p.apL != null && p.apS != null && p.apL.Value - p.apS.Value < 0.3 && p.apL.Value >= p.apS.Value && IsDunkSv(I(Or0(p.sv))))
+            {
+                double e = Sim.T - p.apL.Value,
+                    w = SS(1 - e / 0.7) * Math.Min(1, e / 0.06) * clamp(1 - sp / 220, 0, 1),
+                    v = p.k % 3;
+                if (w > 0)
+                {
+                    if (v == 0) { u.cr += 0.3 * w; u.aL += (0.5 - u.aL) * w; u.aR += (0.5 - u.aR) * w; u.eL += (1.6 - u.eL) * w; u.eR += (1.6 - u.eR) * w; u.sz += (0.85 - u.sz) * w; u.ZL(u.zL + (0.85 - u.zL) * w); u.gL = u.gR = 1; }
+                    else if (v == 1) { u.cr += 0.45 * w; u.ln += 0.25 * w; u.aL += (0.55 - u.aL) * w; u.aR += (0.55 - u.aR) * w; u.eL += (0.45 - u.eL) * w; u.eR += (0.45 - u.eR) * w; }
+                    else { u.ln += 0.18 * w; u.rz += 0.15 * w * (p.k % 2 != 0 ? 1 : -1); u.aL += (1.35 - u.aL) * w; u.eL += (0.4 - u.eL) * w; u.ZL(u.zL + (0.7 - u.zL) * w); }
+                }
+            }
             // ---- shot-to-shot variety inside each player's form (after the release only: the release point never moves) ----
             if (md == "c" && p.apM != "c") p.shV = ((Math.Floor(Sim.T * 60) * 2654435761.0 + p.k * 40503) % 1000) / 1000;
             if (md == "s" && has && p.shV != null)
@@ -664,6 +745,7 @@ namespace Hoops.Core
                 }
             }
             p.apM = md;
+            p.hcP = p.hcT;
         }
     }
 }

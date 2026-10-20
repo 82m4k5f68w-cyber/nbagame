@@ -5,6 +5,7 @@ namespace Hoops.Core
 
     public sealed class Ball
     {
+        public double gd, ghx; // green guide: an intended green make (bstep greenGuide) and its rim x
         public double x, y, z, vx, vy, vz, a, age;
         public string mode = "held"; // held | air | pass
         public Player owner, last, to, flBy, dho, dho2, hold, tgo;

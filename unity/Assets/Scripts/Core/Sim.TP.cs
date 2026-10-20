@@ -88,7 +88,7 @@ namespace Hoops.Core
             if (ato == 1 || TS.setN[ti]++ % 3 == 0) cm(ato == 1 ? "ato" : "set", cl[ti], nm.ToLowerInvariant());
             if (ato == 1) txtW(nm, use.x, use.y, 110, "#9fe7ff");
             // a CPU handler runs the play: a beat more patience before he looks for his own shot
-            if (!ctHas(t) && Util.T(h.ai.r)) h.ai.w = Math.Min(h.ai.w, v == "spain" ? -0.8 : -0.5);
+            if (!ctHas(t) && Util.T(h.ai.r)) { h.ai.w = Math.Min(h.ai.w, v == "spain" ? -0.8 : -0.5); h.ai.pt = Math.Max(h.ai.pt, v == "stagger" ? 1.2 : 0.7); }
             return new Play { kind = kind, v = v, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0, s2 = x2, sd = (v == "post" ? h.y : use.y) < HY ? -1 : 1, st = 0, stT = T, nm = nm, ato = ato };
         }
 
@@ -204,7 +204,7 @@ namespace Hoops.Core
                 return true;
             }
             // stagger (floppy): up from the baseline off the first screen, then the second, out to the wing
-            if (pl.ph == "go")
+            if (pl.ph == "go" && Hypot(scr.x - pl.sx, scr.y - pl.sy) > 30)
             {
                 mv(p, hx + dir * 20, HY + sd * 85, 1);
                 return true;

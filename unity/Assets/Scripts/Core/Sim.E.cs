@@ -34,6 +34,18 @@ namespace Hoops.Core
             return Rng.R() < 0.05;
         }
 
+        /// <summary>Green guide: a green release that was meant to go in (B.gd) is re-aimed at the middle of the rim on its way
+        /// down, every half step, from .9 s out (ballistic time to rim height): drag, Magnus drift, aim rounding, a brush with a
+        /// body and PhysX all wash out - nothing but a block can miss it. TS twin: sim.ts greenGuide.</summary>
+        public static void greenGuide(double dt)
+        {
+            if (!Util.T(B.gd) || !Util.T(B.sh) || Util.T(B.sc) || B.mode != "air" || B.vz >= 0 || B.z <= 100) return;
+            double tt = (B.vz + Math.Sqrt(B.vz * B.vz + 2 * g * (B.z - 100))) / g;
+            if (tt < dt || tt > 0.9) return;
+            B.vx = (B.ghx - B.x) / tt;
+            B.vy = (HY - B.y) / tt;
+        }
+
         public static void bstep(double dt)
         {
             var o = B.owner;
@@ -139,6 +151,7 @@ namespace Hoops.Core
                 B.vy += ((dy / ds) * sp - B.vy) * Math.Min(1, dt * 2.5);
             }
             if (cfg.PP != 0 && B.mode == "pass" && B.to != null && PREDICT == 0 && !Util.T(B.dfl) && B.age > 0.08 && ftq == null && inb <= 0) ppDeflect();
+            greenGuide(dt);
             double pz = B.z;
             if (RA) Phys.RAP.Step(dt, B);
             else
@@ -410,6 +423,8 @@ namespace Hoops.Core
             }
             if (Util.T(B.sc)) return;
             if (ftq != null) return;
+            // a green on its way in (B.gd) is nobody's to touch: only launch's block roll could have stopped it
+            if (Util.T(B.sh) && Util.T(B.gd) && B.mode == "air" && B.z > 60) return;
             // Cylinder rule: nobody may touch a live shot in the imaginary cylinder above either rim
             if (Util.T(B.sh) && B.mode == "air" && B.z > 55 && (Hypot(B.x - HXs[0], B.y - HY) < 22 || Hypot(B.x - HXs[1], B.y - HY) < 22))
             {

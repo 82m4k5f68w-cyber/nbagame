@@ -285,7 +285,7 @@ namespace Hoops.Core
             double cx = hum && p.cw != null ? p.cw.Value : Math.Min(1, ct * (p.sbw > 0 ? 0.25 : 1) + p.bmp * 0.5),
                 rat = shotRat(p, D0, isFT),
                 wm0 = lay && !isFT ? 1 : winMul(p, D0, notes),
-                win = (0.07 + (rat / 100) * 0.05) * (1 - 0.45 * cx) * (0.85 + 0.15 * p.en) * wm0,
+                win = greenWin(p, rat, cx, wm0), // (shared with the HUD meter: the contest shrinks it live)
                 rT = lay ? 0.28 : p.st == 1 ? 0.3 : 0.4;
             bool gr;
             B.d0 = isFT ? (double?)null : D0;
@@ -382,6 +382,7 @@ namespace Hoops.Core
             B.abv = -1;
             B.wv = new double[] { 0, 0, 0 };
             B.gt = B.gtc = 0;
+            B.gd = 0; // (green guide: set below for an intended green make)
             Player fd = isFT ? null : shootingFoul(p, lay);
             if (fd != null)
             {
@@ -498,7 +499,7 @@ namespace Hoops.Core
             bool rap = useRap();
             if (dunkMiss && hum) txtW("MISSED DUNK!", p.x, p.y, 120, "#ff6b4a");
             // (Pro Play v2: contact knocks a fouled shot off - layups x.5, CPU jumpers x.35; a human's green still counts)
-            bool mk = dunkMiss ? false : lay ? Rng.R() < Clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd != null && cfg.PP >= 2 ? 0.5 : 1) : gr && (Util.T(p.perf) || Rng.R() < (0.98 - cx * 0.25) * (fd != null && cfg.PP >= 2 && !hum ? 0.35 : 1));
+            bool mk = dunkMiss ? false : lay ? (gr && hum) || Rng.R() < Clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd != null && cfg.PP >= 2 ? 0.5 : 1) : gr && (Util.T(p.perf) || hum || Rng.R() < (0.98 - cx * 0.25) * (fd != null && cfg.PP >= 2 && !hum ? 0.35 : 1)); // (a human's green is a make)
             double a = Rng.R() * 6.28,
                 off = mk ? (rap ? 0.3 : 1.2) : 9 + Rng.R() * 7,
                 tx = hx + JsMath.Cos(a) * off,
@@ -584,6 +585,8 @@ namespace Hoops.Core
                 }
             }
             B.gn = gr ? 1 : 0;
+            B.gd = gr && mk ? 1 : 0; // an intended green make: greenGuide (bstep) sees it through the iron, bodies and spin drift
+            B.ghx = hx;
             if (gr && hum) txtW("GREEN!", p.x, p.y, 95, "#2ecc71");
             if (gr && PREDICT == 0 && !(p.celT > 0))
             {

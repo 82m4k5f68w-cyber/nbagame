@@ -1,5 +1,4 @@
-// Port of tests/greens.ts: 400 perfectly timed jumpers from random spots (no defenders) -> expect >= 95% made with
-// BallSim. Also checks that free flight is bit-identical to launch()'s aim pre-simulation (h = 1/120).
+// Port of tests/greens.ts: 400 perfectly timed jumpers from random spots (no defenders) -> 100% made on every path. Also checks that free flight is bit-identical to launch()'s aim pre-simulation (h = 1/120).
 //   scripts/unity/cs.sh unity/CoreTests/Greens.cs [ball|plain|legacy|ball+up|ball+up+arcade|ball+up+sim|ball+up-ph2|all] [N] [dt]
 // (+up = cfg.UP 1 with PH2, +arcade / +sim = cfg.PHYS 0 / 1 (default .5), -ph2 = UP without the PH2 physics)
 using System;
@@ -19,7 +18,7 @@ static class Greens
         {
             double pct = Run(m, N, dt, out int bitBad, out int bitChecked);
             Console.WriteLine($"{m,-14} dt {dt:F4}: made {pct:F1}%" + (bitChecked > 0 ? $"  free-flight bit-identical {bitChecked - bitBad}/{bitChecked}" : ""));
-            if (m != "legacy" && pct < 95) ok = false;
+            if (pct < 100) ok = false; // every green goes in, every physics path (greenGuide)
             if (bitBad > 0 && Math.Abs(dt - 1 / 120.0) < 1e-12) ok = false;
         }
         Console.WriteLine(ok ? "PASS" : "FAIL");
@@ -76,7 +75,8 @@ static class Greens
                     w0 *= wd; w1 *= wd;
                     if (bs.Contacts != contacts0) refOn = false; // touched something: the reference no longer applies
                     else if (x != B.x || y != B.y || z != B.z) { diverged = true; }
-                    if (qz >= 100 && z < 100 && vz < 0) { bitChecked++; if (diverged) bitBad++; refOn = false; }
+                    // (compared up to the apex: on the way down greenGuide may steer an intended make)
+                    if (vz < 0) { bitChecked++; if (diverged) bitBad++; refOn = false; }
                 }
                 if (B.owner != null) break;
             }

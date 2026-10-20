@@ -2849,8 +2849,11 @@ function upPose(p: Player, u: UV, md: string, has: boolean, air: boolean, sp: nu
       u.ln += 0.1 * Bump(s);
     } else if (p.hcT > 0) {
       // hand check: the near hand jabs out to the handler's hip and comes straight back (forearm, palm flat)
-      const w = Bump(1 - p.hcT / 0.3),
-        r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7, u.ln, u.cx);
+      // (AP: the arm is picked once, when the jab starts - a handler crossing his midline mid-jab used to hand the
+      // whole jab to the other arm in one tick; a hip behind him fades it out instead of swinging the arm back)
+      if (cfg.AP !== 0 && (p.hcT > (p.hcP || 0) + 0.01 || !p.hcS)) p.hcS = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, 0, 0.7, u.ln, u.cx).right ? 1 : -1;
+      const r = armIK(p, u.cr, ow.x, ow.y, ow.z + ow.ht * 4.6, cfg.AP !== 0 ? p.hcS : 0, 0.7, u.ln, u.cx),
+        w = Bump(1 - p.hcT / 0.3) * (cfg.AP !== 0 ? clamp((r.a + 0.6) / 0.4, 0, 1) * clamp((3.0 - r.a) / 0.4, 0, 1) : 1);
       if (r.right) (u.aR += (r.a - u.aR) * w), (u.eR += (Math.max(0.25, r.e) - u.eR) * w), (u.sz += (r.ab - u.sz) * w), (u.wR -= 0.4 * w);
       else (u.aL += (r.a - u.aL) * w), (u.eL += (Math.max(0.25, r.e) - u.eL) * w), ZLs(u, u.zL + (r.ab - u.zL) * w), (u.wL -= 0.4 * w);
       u.cr += 0.06 * w;
@@ -3243,7 +3246,15 @@ function apPose(p: Player, u: UV, md: string, has: boolean, air: boolean, sp: nu
     if (cq) {
       const e = CEL_T - cq.celT - 0.07 * (p.k % 4),
         w = clamp(Math.min(e / 0.3, (cq.celT - 0.2) / 0.4), 0, 1);
-      if (w > 0 && cq.tm === p.tm) {
+      if (w > 0 && cq.tm === p.tm && cd < 75 && cq.skelOk && cq.skel[59] > cq.z + cq.ht * 9) {
+        // close enough and his hand is up: go up and slap it (high five)
+        const r = armIK(p, u.cr, cq.skel[57], cq.skel[58], cq.skel[59], 1, 0.8, u.ln, u.cx);
+        u.aR += (Math.min(r.a, 3.2) - u.aR) * w;
+        u.eR += (r.e - u.eR) * w;
+        u.sz += (r.ab - u.sz) * w;
+        u.gR = 0;
+        u.wR -= 0.3 * w;
+      } else if (w > 0 && cq.tm === p.tm) {
         if (p.k % 2 === 0) {
           // fist pump (twice)
           const pm = Math.max(0, Math.sin(e * 11));
@@ -3303,6 +3314,80 @@ function apPose(p: Player, u: UV, md: string, has: boolean, air: boolean, sp: nu
       HEADX -= 0.18 * w;
     }
   }
+  // ---- celebration variety: each celebration draws its own variant (p.celV, at its start) so the same player's
+  //      signature move is not a copy every time ----
+  if ((p.celT || 0) > (p.apC || 0) + 0.01) p.celV = ((Math.floor(T * 60) * 40503 + p.k * 2654435761) % 997) / 997;
+  p.apC = p.celT || 0;
+  if (p.celT > 0 && p.cel && md === "i" && !has && !air && !p.postA && p.celV != null) {
+    const e = CEL_T - p.celT,
+      k = Math.min(1, e / 0.2, p.celT / 0.35),
+      v = p.celV;
+    if (p.cel === 4 && v < 0.5) (u.aL += (0.35 - u.aL) * k), (u.eL += (0.6 - u.eL) * k); // three up with one arm
+    else if (p.cel === 1 && v >= 0.5) u.rz += Math.sin(e * 25) * 0.07 * k; // the shimmy gets the hips too
+    else if (p.cel === 6 && v < 0.5) (u.aL += (1.15 - u.aL) * k), (u.aR += (1.15 - u.aR) * k), (u.eL += (2.3 - u.eL) * k), (u.eR += (2.3 - u.eR) * k), (u.gL = u.gR = 1); // roar with fists at the chest
+    else if (p.cel === 8 && v < 0.4) (u.aL += (2.9 - u.aL) * k), (u.eL += (0.15 - u.eL) * k); // both hands to the sky
+    else if (p.cel === 3 && v < 0.5) (u.aL += (0.25 - u.aL) * k), (u.eL += (0.5 - u.eL) * k), (u.hL += (0 - u.hL) * k); // one-arm flex
+  }
+  // ---- contested jumper: in the air the shooter tucks his legs and kicks them through toward the defender (the
+  //      legs hang off the root: the release point does not move); after the release he falls away from the hand ----
+  if (md === "s" && p.z > 2 && !isLaySv(p.sv || 0)) {
+    const kind = CK[p.sv];
+    if (kind !== "hang" && kind !== "hook" && kind !== "sky") {
+      let c = 0;
+      const cf = Math.cos(p.f),
+        sf = Math.sin(p.f);
+      for (const q of P)
+        if (q.tm !== p.tm && !q.off) {
+          const dx = q.x - p.x,
+            dy = q.y - p.y,
+            d = Math.hypot(dx, dy);
+          if (d < 60) {
+            const fr = (dx * cf + dy * sf) / (d || 1);
+            c = Math.max(c, clamp((60 - d) / 30, 0, 1) * clamp((fr - 0.2) / 0.4, 0, 1) * (q.z > 4 ? 1 : 0.7));
+          }
+        }
+      if (c > 0) {
+        u.tL += 0.3 * c;
+        u.kL += 0.4 * c;
+        u.tR += 0.2 * c;
+        u.kR += 0.45 * c;
+        u.toe += 0.12 * c;
+        if (!has) (u.ln -= 0.14 * c), (u.cx -= 0.06 * c), (u.aL += (1.5 - u.aL) * 0.6 * c), (u.eL += (0.9 - u.eL) * 0.6 * c); // falls away, off arm up for balance
+      }
+    }
+  }
+  // ---- rebound read: while a shot is up, the players around that rim (not already boxing out) sit into a ready stance,
+  //      hands up at the shoulders, on the balls of the feet - eased in as the ball rises, by the distance ----
+  if (free && !B.owner && B.sh && !B.ft && B.z > 20 && B.last && u.st !== ST.post) {
+    const dh = Math.hypot(hoop(B.last.tm) - p.x, HY - p.y);
+    if (dh < 170) {
+      const w = clamp((170 - dh) / 50, 0, 1) * clamp((B.age - 0.12) / 0.25, 0, 1) * clamp(1 - sp / 260, 0, 1);
+      u.cr = Math.max(u.cr, 0.38 * w);
+      u.aL += (1.1 - u.aL) * w;
+      u.aR += (1.2 - u.aR) * w;
+      u.eL += (1.5 - u.eL) * w;
+      u.eR += (1.4 - u.eR) * w;
+      u.sz += (0.45 - u.sz) * w;
+      ZLs(u, u.zL + (0.45 - u.zL) * w);
+      u.toe += 0.1 * w;
+      if (w > 0.3) u.gL = u.gR = 0.15;
+    }
+  }
+  // ---- dunk landings: each player comes down his own way (a wide roar, a deep sit with the hands near the knees, a
+  //      stagger with a balance arm), held ~0.7 s after touchdown and faded out as he runs back ----
+  if (md === "s") p.apS = T;
+  if ((p.landT || 0) > (p.apLT || 0) + 0.01) p.apL = T;
+  p.apLT = p.landT || 0;
+  if (md === "i" && !air && !has && p.apL != null && p.apS != null && p.apL - p.apS < 0.3 && p.apL >= p.apS && isDunkSv(p.sv || 0)) {
+    const e = T - p.apL,
+      w = SS(1 - e / 0.7) * Math.min(1, e / 0.06) * clamp(1 - sp / 220, 0, 1),
+      v = p.k % 3;
+    if (w > 0) {
+      if (v === 0) (u.cr += 0.3 * w), (u.aL += (0.5 - u.aL) * w), (u.aR += (0.5 - u.aR) * w), (u.eL += (1.6 - u.eL) * w), (u.eR += (1.6 - u.eR) * w), (u.sz += (0.85 - u.sz) * w), ZLs(u, u.zL + (0.85 - u.zL) * w), (u.gL = u.gR = 1);
+      else if (v === 1) (u.cr += 0.45 * w), (u.ln += 0.25 * w), (u.aL += (0.55 - u.aL) * w), (u.aR += (0.55 - u.aR) * w), (u.eL += (0.45 - u.eL) * w), (u.eR += (0.45 - u.eR) * w);
+      else (u.ln += 0.18 * w), (u.rz += 0.15 * w * (p.k % 2 ? 1 : -1)), (u.aL += (1.35 - u.aL) * w), (u.eL += (0.4 - u.eL) * w), ZLs(u, u.zL + (0.7 - u.zL) * w);
+    }
+  }
   // ---- shot-to-shot variety inside each player's form: a per-shot draw (set at the gather) varies the follow-through
   //      height, the wrist snap and the leg kick a little - after the release only, so the release point never moves ----
   if (md === "c" && p.apM !== "c") p.shV = ((Math.floor(T * 60) * 2654435761 + p.k * 40503) % 1000) / 1000;
@@ -3325,6 +3410,7 @@ function apPose(p: Player, u: UV, md: string, has: boolean, air: boolean, sp: nu
     }
   }
   p.apM = md;
+  p.hcP = p.hcT || 0;
 }
 /** Hip turn (cfg.AP): a player backpedaling or sliding faster than a stance allows (> ~15 ft/s, more than ~70 deg off his
  *  facing) opens his hips and runs - the drawn root (p.ry, via fv) turns toward the run while the sim facing, the chest

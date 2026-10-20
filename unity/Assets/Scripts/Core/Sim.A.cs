@@ -640,6 +640,13 @@ namespace Hoops.Core
         public static void cm(string e, string n = null, string n2 = null) => fx(new Fx { k = "cm", e = e, n = n, n2 = n2 });
         public static void ban(string s, string sub = "", string c = "#ffd23f") => fx(new Fx { k = "ban", s = s, sub = sub, c = c });
         /// <summary>Shot-window multiplier from badges, hot zones, rhythm, streaks, momentum and clutch. Shared with the HUD meter.</summary>
+        /// <summary>Green-window factor of a contest: open = full, light (.3) -30%, heavy / smothered (.75+) -75% (sim.ts cwin).</summary>
+        public static double cwin(double cx) => Math.Max(0.25, 1 - cx);
+        /// <summary>The contest a human's window uses: live while charging (contestOf + body contact), locked at release (p.cw).</summary>
+        public static double shotContest(Player p) => p.mode == "s" && p.cw != null ? p.cw.Value : Math.Min(1, contestOf(p).Item1 + p.bmp * 0.5);
+        /// <summary>The green window (s; x1.2 with tempo): launch and the HUD meter share it (sim.ts greenWin).</summary>
+        public static double greenWin(Player p, double rat, double cx, double wm0) => (0.07 + (rat / 100) * 0.05) * cwin(cx) * (0.85 + 0.15 * p.en) * wm0;
+
         public static double winMul(Player p, double D0, List<string> note = null)
         {
             if (cfg.BADGES == 0 || cfg.ONLINE != 0) return 1;

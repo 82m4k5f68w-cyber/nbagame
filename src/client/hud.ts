@@ -1,5 +1,5 @@
 // Heads-up display: score bug, player strip, shot meters, contest ring, pass/open markers, floating texts.
-import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, RSPD, gameLike, guardOf, type Player } from "../core/sim";
+import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, shotContest, greenWin, cwin, RSPD, gameLike, guardOf, type Player } from "../core/sim";
 import { V, pr, fmt, MN } from "./view";
 import { isLaySv } from "../core/data";
 import { K, tempoOf, TX, STK_R } from "./input";
@@ -58,7 +58,8 @@ export function replayHud() {
 }
 export function contestFx(p: Player) {
   if (B.owner !== p || ftq) return;
-  const c = contestOf(p)[0],
+  // (while charging / releasing: the contest the green window is judged on, live - see sim.ts shotContest)
+  const c = p.mode === "c" || p.mode === "s" ? shotContest(p) : contestOf(p)[0],
     q = pr(p.x, p.y, 0),
     sx = q[0],
     sy = q[1],
@@ -73,9 +74,10 @@ export function contestFx(p: Player) {
   if (p.mode === "c" || p.mode === "s") {
     X.textAlign = "center";
     X.font = "800 12px system-ui";
+    // the window shrinking with the contest, live: open = full window .. smothered = a quarter of it
     X.fillStyle = c < 0.08 ? "#2ecc71" : c < 0.5 ? "#ffd23f" : "#ff6b6b";
     X.fillText(
-      c < 0.08 ? "WIDE OPEN" : "CONTESTED " + Math.round(c * 100) + "%",
+      c < 0.08 ? "WIDE OPEN" : (c < 0.5 ? "CONTESTED" : "SMOTHERED") + " · WINDOW -" + Math.round((1 - cwin(c)) * 100) + "%",
       sx,
       sy + ph * 0.5,
     );
@@ -88,13 +90,8 @@ export function meter(p: Player) {
   if (!(tm || hold)) return;
   const D0 = Math.hypot(hoop(p.tm) - p.x, HY - p.y),
     rat = shotRat(p, D0, !!ftq),
-    c = p.mode === "s" && p.cw != null ? p.cw : contestOf(p)[0],
-    win =
-      (0.07 + (rat / 100) * 0.05) *
-      (1 - 0.45 * c) *
-      (TEMPO ? 1.2 : 1) *
-      (0.85 + 0.15 * (p.en == null ? 1 : p.en)) *
-      (D0 < 90 || p.hk ? 1 : winMul(p, D0)),
+    c = shotContest(p), // (live while charging, locked at release - the same contest launch judges)
+    win = greenWin(p, rat, c, D0 < 90 || p.hk ? 1 : winMul(p, D0)) * (TEMPO ? 1.2 : 1), // (launch's window)
     ideal = TEMPO
       ? isLaySv(p.sv)
         ? 0.28

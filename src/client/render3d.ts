@@ -1350,9 +1350,23 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           else Object.assign(q, { aL: 1.05, aR: 1.05, eL: 2.2, eR: 2.2, sz: -0.35, zL: -0.35 });
         } else {
           // seated: thighs level, shins down; standing and waving arms when his team scores
-          const w = Math.sin(T * 9 + b.x) * 0.3;
-          if (up) Object.assign(q, { tL: 0, tR: 0, kL: 0.05, kR: 0.05, cr: 0, ln: -0.05, aL: 2.7 + w, aR: 2.7 - w, eL: 0.3, eR: 0.3, sz: 0.4, zL: 0.4 });
-          else Object.assign(q, { tL: 1.5, tR: 1.45, kL: 1.5, kR: 1.5, cr: 4.1, ln: 0.12, aL: 0.6, aR: 0.55, eL: 1.3, eR: 1.3, sz: 0.2, zL: 0.2 });
+          // (each bench player cheers his own way - waving, a towel-style circle overhead, clapping, bouncing with a fist
+          // pump - and gets up a beat after the one next to him; seated, some lean on their knees, some sit back)
+          const w = Math.sin(T * 9 + b.x) * 0.3,
+            sty = Math.floor(Math.abs(b.x * 7.3)) % 4,
+            late = (Math.abs(b.x * 3.1) % 1) * 0.35;
+          if (up && cheerT[b.tm] < 2.2 - late) {
+            const stand = { tL: 0, tR: 0, kL: 0.05, kR: 0.05, cr: 0, ln: -0.05 };
+            if (sty === 1) Object.assign(q, stand, { aL: 0.5, eL: 0.6, zL: 0.2, aR: 2.85, eR: 0.35, sz: 0.25 + Math.sin(T * 11 + b.x) * 0.45 }); // towel circling
+            else if (sty === 2) {
+              const cl = Math.abs(Math.sin(T * 8 + b.x));
+              Object.assign(q, stand, { aL: 1.35, aR: 1.35, eL: 0.95, eR: 0.95, sz: -0.12 + 0.5 * cl, zL: -0.12 + 0.5 * cl }); // clapping
+            } else if (sty === 3) {
+              const bo = Math.max(0, Math.sin(T * 10 + b.x));
+              Object.assign(q, stand, { kL: 0.05 + 0.4 * bo, kR: 0.05 + 0.4 * bo, tL: 0.2 * bo, tR: 0.2 * bo, cr: 0.5 * bo, aR: 2.0 + 0.6 * bo, eR: 1.9 - 0.6 * bo, sz: 0.3, aL: 0.6, eL: 1.2, zL: 0.3 }); // bounce + fist pump
+            } else Object.assign(q, stand, { aL: 2.7 + w, aR: 2.7 - w, eL: 0.3, eR: 0.3, sz: 0.4, zL: 0.4 });
+          } else if (sty === 1 || sty === 3) Object.assign(q, { tL: 1.5, tR: 1.45, kL: 1.5, kR: 1.5, cr: 4.1, ln: 0.45, aL: 0.15, aR: 0.2, eL: 1.6, eR: 1.6, sz: 0.35, zL: 0.35 }); // elbows on the knees
+          else Object.assign(q, { tL: 1.5, tR: 1.45, kL: 1.5, kR: 1.5, cr: 4.1, ln: sty === 2 ? -0.08 : 0.12, aL: 0.6, aR: 0.55, eL: 1.3, eR: 1.3, sz: 0.2, zL: 0.2 });
           b.f = Math.PI / 2; // facing the court
         }
         // place the rig directly (bench people are not sim players): game coords from world feet

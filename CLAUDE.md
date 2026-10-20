@@ -463,6 +463,15 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Fixes: the inbounder's two-hand IK aims at the in-world (clamped) ball - he stands behind the line, the ball is
   clamped to x 6..934 (hands used to stay 1-2 ft from the ball); a holder who must stand (inbound, triple threat,
   fakes, FT) is never drawn in a left-over fall/dive (`upGot`).
+- Round 2 (same flag): slide footwork - a sideways step lifts >= 3.2 px and only travels while the foot is up (`swh`:
+  pick up, step, plant), defensive foot slide 32 -> ~14 px/s (all states ~20 -> ~11); contested jumper: legs tuck and
+  kick through in the air (legs hang off the root, so the release point is untouched), falls away + off arm up only
+  after the release; rebound read (ready stance, hands at the shoulders near that rim while a shot is up, unless boxing
+  out); dunk landings (3 styles by slot, ~0.7 s, `p.apL`); celebration variants per celebration (`p.celV`: one-arm
+  three, hip shimmy, fists roar, two-hand point, one-arm flex); high five when a celebrating teammate's hand is up within
+  75 px (reaches for his `skel` hand); hand check latches its arm at the jab start (`p.hcS`) and fades for a hip
+  behind him (an armIK branch flip popped aR 3.3 rad). Bench (render3d benchUpd): 4 cheer styles (wave, towel circle,
+  clap, bounce + fist pump) staggered, 3 seated postures.
 - Traces: `POSE=1` adds a per-player pose checksum (all 31 channels) to trace.ts / Trace.cs - pose parity, not just
   positions. Studio: hip turn, fake reactions, big-play reactions, miss frustration entries.
 

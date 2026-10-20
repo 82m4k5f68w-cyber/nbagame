@@ -401,7 +401,8 @@ namespace Hoops.Game
         {
             if (B.owner != p || ftq != null) return;
             if (!Pr(p.x, p.y, 0, out float sx, out float sy)) return;
-            double c = contestOf(p).Item1;
+            // (while charging / releasing: the contest the green window is judged on, live - Sim.shotContest)
+            double c = p.mode == "c" || p.mode == "s" ? shotContest(p) : contestOf(p).Item1;
             float ph = Ph(p, sx, sy);
             if (c > 0.03) Ui.Arc(sx, sy, ph * 0.55f, ph * 0.22f, 0, 6.3f, (2 + (float)c * 3) * Ui.s * 0.5f, new Color(1, 70 / 255f, 70 / 255f, 0.35f + (float)c * 0.55f));
             if (p.mode == "c" || p.mode == "s")
@@ -414,7 +415,8 @@ namespace Hoops.Game
         string ContestStr(double c)
         {
             int i = Mathf.Clamp((int)System.Math.Round(c * 100), 0, 100);
-            return contestS[i] ??= "CONTESTED " + i + "%";
+            // the window shrinking with the contest (hud.ts): open = full window .. smothered = a quarter of it
+            return contestS[i] ??= (i < 50 ? "CONTESTED" : "SMOTHERED") + " · WINDOW -" + (int)System.Math.Round((1 - cwin(i / 100.0)) * 100) + "%";
         }
 
         // ---------------- shot meter (hud.ts meter, all 4 styles; green at the TOP / end) ----------------
@@ -425,8 +427,8 @@ namespace Hoops.Game
             if (!(tm || hold)) return;
             double D0 = Util.Hypot(hoop(p.tm) - p.x, HY - p.y),
                 rat = shotRat(p, D0, ftq != null),
-                c = p.mode == "s" && p.cw != null ? p.cw.Value : contestOf(p).Item1,
-                win = (0.07 + rat / 100 * 0.05) * (1 - 0.45 * c) * (TEMPO ? 1.2 : 1) * (0.85 + 0.15 * p.en) * (D0 < 90 || Util.T(p.hk) ? 1 : winMul(p, D0)),
+                c = shotContest(p), // (live while charging, locked at release - the contest launch judges)
+                win = greenWin(p, rat, c, D0 < 90 || Util.T(p.hk) ? 1 : winMul(p, D0)) * (TEMPO ? 1.2 : 1), // (launch's window)
                 ideal = TEMPO ? (Data.IsLaySv((int)p.sv) ? 0.28 : p.st == 1 ? 0.3 : 0.4) : p.st == 1 ? 0.45 : 0.6,
                 wm = (0.07 + rat / 100 * 0.05) * (TEMPO ? 1.2 : 1),
                 m = (ideal + wm) / 0.97;

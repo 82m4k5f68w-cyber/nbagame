@@ -38,7 +38,7 @@ import { handPos } from "../src/core/pose";
     if (B.sc) made++;
   }
   console.log({ made: made + "/" + n, leftHand: left + "/" + n, mirFrames: mirSeen });
-  const ok = made >= n * 0.9 && left >= n * 0.9 && mirSeen > 0;
+  const ok = made === n && left >= n * 0.9 && mirSeen > 0; // (every green goes in: greenGuide)
   console.log(ok ? "LEFTY OK" : "LEFTY FAIL");
   process.exit(ok ? 0 : 1);
 })();

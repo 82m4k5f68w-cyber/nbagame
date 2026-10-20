@@ -577,6 +577,50 @@ export const ANIMS: [string, Setup][] = [
       move(p, dt, 210, Math.PI / 2);
     },
   ],
+  // round 2: rebound read, contested jumper, high five
+  [
+    "Rebound read (shot in the air)",
+    (p, t) => {
+      stand(p);
+      const hx = G.hoop(p.tm);
+      p.x = hx - Math.sign(hx - 470) * 70;
+      p.f = hx > 470 ? 0 : Math.PI;
+      B.owner = null;
+      B.mode = "air";
+      B.sh = 1;
+      B.ft = 0;
+      B.last = p;
+      B.age = 0.6;
+      (B.x = hx - Math.sign(hx - 470) * 30), (B.y = 250), (B.z = 130);
+    },
+  ],
+  [
+    "Contested jumper (legs tuck, release unchanged)",
+    (p, t) => {
+      stand(p);
+      const o = P.find((q) => q.tm !== p.tm)!;
+      (o.x = p.x + Math.cos(p.f) * 32), (o.y = p.y + Math.sin(p.f) * 32), (o.f = p.f + Math.PI), (o.z = 12);
+      p.mode = "s";
+      p.sv = 0;
+      p.t = 0.2;
+      p.z = 22;
+      B.owner = p;
+      B.mode = "held";
+      pose3(o);
+    },
+  ],
+  [
+    "High five (teammate's three)",
+    (p, t) => {
+      stand(p);
+      const q = P.find((o) => o !== p && o.tm === p.tm);
+      if (!q) return;
+      (q.x = p.x + Math.cos(p.f + 0.5) * 40), (q.y = p.y + Math.sin(p.f + 0.5) * 40), (q.f = p.f + Math.PI), (q.mode = "i");
+      q.cel = 8;
+      q.celT = 1.2;
+      pose3(q);
+    },
+  ],
   // animation pack v5.4 reactions (pose.ts apPose)
   ...([
     [1, 0.42, "Defender bites on a pump fake"],

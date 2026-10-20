@@ -819,9 +819,9 @@ function autoRel(p: any) {
     arP = p;
     const D0 = Math.hypot(G.hoop(p.tm) - p.x, G.HY - p.y),
       rat = G.shotRat(p, D0, !!G.ftq),
-      c = Math.min(1, G.contestOf(p)[0] + (p.bmp || 0) * 0.5),
+      c = G.shotContest(p),
       wm = 0.07 + (rat / 100) * 0.05,
-      win = wm * (1 - 0.45 * c) * (0.85 + 0.15 * (p.en ?? 1)) * (D0 < 90 ? 1 : G.winMul(p, D0)),
+      win = G.greenWin(p, rat, c, D0 < 90 ? 1 : G.winMul(p, D0)), // (launch's window)
       cen = (p.st === 1 ? 0.45 : 0.6) + (wm - win);
     arT = cen + (Math.random() - 0.5) * 0.09;
   }

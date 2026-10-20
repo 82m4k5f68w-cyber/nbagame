@@ -8,8 +8,9 @@ import { rapInit } from "../src/core/physics";
   G.cfg.input = () => { const i = { dx: K.R ? 1 : 0, dy: 0, ...ev }; ev = {}; return i; };
   G.setCtrls([G.mkCtrl("p1", 0)]);
   const out: Record<string, string> = {};
+  let bad = 0;
   for (const [lo, hi, label, mv] of [[560, 660, "mid/3 (23-33ft)", 0], [430, 560, "deep (33-45ft)", 0], [330, 430, "heave (45ft+)", 0], [560, 660, "moving toward hoop", 1]] as const) {
-    let made = 0; const n = 60;
+    let made = 0, greens = 0, gMade = 0, why = ""; const n = 60;
     for (let i = 0; i < n; i++) {
       G.start(1); const P = G.P, p = P[0]; G.setup(0); G.setInb(0);
       P.forEach((q, k) => { if (k) (q.x = 60), (q.y = 20 + k * 8); });
@@ -22,11 +23,17 @@ import { rapInit } from "../src/core/physics";
       K.R = false;
       let T = 0;
       while (B.owner === p && T < 1.5) { G.upd(1 / 60); T += 1 / 60; }
+      const gn = B.gn, blk = !B.sh && !B.sc;
       T = 0;
       while (T < 5 && !B.owner) { G.upd(1 / 60); T += 1 / 60; if (B.sc) break; }
       if (B.sc) made++;
+      if (gn) (greens++, B.sc ? gMade++ : (why += " miss@" + Math.round(Math.hypot(887.5 - p.x, 250 - p.y)) + (blk ? "(blocked)" : "")));
+      else why += " notGreen@" + Math.round(Math.hypot(887.5 - p.x, 250 - p.y)) + "(off " + (p.tg ? p.tg.off + "/" + p.tg.win : "?") + ")";
     }
-    out[label] = made + "/" + n;
+    out[label] = made + "/" + n + " greens " + gMade + "/" + greens + why;
+    if (gMade < greens) bad = 1;
   }
   console.log("Curry greens", JSON.stringify(out));
+  // every green goes in (heaves and moving shots included)
+  if (bad) process.exit(1);
 })();
