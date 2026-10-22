@@ -3869,6 +3869,7 @@ export function bstep(dt: number) {
     }
     if (B.sh && B.z >= 100 && d < RR + 2) B.abv = b; // was above this rim
     if (B.sh && d < 20) B.rim = Math.min(B.rim ?? 99, Math.hypot(d - RR, B.z - 100)); // closest approach to the iron
+    if (B.sh && Math.abs(B.x - bx) < BR + 4 && Math.abs(B.y - HY) < 32 && B.z > 90 && B.z < 140) B.gl = T; // touched the glass (airball check)
     if (B.sh && !B.sc && B.vz < 0 && ((pz >= 100 && B.z < 100 && d < RR - 1.2) || (B.abv === b && B.z < 97 && B.z > 80 && d < RR - 0.6))) {
       B.sc = 1;
       const t = cfg.HALF && B.last ? B.last.tm : b ? 0 : 1,
@@ -4158,6 +4159,7 @@ export function bstep(dt: number) {
         if (!B.ft) cm(p.tm === B.last.tm ? "missO" : "miss", B.last.n, p.n);
         if (!B.ft && !PREDICT && B.last.tm != null) B.last.frT = 1.8; // the shooter's face drops
         if (!B.ft && (B.rim ?? 99) < BR + 2.5) fx({ k: "ooh" }); // in and out: the whole building groans
+        else if (!B.ft && (B.rim ?? 99) > BR + 4 && !(B.gl != null && T - B.gl <= B.age)) fx({ k: "air", v: B.last.tm, tm: B.last.tm, n: B.last.n }); // AIR BALL (crowd chant)
         if (hasB(p, "GC") && Math.random() < 0.3) cm("board", p.n);
       }
       if (B.sh && B.last && !B.sc) B.last.heat = Math.max(-2, (B.last.heat || 0) - 1);

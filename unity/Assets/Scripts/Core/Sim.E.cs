@@ -207,6 +207,7 @@ namespace Hoops.Core
                 }
                 if (Util.T(B.sh) && B.z >= 100 && d < RR + 2) B.abv = b; // was above this rim
                 if (Util.T(B.sh) && d < 20) B.rim = Math.Min(B.rim ?? 99, Hypot(d - RR, B.z - 100)); // closest approach to the iron
+                if (Util.T(B.sh) && Math.Abs(B.x - bx) < BR + 4 && Math.Abs(B.y - HY) < 32 && B.z > 90 && B.z < 140) B.gl = T; // touched the glass (airball check)
                 if (Util.T(B.sh) && !Util.T(B.sc) && B.vz < 0 && ((pz >= 100 && B.z < 100 && d < RR - 1.2) || (B.abv == b && B.z < 97 && B.z > 80 && d < RR - 0.6)))
                 {
                     B.sc = 1;
@@ -544,6 +545,7 @@ namespace Hoops.Core
                         if (!Util.T(B.ft)) cm(p.tm == B.last.tm ? "missO" : "miss", B.last.n, p.n);
                         if (!Util.T(B.ft) && !Util.T(PREDICT)) B.last.frT = 1.8; // the shooter's face drops (TS: && B.last.tm != null, always true)
                         if (!Util.T(B.ft) && (B.rim ?? 99) < BR + 2.5) fx(new Fx { k = "ooh" }); // in and out: the whole building groans
+                        else if (!Util.T(B.ft) && (B.rim ?? 99) > BR + 4 && !(B.gl != null && T - B.gl.Value <= B.age)) fx(new Fx { k = "air", v = B.last.tm, tm = B.last.tm, hasTm = true, n = B.last.n }); // AIR BALL (crowd chant)
                         if (hasB(p, "GC") && Rng.R() < 0.3) cm("board", p.n);
                     }
                     if (Util.T(B.sh) && B.last != null && !Util.T(B.sc)) B.last.heat = Math.Max(-2, B.last.heat - 1);
