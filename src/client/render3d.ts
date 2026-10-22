@@ -6,7 +6,8 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
 import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike, stepLen } from "../core/sim";
 import { gar, CP } from "./canvas";
-import { V, fmt } from "./view";
+import { V, fmt, HSRS, targetMs, hsrMode } from "./view";
+import { makeDynRes } from "./hsr";
 import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
 import { makeFx, type Fx } from "./fx3d";
 
@@ -1204,14 +1205,24 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       lastQ = -1,
       lastFX: any = null;
     // Ladder (top -> bottom): everything; -SSAO; -reflection; -bloom/blur; -shadows; 85% res; 75% res.
+    // With HSR Auto the internal resolution is the first lever (dynamic resolution, below); the ladder only moves
+    // once that sits at its floor, and its 85% / 75% rungs scale the internal resolution, never the output.
+    const dres = makeDynRes();
+    dres.set(V.QL >= 2 ? 0.8 : 0.67);
+    let hsrK = "";
     const fxLevel = () => {
       const ql = V.QL,
-        on = V.FX && ql > 0;
+        on = V.FX && ql > 0,
+        hm = hsrMode(),
+        lk = lvl >= 2 ? 1 : lvl === 1 ? 0.85 : 0.75;
       // the drawing buffer follows the canvas's real size on screen (it was a fixed 960x540 x DPR stretched to the
       // window: blurry on a 1080p laptop); capped per tier, then the frame-rate ladder's 85% / 75% rungs
       const scr = Math.max(1, (C.clientWidth || 960) / 960);
-      R.setPixelRatio(Math.min(scr * Math.min(devicePixelRatio || 1, DPR[ql]), MAXR[ql]) * (lvl >= 2 ? 1 : lvl === 1 ? 0.85 : 0.75));
+      R.setPixelRatio(Math.min(scr * Math.min(devicePixelRatio || 1, DPR[ql]), MAXR[ql]) * (hm ? 1 : lk));
       R.setSize(960, 540, false);
+      const hs = hm ? Math.max(0.25, (V.HSR === 1 ? dres.scale : HSRS[V.HSR]) * lk) : 1;
+      hsrK = hm + ":" + V.HSR;
+      fx.setHSR(hm, hs);
       fx.setLevel(on && lvl >= 4 ? ql : on ? 0 : 0, on && lvl >= 4, 960, 540, on && lvl >= 6 && ql >= 2);
       setMirror(on && ql >= 2 && lvl >= 5);
       const wantShadow = ql > 0 && lvl >= 3;
@@ -1446,6 +1457,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           lvl = 6;
           fxLevel();
           settle = now + 700; // shader compiles after a change: don't judge these frames
+        } else if (hsrK !== hsrMode() + ":" + V.HSR) {
+          fxLevel(); // HSR mode / upscaler changed in the settings
+          settle = now + 500;
         }
         const tot = sc[0] + sc[1];
         if (tot !== lastTot) {
@@ -1464,10 +1478,15 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         else if (lastR && !paused) {
           // (frames around a hidden tab / pause menu are skipped via settle); a crawling machine is judged every 5 frames
           ema = ema * 0.9 + Math.min(1000, now - lastR) * 0.1;
+          // HSR Auto: dynamic resolution holds the target frame time first (every 12 frames)
+          const dynOn = V.HSR === 1 && hsrMode() > 0,
+            lo = 0.45;
+          if (dynOn && dres.update(ema, targetMs(), lo, 1, now)) (fxLevel(), (settle = now + 120), (settleN = 1));
           if (++nf > (ema > 60 ? 5 : 30)) {
             nf = 0;
             const old = lvl;
-            if (ema > 21) {
+            if (ema > 21 && dynOn && dres.scale > lo + 0.001) good = 0; // still room to lower the resolution
+            else if (ema > 21) {
               good = 0;
               if (lvl > 0) lvl = Math.max(0, lvl - (ema > 34 ? 2 : 1));
               else if (QL > 0 && ++bad >= 2) {
@@ -1477,7 +1496,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               }
             } else if (ema < 13 && lvl < 6 && ++good >= 4) (good = 0), lvl++;
             if (lvl !== old) (fxLevel(), (settle = now + 350), (settleN = 2));
-            V.perf = { fps: Math.round(1000 / ema), lvl, scale: R.getPixelRatio() };
+            const h = fx.hsr;
+            V.perf = { fps: Math.round(1000 / ema), ms: Math.round(ema * 10) / 10, lvl, scale: R.getPixelRatio(), hsr: h.mode, hs: h.scale, iw: h.w, ih: h.h, ow: h.ow, oh: h.oh };
           }
         }
         lastR = paused ? 0 : now;
@@ -1677,6 +1697,12 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           shake *= 0.86;
         }
         cam.updateMatrixWorld();
+        // HSR velocity pass: the objects that move on their own (rigs + ball); the static world reprojects from depth
+        const dl = fx.dyn;
+        dl.length = 0;
+        dl.push(ball);
+        for (const p of P) if ((p as any).gl) dl.push((p as any).gl.G);
+        for (const r of refs) dl.push(r.gl.G);
         // Motion blur only for the big moments (dunks, dribble moves of the followed player), never on camera pans.
         const fast = p0 && ((p0.mvT > 0 && p0 === B.owner) || (B.dk && B.age < 0.4)) ? 1 : 0;
         fx.setMotion(fast && p0 ? Math.cos(Math.PI / 2 - p0.f) * 0.006 : 0, 0, fast && V.FX && QL >= 2 && lvl >= 5 ? 1 : 0);
