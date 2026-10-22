@@ -351,7 +351,7 @@ export function encodeFx(max: number): any[] {
     else if (f.k === "s") out.push([f.id, "s", f.f, f.d, f.ty, f.v]);
     else if (f.k === "x") out.push([f.id, "x", f.v]);
     else if (f.k === "end") out.push([f.id, "e", f.w]);
-    else if (f.k === "shake" || f.k === "slow" || f.k === "chant" || f.k === "ooh") out.push([f.id, "g", f.k, f.v || 0]);
+    else if (f.k === "shake" || f.k === "slow" || f.k === "chant" || f.k === "ooh" || f.k === "air") out.push([f.id, "g", f.k, f.v || 0]);
     else if (f.k === "whistle") out.push([f.id, "g", "whistle", f.tm]);
     else if (f.k === "duck") out.push([f.id, "g", "duck", r(f.x) * 1000 + r(f.y)]);
     else if (f.k === "ban") out.push([f.id, "b", f.s, f.sub || "", f.c]);

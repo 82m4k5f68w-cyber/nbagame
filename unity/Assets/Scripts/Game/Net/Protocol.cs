@@ -457,7 +457,7 @@ namespace Hoops.Game.Net
                     case "s": o.Add(new List<object> { id, "s", f.f, f.d, f.ty, f.v }); break;
                     case "x": o.Add(new List<object> { id, "x", f.v }); break;
                     case "end": o.Add(new List<object> { id, "e", f.w }); break;
-                    case "shake": case "slow": case "chant": case "ooh": o.Add(new List<object> { id, "g", f.k, double.IsNaN(f.v) ? 0 : f.v }); break;
+                    case "shake": case "slow": case "chant": case "ooh": case "air": o.Add(new List<object> { id, "g", f.k, double.IsNaN(f.v) ? 0 : f.v }); break;
                     case "whistle": o.Add(new List<object> { id, "g", "whistle", f.tm }); break;
                     case "duck": o.Add(new List<object> { id, "g", "duck", r(f.x ?? 0) * 1000 + r(f.y ?? 0) }); break;
                     case "ban": o.Add(new List<object> { id, "b", f.s, f.sub ?? "", f.c }); break;
