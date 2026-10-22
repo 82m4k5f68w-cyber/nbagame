@@ -88,9 +88,9 @@ const NICK: Record<string, string> = { TIMBERWOLVES: "WOLVES", CAVALIERS: "CAVS"
 const isV = (ch: string) => "AEIOUY".indexOf(ch) >= 0;
 function onsetOf(c: string): string {
   if (!c) return "";
-  if (c.startsWith("SH") || c.startsWith("CH") && c.length > 1 && c[1] === "H") return c.startsWith("SH") ? "sh" : "ch";
-  if (c.startsWith("TH")) return "f";
-  if (c.startsWith("PH")) return "f";
+  if (c.startsWith("SH")) return "sh";
+  if (c.startsWith("CH")) return "ch";
+  if (c.startsWith("TH") || c.startsWith("PH")) return "f";
   const x = c[0];
   return x === "D" ? "d" : x === "T" ? "t" : x === "K" || x === "C" || x === "Q" || x === "G" ? "k" : x === "P" || x === "B" ? "p" : x === "F" ? "f" : x === "V" ? "v" : x === "S" || x === "Z" || x === "X" ? "s" : x === "J" ? "ch" : x === "M" ? "m" : x === "N" ? "n" : x === "L" ? "l" : x === "R" ? "r" : x === "W" ? "w" : "";
 }
@@ -409,6 +409,7 @@ export class ChantJob {
         an = 0,
         avT = 0,
         anT = 0,
+        f0 = f0b,
         nf = -1;
       for (let k = a0; k < a1; k++) {
         if ((k - a0) % 32 === 0) {
@@ -479,12 +480,10 @@ export class ChantJob {
             if (c && nf !== c[0]) (fn.set(c[0], c[1]), (nf = c[0]));
           }
           drift += (r() - 0.5) * 0.06 - drift * 0.02;
+          f0 = f0b * Math.pow(2, (s.p + det + drift - 1.5 * Math.min(1, Math.max(0, u / D))) / 12); // shouts fall
         }
         av += (avT * s.a - av) * 0.02;
         an += (anT * s.a - an) * 0.08;
-        const u = k / CSR - st,
-          fall = -1.5 * Math.min(1, Math.max(0, u / D)),
-          f0 = f0b * Math.pow(2, (s.p + det + drift + fall) / 12);
         ph += f0 / CSR;
         if (ph >= 1) ph -= 1;
         const nz = r() * 2 - 1;

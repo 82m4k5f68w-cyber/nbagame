@@ -33,7 +33,7 @@ export const V = {
   backend: "", // what is actually drawing (shown in settings)
   stick: null as null | number[], // virtual joystick (mobile)
   stk: null as null | { cx: number; cy: number; ox: number; oy: number; sp: number }, // its drawn state (HUD px)
-  perf: null as null | { fps: number; lvl: number; scale: number },
+  perf: null as null | { fps: number; lvl: number; scale: number; hsr?: number; hs?: number; iw?: number; ih?: number; ow?: number; oh?: number; ms?: number },
   onResize: null as null | (() => void),
   shake: null as null | ((a: number) => void),
   focus: 0, // which controller this screen follows (CT index)
@@ -46,8 +46,23 @@ export const V = {
   CB: 0, // colorblind-safe meter colors
   BIGM: 0, // bigger shot meter
   AUTO: 0, // auto-release assist (hold & release style)
+  // H2K Super Resolution (render3d / fx3d / hsr.ts): 0 Off (native), 1 Auto (dynamic resolution), 2 Quality 67%,
+  // 3 Balanced 58%, 4 Performance 50%, 5 Ultra Performance 33%. Default by GPU: discrete Off, integrated / Chromebook /
+  // software Auto. HSRM upscaler: 0 auto (temporal; spatial on Low), 1 temporal, 2 spatial.
+  HSR: TIER >= 2 ? 0 : 1,
+  HSRM: 0,
+  TFPS: 60, // dynamic-resolution target: 60 / 90 / 120 / 144 / 240, 0 = the display refresh ("Max")
+  HZ: 0, // measured display refresh (rAF intervals); 0 = not measured yet
+  FPSC: 0, // FPS counter on the HUD
   focusP: () => P[(CT[V.focus] || CT[0] || { idx: 0 }).idx],
 };
+/** HSR mode names and fixed internal scales (index = V.HSR). */
+export const HSRN = ["Off", "Auto", "Quality", "Balanced", "Performance", "Ultra Perf."];
+export const HSRS = [1, 1, 0.67, 0.58, 0.5, 0.33];
+/** Target frame time for dynamic resolution (ms): never faster than the display can show. */
+export const targetMs = () => Math.max(V.TFPS ? 1000 / V.TFPS : 0, 1000 / (V.HZ || 60));
+/** The upscaler HSR uses now: 0 none, 1 temporal, 2 spatial (Low tier / chosen). */
+export const hsrMode = () => (!V.HSR ? 0 : V.HSRM === 2 || (V.HSRM === 0 && V.QL === 0) ? 2 : 1);
 export const CAMN = ["Broadcast", "2K Style", "Baseline", "Player Lock"];
 export const MN = ["Arrow 2", "Bar (feet)", "Bar (head)", "Ring"];
 
