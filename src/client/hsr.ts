@@ -205,7 +205,7 @@ const sm = (fs: string, u: Record<string, any>, g3 = false) =>
   new THREE.ShaderMaterial({ uniforms: Object.fromEntries(Object.entries(u).map(([k, v]) => [k, { value: v }])), vertexShader: VQ, fragmentShader: fs, depthTest: false, depthWrite: false, glslVersion: g3 ? THREE.GLSL3 : null });
 
 export interface HSR {
-  /** jitter the camera for this frame (temporal); returns false when nothing was applied */
+  /** jitter the camera's projection for this frame (temporal) */
   jitter(cam: THREE.PerspectiveCamera, inW: number, inH: number): void;
   unjitter(cam: THREE.PerspectiveCamera): void;
   /** temporal resolve + RCAS to the screen */
@@ -226,7 +226,6 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
   const prep = [new THREE.WebGLRenderTarget(1, 1, NR), new THREE.WebGLRenderTarget(1, 1, NR)];
   const vel = new THREE.WebGLRenderTarget(1, 1, { ...NR, depthBuffer: true });
   const up = new THREE.WebGLRenderTarget(1, 1, HF);
-  const sharpT = new THREE.WebGLRenderTarget(1, 1, HF);
   const velM = new THREE.ShaderMaterial({
     uniforms: { prevModel: { value: new THREE.Matrix4() }, curVP: { value: new THREE.Matrix4() }, prevVP: { value: new THREE.Matrix4() }, prevBones: { value: null } },
     vertexShader: VelVS,
@@ -370,7 +369,7 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
       // 2) prep: per-pixel motion + depths (low res)
       const pr = prep[cur],
         pp = prep[1 - cur];
-      Object.assign(prepM.uniforms.tDepth, { value: depth });
+      prepM.uniforms.tDepth.value = depth;
       prepM.uniforms.tVel.value = vel.texture;
       prepM.uniforms.hasVel.value = hasVel;
       prepM.uniforms.invVPj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
@@ -426,7 +425,7 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
       doReset = true;
     },
     dispose() {
-      [...hist, ...prep, vel, up, sharpT].forEach((r) => r.dispose());
+      [...hist, ...prep, vel, up].forEach((r) => r.dispose());
       [velM, prepM, resM, rcasM, easuM].forEach((m) => m.dispose());
       q.dispose();
     },
