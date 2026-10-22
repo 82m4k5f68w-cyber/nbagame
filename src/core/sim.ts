@@ -1600,7 +1600,7 @@ export function launch(p: Player) {
     }
   }
   B.gn = gr;
-  B.gd = gr && mk ? 1 : 0; // an intended green make: greenGuide (bstep) sees it through the iron, bodies and spin drift
+  B.gd = gr && mk && hum ? 1 : 0; // a human's green (CPU odds stay calibrated with the iron): greenGuide (bstep) sees it through the iron, bodies and spin drift
   B.ghx = hx;
   if (gr && hum) txtW("GREEN!", p.x, p.y, 95, "#2ecc71");
   if (gr && !PREDICT && !(p.celT > 0)) {
