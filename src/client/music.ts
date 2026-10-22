@@ -4,6 +4,7 @@
 //            ("Charge!", the "De-fense" chant, "Let's go ___"), stingers after big plays
 //  hype    - a team on a run: four-on-the-floor kick, claps, bass and organ stabs over the top
 //  clutch  - heartbeat kick, ticking hats and a low drone
+import { actx } from "./audio";
 let AC: AudioContext | null = null,
   OUT: GainNode | null = null,
   NX = 0, // next 16th-note time
@@ -29,9 +30,11 @@ export const music = {
   dead: 0, // dead ball: the organ plays riffs
   offense: 1, // 1 = the home (your) team has the ball
   riffQ: [] as string[], // riffs waiting for the next bar
+  duck: 1, // crowd.ts: the organ backs off while the crowd chants
+  onRiff: null as null | ((name: string, t: number) => void), // a riff starts at audio time t (crowd call-and-response)
   start() {
     try {
-      AC = AC || new AudioContext();
+      AC = AC || actx();
       if (!OUT) {
         OUT = AC.createGain();
         OUT.gain.value = 0;
@@ -51,7 +54,7 @@ export const music = {
   /** Called every frame: schedule ~120 ms ahead and fade between modes. */
   tick() {
     if (!AC || !OUT) return;
-    const vol = !this.on || this.mode === "off" ? 0 : this.mode === "organ" ? 0.045 : this.mode === "calm" ? 0.03 : 0.06;
+    const vol = (!this.on || this.mode === "off" ? 0 : this.mode === "organ" ? 0.045 : this.mode === "calm" ? 0.03 : 0.06) * this.duck;
     OUT.gain.value += (vol - OUT.gain.value) * 0.05;
     if (OUT.gain.value < 0.001 && vol === 0) {
       NX = AC.currentTime + 0.05;
@@ -70,7 +73,11 @@ export const music = {
       root = PROG[bar],
       m = this.mode;
     // riffs start on a bar line and play over any mode
-    if (k === 0 && !this.cur && this.riffQ.length) this.cur = { r: RIFFS[this.riffQ.shift()!], s0: s };
+    if (k === 0 && !this.cur && this.riffQ.length) {
+      const nm = this.riffQ.shift()!;
+      this.cur = { r: RIFFS[nm], s0: s };
+      if (this.onRiff) this.onRiff(nm, t);
+    }
     if (this.cur) {
       const rel = (s - this.cur.s0 + 64) % 64;
       for (const n of this.cur.r) if (n[0] === rel) organ(t, mtof(n[1]), n[2] * S16 * 0.95, 0.9);

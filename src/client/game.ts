@@ -5,13 +5,16 @@ import { cfg, P, B, CT, MYP, mkT, RO, ALL, nChoices, ovr } from "../core/sim";
 import { TM, PRE, ov2, formOf } from "../core/data";
 import { lookOf, faceOf } from "./look";
 import { rapInit } from "../core/physics";
-import { V, CAMN, MN, pr } from "./view";
+import { V, CAMN, MN, pr, HSRN } from "./view";
+import { measureRefresh } from "./hsr";
 import { glInit } from "./render3d";
 import { court2d, hoop2d, net2d, player2d, ball2d, scene3c, segs3c, paint3c, ball3c, pj, CP, setCanvasCtx } from "./canvas";
 import { setHudCtx, hud, hud2, contestFx, meter, openMark, assignMark, passMark, replayHud } from "./hud";
 import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
 import { audio } from "./audio";
 import { music } from "./music";
+import { crowd } from "./crowd";
+import type { CCtx } from "./chantdir";
 import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr, drawPlayerIntro, introLen, timingGrade, drawTiming } from "./broadcast";
 import { NET } from "./net/session";
 import { openStudio, studioPose } from "./animview";
@@ -84,6 +87,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   mkT();
   rapInit();
   if (o.r3d) glInit(C);
+  measureRefresh((hz) => (V.HZ = hz)); // "Your screen: N Hz" (Display settings) + the Max target
   if (!V.GL) C.style.visibility = o.r3d ? "visible" : "hidden";
   cfg.input = (c) => {
     if ((c as any).remote) return NET.remoteInput(c);
@@ -116,7 +120,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   });
   addEventListener("blur", () => !NET.role && !G.RPL && G.S === "play" && pause());
   GS.booted = 1;
-  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, openMode, MODE, shareLink, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, openMode, MODE, shareLink, crowd, CC, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
   if (o.quick) {
     SEL = o.quick.sel;
@@ -138,6 +142,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
 
 // ---------------- settings (remembered per browser) ----------------
 let QPICK = 0; // the player chose a graphics level (saved; otherwise the GPU-tier default applies)
+let HPICK = 0; // same for the HSR mode
 function loadSet() {
   try {
     const o = JSON.parse(localStorage.getItem("h2k_set") || "{}");
@@ -148,11 +153,17 @@ function loadSet() {
     if (o.q2 != null) (V.QL = o.q2), (QPICK = 1); // only an explicit pick (old saves always carried "q" = the default)
     if (o.fx != null) V.FX = !!o.fx;
     if (o.gp != null) V.GPU = o.gp ? 1 : 0;
+    if (o.hs != null) (V.HSR = o.hs), (HPICK = 1);
+    if (o.hm != null) V.HSRM = o.hm;
+    if (o.tf != null) V.TFPS = o.tf;
+    if (o.fc != null) V.FPSC = o.fc;
     if (o.my != null) MYM = o.my;
     if (o.df != null) cfg.DIFF = o.df;
     if (o.ql) QLEN = o.ql;
     if (o.ru) Object.assign(cfg, o.ru);
     for (const k of ["COMM", "VOICE", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO"]) if (o[k] != null) (V as any)[k] = o[k];
+    if (o.CROWD != null) crowd.vol = o.CROWD;
+    if (o.CHANTS != null) crowd.on = o.CHANTS;
   } catch (e) {}
 }
 function saveSet() {
@@ -160,15 +171,25 @@ function saveSet() {
     localStorage.setItem(
       "h2k_set",
       JSON.stringify({
-        m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q2: QPICK ? V.QL : undefined, fx: V.FX ? 1 : 0, gp: V.GPU, my: MYM, df: cfg.DIFF, ql: QLEN,
+        m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q2: QPICK ? V.QL : undefined, fx: V.FX ? 1 : 0, gp: V.GPU, hs: HPICK ? V.HSR : undefined, hm: V.HSRM, tf: V.TFPS, fc: V.FPSC, my: MYM, df: cfg.DIFF, ql: QLEN,
         ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
         COMM: V.COMM, VOICE: V.VOICE, MUSIC: V.MUSIC, INTRO: V.INTRO, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
+        CROWD: crowd.vol, CHANTS: crowd.on,
       }),
     );
   } catch (e) {}
 }
 
+/** Display refresh line under Target FPS: browsers never draw faster than the screen refreshes. */
+const hzLine = () => {
+  const hz = V.HZ;
+  if (!hz) return "Auto resolution holds this frame rate. Browsers draw at most once per screen refresh.";
+  const t = V.TFPS || hz;
+  return `Your screen: ${hz} Hz. ` + (t > hz ? `Browsers can't draw faster than the screen, so ${V.TFPS} acts as Max (${hz} FPS).` : V.TFPS ? `Auto resolution aims for ${t} FPS.` : `Auto resolution aims for every refresh (${hz} FPS).`);
+};
+
 // ---------------- menus ----------------
+const CRN: [string, number][] = [["Off", 0], ["Low", 35], ["Medium", 70], ["Full", 100]]; // crowd volume
 const opt = (b: string, k: string, v: number, cur: number, l: string) => `<button data-${k}="${v}" class="${cur === v ? "on" : ""}">${l}</button>`;
 const onoff = (k: string, cur: number) => opt("", k, 1, cur ? 1 : 0, "On") + opt("", k, 0, cur ? 1 : 0, "Off");
 const keyName = (c: string) => (c || "?").replace(/^Key/, "").replace(/^Digit/, "").replace("ShiftLeft", "L-Shift").replace("ShiftRight", "R-Shift").replace("Space", "Space");
@@ -425,10 +446,10 @@ export function menu() {
     <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
    <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
    <div class="opts"><h3>RULES</h3><b>FOULS</b>${onoff("rf", cfg.FOULS)}<b>SHOT CLOCK</b>${onoff("rc", cfg.SCLK)}<b>VIOLATIONS</b>${onoff("rv", cfg.VIOL)}<i class="sm">3 seconds · 8 seconds · goaltending</i><b>FATIGUE &amp; SUBS</b>${onoff("rs", cfg.SUBS)}<i class="sm">5v5: reserves check in, 6 fouls = out</i><b>BADGES &amp; HOT ZONES</b>${onoff("rb", cfg.BADGES)}</div>
-   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>PLAYER INTROS</b>${onoff("pi", V.INTRO)}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
+   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>PLAYER INTROS</b>${onoff("pi", V.INTRO)}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>CROWD</b>${CRN.map(([l, v]) => opt("", "vc", v, crowd.vol, l)).join("")}<b>CROWD CHANTS</b>${onoff("ch", crowd.on)}<i class="sm">DE-FENSE · LET'S GO · M-V-P · AIR BALL · boos and roars</i><b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
    <div class="opts"><h3>ACCESSIBILITY</h3><b>METER COLORS</b>${opt("", "cb", 0, V.CB, "Standard")}${opt("", "cb", 1, V.CB, "Colorblind-safe")}<b>METER SIZE</b>${opt("", "bm", 0, V.BIGM, "Normal")}${opt("", "bm", 1, V.BIGM, "Large")}<b>AUTO-RELEASE ASSIST</b>${onoff("au", V.AUTO)}<i class="sm">hold &amp; release only: lets go near the top for you</i></div>
    <div class="opts keys"><h3>CONTROLS</h3>${ACTS.map(([id, l]) => `<button data-key="${id}" title="Click, then press a key">${esc(l)} <kbd>${esc(keyName(KMAP[id]))}</kbd></button>`).join("")}<button id="krs" class="ghost">Reset keys</button></div>
-   ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i></div>` : ""}
+   ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i><b>SUPER RESOLUTION (HSR)</b>${HSRN.map((n, i) => opt("", "hsr", i, V.HSR, n)).join("")}<i class="sm">Draws fewer pixels and rebuilds a sharp full-size image from several frames (temporal upscaling, like DLSS / FSR 2, no AI). Quality 67% · Balanced 58% · Performance 50% · Ultra 33% of the width; Auto moves it to hold your target.</i><b>UPSCALER</b>${opt("", "hsrm", 0, V.HSRM, "Auto")}${opt("", "hsrm", 1, V.HSRM, "Temporal")}${opt("", "hsrm", 2, V.HSRM, "Spatial")}<i class="sm">Spatial (FSR 1 style) is lighter for very old GPUs; Auto uses it on Low graphics.</i><b>TARGET FPS</b>${[60, 90, 120, 144, 240, 0].map((f) => opt("", "tfps", f, V.TFPS, f ? String(f) : "Max")).join("")}<i class="sm" id="hzline">${hzLine()}</i><b>FPS COUNTER</b>${onoff("fpsc", V.FPSC)}</div>` : ""}
    <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p></aside></div>`;
   const re = () => (saveSet(), menu());
   const cyc = (who: string, d: number) => {
@@ -483,6 +504,14 @@ export function menu() {
   grp("cm", (v) => (V.CAMM = v));
   grp("q", (v) => ((V.QL = v), (QPICK = 1), (V.QAUTO = "")));
   grp("fx", (v) => (V.FX = !!v));
+  grp("hsr", (v) => ((V.HSR = v), (HPICK = 1)));
+  grp("hsrm", (v) => (V.HSRM = v));
+  grp("tfps", (v) => {
+    V.TFPS = v;
+    const h = ov.querySelector("#hzline");
+    if (h) h.textContent = hzLine();
+  });
+  grp("fpsc", (v) => (V.FPSC = v));
   grp("gp", (v) => {
     // the renderer is created once at start: save, then reload into the menu with the new one
     V.GPU = v;
@@ -501,6 +530,8 @@ export function menu() {
     if (v === 2) comment("clutch");
   });
   grp("mu", (v) => (V.MUSIC = v));
+  grp("vc", (v) => (crowd.vol = v));
+  grp("ch", (v) => (crowd.on = v));
   grp("pi", (v) => (V.INTRO = v));
   grp("ru", (v) => ((V.RUMBLE = v), rumble(0.6, 200)));
   grp("cb", (v) => (V.CB = v));
@@ -786,13 +817,13 @@ function drainFx() {
   for (const f of G.FX) {
     if (f.id <= lastFx) continue;
     lastFx = f.id;
+    crowd.fx(f, CC); // chants: airballs, big plays, calls against the home team ...
     if (f.k === "s") audio.snd(f.f, f.d, f.ty, f.v);
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
     else if (f.k === "x") audio.EXC = f.v;
     else if (f.k === "end" && cfg.GM === "game") endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200); // let the confetti fall first
     else if (f.k === "shake") (V.shake && V.shake(f.v), rumble(f.v, 120 + f.v * 200));
     else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
-    else if (f.k === "chant") audio.chant();
     else if (f.k === "ban") {
       banner(f.s, f.sub, f.c);
       if (/RUN|CLUTCH/.test(f.s)) music.riff("stinger");
@@ -810,6 +841,66 @@ function drainFx() {
     else if (f.k === "duck") (V as any).crowdReact && (V as any).crowdReact("duck", f.x, f.y);
     else if (f.k === "tg" && CT.some((c) => P[c.idx] && P[c.idx].n === f.n)) timingGrade(f);
   }
+}
+// ---------------- crowd chants (crowd.ts / chantdir.ts) ----------------
+const CC: CCtx = {
+  live: false, over: false, home: 0, pos: 0, sc: [0, 0], q: 1, clutch: false, mom: 0, run: [0, 0], dead: false,
+  ft: 0, ftTm: 0, ftN: "", ftStar: false, bench: "", names: ["", ""], speaking: false,
+  tmOf: (n: string) => {
+    for (const p of P) if (p.n === n) return p.tm;
+    for (let t = 0; t < 2; t++) for (const p of G.ROST[t] || []) if (p.n === n) return t;
+    return -1;
+  },
+};
+let ccP: any = null,
+  ccFt: any = null,
+  ccFtN = 0,
+  ccBenchT = 0;
+music.onRiff = crowd.onRiff;
+/** The home crowd's favourite when he sits (5v5 with subs): WE WANT <NAME>. */
+function benchFav() {
+  if (cfg.NP !== 5 || !G.ROST[CC.home]) return "";
+  let best: any = null;
+  for (const p of G.ROST[CC.home]) if (!P.includes(p) && ovr(p) >= 84 && (!best || ovr(p) > ovr(best))) best = p;
+  return best ? best.n : "";
+}
+/** Fill the director's context in place (no per-frame garbage). */
+function crowdCtx() {
+  if (P !== ccP) {
+    ccP = P;
+    CC.names[0] = G.cl[0] || "";
+    CC.names[1] = G.cl[1] || "";
+    crowd.prepare(CC.names);
+  }
+  const game = G.gameLike(),
+    TS = G.TS,
+    fq: any = G.ftq;
+  CC.live = G.S === "play" && !G.RPL && !REEL && game;
+  CC.over = G.S === "over" && game && !G.RPL;
+  CC.pos = G.pos;
+  CC.sc = G.sc;
+  CC.q = G.q;
+  CC.clutch = !!TS.clutch;
+  CC.mom = TS.mom || 0;
+  CC.run = TS.run;
+  CC.dead = G.rs > 0 || G.inb > 0 || !!fq;
+  if (fq !== ccFt) (ccFt = fq), fq && ccFtN++;
+  CC.ft = fq && fq.s ? ccFtN : 0;
+  if (CC.ft) {
+    const s = fq.s;
+    let top = 0;
+    for (const p of P) if (p.tm === s.tm && p !== s) top = Math.max(top, p.stt.pts);
+    CC.ftTm = s.tm;
+    CC.ftN = s.n;
+    CC.ftStar = (s.heat || 0) >= 2 || (s.stt.pts >= 10 && s.stt.pts >= top);
+  }
+  if (G.T - ccBenchT > 1 || G.T < ccBenchT) {
+    ccBenchT = G.T;
+    const b = benchFav();
+    if (b && b !== CC.bench) crowd.need("wewant", b);
+    CC.bench = b;
+  }
+  CC.speaking = !!V.VOICE && typeof speechSynthesis !== "undefined" && speechSynthesis.speaking;
 }
 /** Auto-release assist: aim for the middle of this shot's green window, with a little human error. */
 let arP: any = null,
@@ -1332,6 +1423,27 @@ function overlay() {
       meter(P[c.idx]);
     }
   NET.hud(X);
+  if (V.FPSC) fpsHud();
+}
+/** Optional FPS counter (Display settings): frames per second drawn + HSR's internal / output resolution. */
+let fpsT = 0,
+  fpsE = 16.7;
+function fpsHud() {
+  const n = performance.now();
+  if (fpsT) fpsE = fpsE * 0.92 + Math.min(250, n - fpsT) * 0.08;
+  fpsT = n;
+  const pf = V.perf,
+    h = pf && pf.hsr ? ` · HSR ${pf.hsr === 1 ? "T" : "S"} ${Math.round((pf.hs || 1) * 100)}% ${pf.iw}x${pf.ih}→${pf.ow}x${pf.oh}` : pf && pf.ow ? ` · native ${pf.ow}x${pf.oh}` : "";
+  const t = Math.round(1000 / fpsE) + " FPS" + h;
+  X.save();
+  X.font = "700 11px ui-monospace, monospace";
+  X.textAlign = "right";
+  X.fillStyle = "rgba(0,0,0,.55)";
+  const w = X.measureText(t).width + 10;
+  X.fillRect(956 - w, 524, w, 15);
+  X.fillStyle = "#9fe7ff";
+  X.fillText(t, 951, 535);
+  X.restore();
 }
 
 // ---------------- loop ----------------
@@ -1411,8 +1523,11 @@ function loop(n: number) {
                   ? "hype"
                   : "organ";
   }
+  music.duck = crowd.duck();
   music.tick();
+  crowdCtx();
   drainFx();
+  crowd.tick(dt, CC);
   dribSound();
   for (const o of TX) {
     o.t -= dt;

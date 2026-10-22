@@ -309,11 +309,13 @@ export class ChantJob {
   private sp: Spec;
   private r: () => number;
   private v = 0; // next voice
-  private stage = 0; // 0 voices, 1 hits, 2 section copies + room, 3 done
+  private stage = 0; // 0 voices, 1 hits, 2 section copies, 3-4 reverb L/R, 5 normalize, 6 done
   private f1 = new BP();
   private f2 = new BP();
   private f3 = new BP();
   private fn = new BP();
+  private gr: Float32Array[][] = [];
+  private wet: Float32Array | null = null;
   constructor(
     public id: string,
     public word: string,
@@ -332,17 +334,17 @@ export class ChantJob {
     const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
     let now = t0;
     do {
+      // units of work: one voice, one percussion hit, the section copies, the reverb per channel, normalize
       if (this.stage === 0) {
         if (this.v < this.sp.nv) this.voice(this.v++);
-        else this.stage = 1;
+        else (this.stage = 1), (this.v = 0);
       } else if (this.stage === 1) {
-        for (const h of this.sp.hits) this.hit(h);
-        this.stage = 2;
-      } else if (this.stage === 2) {
-        this.room();
-        this.stage = 3;
-        this.done = true;
-      }
+        if (this.v < this.sp.hits.length) this.hit(this.sp.hits[this.v], this.v++);
+        else this.stage = 2;
+      } else if (this.stage === 2) (this.copies(), (this.stage = 3));
+      else if (this.stage === 3) (this.verb(0), (this.stage = 4));
+      else if (this.stage === 4) (this.verb(1), (this.stage = 5));
+      else (this.norm(), (this.stage = 6), (this.done = true));
       now = typeof performance !== "undefined" ? performance.now() : Date.now();
     } while (!this.done && now - t0 < budget);
     this.ms += now - t0;
@@ -501,54 +503,83 @@ export class ChantJob {
     }
   }
 
-  private hit(h: Hit) {
+  /** A stomp (18 feet) or a clap (22 hands) as a stereo grain - rendered twice / three times per chant and reused. */
+  private grain(k: number, v: number) {
+    const key = k * 4 + v;
+    if (this.gr[key]) return this.gr[key];
     const r = this.r,
-      { L, R } = this,
-      N = L.length;
-    if (h.k === 0) {
-      // stomp: a section of feet on the floor / risers
+      n = Math.floor((k === 0 ? 0.26 : 0.1) * CSR),
+      L = new Float32Array(n),
+      R = new Float32Array(n),
+      off = Math.floor(0.03 * CSR);
+    if (k === 0) {
+      // stomp: a section of feet on the floor / risers (decaying sine thump with a pitch drop + a thud of low noise)
+      const e1 = Math.exp(-16 / CSR),
+        e2 = Math.exp(-35 / CSR),
+        e3 = Math.exp(-30 / CSR);
       for (let i = 0; i < 18; i++) {
-        const t = h.t + (r() + r() - 1) * 0.02,
-          a0 = Math.max(0, Math.floor(t * CSR)),
-          n = Math.floor(0.2 * CSR),
+        const a0 = Math.max(0, off + Math.floor((r() + r() - 1) * 0.02 * CSR)),
           pan = r() * 2 - 1,
-          g = (h.a * (0.6 + r() * 0.4)) / 6,
+          g = (0.6 + r() * 0.4) / 6,
           gl = g * Math.cos(((pan + 1) * Math.PI) / 4),
           gr = g * Math.sin(((pan + 1) * Math.PI) / 4),
           f0 = 85 + r() * 30;
         let ph = 0,
-          lp = 0;
-        for (let k = 0; k < n && a0 + k < N; k++) {
-          const u = k / CSR,
-            f = 42 + (f0 - 42) * Math.exp(-u * 30);
-          ph += f / CSR;
+          lp = 0,
+          a = 1,
+          b = 1.2,
+          sw = f0 - 42;
+        for (let q = a0; q < n; q++) {
+          ph += (42 + sw) / CSR;
+          sw *= e3;
           lp += (r() * 2 - 1 - lp) * 0.08;
-          const y = Math.sin(2 * Math.PI * ph) * Math.exp(-u * 16) + lp * 1.2 * Math.exp(-u * 35);
-          L[a0 + k] += y * gl;
-          R[a0 + k] += y * gr;
+          const y = Math.sin(2 * Math.PI * ph) * a + lp * b;
+          a *= e1;
+          b *= e2;
+          L[q] += y * gl;
+          R[q] += y * gr;
         }
       }
-    } else if (h.k === 1) {
+    } else {
       // clap: many hands, three micro-bursts each
-      const bp = this.fn;
+      const bp = this.fn,
+        ed = Math.exp(-260 / CSR),
+        et = Math.exp(-60 / CSR),
+        m = Math.floor(0.011 * CSR),
+        hn = Math.floor(0.07 * CSR);
       for (let i = 0; i < 22; i++) {
-        const t = h.t + (r() + r() - 1) * 0.014,
-          a0 = Math.max(0, Math.floor(t * CSR)),
-          n = Math.floor(0.07 * CSR),
+        const a0 = Math.max(0, off + Math.floor((r() + r() - 1) * 0.014 * CSR)),
           pan = r() * 2 - 1,
-          g = (h.a * (0.5 + r() * 0.5)) / 5,
+          g = (0.5 + r() * 0.5) / 5,
           gl = g * Math.cos(((pan + 1) * Math.PI) / 4),
           gr = g * Math.sin(((pan + 1) * Math.PI) / 4);
         bp.clear();
         bp.set(1000 + r() * 1200, 1.3);
-        for (let k = 0; k < n && a0 + k < N; k++) {
-          const u = k / CSR,
-            e = Math.exp(-((u % 0.011) * 260)) * (u < 0.033 ? 1 : Math.exp(-(u - 0.033) * 60));
-          const y = bp.run(r() * 2 - 1) * e * 3;
-          L[a0 + k] += y * gl;
-          R[a0 + k] += y * gr;
+        let e = 1,
+          tl = 3;
+        for (let q = 0; q < hn && a0 + q < n; q++) {
+          if (q % m === 0 && q < 3 * m) e = 1;
+          if (q >= 3 * m) tl *= et;
+          const y = bp.run(r() * 2 - 1) * e * tl;
+          e *= ed;
+          L[a0 + q] += y * gl;
+          R[a0 + q] += y * gr;
         }
       }
+    }
+    return (this.gr[key] = [L, R]);
+  }
+
+  private hit(h: Hit, i: number) {
+    const r = this.r,
+      { L, R } = this,
+      N = L.length;
+    if (h.k <= 1) {
+      const g = this.grain(h.k, i % (h.k === 0 ? 2 : 3)),
+        gL = g[0],
+        gR = g[1],
+        a0 = Math.floor(h.t * CSR) - Math.floor(0.03 * CSR);
+      for (let q = Math.max(0, -a0); q < gL.length && a0 + q < N; q++) (L[a0 + q] += gL[q] * h.a), (R[a0 + q] += gR[q] * h.a);
     } else if (h.k === 2) {
       // a fan's whistle (two fingers): a bright glide with a wobble
       const a0 = Math.max(0, Math.floor(h.t * CSR)),
@@ -564,6 +595,7 @@ export class ChantJob {
         const u = k / n,
           f = (u < 0.3 ? fa + (fb - fa) * (u / 0.3) : fb - (fb - fa) * 0.4 * ((u - 0.3) / 0.7)) * (1 + 0.01 * Math.sin(k * 0.012));
         ph += f / CSR;
+        if (ph >= 1) ph -= 1;
         const e = u < 0.05 ? u / 0.05 : u > 0.85 ? (1 - u) / 0.15 : 1;
         const y = Math.sin(2 * Math.PI * ph) * e;
         L[a0 + k] += y * gl;
@@ -573,21 +605,28 @@ export class ChantJob {
       // the wash under a roar: broadband crowd noise swelling and dying away
       const a0 = Math.max(0, Math.floor(h.t * CSR)),
         n = Math.floor(h.d * CSR),
-        bl = new BP(),
-        br = new BP();
+        bl = this.f1,
+        br = this.f2,
+        k35 = Math.floor(0.35 * CSR),
+        ed = Math.exp(-1.1 / CSR);
+      bl.clear();
+      br.clear();
       bl.set(900, 0.5);
       br.set(1000, 0.5);
+      let e = 1;
       for (let k = 0; k < n && a0 + k < N; k++) {
-        const u = k / CSR,
-          e = (u < 0.35 ? u / 0.35 : Math.exp(-(u - 0.35) * 1.1)) * h.a * 0.35;
-        L[a0 + k] += bl.run(r() * 2 - 1) * e;
-        R[a0 + k] += br.run(r() * 2 - 1) * e;
+        let v;
+        if (k < k35) v = k / k35;
+        else (v = e), (e *= ed);
+        v *= h.a * 0.35;
+        L[a0 + k] += bl.run(r() * 2 - 1) * v;
+        R[a0 + k] += br.run(r() * 2 - 1) * v;
       }
     }
   }
 
-  /** Section copies (x3 heads), the arena (pre-delay + Schroeder reverb), then normalize to a .9 peak. */
-  private room() {
+  /** Section copies: the voices again 19 ms (sides swapped) and 37 ms later = three times the heads. */
+  private copies() {
     const { L, R } = this,
       N = L.length;
     if (this.sp.nv > 0) {
@@ -600,44 +639,83 @@ export class ChantJob {
         R[k] = rr + L[k - d1] * 0.7 + R[k - d2] * 0.55;
       }
     }
-    for (let ch = 0; ch < 2; ch++) {
-      const x = ch ? R : L,
+  }
+  /** The arena: pre-delay + Schroeder reverb (4 damped combs, 2 all-passes), one channel per call. */
+  private verb(ch: number) {
+    const N = this.L.length,
+      wet = this.wet || (this.wet = new Float32Array(N)),
+      pre = Math.floor(0.025 * CSR);
+    {
+      const x = ch ? this.R : this.L,
         sp = ch ? 23 : 0,
-        pre = Math.floor(0.025 * CSR),
-        CB = [1557, 1617, 1491, 1422].map((v) => Math.floor(((v + sp) * CSR) / 44100)),
-        AP = [556, 341].map((v) => Math.floor(((v + sp) * CSR) / 44100)),
-        cb = CB.map((n) => new Float32Array(n)),
-        ci = [0, 0, 0, 0],
-        cf = [0, 0, 0, 0],
-        ap = AP.map((n) => new Float32Array(n)),
-        ai = [0, 0],
-        wet = new Float32Array(N),
+        n0 = Math.floor(((1557 + sp) * CSR) / 44100),
+        n1 = Math.floor(((1617 + sp) * CSR) / 44100),
+        n2 = Math.floor(((1491 + sp) * CSR) / 44100),
+        n3 = Math.floor(((1422 + sp) * CSR) / 44100),
+        m0 = Math.floor(((556 + sp) * CSR) / 44100),
+        m1 = Math.floor(((341 + sp) * CSR) / 44100),
+        c0 = new Float32Array(n0),
+        c1 = new Float32Array(n1),
+        c2 = new Float32Array(n2),
+        c3 = new Float32Array(n3),
+        p0 = new Float32Array(m0),
+        p1 = new Float32Array(m1),
         fb = 0.8,
-        damp = 0.3;
+        dm = 0.3;
+      let i0 = 0,
+        i1 = 0,
+        i2 = 0,
+        i3 = 0,
+        j0 = 0,
+        j1 = 0,
+        s0 = 0,
+        s1 = 0,
+        s2 = 0,
+        s3 = 0;
       for (let k = 0; k < N; k++) {
-        const inp = k >= pre ? x[k - pre] * 0.15 : 0;
-        let y = 0;
-        for (let c = 0; c < 4; c++) {
-          const buf = cb[c],
-            o = buf[ci[c]];
-          cf[c] = o * (1 - damp) + cf[c] * damp;
-          buf[ci[c]] = inp + cf[c] * fb;
-          if (++ci[c] >= buf.length) ci[c] = 0;
-          y += o;
-        }
-        for (let a = 0; a < 2; a++) {
-          const buf = ap[a],
-            o = buf[ai[a]];
-          buf[ai[a]] = y + o * 0.5;
-          y = o - y * 0.5;
-          if (++ai[a] >= buf.length) ai[a] = 0;
-        }
+        const inp = k >= pre ? x[k - pre] * 0.15 : 0,
+          o0 = c0[i0],
+          o1 = c1[i1],
+          o2 = c2[i2],
+          o3 = c3[i3];
+        s0 = o0 * (1 - dm) + s0 * dm;
+        s1 = o1 * (1 - dm) + s1 * dm;
+        s2 = o2 * (1 - dm) + s2 * dm;
+        s3 = o3 * (1 - dm) + s3 * dm;
+        c0[i0] = inp + s0 * fb;
+        c1[i1] = inp + s1 * fb;
+        c2[i2] = inp + s2 * fb;
+        c3[i3] = inp + s3 * fb;
+        if (++i0 >= n0) i0 = 0;
+        if (++i1 >= n1) i1 = 0;
+        if (++i2 >= n2) i2 = 0;
+        if (++i3 >= n3) i3 = 0;
+        let y = o0 + o1 + o2 + o3;
+        const q0 = p0[j0];
+        p0[j0] = y + q0 * 0.5;
+        y = q0 - y * 0.5;
+        if (++j0 >= m0) j0 = 0;
+        const q1 = p1[j1];
+        p1[j1] = y + q1 * 0.5;
+        y = q1 - y * 0.5;
+        if (++j1 >= m1) j1 = 0;
         wet[k] = y;
       }
       for (let k = 0; k < N; k++) x[k] += wet[k] * 1.4;
     }
+  }
+  /** Normalize to a .9 peak (levels are set at playback). */
+  private norm() {
+    const { L, R } = this,
+      N = L.length;
+    this.wet = null;
     let pk = 1e-6;
-    for (let k = 0; k < N; k++) pk = Math.max(pk, Math.abs(L[k]), Math.abs(R[k]));
+    for (let k = 0; k < N; k++) {
+      const a = L[k] < 0 ? -L[k] : L[k],
+        b = R[k] < 0 ? -R[k] : R[k];
+      if (a > pk) pk = a;
+      if (b > pk) pk = b;
+    }
     const g = 0.9 / pk;
     for (let k = 0; k < N; k++) (L[k] *= g), (R[k] *= g);
   }
