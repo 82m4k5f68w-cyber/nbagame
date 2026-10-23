@@ -26,7 +26,18 @@ const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let C: HTMLCanvasElement, X: CanvasRenderingContext2D, ov: HTMLElement;
 let SEL = 0,
   MYM = 0;
-export const GS = { mode: "5v5-3d", booted: 0, onEnd: null as null | ((won: boolean) => void), onMode: null as null | ((f: any) => void) };
+export const GS = {
+  mode: "5v5-3d",
+  booted: 0,
+  onEnd: null as null | ((won: boolean) => void),
+  onMode: null as null | ((f: any) => void),
+  // LIFE hooks (src/life): idle = the shell sleeps (no sim / draw / keys) while the life world runs; onFx sees every
+  // sim FX; onQuit replaces the pause menu's quit; life = a LIFE game (no hub record / My Player XP).
+  idle: 0,
+  life: 0,
+  onFx: null as null | ((f: any) => void),
+  onQuit: null as null | (() => void),
+};
 
 function fatal(m: string) {
   ov.style.display = "flex";
@@ -108,6 +119,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   bindInput();
   C.parentElement!.addEventListener("pointerdown", () => endIntro());
   addEventListener("keydown", (e) => {
+    if (GS.idle) return;
     if (G.S === "intro" && (e.code === "Space" || e.code === "Enter" || e.code === "Escape")) {
       e.preventDefault();
       return endIntro();
@@ -692,7 +704,7 @@ function pause() {
   if (psc) psc.onclick = scouting;
   $("#prs").onclick = () => (MODE.kind ? replayMode() : startLocal(SEL, { j: lastJ }));
   if (V.r3d) $("#pan").onclick = () => studio();
-  $("#pq").onclick = menu;
+  $("#pq").onclick = () => (GS.onQuit ? GS.onQuit() : menu());
   ($("#pr") as HTMLElement).focus();
 }
 /** Pause → Scouting report: what each side is living on lately (decayed shot records), who is hot / cold / smothered,
@@ -777,6 +789,25 @@ const endIntro = () => {
 };
 export const esc = (s: any) => String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
 
+/** LIFE: start a game from the life world - kind "game" (5v5 vs team index opp) or a mode strip key (street3, 3pt,
+ *  practice, ...). My Player plays; difficulty and quarter length come from the life save. */
+export function lifeStart(o: { kind: string; sel: number; opp: number; ql: number; diff: number }) {
+  GS.idle = 0;
+  GS.life = 1;
+  const cb = crowd.bus();
+  if (cb) cb.gain.value = crowd.vol / 100;
+  MYM = 1;
+  IN.MP2 = 0;
+  SEL = o.sel;
+  OPP = o.opp;
+  QLEN = o.ql;
+  cfg.DIFF = o.diff;
+  cfg.NP = 5;
+  NP0 = 5;
+  ov.classList.remove("mu-on");
+  if (o.kind === "game") startLocal(SEL, { j: OPP });
+  else openMode(o.kind);
+}
 /** Local game: P1 on team 0 (+ P2 on team 1 for local 2-player). */
 export function startLocal(i: number, o: { j?: number } = {}) {
   stopMode();
@@ -817,6 +848,7 @@ function drainFx() {
   for (const f of G.FX) {
     if (f.id <= lastFx) continue;
     lastFx = f.id;
+    if (GS.onFx) GS.onFx(f);
     crowd.fx(f, CC); // chants: airballs, big plays, calls against the home team ...
     if (f.k === "s") audio.snd(f.f, f.d, f.ty, f.v);
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
@@ -1082,10 +1114,10 @@ function endGame() {
     pct = (m: number, a: number) => (a ? Math.round((100 * m) / a) : 0);
   const inSeason = !NET.role && seasonResult(w);
   // My Player career XP (offline games vs the CPU)
-  const myp = !NET.role && !IN.MP2 && cfg.MYM && G.gameLike() ? tm(me).find((p) => p.my) : null,
+  const myp = !NET.role && !IN.MP2 && cfg.MYM && G.gameLike() && !GS.life ? tm(me).find((p) => p.my) : null,
     xpr = myp ? awardXP(myp, w) : null;
   // record (offline games vs the CPU only)
-  if (!NET.role && !IN.MP2) {
+  if (!NET.role && !IN.MP2 && !GS.life) {
     const r = rec.get();
     if (w) (r.w++, (r.st = Math.max(1, r.st + 1)), (r.best = Math.max(r.best, r.st)));
     else (r.l++, (r.st = 0));
@@ -1460,6 +1492,15 @@ const studio = (at = 0) => {
 };
 function loop(n: number) {
   requestAnimationFrame(loop);
+  if (GS.idle) {
+    // LIFE world on screen: the arena sleeps (music fades out, crowd bed muted)
+    last = n;
+    music.mode = "off";
+    music.tick();
+    const cb = crowd.bus();
+    if (cb) cb.gain.value = 0;
+    return;
+  }
   if (document.hidden) {
     last = n; // paused while hidden: no catch-up burst on return
     return;

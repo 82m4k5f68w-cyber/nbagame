@@ -1450,6 +1450,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         return this.draw();
       },
       draw() {
+        if (R.info) (R.info.autoReset = false), R.info.reset(); // per-frame totals (stats(): all passes of a frame)
         const QL = V.QL,
           now = performance.now(),
           fdt = Math.min(0.1, (now - lastF) / 1000);
