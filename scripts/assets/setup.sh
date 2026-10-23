@@ -8,7 +8,7 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 T="${H2K_TOOLS:-/home/user/tools}"
 BLENDER_VER="${BLENDER_VER:-4.5.15}"      # LTS; official tarball from download.blender.org
 KTX_VER="${KTX_VER:-4.4.2}"               # KhronosGroup/KTX-Software GitHub release (toktx, ktx)
-PY_PKGS="mediapipe==0.10.21 piper-tts==1.3.0 numpy opencv-python-headless onnxruntime"
+PY_PKGS="mediapipe==1.1.1 piper-tts==1.8.0 numpy opencv-python-headless onnxruntime"
 VOICES="en_US-norman-medium en_US-joe-medium en_US-john-medium"   # public domain / CC0 datasets only (see assets/LICENSES.md)
 POSE_MODEL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task"
 mkdir -p "$T/bin" "$T/dl"

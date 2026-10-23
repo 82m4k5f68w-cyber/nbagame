@@ -151,7 +151,7 @@ function play(lines: string[], seed: number) {
     c = mk(),
     log: string[] = [],
     starts: CReq[] = [],
-    emit = (r: CReq) => (starts.push(r), log.push(r.t.toFixed(3) + " " + r.id + " " + (r.word || "-") + " " + r.side + " " + r.gain.toFixed(3) + " " + r.delay.toFixed(3)));
+    emit = (r: CReq) => (starts.push(r), log.push(Math.round(r.t * 1e6) + " " + r.id + " " + (r.word || "-") + " " + r.side + " " + Math.round(r.gain * 1e6) + " " + Math.round(r.delay * 1e6)));
   for (const ln of lines) {
     const [st, fxs] = ln.split(" | "),
       a = st.split(" ");
