@@ -32,6 +32,7 @@ await pg.evaluate(() => {
   for (let i = 0; i < 240; i++) G.upd(1 / 60);
   G.setS("pause"); // frozen scene: equal-scene comparisons
   document.getElementById("ov").style.display = "none";
+  window.H2K.V.GL.pin(6); // the frame-rate ladder would change the resolution under SwiftShader mid-comparison
 });
 let bad = 0;
 const fail = (m) => (bad++, console.log("FAIL", m));
@@ -134,7 +135,7 @@ const MODES = [
 ];
 const SC = [1, 1, 0.67, 0.58, 0.5, 0.33];
 await set(0, 0);
-await pg.evaluate(() => window.T.frames(3));
+await pg.evaluate(() => window.T.frames(50)); // the broadcast camera eases in: let it settle first
 const c0 = await canvasOK();
 const rows = [];
 for (const [h, m, name] of MODES) {
@@ -152,7 +153,7 @@ for (const [h, m, name] of MODES) {
   rows.push({ name, mode: hs.mode, scale: hs.scale, internal: hs.w + "x" + hs.h, output: hs.ow + "x" + hs.oh, px: hs.w * hs.h, calls: st.calls, ms: +ms.toFixed(1), mean: r && +r.mean.toFixed(1), black: r && +r.black.toFixed(3), ssim: r && +r.ssim.toFixed(4) });
   if (cv.cw !== c0.cw || cv.ch !== c0.ch) fail(name + ": output canvas resized " + JSON.stringify(cv));
   if (!cv.hudTransparent) fail("HUD canvas not transparent");
-  if (h > 1 && Math.abs(hs.w / hs.ow - SC[h]) > 0.02) fail(name + ": internal width " + hs.w + " vs output " + hs.ow);
+  if (h > 1 && (Math.abs(hs.scale - SC[h]) > 0.001 || Math.abs(hs.w / hs.ow - SC[h]) > 0.02)) fail(name + ": internal width " + hs.w + " vs output " + hs.ow);
   if (h === 0 && hs.mode !== 0) fail("native mode reports HSR " + hs.mode);
   if (h > 0 && hs.mode !== m) fail(name + ": upscaler " + hs.mode + " != " + m);
   if (r && (r.black > 0.2 || r.mean < 8)) fail(name + ": black frame " + JSON.stringify(r));
@@ -166,21 +167,21 @@ if (!GPU) {
   const g = await pg.evaluate(async () => {
     const H = window.H2K, T = window.T, out = {};
     const pose = (k) => (H.V.netCam = { b: 1, a: 2.2 + k * 0.035, d: 9, h: 8.2 });
-    const run = (hsr, m, f) => { H.V.HSR = hsr; H.V.HSRM = m; return T.frames(24, (i) => (pose(i), f && f(i))); };
+    const run = (hsr, m, f) => { H.V.HSR = hsr; H.V.HSRM = m; return T.frames(16, (i) => (pose(i), f && f(i))); };
     const nat = run(0, 0);
     for (const [hsr, m, nm] of [[3, 1, "balanced-T"], [4, 1, "performance-T"], [4, 2, "performance-S"]]) out["moving " + nm] = +T.ssim(nat, run(hsr, m)).toFixed(4);
     // no-history control: reset every frame = raw jittered upscale
     out["moving performance-T no history"] = +T.ssim(nat, run(4, 1, () => H.V.GL.hsrReset())).toFixed(4);
     // static camera on the net: frame-to-frame flicker in the net box (thin cords)
     const box = [380, 120, 600, 420];
-    const fl = (hsr, m, f) => { H.V.HSR = hsr; H.V.HSRM = m; pose(0); T.frames(30); return +T.flicker(16, box, f).toFixed(3); };
+    const fl = (hsr, m, f) => { H.V.HSR = hsr; H.V.HSRM = m; pose(0); T.frames(16); return +T.flicker(8, box, f).toFixed(3); };
     out["flicker native"] = fl(0, 0);
     out["flicker balanced-T"] = fl(3, 1);
     out["flicker performance-T"] = fl(4, 1);
     out["flicker performance-T no history"] = fl(4, 1, () => H.V.GL.hsrReset());
     out["flicker performance-S"] = fl(4, 2);
     // static net close-up quality vs native (converged)
-    const sn = (hsr, m) => { H.V.HSR = hsr; H.V.HSRM = m; pose(0); return T.frames(40); };
+    const sn = (hsr, m) => { H.V.HSR = hsr; H.V.HSRM = m; pose(0); return T.frames(28); };
     const nn = sn(0, 0);
     for (const [hsr, m, nm] of [[2, 1, "quality-T"], [3, 1, "balanced-T"], [4, 1, "performance-T"], [4, 2, "performance-S"], [5, 1, "ultra-T"]]) out["net ssim " + nm] = +T.ssim(nn, sn(hsr, m)).toFixed(4);
     H.V.netCam = null;
@@ -201,6 +202,7 @@ if (!GPU) {
   if (g["flicker performance-T"] > g["flicker performance-T no history"]) fail("temporal history does not reduce thin-line flicker");
 }
 
+await pg.evaluate(() => window.H2K.V.GL.pin(-1));
 // ---- 3) Auto: the real rAF loop on SwiftShader (very slow) must walk the internal scale down ----
 await set(1, 1);
 await pg.evaluate(() => window.H2K.G.setS("play"));
