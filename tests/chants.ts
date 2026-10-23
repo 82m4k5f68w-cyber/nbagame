@@ -82,7 +82,14 @@ const has = (a: string[], s: string) => a.some((x) => x === s || x.startsWith(s 
   ok(!!r && r.id === "charge" && r.delay === CHARGE_AT, "organ CHARGE riff -> crowd answers on the beat");
   d = new ChantDir(rng32(3)); c = mk(); c.pos = 1; run(d, c, 0.1);
   ok(!d.riff("charge", c), "no CHARGE! while the visitors have it");
-  ok(d.riff("defense", c)?.id === "defense" || d.riff("defense", c) === null, "organ DE-FENSE riff answered (or skipped by chance)");
+  let dfn = 0;
+  for (let s = 0; s < 20; s++) {
+    const d2 = new ChantDir(rng32(50 + s)), c2 = mk();
+    c2.pos = 1;
+    run(d2, c2, 0.1);
+    if (d2.riff("defense", c2)?.id === "defense") dfn++;
+  }
+  ok(dfn >= 5 && dfn < 20, "organ DE-FENSE riff: the crowd joins in on the bar (" + dfn + "/20)");
   // dead-ball fillers: LET'S GO <home>, ROCK YOU, WE WANT <bench favourite>, visitors' LET'S GO on a road run
   const seen = new Set<string>();
   for (let s = 0; s < 80; s++) {
@@ -240,7 +247,7 @@ function play(lines: string[], seed: number) {
   };
   ok(shot(99, false) === "air1", "missed everything -> air FX (team 1): " + shot(99, false));
   ok(shot(5, false) === "ooh", "in and out -> ooh: " + shot(5, false));
-  ok(shot(9, false) === "", "off the iron -> nothing: " + shot(9, false));
+  ok(shot(7, false) === "", "off the iron -> nothing: " + shot(7, false));
   ok(shot(99, true) === "", "off the glass only -> not an airball: " + shot(99, true));
 }
 
