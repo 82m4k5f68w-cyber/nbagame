@@ -12,6 +12,15 @@ const FLAGS: Record<string, { np: number; r3d: boolean }> = {
 };
 let hubRaf = 0;
 function go(k: string, my: number, mp: number, online: any = false, quick: any = null) {
+  if (k === "life") {
+    // LIFE (src/life): its own open-world shell; the game engine boots later, on the first game
+    cancelAnimationFrame(hubRaf);
+    hubRaf = -1;
+    (document.getElementById("hcss") as HTMLStyleElement).media = "not all";
+    document.getElementById("hub")!.remove();
+    import("../life/index").then((m) => m.startLife());
+    return;
+  }
   if (k === "classic") {
     const h = classicHtml.replace('<script src="game.js"></script>', () => "<script>\n" + classicJs + "</script>");
     document.open();
@@ -33,6 +42,7 @@ const pre = (window as any).__H2K_MODE;
 // a shared replay link (#reel=...&m=<mode>) opens straight into that mode and plays the clip
 const reelM = /[#&]reel=/.test(location.hash) ? new URLSearchParams(location.hash.slice(1)).get("m") : null;
 if (pre) go(pre, 0, 0);
+else if (/[?&]life\b/.test(location.search)) go("life", 0, 0);
 else if (reelM && /^(5v5|1v1)-(2d|3d)$/.test(reelM)) go(reelM, 0, 0);
 else hubInit();
 function hubInit() {
@@ -40,6 +50,7 @@ function hubInit() {
 const MODES=[
 {t:'5v5 NBA GAME',ic:'🏆',c:'#1d428a',big:1,tags:['FULL COURT','4 QUARTERS','FOULS · FTs','REPLAYS','BOX SCORE'],hot:'FLAGSHIP',d:'The full game: 7 teams, motion offense, screens, rebounds, free throws and technicals, Pro Play animation, instant replays and a box score.',b:[['▶ 3D','5v5-3d'],['▶ 2D','5v5-2d',0,0,1]]},
 {t:'1V1 SHOWDOWN',ic:'⚡',c:'#7b3fb5',tags:['PICK ANY STAR','FULL COURT'],d:'Pick any of 70 players and duel the CPU with the same physics, fouls and tempo shooting.',b:[['▶ 3D','1v1-3d'],['▶ 2D','1v1-2d',0,0,1]]},
+{t:'LIFE',ic:'🏙️',c:'#b8860b',big:1,tags:['OPEN WORLD','HS → COLLEGE → NBA','CLASSES + QUIZZES','PHONE + HOOPR'],hot:'NEW',d:'Live it: walk your town, go to class (on time!), eat, train, post on Hoopr, sign with a college, survive Draft Night - and play every game for real in the engine.',b:[['▶ START LIFE','life']]},
 {t:'MY PLAYER',ic:'🧬',c:'#e8541e',tags:['CREATE-A-PLAYER','SAVED'],d:'Build your own player: ratings, shot form, height, build and look. Play him in 5v5 or 1v1.',b:[['▶ 5v5 3D','5v5-3d',1],['▶ 1v1 3D','1v1-3d',1],['5v5 2D','5v5-2d',1,0,1],['1v1 2D','1v1-2d',1,0,1]]},
 {t:'PLAY ONLINE',ic:'🌐',c:'#0b7a8a',online:1,tags:['NO INSTALL','ROOM CODES','ANTI-LAG'],hot:'NEW',d:'Host a game and send your friend the 4-letter code, or type a friend\'s code below. Works right on this page.',b:[['▶ Host 5v5','5v5-3d',0,0,0,'host'],['▶ Host 1v1','1v1-3d',0,0,0,'host'],['Lobby (2D)','5v5-2d',0,0,1,1]]},
 {t:'LOCAL 2-PLAYER',ic:'🎮',c:'#0f8a5f',tags:['SAME DEVICE','KEYBOARD'],d:'Two people, one keyboard. Player 2 gets the right-side team with arrows, Enter, / . and ,',b:[['▶ 5v5 3D','5v5-3d',0,1],['▶ 1v1 3D','1v1-3d',0,1]]},

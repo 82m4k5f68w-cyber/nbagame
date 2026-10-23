@@ -1,0 +1,134 @@
+{
+ "city": {
+  "file": "assets/models/city.glb",
+  "bytes": 387512,
+  "models": [
+   "building-a",
+   "building-b",
+   "building-c",
+   "building-d",
+   "building-e",
+   "building-g",
+   "building-h",
+   "building-k",
+   "building-skyscraper-a",
+   "building-skyscraper-c",
+   "low-detail-building-a",
+   "low-detail-building-b",
+   "low-detail-building-wide-a",
+   "detail-awning",
+   "detail-parasol-a",
+   "building-type-a",
+   "building-type-c",
+   "building-type-b",
+   "building-type-e",
+   "building-type-h",
+   "building-type-o",
+   "building-type-t",
+   "fence-1x3",
+   "fence-low",
+   "planter",
+   "tree-large",
+   "tree-small",
+   "driveway-short",
+   "path-long"
+  ],
+  "source": [
+   "City Kit Commercial 2.1",
+   "City Kit Suburban 2.0"
+  ]
+ },
+ "roads": {
+  "file": "assets/models/roads.glb",
+  "bytes": 59408,
+  "models": [
+   "road-straight",
+   "road-bend",
+   "road-crossroad",
+   "road-intersection",
+   "road-end",
+   "road-side",
+   "construction-cone",
+   "construction-barrier",
+   "dumpster",
+   "light-square",
+   "light-curved",
+   "traffic-light",
+   "road-sign-stop",
+   "electricity-pole",
+   "tile-low"
+  ],
+  "source": [
+   "City Kit Roads 2.2"
+  ]
+ },
+ "cars": {
+  "file": "assets/models/cars.glb",
+  "bytes": 216144,
+  "models": [
+   "sedan",
+   "suv",
+   "taxi",
+   "police",
+   "van",
+   "truck",
+   "hatchback-sports",
+   "ambulance",
+   "delivery",
+   "garbage-truck",
+   "firetruck",
+   "race",
+   "cone",
+   "box"
+  ],
+  "source": [
+   "Car Kit 3.1"
+  ]
+ },
+ "furniture": {
+  "file": "assets/models/furniture.glb",
+  "bytes": 169792,
+  "models": [
+   "bench",
+   "benchCushion",
+   "chair",
+   "chairCushion",
+   "chairModernCushion",
+   "stoolBar",
+   "table",
+   "tableRound",
+   "tableCoffee",
+   "loungeSofa",
+   "loungeChair",
+   "trashcan",
+   "speaker",
+   "televisionModern",
+   "pottedPlant",
+   "plantSmall1",
+   "lampSquareFloor",
+   "bookcaseOpen",
+   "bedSingle",
+   "bedDouble",
+   "desk",
+   "kitchenFridge",
+   "kitchenStove",
+   "kitchenSink",
+   "rugRectangle",
+   "cardboardBoxClosed",
+   "doorway",
+   "wall",
+   "wallWindow",
+   "floorFull",
+   "stairs",
+   "ceilingFan",
+   "laptop",
+   "computerScreen",
+   "radio",
+   "kitchenBar",
+   "stoolBarSquare"
+  ],
+  "source": [
+   "Furniture Kit 2.0"
+  ]
+ }
+}
