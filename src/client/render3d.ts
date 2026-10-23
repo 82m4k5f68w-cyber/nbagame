@@ -1429,6 +1429,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     V.shake = (a: number) => (shake = Math.max(shake, a));
     V.GL = {
       netM: () => netI.instanceMatrix.array, // the drawn net strands (tests: they must move)
+      // tests / FPS counter: HSR state (mode, scale, internal + output size), last frame's draw calls, the ladder rung
+      stats: () => ({ hsr: { ...fx.hsr, core: undefined, st: fx.hsr.core ? fx.hsr.core.stats : null }, calls: R.info.render.calls, tris: R.info.render.triangles, lvl, pr: R.getPixelRatio(), dyn: fx.dyn.length }),
+      hsrReset: () => fx.hsr.core && fx.hsr.core.reset(),
       dbg: () => ({ refs: refs.map((r) => [Math.round(r.x), Math.round(r.y), r.gl.G.visible]), street: streetOn, cs: !!CS.react }),
       proj(x: number, y: number, z: number) {
         const v = PV.set(x, y, z).project(cam);

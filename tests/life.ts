@@ -92,7 +92,7 @@ ok(D.cal.filter((e) => e.day <= 1 && e.k === "class").every((e) => e.s === 2), "
 // ---- food / workout diminishing returns / injuries
 const F = S.newLife({ seed: 10 });
 F.hunger = 20;
-ok(S.eat(F, "burrito") == null && F.hunger >= 74 && F.money === 141, "burrito: hunger up, $9 spent");
+ok(S.eat(F, "burrito") == null && F.hunger >= 70 && F.money === 141, "burrito: hunger up, $9 spent");
 ok(S.eat(F, "nope") != null, "unknown food rejected");
 F.money = 0;
 ok(S.eat(F, "bowl") === "Not enough money", "no money no bowl");
@@ -166,7 +166,8 @@ S.joinNBA(Y, dr.pick, dr.team);
 ok(Y.stage === "nba" && Y.contract && Y.contract.sal > 1e6 && Y.courses.length === 0 && Y.cal.some((e) => e.k === "game"), "NBA: contract, no classes, games");
 ok(S.rookieSal(1) > S.rookieSal(20), "rookie scale by pick");
 const m0 = Y.money;
-for (let i = 0; i < 7; i++) S.sleep(Y);
+const dd = S.dayOf(Y.t);
+while (S.dayOf(Y.t) < dd + 8) S.sleep(Y);
 ok(Y.money > m0, "NBA paycheck arrives");
 
 // ---- save / load

@@ -352,7 +352,7 @@ export function screenPosts(L: Life, arr: any, max = 8): Post[] {
     const h = a.handle.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_]/g, "").slice(0, 20),
       nm = String(a.name || h).slice(0, 30);
     if (h.length < 3 || !a.text.trim() || a.text.length > 280) continue;
-    if (REAL.test(a.text) || REAL.test(h) || REAL.test(nm)) continue;
+    if (REAL.test(a.text) || REAL.test(h.replace(/_/g, " ")) || REAL.test(nm)) continue;
     const c = clean(a.text);
     if (c.hit || clean(nm).hit || clean(h).hit) continue;
     const cap = Math.max(50, L.followers * 0.5),

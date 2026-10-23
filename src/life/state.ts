@@ -523,7 +523,7 @@ export function sleep(L: Life, hrs?: number): number {
     const alarm = L.set.alarm || 7 * 60;
     mins = (alarm - m + DAY) % DAY;
     if (mins < 180) mins += DAY; // a sleep is at least ~3 h; otherwise the next alarm
-    if (mins > 15 * 60) mins = 15 * 60; // sleeping through the day: capped
+    if (mins > 12 * 60) mins = 8 * 60; // going to bed in the morning / afternoon: an 8-hour sleep, not a 20-hour one
   }
   const e0 = L.energy;
   // quality: late nights and an empty stomach sleep worse
