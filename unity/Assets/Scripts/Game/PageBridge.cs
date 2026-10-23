@@ -178,6 +178,7 @@ namespace Hoops.Game
                 case "cmt": Broadcast.COMM = i > 0; Broadcast.VOICE = i == 2; Prefs("h2k_comm", i > 0); Prefs("h2k_voice", i == 2); break;
                 case "pi": Broadcast.INTRO = on; Prefs("h2k_intro", on); break;
                 case "mu": Music.On = on; Prefs("h2k_music", on); break;
+                case "ch": Chants.On = on; Prefs("h2k_chants", on); break; // crowd chants on/off
                 case "ru": Broadcast.RUMBLE = on; Prefs("h2k_rumble", on); break;
                 case "cb": Hud.CB = on; Prefs("h2k_cb", on); break;
                 case "bm": Hud.BIGM = on; Prefs("h2k_bigm", on); break;

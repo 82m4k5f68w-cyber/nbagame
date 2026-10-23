@@ -1,6 +1,7 @@
 // Sound for the Unity build: the browser's WebAudio synths (src/client/audio.ts) rendered into AudioClips from code -
 // tones for the sim's "s" effects, ball bounces (heard by watching the ball's height, like the browser), whistle,
-// the crowd's "ooh", "DE-FENSE!" chants and a looping crowd bed that swells with excitement. No audio assets.
+// the crowd's "ooh" and a looping crowd bed that swells with excitement. No audio assets. Crowd chants (DE-FENSE,
+// LET'S GO, M-V-P, AIR BALL, boos, roars ...) live in Chants.cs: every FX is forwarded there.
 using System;
 using System.Collections.Generic;
 using Hoops.Core;
@@ -13,10 +14,11 @@ namespace Hoops.Game
     {
         const int SR = 44100;
         AudioSource fx, bed;
-        AudioClip bounce, whistle, ooh, chant;
+        AudioClip bounce, whistle, ooh;
         readonly Dictionary<long, AudioClip> tones = new();
         public static float EXC = 0.3f;
-        public static float CrowdVol = 1f; // crowd bed level (page Audio settings, PageBridge)
+        public static float CrowdVol = 1f; // crowd level: bed, "ooh" and chants (page Audio settings "vc", PageBridge)
+        public static float Hush = 1f; // Chants: the bed goes quiet for a clutch home free throw
         double lastBz;
         bool wasDown;
         System.Random rnd = new System.Random(5);
@@ -33,7 +35,7 @@ namespace Hoops.Game
             bounce = Bounce();
             whistle = Make("whistle", 0.5f, (i, t) => Math.Sin(2 * Math.PI * (2900 * t + 140 / (2 * Math.PI * 38) * -Math.Cos(2 * Math.PI * 38 * t))) * Env(t, 0.02, 0.32, 0.45) * 0.6);
             ooh = Ooh();
-            chant = Chant();
+            if (GetComponent<Chants>() == null) gameObject.AddComponent<Chants>();
         }
 
         double Noise() => rnd.NextDouble() * 2 - 1;
@@ -84,23 +86,6 @@ namespace Hoops.Game
 
         AudioClip Ooh() => Make("ooh", 1.4f, (i, t) => Noise() * (t < 0.25 ? t / 0.25 : Math.Exp(-(t - 0.25) * 4)) * 1.6, bp: (520, 6f), bpf: t => 520 * Math.Pow(330 / 520.0, Math.Min(1, t / 1.2)));
 
-        AudioClip Chant()
-        {
-            // "DE-FENSE!": two crowd bursts, low then high
-            var lo = Make("c1", 0.4f, (i, t) => Noise() * Env(t, 0.05, 0.05, 0.36), bp: (660, 2.5f));
-            var hi = Make("c2", 0.4f, (i, t) => Noise() * Env(t, 0.05, 0.05, 0.36), bp: (880, 2.5f));
-            int off = (int)(0.42 * SR);
-            var a = new float[off + hi.samples];
-            var b = new float[lo.samples];
-            lo.GetData(b, 0);
-            Array.Copy(b, a, b.Length);
-            hi.GetData(b, 0);
-            for (int i = 0; i < b.Length; i++) a[off + i] += b[i];
-            var c = AudioClip.Create("chant", a.Length, 1, SR, false);
-            c.SetData(a, 0);
-            return c;
-        }
-
         /// <summary>The sim's snd(f, d, type, v): an oscillator with an exponential decay (cached per sound).</summary>
         public void Tone(double f, double d, string ty, double v)
         {
@@ -122,12 +107,12 @@ namespace Hoops.Game
         /// <summary>Consume the sim's sound effects (called before GameMain drains FX).</summary>
         public void OnFx(Fx f)
         {
+            Chants.OnFx(f);
             switch (f.k)
             {
                 case "s": Tone(f.f, f.d, f.ty, f.v); break;
                 case "whistle": fx.PlayOneShot(whistle, 0.8f); break;
-                case "ooh": fx.PlayOneShot(ooh, 0.9f); break;
-                case "chant": fx.PlayOneShot(chant, 0.8f); break;
+                case "ooh": fx.PlayOneShot(ooh, 0.9f * CrowdVol); break;
                 case "x": EXC = Mathf.Min(1, EXC + (float)Math.Max(0.15, f.v) * 0.6f); break;
             }
         }
@@ -136,7 +121,7 @@ namespace Hoops.Game
         {
             float dt = Time.unscaledDeltaTime;
             EXC = Mathf.Max(0.2f, EXC - dt * 0.25f);
-            bed.volume = (0.08f + 0.45f * EXC) * CrowdVol;
+            bed.volume = (0.08f + 0.45f * EXC) * CrowdVol * Hush;
             // dribble / loose-ball bounces: the ball reached the floor this frame
             bool down = B.z < BR + 1.5;
             if (down && !wasDown && lastBz > B.z && (S == "play" || RPL != null))

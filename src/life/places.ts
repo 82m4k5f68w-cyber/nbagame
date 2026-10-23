@@ -83,11 +83,13 @@ export function blocked(x: number, z: number, r = 1.4): Place | null {
   }
   return null;
 }
-/** Walking minutes between two places (fast travel cost; ~4.5 ft/s walking, roads add 30%). */
+/** Fast-travel (ZipRide) game minutes between two points: pickup wait + a drive along the grid. The world clock runs
+ *  1 game minute per real second at speed 1, so walking the same trip (6.5 ft/s) costs about d / 6.5 minutes. */
 export function travelMin(a: { x: number; z: number }, b: { x: number; z: number }) {
-  const d = (Math.abs(a.x - b.x) + Math.abs(a.z - b.z)) * 1.05;
-  return Math.max(3, Math.round(d / 4.5 / 60 * 10 + 2));
+  const d = Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
+  return Math.max(4, Math.round(d / 18 + 4));
 }
+export const RIDE_COST = 6;
 /** Is a place open at minute-of-day m? */
 export const isOpen = (p: Place, m: number) => !p.open || (m >= p.open[0] && m < p.open[1]);
 /** The sleeping place for a stage (home in high school and the NBA, the dorm in college). */

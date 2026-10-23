@@ -29,14 +29,14 @@
     QN = ["Low", "Medium", "High"];
 
   // ---------------- settings (browser h2k_set shape) ----------------
-  var SET = Object.assign({ m: 0, s: 0, p: 1, cm: 0, fx: 1, df: 1, ql: 60, COMM: 1, VOICE: 1, MUSIC: 1, INTRO: 1, RUMBLE: 1, CB: 0, BIGM: 0 }, lsGet("h2k_set", {}));
+  var SET = Object.assign({ m: 0, s: 0, p: 1, cm: 0, fx: 1, df: 1, ql: 60, COMM: 1, VOICE: 1, MUSIC: 1, CHANTS: 1, INTRO: 1, RUMBLE: 1, CB: 0, BIGM: 0 }, lsGet("h2k_set", {}));
   SET.ru = Object.assign({ FOULS: 1, SCLK: 1, VIOL: 1, SUBS: 1, BADGES: 1 }, SET.ru || {});
   SET.vol = Object.assign({ vm: 100, vu: 100, vc: 100, vv: 100 }, SET.vol || {});
   var saveSet = function () { lsPut("h2k_set", SET); };
   /** Flat settings for Unity (same keys as the menus' data- attributes / PageBridge.Apply). */
   function flat() {
     var o = { m: SET.m, s: SET.s, p: SET.p, cm: SET.cm, fx: SET.fx ? 1 : 0, df: SET.df, rf: SET.ru.FOULS, rc: SET.ru.SCLK, rv: SET.ru.VIOL, rs: SET.ru.SUBS, rb: SET.ru.BADGES,
-      cmt: SET.COMM ? (SET.VOICE ? 2 : 1) : 0, pi: SET.INTRO, mu: SET.MUSIC, ru: SET.RUMBLE, cb: SET.CB, bm: SET.BIGM,
+      cmt: SET.COMM ? (SET.VOICE ? 2 : 1) : 0, pi: SET.INTRO, mu: SET.MUSIC, ch: SET.CHANTS, ru: SET.RUMBLE, cb: SET.CB, bm: SET.BIGM,
       vm: SET.vol.vm, vu: SET.vol.vu, vc: SET.vol.vc, vv: SET.vol.vv };
     if (SET.q2 != null) o.q = SET.q2; // graphics only when picked (else Unity's GPU-tier default)
     return o;
@@ -63,6 +63,7 @@
       case "cmt": SET.COMM = v ? 1 : 0; SET.VOICE = v === 2 ? 1 : 0; break;
       case "pi": SET.INTRO = v; break;
       case "mu": SET.MUSIC = v; break;
+      case "ch": SET.CHANTS = v; break;
       case "ru": SET.RUMBLE = v; break;
       case "cb": SET.CB = v; break;
       case "bm": SET.BIGM = v; break;
@@ -549,7 +550,7 @@
         '<div class="opts"><h3>CAMERA</h3><b>VIEW (K in game)</b>' + CAMN.map(function (n, i) { return opt("cm", i, SET.cm, n); }).join("") + "</div>";
     var cmt = SET.COMM ? (SET.VOICE ? 2 : 1) : 0;
     return '<div class="opts"><h3>VOLUME</h3>' + slider("vm", "Master") + slider("vu", "Music") + slider("vc", "Crowd") + slider("vv", "Commentary") + "</div>" +
-      '<div class="opts"><h3>SOUND</h3><b>MUSIC</b>' + onoff("mu") + "<b>COMMENTARY</b>" + opt("cmt", 0, cmt, "Off") + opt("cmt", 1, cmt, "Captions") + opt("cmt", 2, cmt, "Captions + voice") + "</div>";
+      '<div class="opts"><h3>SOUND</h3><b>MUSIC</b>' + onoff("mu") + "<b>CROWD CHANTS</b>" + onoff("ch") + "<b>COMMENTARY</b>" + opt("cmt", 0, cmt, "Off") + opt("cmt", 1, cmt, "Captions") + opt("cmt", 2, cmt, "Captions + voice") + "</div>";
   }
   var setBack = null;
   function openSettings(tab, back) {
@@ -562,7 +563,7 @@
       '<div class="tbody" role="tabpanel" data-t="' + setTab + '">' + tabBody(setTab) + "</div>";
     s.hidden = false;
     $$("[data-tab]", s).forEach(function (b) { b.onclick = function () { openSettings(b.dataset.tab, setBack); focusFirst('#sd [data-tab="' + b.dataset.tab + '"]'); }; });
-    ["df", "p", "s", "m", "cb", "bm", "rf", "rc", "rv", "rs", "rb", "pi", "ru", "q", "fx", "cm", "mu", "cmt"].forEach(function (k) {
+    ["df", "p", "s", "m", "cb", "bm", "rf", "rc", "rv", "rs", "rb", "pi", "ru", "q", "fx", "cm", "mu", "ch", "cmt"].forEach(function (k) {
       $$("[data-" + k + "]", s).forEach(function (b) {
         b.onclick = function () {
           setK(k, +b.dataset[k]);

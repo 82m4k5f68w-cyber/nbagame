@@ -16,7 +16,7 @@ want() { [ $# -eq 0 ] && return 0; [ -z "${PARTS:-}" ] && return 0; [[ " $PARTS 
 PARTS="${*:-}"
 fetch() { # url dest
   [ -s "$2" ] && return 0
-  echo "  fetch $1"; curl -fL --retry 4 --retry-delay 3 -o "$2.part" "$1" && mv "$2.part" "$2"
+  echo "  fetch $1"; curl -fsSL --retry 4 --retry-delay 3 -o "$2.part" "$1" && mv "$2.part" "$2"
 }
 
 if want node; then

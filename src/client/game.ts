@@ -914,7 +914,8 @@ function crowdCtx() {
   CC.q = G.q;
   CC.clutch = !!TS.clutch;
   CC.mom = TS.mom || 0;
-  CC.run = TS.run;
+  CC.run[0] = TS.run[0] === 0 ? TS.run[1] : 0; // (TS.run = [team, points] of the current run)
+  CC.run[1] = TS.run[0] === 1 ? TS.run[1] : 0;
   CC.dead = G.rs > 0 || G.inb > 0 || !!fq;
   if (fq !== ccFt) (ccFt = fq), fq && ccFtN++;
   CC.ft = fq && fq.s ? ccFtN : 0;

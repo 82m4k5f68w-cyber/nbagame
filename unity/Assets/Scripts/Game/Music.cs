@@ -26,6 +26,7 @@ namespace Hoops.Game
         public static string Mode = "off";
         public static float Level = 0.3f; // crowd energy 0..1
         public static bool Dead, Offense = true;
+        public static float Duck = 1f; // Chants: the organ backs off while the crowd chants
 
         const int SR = 32000;
         const double BPM = 96, S16 = 60 / BPM / 4; // 0.15625 s
@@ -163,7 +164,7 @@ namespace Hoops.Game
             Pick();
             if (!ready) return;
             // OUT gain: fade toward the mode's level (music.ts tick: 5% per 60 Hz frame)
-            float vol = !On || Mode == "off" ? 0 : Mode == "organ" ? 0.045f : Mode == "calm" ? 0.03f : 0.06f;
+            float vol = (!On || Mode == "off" ? 0 : Mode == "organ" ? 0.045f : Mode == "calm" ? 0.03f : 0.06f) * Duck;
             outG += (vol - outG) * (1 - Mathf.Exp(-3.1f * dt));
             for (int i = 0; i < NST; i++) stemT[i] = 0;
             switch (Mode)
@@ -205,6 +206,7 @@ namespace Hoops.Game
                     src.timeSamples = Mathf.Min(pos % (SPS * 16), riffClips[r].samples - 1);
                     src.Play();
                     riffPlaying = true;
+                    Chants.OnRiff(RN[r], (float)(pos % (SPS * 16)) / SR); // crowd call-and-response (CHARGE! / DE-FENSE)
                 }
                 else if (outG <= 0.002f) rqN = 0;
             }

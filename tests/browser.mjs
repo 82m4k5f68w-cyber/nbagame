@@ -31,8 +31,20 @@ for (const m of modes) {
   await pg.waitForTimeout(400);
   await pg.keyboard.up("Space");
   await pg.waitForTimeout(800);
-  const st = await pg.evaluate(async () => ({ gl: window.H2K.V.GL ? "webgl" : window.H2K.V.r3d ? "canvas3d" : "2d", rap: await window.H2K.RAP(), S: window.H2K.G.S, np: window.H2K.G.P.length, t: window.H2K.G.T.toFixed(1) }));
+  // crowd chants: the buffers render in the background, the director answers a scripted airball, a chant plays
+  const ch = await pg.evaluate(async () => {
+    const { crowd, CC } = window.H2K;
+    for (let i = 0; i < 100 && crowd.stats().ready.length < 6; i++) await new Promise((r) => setTimeout(r, 100));
+    crowd.fx({ k: "air", v: 1, tm: 1, n: "x" }, CC);
+    await new Promise((r) => setTimeout(r, 400));
+    const played = crowd.play("defense");
+    const s = crowd.stats();
+    return { ready: s.ready.length, renderMs: s.renderMs, errors: s.errors, air: s.log.some((l) => l.id === "airball"), played, live: CC.live };
+  });
+  if (ch.errors.length || ch.ready < 6 || !ch.played || (ch.live && !ch.air)) errs.push("chants: " + JSON.stringify(ch));
+  const st = await pg.evaluate(async () => ({ chants: 0, gl: window.H2K.V.GL ? "webgl" : window.H2K.V.r3d ? "canvas3d" : "2d", rap: await window.H2K.RAP(), S: window.H2K.G.S, np: window.H2K.G.P.length, t: window.H2K.G.T.toFixed(1) }));
   await pg.screenshot({ path: `docs/shot-${m}.png`, clip: { x: 20, y: 0, width: 960, height: 540 }, timeout: 120000 });
+  st.chants = ch;
   console.log(m, JSON.stringify(st), errs.length ? errs.slice(0, 4) : "no errors");
   if (errs.length || st.S !== "play") bad++;
   await pg.close();

@@ -20,6 +20,7 @@ namespace Hoops.Game
     {
         // settings (view.ts V.*), saved in PlayerPrefs
         public static bool VOICE = true, COMM = true, RUMBLE = true, INTRO = true;
+        public static float SpeakUntil; // estimated end of the current line (Chants hold back while the voice talks)
         public static float VoiceVol = 1f; // commentary voice level (page Audio settings, PageBridge)
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -147,6 +148,8 @@ namespace Hoops.Game
         static void Say(string s, bool now, float hype = 0)
         {
             if (!VOICE) return;
+            float t0 = Time.unscaledTime, len = 0.4f + s.Length * 0.065f / (1.1f + hype * 0.15f);
+            SpeakUntil = now || SpeakUntil < t0 ? t0 + len : SpeakUntil + len;
             try { HoopsSpeak(s, 1.1f + hype * 0.15f, 0.92f + hype * 0.22f, (0.85f + hype * 0.15f) * VoiceVol, now ? 1 : 0); } catch { }
         }
 
