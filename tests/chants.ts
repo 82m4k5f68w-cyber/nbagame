@@ -204,6 +204,7 @@ function play(lines: string[], seed: number) {
 // ---------------- 3. synthesis ----------------
 {
   let ms = 0;
+  const RMS: string[] = [];
   for (const id of Object.keys(CH)) {
     const j = new ChantJob(id, id === "letsgo" ? "Timberwolves" : id === "wewant" ? "Gilgeous-Alexander" : "");
     let n = 0;
@@ -217,8 +218,10 @@ function play(lines: string[], seed: number) {
     }
     const rms = Math.sqrt(s / (2 * j.L.length)), sec = j.L.length / CSR;
     ms += j.ms;
+    RMS.push(id + " " + rms.toFixed(5) + " " + j.L.length);
     ok(bad === 0 && pk <= 0.9001 && rms > 0.03 && Math.abs(sec - CH[id][0] - 1.2) < 0.01 && n >= 2, `${id}: bad ${bad} peak ${pk.toFixed(3)} rms ${rms.toFixed(3)} ${sec.toFixed(2)} s, ${n + 1} slices`);
   }
+  if (process.env.CS) writeFileSync(process.env.CS + ".rms", RMS.join("\n") + "\n");
   console.log("rendered", Object.keys(CH).length, "chants in", Math.round(ms), "ms (Node, sliced <= ~4 ms units)");
   for (const t of ["Lakers", "Warriors", "Nuggets", "Thunder", "Spurs", "Timberwolves", "Knicks", "Celtics", "Bucks", "Mavericks", "Cavaliers", "Rockets", "Pistons", "Magic"]) {
     const s = sylls(t);
