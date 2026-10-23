@@ -1209,7 +1209,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     // once that sits at its floor, and its 85% / 75% rungs scale the internal resolution, never the output.
     const dres = makeDynRes();
     dres.set(V.QL >= 2 ? 0.8 : 0.67);
-    let hsrK = "";
+    let hsrK = "",
+      pinned = false;
     const fxLevel = () => {
       const ql = V.QL,
         on = V.FX && ql > 0,
@@ -1432,6 +1433,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       // tests / FPS counter: HSR state (mode, scale, internal + output size), last frame's draw calls, the ladder rung
       stats: () => ({ hsr: { ...fx.hsr, core: undefined, st: fx.hsr.core ? fx.hsr.core.stats : null }, calls: R.info.render.calls, tris: R.info.render.triangles, lvl, pr: R.getPixelRatio(), dyn: fx.dyn.length }),
       hsrReset: () => fx.hsr.core && fx.hsr.core.reset(),
+      /** tests: pin the frame-rate ladder at a rung (equal-scene comparisons on a slow software GPU); -1 = release */
+      pin: (l: number) => ((pinned = l >= 0), pinned && (lvl = l), fxLevel()),
       dbg: () => ({ refs: refs.map((r) => [Math.round(r.x), Math.round(r.y), r.gl.G.visible]), street: streetOn, cs: !!CS.react }),
       proj(x: number, y: number, z: number) {
         const v = PV.set(x, y, z).project(cam);
@@ -1479,7 +1482,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         // Frame-rate guard: judged every 30 frames (~.5 s); very slow frames drop two rungs; at the bottom of the
         // ladder the graphics level itself steps down (this session only, toast). Climbs back slowly (2 s of fast frames).
         if (now < settle || settleN > 0) settleN--, (ema = 16.7);
-        else if (lastR && !paused) {
+        else if (lastR && !paused && !pinned) {
           // (frames around a hidden tab / pause menu are skipped via settle); a crawling machine is judged every 5 frames
           ema = ema * 0.9 + Math.min(1000, now - lastR) * 0.1;
           // HSR Auto: dynamic resolution holds the target frame time first (every 12 frames)

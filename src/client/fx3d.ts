@@ -126,8 +126,8 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
     C.setPixelRatio(pr);
     C.setSize(lw, lh);
     ao.setSize(Math.round(lw * pr * 0.5), Math.round(lh * pr * 0.5));
-    st.w = C.renderTarget1.width;
-    st.h = C.renderTarget1.height;
+    st.w = Math.floor(C.renderTarget1.width); // the composer keeps w x pixelRatio unrounded; GL truncates
+    st.h = Math.floor(C.renderTarget1.height);
     const v = R.getDrawingBufferSize(new THREE.Vector2());
     st.ow = v.x;
     st.oh = v.y;
@@ -148,8 +148,8 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
       if (!on) ao.enabled = dof.enabled = bloom.enabled = mb.enabled = gr.enabled = aa.enabled = false;
       if (hm === 1) aa.enabled = false;
       C.renderToScreen = false;
-      const w = C.renderTarget1.width,
-        h = C.renderTarget1.height;
+      const w = Math.floor(C.renderTarget1.width),
+        h = Math.floor(C.renderTarget1.height);
       try {
         if (hm === 1) core.jitter(cam, w, h);
         C.render();
