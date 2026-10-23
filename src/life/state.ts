@@ -391,18 +391,22 @@ export function beginYear(L: Life) {
     L.league = [];
   }
   const gd = GAME_DAYS[L.stage === "nba" ? "nba" : L.stage === "college" ? "college" : "hs"];
-  const examDay = n - 3; // finals: the Wednesday/Thursday before the season wraps
+  // finals: the last weekday at least 3 days before the year wraps; midterms (college): first weekday past halfway
+  let examDay = n - 3;
+  while (examDay > 0 && wdOf(y0 + examDay) >= 5) examDay--;
+  let midDay = Math.floor(n / 2);
+  while (midDay < examDay - 1 && wdOf(y0 + midDay) >= 5) midDay++;
+  if (L.stage !== "college") midDay = -1;
   for (let d = 0; d < n; d++) {
     const day = y0 + d,
       wd = wdOf(day),
       game = gd.includes(d);
     if (L.courses.length && wd < 5) {
+      const ex = d === examDay || d === midDay;
       for (let s = 0; s < 3; s++) {
         const ci = s < 2 ? s : wd % 2 === 0 ? 2 : 3,
-          c = L.courses[ci],
-          exam = d === examDay || (L.stage === "college" && d === 6 && s === 0); // + a Sunday? no: midterm = day 6 is Sun -> skipped below
-        if (exam && wd >= 5) continue;
-        L.cal.push({ id: `c${day}_${s}`, day, st: SLOT_T[s], en: SLOT_T[s] + CLASS_LEN, k: d === examDay ? "exam" : "class", place: c.room, title: (d === examDay ? "FINAL: " : "") + c.n, c: ci, s: 0 });
+          c = L.courses[ci];
+        L.cal.push({ id: `c${day}_${s}`, day, st: SLOT_T[s], en: SLOT_T[s] + CLASS_LEN, k: ex ? "exam" : "class", place: c.room, title: (d === examDay ? "FINAL: " : d === midDay ? "MIDTERM: " : "") + c.n, c: ci, s: 0 });
       }
     }
     if (!game && wd < 6 && L.stage !== "draft")
@@ -417,7 +421,7 @@ export function beginYear(L: Life) {
       let opp = L.stage === "nba" ? (L.team.tm + 1 + rint(r, 0, 12)) % 14 : 1 + ((gi + rint(r, 0, nOpp - 2)) % (nOpp - 1));
       if (L.stage === "nba" && opp === L.team.tm) opp = (opp + 1) % 14;
       const big = L.stage === "hs" && gi === gd.length - 1 ? "state" : L.stage === "college" && gi >= gd.length - 2 ? "mm" : "";
-      L.cal.push({ id: `g${day}`, day, st: wd === 5 ? 14 * 60 : 19 * 60, en: (wd === 5 ? 14 : 19) * 60 + 120, k: "game", place: "arena", title: big === "state" ? "STATE FINAL" : big === "mm" ? "MARCH MADNESS" : "Game", opp, home: gi % 2 === 0 ? 1 : 0, s: 0, big: big || undefined });
+      L.cal.push({ id: `g${day}`, day, st: wd >= 5 ? 14 * 60 : 19 * 60, en: (wd >= 5 ? 14 : 19) * 60 + 120, k: "game", place: "arena", title: big === "state" ? "STATE FINAL" : big === "mm" ? "MARCH MADNESS" : "Game", opp, home: gi % 2 === 0 ? 1 : 0, s: 0, big: big || undefined });
     }
   }
   L.cal.sort((a, b) => a.day - b.day || a.st - b.st);
