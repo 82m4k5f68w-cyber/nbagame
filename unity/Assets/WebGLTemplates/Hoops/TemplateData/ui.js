@@ -26,7 +26,23 @@
     DIFFN = ["Rookie", "Pro", "All-Star", "Hall of Fame"],
     CAMN = ["Broadcast", "2K Style", "Baseline", "Player Lock"],
     MN = ["Arrow 2", "Bar (feet)", "Bar (head)", "Ring"],
-    QN = ["Low", "Medium", "High"];
+    QN = ["Low", "Medium", "High"],
+    HSRN = ["Off", "Auto", "Quality", "Balanced", "Performance", "Ultra Perf."];
+  // display refresh from rAF intervals (~1 s, low percentile, snapped): "Your screen: N Hz" in the graphics tab
+  var HZ = 0;
+  (function () {
+    var d = [], last = 0, t0 = performance.now();
+    function f(t) {
+      if (last) d.push(t - last);
+      last = t;
+      if (t - t0 < 1100 || d.length < 20) return requestAnimationFrame(f);
+      d.sort(function (a, b) { return a - b; });
+      var hz = 1000 / (d[Math.floor(d.length * 0.2)] || 16.7), best = 60;
+      [30, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240, 360].forEach(function (r) { if (Math.abs(r - hz) < Math.abs(best - hz)) best = r; });
+      HZ = Math.abs(best - hz) / hz < 0.08 ? best : Math.round(hz);
+    }
+    requestAnimationFrame(f);
+  })();
 
   // ---------------- settings (browser h2k_set shape) ----------------
   var SET = Object.assign({ m: 0, s: 0, p: 1, cm: 0, fx: 1, df: 1, ql: 60, COMM: 1, VOICE: 1, MUSIC: 1, CHANTS: 1, INTRO: 1, RUMBLE: 1, CB: 0, BIGM: 0 }, lsGet("h2k_set", {}));
@@ -39,11 +55,15 @@
       cmt: SET.COMM ? (SET.VOICE ? 2 : 1) : 0, pi: SET.INTRO, mu: SET.MUSIC, ch: SET.CHANTS, ru: SET.RUMBLE, cb: SET.CB, bm: SET.BIGM,
       vm: SET.vol.vm, vu: SET.vol.vu, vc: SET.vol.vc, vv: SET.vol.vv };
     if (SET.q2 != null) o.q = SET.q2; // graphics only when picked (else Unity's GPU-tier default)
+    if (SET.hs != null) o.hsr = SET.hs; // H2K Super Resolution, same rule
+    o.hsrm = SET.hm || 0;
+    o.tfps = SET.tf == null ? 60 : SET.tf;
     return o;
   }
   var getK = function (k) {
     var f = flat();
     if (k === "q") return SET.q2 == null ? -1 : SET.q2;
+    if (k === "hsr") return SET.hs == null ? -1 : SET.hs;
     return f[k];
   };
   function setK(k, v) {
@@ -54,6 +74,9 @@
       case "cm": SET.cm = v; break;
       case "q": SET.q2 = v; break;
       case "fx": SET.fx = v; break;
+      case "hsr": SET.hs = v; break;
+      case "hsrm": SET.hm = v; break;
+      case "tfps": SET.tf = v; break;
       case "df": SET.df = v; break;
       case "rf": SET.ru.FOULS = v; break;
       case "rc": SET.ru.SCLK = v; break;
@@ -546,7 +569,12 @@
     }
     if (t === "graphics")
       return '<div class="opts"><h3>QUALITY</h3><b>GRAPHICS</b>' + QN.map(function (n, i) { return opt("q", i, getK("q"), n); }).join("") +
-        '<i class="sm">' + (SET.q2 == null ? "Auto: picked for your GPU until you choose" : "Saved") + "</i><b>EFFECTS</b>" + onoff("fx") + '<i class="sm">bloom · color grade · depth of field in replays</i></div>' +
+        '<i class="sm">' + (SET.q2 == null ? "Auto: picked for your GPU until you choose" : "Saved") + "</i><b>EFFECTS</b>" + onoff("fx") + '<i class="sm">bloom · color grade · depth of field in replays</i>' +
+        "<b>SUPER RESOLUTION (HSR)</b>" + HSRN.map(function (n, i) { return opt("hsr", i, getK("hsr"), n); }).join("") +
+        '<i class="sm">' + (SET.hs == null ? "Auto-picked for your GPU. " : "") + "Draws fewer pixels and upscales (STP temporal where supported, else FSR 1). Quality 67% · Balanced 58% · Performance 50% · Ultra 33%; Auto holds your target.</i>" +
+        "<b>UPSCALER</b>" + opt("hsrm", 0, SET.hm || 0, "Auto") + opt("hsrm", 1, SET.hm || 0, "Temporal") + opt("hsrm", 2, SET.hm || 0, "Spatial") +
+        "<b>TARGET FPS</b>" + [60, 90, 120, 144, 240, 0].map(function (f) { return opt("tfps", f, SET.tf == null ? 60 : SET.tf, f ? String(f) : "Max"); }).join("") +
+        '<i class="sm">' + (HZ ? "Your screen: " + HZ + " Hz. " : "") + "Browsers draw at most once per screen refresh, so higher targets act as Max.</i></div>" +
         '<div class="opts"><h3>CAMERA</h3><b>VIEW (K in game)</b>' + CAMN.map(function (n, i) { return opt("cm", i, SET.cm, n); }).join("") + "</div>";
     var cmt = SET.COMM ? (SET.VOICE ? 2 : 1) : 0;
     return '<div class="opts"><h3>VOLUME</h3>' + slider("vm", "Master") + slider("vu", "Music") + slider("vc", "Crowd") + slider("vv", "Commentary") + "</div>" +
@@ -563,7 +591,7 @@
       '<div class="tbody" role="tabpanel" data-t="' + setTab + '">' + tabBody(setTab) + "</div>";
     s.hidden = false;
     $$("[data-tab]", s).forEach(function (b) { b.onclick = function () { openSettings(b.dataset.tab, setBack); focusFirst('#sd [data-tab="' + b.dataset.tab + '"]'); }; });
-    ["df", "p", "s", "m", "cb", "bm", "rf", "rc", "rv", "rs", "rb", "pi", "ru", "q", "fx", "cm", "mu", "ch", "cmt"].forEach(function (k) {
+    ["df", "p", "s", "m", "cb", "bm", "rf", "rc", "rv", "rs", "rb", "pi", "ru", "q", "fx", "hsr", "hsrm", "tfps", "cm", "mu", "ch", "cmt"].forEach(function (k) {
       $$("[data-" + k + "]", s).forEach(function (b) {
         b.onclick = function () {
           setK(k, +b.dataset[k]);

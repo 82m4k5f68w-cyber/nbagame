@@ -168,6 +168,9 @@ namespace Hoops.Game
                 case "cm": CameraDirector.Mode = Mathf.Clamp(i, 0, 3); try { PlayerPrefs.SetInt("h2k_cam", CameraDirector.Mode); } catch { } break;
                 case "q": Arena.SetQuality(Mathf.Clamp(i, 0, 2)); break;
                 case "fx": Arena.FxOn = on; break;
+                case "hsr": Arena.HSR = Mathf.Clamp(i, 0, 5); try { PlayerPrefs.SetInt("h2k_hsr", Arena.HSR); } catch { } break; // H2K Super Resolution mode
+                case "hsrm": Arena.HSRM = Mathf.Clamp(i, 0, 2); break;
+                case "tfps": Arena.TFPS = Mathf.Max(0, i); break;
                 case "df": Menus.Diff = Mathf.Clamp(i, 0, 3); cfg.DIFF = Menus.Diff; break;
                 case "rf": cfg.FOULS = i; break;
                 case "rc": cfg.SCLK = i; break;
@@ -214,6 +217,10 @@ namespace Hoops.Game
             ["m"] = Hud.METER,
             ["s"] = Menus.Tempo,
             ["fx"] = Arena.FxOn ? 1 : 0,
+            ["hsr"] = Arena.HSR,
+            ["hsrm"] = Arena.HSRM,
+            ["tfps"] = Arena.TFPS,
+            ["hz"] = Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value),
         };
 
         /// <summary>Box score per team over ROST (benched players keep their lines), like game.ts endGame tm().</summary>

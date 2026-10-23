@@ -41,6 +41,7 @@ export const V = {
   INTRO: 1, // player introductions before the tip
   introDone: 0, // the intro sequence ran for this game (skip the small lineup card)
   VOICE: 1, // speak the commentary (browser text-to-speech)
+  ANNV: 2, // announcer voice: 2 AI (Piper voice bank, client/voice.ts; falls back to browser), 1 browser speech, 0 off
   MUSIC: 1, // dynamic arena music
   RUMBLE: 1, // gamepad rumble
   CB: 0, // colorblind-safe meter colors

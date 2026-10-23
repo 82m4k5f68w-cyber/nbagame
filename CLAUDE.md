@@ -531,6 +531,33 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   Season v2 (modesui.ts: PF/PA, streaks, league leaders from real + generated box scores, best-of-3 playoffs, awards).
 - tests/teamplay.ts. Parity: trace.ts vs Trace.cs identical for the whole 46000-tick game (normal) and 3000 (hum).
 
+## H2K Super Resolution (HSR, v5.5: `client/hsr.ts`, fx3d.ts, fxgpu.ts)
+- Renders the effect chain at an internal resolution and rebuilds the full-res image. `V.HSR` 0 Off, 1 Auto (dynamic
+  res), 2 Quality .67, 3 Balanced .58, 4 Performance .5, 5 Ultra .33 (`HSRN/HSRS`); `V.HSRM` upscaler 0 auto (temporal,
+  spatial on Low), 1 temporal, 2 spatial (`hsrMode()`); `V.TFPS` 60/90/120/144/240/0=Max; `V.HZ` measured refresh
+  (`measureRefresh`, rAF 1 s, shown "Your screen: N Hz"); `V.FPSC` HUD FPS counter (game.ts `fpsHud`). Saved in
+  h2k_set `hs` (only when picked: default discrete Off, others Auto) / `hm` / `tf` / `fc`.
+- WebGL temporal: Halton(2,3) jitter on `cam.projectionMatrix` (restored after the frame: HUD `proj()` stays
+  unjittered), composer at low res WITHOUT MSAA + `DepthTexture` on both composer buffers (`ScenePass.last` = the one
+  with this frame's depth; all full-screen pass materials have depthTest/Write off so they can't overwrite it),
+  velocity pass for `fx.dyn` (rig roots + ball + refs; borrowed as children of a private Scene, override material
+  with previous model matrix AND previous bone texture per skeleton = exact limb motion), prep pass (camera
+  reprojection of depth elsewhere), resolve at output res (MRT: color + [lock, weight]; 3x3 depth dilation,
+  Blackman-Harris reconstruction, Catmull-Rom history, YCoCg variance clip, disocclusion vs previous depth,
+  thin-feature lock, accumulation weight), RCAS to the screen. Works on the tone-mapped output (cheap; chain at low
+  res). Camera cuts (> 3.5 ft or 10 deg in a frame) reset history. Spatial: EASU + RCAS. WebGPU: three's `taau`
+  (MRT velocity, samples 0) + `sharpen`, spatial = `rtt(...)`.setResolutionScale -> `fsr1`.
+- Dynamic res (`makeDynRes`, render3d guard): every 12 frames, late (> 1.12 x `targetMs()`) -> scale x ~.9, on time
+  for 8 checks -> +.05, a failed scale is not re-probed for 8 s; range .45..1. The effects ladder only drops once
+  the scale is at .45, and its 85/75% rungs scale the internal res (output never shrinks). rAF is capped at the
+  refresh, so targets above it mean "every refresh".
+- Composer render targets are w x pixelRatio UNROUNDED: always floor before using them as sizes (GL truncates).
+- Debug: `V.GL.stats()` (hsr sizes, draw calls per frame - `R.info.autoReset` is off and reset per draw), `V.GL.pin(lvl)`
+  freezes the ladder (tests), `V.GL.hsrReset()`. tests/browser_hsr.mjs (+ `webgpu`), screenshots docs/hsr/.
+- Unity: `Arena.HSR/HSRM/TFPS/HsrScale` + the same dynamic-res loop in `Guard`; PostFx: URP renderScale + STP (compute
+  shaders) or FSR 1; page keys hsr/hsrm/tfps (ui.js Graphics tab, PageBridge).
+- Scene materials compile behind the tip-off (`R.compileAsync` when the rigs are built).
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
 fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

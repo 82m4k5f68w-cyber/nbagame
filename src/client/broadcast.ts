@@ -3,6 +3,7 @@
 import { P, sc, q, clock, cl, PC, TS, DSN, PCN, JB, BENCH, CT, badgesOf, BADGE, ovr, cfg, gameLike, PLAY, T, type Player } from "../core/sim";
 import { V } from "./view";
 import { KMAP } from "./input";
+import { aiSay, paEvent, paIntro } from "./voice";
 const kn = (id: string) => (KMAP[id] || "?").replace(/^Key|^Digit/, "");
 
 let X: CanvasRenderingContext2D = null as any;
@@ -98,7 +99,7 @@ if (typeof speechSynthesis !== "undefined") {
 }
 /** Speak a line. now = cut off whatever is being said (a new play); hype = louder, faster, higher. */
 function say(s: string, now: boolean, hype = 0) {
-  if (!V.VOICE || typeof speechSynthesis === "undefined") return;
+  if (!V.VOICE || !V.ANNV || (V.ANNV === 2 && aiSay(s, now, hype)) || typeof speechSynthesis === "undefined") return; // ANNV 2 AI voice bank (falls back), 1 browser, 0 off
   try {
     if (now) {
       speechSynthesis.cancel();
@@ -116,6 +117,7 @@ function say(s: string, now: boolean, hype = 0) {
 }
 export function comment(e: string, n = "", n2 = "") {
   const t = performance.now();
+  if (V.VOICE && V.ANNV === 2) paEvent(e); // PA stinger ("Threeeee!", "And one!")
   if (e === "rise") {
     const L = RISE[n2] || RISE.mid,
       s = pick(L)(n);
@@ -276,6 +278,7 @@ export function drawBanners() {
 }
 // ---------------- pre-game player introductions ----------------
 const POSN = ["POINT GUARD", "SHOOTING GUARD", "SMALL FORWARD", "POWER FORWARD", "CENTER"];
+let paCard = -1;
 const INTRO_TITLE = 1.8,
   cardT = () => (cfg.NP > 1 ? 0.8 : 1.8);
 /** Length of the intro sequence (title card + one card per starter, away team first). */
@@ -286,6 +289,7 @@ export function drawPlayerIntro(t: number, rec: string) {
   X.fillStyle = "rgba(4,6,16,.55)";
   X.fillRect(0, 0, 960, 540);
   if (t < INTRO_TITLE) {
+    paCard = -1;
     const a = Math.min(1, t * 3, (INTRO_TITLE - t) * 4);
     X.globalAlpha = a;
     X.textAlign = "center";
@@ -316,6 +320,7 @@ export function drawPlayerIntro(t: number, rec: string) {
       lt = t - INTRO_TITLE - i * cardT(),
       a = Math.min(1, lt * 6, Math.max(0, cardT() - lt) * 6),
       sl = Math.max(0, 1 - lt * 5) * 80;
+    if (p && i !== paCard && (paCard = i) >= 0 && V.VOICE && V.ANNV === 2) paIntro(p.no, p.n, cfg.NP > 1); // PA: "Number 30 ... Curry!"
     if (p) {
       const home = p.tm === 0,
         x0 = 200 + (home ? -sl : sl);

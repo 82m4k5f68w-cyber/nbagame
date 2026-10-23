@@ -28,6 +28,20 @@ namespace Hoops.Game
         /// 2 -shadows/shafts/half the crowd, 1 85% resolution, 0 75%.</summary>
         public static int Lvl = 6;
         public static float Fps = 60;
+        /// <summary>H2K Super Resolution (view.ts V.HSR): 0 Off, 1 Auto (dynamic resolution), 2 Quality 67%, 3 Balanced
+        /// 58%, 4 Performance 50%, 5 Ultra Performance 33%. Default: High-tier GPUs Off, the rest Auto. HSRM upscaler:
+        /// 0 auto, 1 temporal (URP STP where compute shaders exist), 2 spatial (FSR 1). TFPS target (0 = refresh).</summary>
+        public static int HSR = -1, HSRM = 0, TFPS = 60;
+        public static readonly float[] HSRS = { 1f, 1f, 0.67f, 0.58f, 0.5f, 0.33f };
+        /// <summary>Internal render scale HSR uses now (Auto moves it; PostFx applies it as URP renderScale).</summary>
+        public static float HsrScale = 1f;
+        /// <summary>Target frame time (ms): never faster than the display refresh.</summary>
+        public static float TargetMs()
+        {
+            double hz = Screen.currentResolution.refreshRateRatio.value;
+            if (hz < 20 || double.IsNaN(hz)) hz = 60;
+            return Mathf.Max(TFPS > 0 ? 1000f / TFPS : 0f, (float)(1000.0 / hz));
+        }
         /// <summary>URP post hooks (Urp/PostFx.cs sets this before the scene loads).</summary>
         public static IPostFx Post;
         public static Arena I;
@@ -66,6 +80,8 @@ namespace Hoops.Game
             I = this;
             this.cam = cam;
             if (QL < 0) QL = DefaultTier();
+            if (HSR < 0) HSR = PlayerPrefs.HasKey("h2k_hsr") ? Mathf.Clamp(PlayerPrefs.GetInt("h2k_hsr"), 0, 5) : QL >= 2 ? 0 : 1;
+            HsrScale = HSR == 1 ? (QL >= 2 ? 0.8f : 0.67f) : HSRS[Mathf.Clamp(HSR, 0, 5)];
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = BG;
             cam.farClipPlane = 420;
@@ -1115,7 +1131,8 @@ namespace Hoops.Game
     {
         // ================= quality ladder + frame-rate guard =================
         float settle, ema = 16.7f;
-        int nf, good, bad, lastQL = -1;
+        int nf, good, bad, lastQL = -1, lastHSR = -2, lastHSRM = -1, dn, dgood;
+        float ceilS = 1f, ceilT;
         bool lastFX = true, shaftsOn = true;
 
         /// <summary>Ladder (top -> bottom): everything; -SSAO; -reflections/motion blur; -bloom/grade; -shadows, shafts
@@ -1138,13 +1155,36 @@ namespace Hoops.Game
         void Guard(float dt)
         {
             if (QL != lastQL || FxOn != lastFX) { Lvl = 6; Apply(); settle = 0.7f; }
+            if (HSR != lastHSR || HSRM != lastHSRM)
+            {
+                lastHSR = HSR;
+                lastHSRM = HSRM;
+                if (HSR > 1) HsrScale = HSRS[HSR];
+                Apply();
+                settle = 0.5f;
+            }
             if (settle > 0) { settle -= dt; ema = 16.7f; return; }
             if (dt > 0.25f) return; // hidden tab / hitch / pause menu: don't judge
             ema = ema * 0.9f + Mathf.Min(1000, dt * 1000) * 0.1f;
+            // HSR Auto (hsr.ts makeDynRes): drop the internal scale fast when frames are late, probe up slowly when on
+            // time, remember the scale that failed for 8 s; the effects ladder below only moves once it sits at .45
+            const float lo = 0.45f;
+            bool dyn = HSR == 1;
+            if (dyn && ++dn >= 12)
+            {
+                dn = 0;
+                float tgt = TargetMs(), s0 = HsrScale, now = Time.unscaledTime;
+                if (ema > tgt * 1.12f) { dgood = 0; ceilS = HsrScale; ceilT = now + 8; HsrScale = Mathf.Max(lo, HsrScale * Mathf.Clamp(Mathf.Sqrt(tgt / ema), 0.8f, 0.95f)); }
+                else if (ema < tgt * 1.04f) { if (++dgood >= 8 && HsrScale < 1) { dgood = 0; float cap = now < ceilT ? ceilS - 0.04f : 1f; if (HsrScale + 0.01f < cap) HsrScale = Mathf.Min(1f, cap, HsrScale + 0.05f); } }
+                else dgood = 0;
+                HsrScale = Mathf.Round(HsrScale * 100) / 100;
+                if (HsrScale != s0) { Apply(); settle = 0.12f; return; }
+            }
             if (++nf <= (ema > 60 ? 5 : 30)) return;
             nf = 0;
             int old = Lvl, oq = QL;
-            if (ema > 21)
+            if (ema > 21 && dyn && HsrScale > lo + 0.001f) good = 0; // still room to lower the resolution
+            else if (ema > 21)
             {
                 good = 0;
                 if (Lvl > 0) Lvl = Mathf.Max(0, Lvl - (ema > 34 ? 2 : 1));

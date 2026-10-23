@@ -12,6 +12,7 @@ import { court2d, hoop2d, net2d, player2d, ball2d, scene3c, segs3c, paint3c, bal
 import { setHudCtx, hud, hud2, contestFx, meter, openMark, assignMark, passMark, replayHud } from "./hud";
 import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
 import { audio } from "./audio";
+import { voiceBusy } from "./voice";
 import { music } from "./music";
 import { crowd } from "./crowd";
 import type { CCtx } from "./chantdir";
@@ -173,7 +174,7 @@ function loadSet() {
     if (o.df != null) cfg.DIFF = o.df;
     if (o.ql) QLEN = o.ql;
     if (o.ru) Object.assign(cfg, o.ru);
-    for (const k of ["COMM", "VOICE", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO"]) if (o[k] != null) (V as any)[k] = o[k];
+    for (const k of ["COMM", "VOICE", "ANNV", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO"]) if (o[k] != null) (V as any)[k] = o[k];
     if (o.CROWD != null) crowd.vol = o.CROWD;
     if (o.CHANTS != null) crowd.on = o.CHANTS;
   } catch (e) {}
@@ -185,7 +186,7 @@ function saveSet() {
       JSON.stringify({
         m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q2: QPICK ? V.QL : undefined, fx: V.FX ? 1 : 0, gp: V.GPU, hs: HPICK ? V.HSR : undefined, hm: V.HSRM, tf: V.TFPS, fc: V.FPSC, my: MYM, df: cfg.DIFF, ql: QLEN,
         ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
-        COMM: V.COMM, VOICE: V.VOICE, MUSIC: V.MUSIC, INTRO: V.INTRO, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
+        COMM: V.COMM, VOICE: V.VOICE, ANNV: V.ANNV, MUSIC: V.MUSIC, INTRO: V.INTRO, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
         CROWD: crowd.vol, CHANTS: crowd.on,
       }),
     );
@@ -458,7 +459,7 @@ export function menu() {
     <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
    <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
    <div class="opts"><h3>RULES</h3><b>FOULS</b>${onoff("rf", cfg.FOULS)}<b>SHOT CLOCK</b>${onoff("rc", cfg.SCLK)}<b>VIOLATIONS</b>${onoff("rv", cfg.VIOL)}<i class="sm">3 seconds · 8 seconds · goaltending</i><b>FATIGUE &amp; SUBS</b>${onoff("rs", cfg.SUBS)}<i class="sm">5v5: reserves check in, 6 fouls = out</i><b>BADGES &amp; HOT ZONES</b>${onoff("rb", cfg.BADGES)}</div>
-   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>PLAYER INTROS</b>${onoff("pi", V.INTRO)}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>CROWD</b>${CRN.map(([l, v]) => opt("", "vc", v, crowd.vol, l)).join("")}<b>CROWD CHANTS</b>${onoff("ch", crowd.on)}<i class="sm">DE-FENSE · LET'S GO · M-V-P · AIR BALL · boos and roars</i><b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
+   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>ANNOUNCER VOICE</b>${opt("", "anv", 2, V.ANNV, "AI")}${opt("", "anv", 1, V.ANNV, "Browser")}${opt("", "anv", 0, V.ANNV, "Off")}<b>PLAYER INTROS</b>${onoff("pi", V.INTRO)}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>CROWD</b>${CRN.map(([l, v]) => opt("", "vc", v, crowd.vol, l)).join("")}<b>CROWD CHANTS</b>${onoff("ch", crowd.on)}<i class="sm">DE-FENSE · LET'S GO · M-V-P · AIR BALL · boos and roars</i><b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
    <div class="opts"><h3>ACCESSIBILITY</h3><b>METER COLORS</b>${opt("", "cb", 0, V.CB, "Standard")}${opt("", "cb", 1, V.CB, "Colorblind-safe")}<b>METER SIZE</b>${opt("", "bm", 0, V.BIGM, "Normal")}${opt("", "bm", 1, V.BIGM, "Large")}<b>AUTO-RELEASE ASSIST</b>${onoff("au", V.AUTO)}<i class="sm">hold &amp; release only: lets go near the top for you</i></div>
    <div class="opts keys"><h3>CONTROLS</h3>${ACTS.map(([id, l]) => `<button data-key="${id}" title="Click, then press a key">${esc(l)} <kbd>${esc(keyName(KMAP[id]))}</kbd></button>`).join("")}<button id="krs" class="ghost">Reset keys</button></div>
    ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i><b>SUPER RESOLUTION (HSR)</b>${HSRN.map((n, i) => opt("", "hsr", i, V.HSR, n)).join("")}<i class="sm">Draws fewer pixels and rebuilds a sharp full-size image from several frames (temporal upscaling, like DLSS / FSR 2, no AI). Quality 67% · Balanced 58% · Performance 50% · Ultra 33% of the width; Auto moves it to hold your target.</i><b>UPSCALER</b>${opt("", "hsrm", 0, V.HSRM, "Auto")}${opt("", "hsrm", 1, V.HSRM, "Temporal")}${opt("", "hsrm", 2, V.HSRM, "Spatial")}<i class="sm">Spatial (FSR 1 style) is lighter for very old GPUs; Auto uses it on Low graphics.</i><b>TARGET FPS</b>${[60, 90, 120, 144, 240, 0].map((f) => opt("", "tfps", f, V.TFPS, f ? String(f) : "Max")).join("")}<i class="sm" id="hzline">${hzLine()}</i><b>FPS COUNTER</b>${onoff("fpsc", V.FPSC)}</div>` : ""}
@@ -541,6 +542,7 @@ export function menu() {
     V.VOICE = v === 2 ? 1 : 0;
     if (v === 2) comment("clutch");
   });
+  grp("anv", (v) => ((V.ANNV = v), v && V.VOICE && comment("clutch")));
   grp("mu", (v) => (V.MUSIC = v));
   grp("vc", (v) => (crowd.vol = v));
   grp("ch", (v) => (crowd.on = v));
@@ -933,7 +935,7 @@ function crowdCtx() {
     if (b && b !== CC.bench) crowd.need("wewant", b);
     CC.bench = b;
   }
-  CC.speaking = !!V.VOICE && typeof speechSynthesis !== "undefined" && speechSynthesis.speaking;
+  CC.speaking = !!V.VOICE && (voiceBusy() || (typeof speechSynthesis !== "undefined" && speechSynthesis.speaking));
 }
 /** Auto-release assist: aim for the middle of this shot's green window, with a little human error. */
 let arP: any = null,

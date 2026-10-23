@@ -1545,6 +1545,12 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           });
           pset = P;
           pslot = P.slice();
+          // warm-up: compile every scene material now (KHR_parallel_shader_compile where available), so the first
+          // look at the far basket / the bench / a replay angle doesn't stall on a shader compile mid-play
+          try {
+            const w = R.compileAsync ? R.compileAsync(S, cam) : null;
+            if (w && w.catch) w.catch(() => {});
+          } catch (e) {}
         } else if (pslot)
           for (let k = 0; k < P.length; k++)
             if (P[k] !== pslot[k]) {

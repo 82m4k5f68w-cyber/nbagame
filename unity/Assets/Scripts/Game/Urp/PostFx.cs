@@ -75,15 +75,20 @@ namespace Hoops.Game
             vig.active = grade;
             cd.renderShadows = ql > 0 && lvl >= 3;
             var a = Asset;
-            float scale = BASE[Mathf.Clamp(ql, 0, 2)] * (lvl >= 2 ? 1 : lvl == 1 ? 0.9f : 0.85f); // native resolution on every tier (sub-native looked blurry); slow GPUs drop effects first
-            cd.antialiasing = scale < 0.95f ? AntialiasingMode.SubpixelMorphologicalAntiAliasing : AntialiasingMode.None;
+            float lk = lvl >= 2 ? 1 : lvl == 1 ? 0.9f : 0.85f;
+            int hsr = Arena.HSR;
+            // H2K Super Resolution (web: hsr.ts): temporal = URP STP (jitter + motion vectors + history, needs compute
+            // shaders: WebGPU / desktop, not WebGL 2), spatial = FSR 1 EASU + RCAS (Low tier, or no compute)
+            bool temporal = hsr > 0 && Arena.HSRM != 2 && !(Arena.HSRM == 0 && ql == 0) && SystemInfo.supportsComputeShaders;
+            float scale = hsr > 0 ? Mathf.Max(0.25f, Arena.HsrScale * lk) : BASE[Mathf.Clamp(ql, 0, 2)] * lk; // native resolution on every tier unless HSR is on; slow GPUs drop effects first
+            cd.antialiasing = temporal ? AntialiasingMode.None : scale < 0.95f ? AntialiasingMode.SubpixelMorphologicalAntiAliasing : AntialiasingMode.None;
             if (a == null) return;
             a.renderScale = scale;
-            // a sub-native rung upscales with FSR 1 + sharpening (bilinear looked soft)
-            a.upscalingFilter = scale < 0.99f ? UpscalingFilterSelection.FSR : UpscalingFilterSelection.Auto;
+            // a sub-native scale upscales with STP (temporal) or FSR 1 + sharpening (bilinear looked soft)
+            a.upscalingFilter = temporal ? UpscalingFilterSelection.STP : scale < 0.99f ? UpscalingFilterSelection.FSR : UpscalingFilterSelection.Auto;
             a.fsrOverrideSharpness = true;
             a.fsrSharpness = 0.92f;
-            a.msaaSampleCount = ql == 0 ? 1 : 4;
+            a.msaaSampleCount = ql == 0 || temporal ? 1 : 4; // STP is the anti-aliasing (MSAA off, like the web temporal path)
             a.shadowDistance = ql >= 2 ? 60 : 45;
             // SSAO (High, top rung): the renderer feature Build.cs adds to the renderer asset
             var rd = a.rendererDataList;
