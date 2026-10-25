@@ -63,6 +63,8 @@ export const cfg = {
   AP: 1, // animation pack v5.4 (pose.ts, C# Pose.UP.cs): shot loads / follow-through by form, finishes, move anticipation, D variety, exact guide palm; 0 = v5.3 poses (A/B)
   TP: 1, // team play pack v5.4 (named sets, ATO, ICE / blitz, box-and-one); 0 = off (A/B tests)
   PP: 2, // Pro Play level: 2 = v5.4 (defender reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (moves, gathers, floaters, stance D, deflections), 0 = the v5.2 game (A/B tests)
+  PH3: 1, // physics v3 (sim.ts "Physics v3" block, C# Sim.PH3.cs): real air drag/Magnus, surfaces, rim/glass/net, bodies, fatigue, fumbles, floor; 0 = v5.4 physics (A/B)
+  SHATTER: 1, // (physics v3) a monster dunk can very rarely shatter the backboard (stoppage while it is replaced); 0 = never
   physics: "rapier" as "rapier" | "legacy",
   hand: true, // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
   replays: true,

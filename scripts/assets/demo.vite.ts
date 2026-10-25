@@ -9,6 +9,6 @@ export default defineConfig({
   base: "./",
   server: { fs: { allow: [R] } },
   plugins: [viteSingleFile({ removeViteModuleLoader: true })],
-  assetsInclude: ["**/*.glb", "**/*.ktx2", "**/*.bin"], // asset pipeline outputs (scripts/assets), imported with ?inline
+  assetsInclude: ["**/*.glb", "**/*.ktx2", "**/*.bin", "**/basis_transcoder.wasm"], // asset pipeline outputs (scripts/assets), imported with ?inline
   build: { target: "es2020", outDir: path.join(R, "dist/assets-demo"), emptyOutDir: true, assetsInlineLimit: 100_000_000, chunkSizeWarningLimit: 20_000, reportCompressedSize: false },
 });

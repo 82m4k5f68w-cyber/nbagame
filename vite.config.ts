@@ -5,7 +5,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 export default defineConfig({
   base: "./",
   plugins: [viteSingleFile({ removeViteModuleLoader: true })],
-  assetsInclude: ["**/*.glb", "**/*.ktx2", "**/*.bin"], // asset pipeline outputs (scripts/assets), imported with ?inline
+  assetsInclude: ["**/*.glb", "**/*.ktx2", "**/*.bin", "**/basis_transcoder.wasm"], // asset pipeline outputs (scripts/assets), imported with ?inline
   build: {
     target: "es2020",
     outDir: "dist",
