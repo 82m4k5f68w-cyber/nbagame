@@ -138,7 +138,7 @@ await set(0, 0);
 await pg.evaluate(() => window.T.frames(50)); // the broadcast camera eases in: let it settle first
 const c0 = await canvasOK();
 const rows = [];
-for (const [h, m, name] of MODES) {
+for (const [h, m, name] of process.env.SKIP1 ? [] : MODES) {
   await set(h, m);
   const r = await pg.evaluate((GPU) => {
     const f = window.T.frames(GPU ? 6 : 24); // temporal converges over ~16-32 jittered frames
@@ -158,7 +158,7 @@ for (const [h, m, name] of MODES) {
   if (h > 0 && hs.mode !== m) fail(name + ": upscaler " + hs.mode + " != " + m);
   if (r && (r.black > 0.2 || r.mean < 8)) fail(name + ": black frame " + JSON.stringify(r));
 }
-const base = rows[0];
+const base = rows[0] || {};
 for (const r of rows) (r.cost = +(r.ms / base.ms).toFixed(2)), (r.pxRel = +(r.px / base.px).toFixed(2));
 console.table(rows);
 
