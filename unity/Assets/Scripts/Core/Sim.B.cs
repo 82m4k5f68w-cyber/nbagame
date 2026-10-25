@@ -500,6 +500,13 @@ namespace Hoops.Core
             if (dunkMiss && hum) txtW("MISSED DUNK!", p.x, p.y, 120, "#ff6b4a");
             // (Pro Play v2: contact knocks a fouled shot off - layups x.5, CPU jumpers x.35; a human's green still counts)
             bool mk = dunkMiss ? false : lay ? (gr && hum) || Rng.R() < Clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd != null && cfg.PP >= 2 ? 0.5 : 1) : gr && (Util.T(p.perf) || hum || Rng.R() < (0.98 - cx * 0.25) * (fd != null && cfg.PP >= 2 && !hum ? 0.35 : 1)); // (a human's green is a make)
+            if (!hum && !lay && !isFT)
+            {
+                // (tuning counters: CPU jumpers launched / meant to go in)
+                string jk = three ? "j3" : "j2";
+                statAdd(jk + "n", 1);
+                if (mk) statAdd(jk + "mk", 1);
+            }
             double a = Rng.R() * 6.28,
                 off = mk ? (rap ? 0.3 : 1.2) : 9 + Rng.R() * 7,
                 tx = hx + JsMath.Cos(a) * off,

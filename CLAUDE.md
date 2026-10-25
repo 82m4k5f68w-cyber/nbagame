@@ -558,6 +558,28 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   shaders) or FSR 1; page keys hsr/hsrm/tfps (ui.js Graphics tab, PageBridge).
 - Scene materials compile behind the tip-off (`R.compileAsync` when the rigs are built).
 
+## Crowd chants (v5.5; browser `client/chantdir.ts` + `chantsyn.ts` + `crowd.ts`, Unity `Game/ChantDir.cs` + `ChantSynth.cs` + `Chants.cs`)
+- Synthesis (no audio files): each chant = 10-16 crowd voices (pulse + breath through 3 vowel formant band-passes,
+  plosive/fricative/nasal onsets + codas, detuned, timing scatter, panned + delayed by seat) x3 via two delayed section
+  copies, stomps / claps (cached grains), fan whistles, roar wash, pre-delay + Schroeder reverb, normalized to .9.
+  Rendered ONCE at 22.05 kHz stereo, sliced into <= ~7 ms units per frame (`ChantJob.step`), played as buffers.
+  Scores follow the organ's 96 BPM: defense (stomp stomp DE-FENSE), letsgo <team> (+claps; `sylls()` + NICK: WOLVES,
+  CAVS, MAVS), mvp, airball (sing-song), overtime, wewant <bench favourite>, rockyou (stomp-stomp-clap), charge
+  (answers the organ riff 1.875 s later), reactions boo / roar / aww / shh. C# renders the same samples (RMS equal).
+- Director `ChantDir` (pure; same rules / random draws in C#): home = team 0; energy from TS.mom, runs (CCtx.run =
+  per-team points; TS.run is [team, pts]!), margin, clutch, OT, excitement scales chance + gain. One chant at a time
+  (busy = length + gap 2-7 s), per-chant cooldowns (CH), priorities; reactions cut in (the player fades the chant);
+  commentary speaking holds prio < 8; nothing unless `live` (game-like, play, no replay/reel). Triggers: sim FX "air"
+  (bstep rebound: no iron `B.rim > BR+4`, no glass `B.gl` this flight; relayed online as "g"), "chant" (Q4 cue),
+  cm dunk/splash/block/and1/three (roar), fire (roar + M-V-P), flagrant/goaltend/tech on home (boo), miss rebounded by
+  home (stop -> DE-FENSE), "t" GAME WINNER/BUZZER BEATER; ft trips (road boo, clutch home hush `crowd.hush()` + shh,
+  star M-V-P), q > 4 (OVERTIME), dead balls (LET'S GO / ROCK YOU / WE WANT, visitors' LET'S GO on a road 8+ run), organ
+  riffs (`music.onRiff`: CHARGE! / DE-FENSE on the bar). Music `duck` .45 under a chant, .25 in a hush.
+- Shared AudioContext `audio.actx()` (music.ts uses it too); crowd bus = bed + ooh + chants. Settings: drawer CROWD
+  Off/Low/Medium/Full (`crowd.vol`, h2k_set CROWD) + CROWD CHANTS (`crowd.on`, CHANTS); Unity page "vc" slider
+  (GameAudio.CrowdVol) + "ch" toggle (Chants.On, PlayerPrefs h2k_chants). Debug: `H2K.crowd.stats()/play(id)`, `H2K.CC`.
+- Tests: tests/chants.ts, unity/CoreTests/ChantCheck.cs (parity), browser.mjs chant check.
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
 fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

@@ -22,6 +22,7 @@ namespace Hoops.Core
         public int PLANT = 1; // stance feet pinned to the floor in the core pose (0 = off)
         public int INZ = 1; // inertialized animation blending (0 = old exponential smoothing)
         public int AP = 1; // animation pack v5.4 (shared with TS cfg.AP): the Pose.UP.cs pose layer runs with AP or UP; 0 = v5.3 poses
+        public int TP = 1; // team play pack v5.4 (Sim.TP.cs); 0 = off (A/B tests)
         public int PP = 2; // Pro Play level (shared with the TS sim: cfg.PP): 2 = v5.4 (Sim.PP2.cs: reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (Sim.UP.cs), 0 = the v5.2 game
         public int UP = 0; // Unity Pro Play upgrades (Sim.UP.cs / Pose.UP.cs): new moves, finishes, reactions. 0 = TS parity
         public double PHYS = 0.5; // ball physics feel with UP (Sim.PH.cs / BallSim): 0 arcade .. 1 sim (restitution, spin, contact strength)
@@ -773,6 +774,7 @@ namespace Hoops.Core
                 if (lv >= 2 && cov == 1 && st != null && hotNow(st)) cov = 3;
                 else if (lv >= 1 && cov == 0 && rimHot) cov = 2;
                 if (lv == 0) cov = 0; // (a rookie coach drops every time)
+                if (cfg.TP == 0) cov = cov == 1 || cov == 3 ? 1 : 0;
                 if (cov != TS.cov[t])
                 {
                     TS.cov[t] = cov;

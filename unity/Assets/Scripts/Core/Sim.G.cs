@@ -168,7 +168,7 @@ namespace Hoops.Core
             }
             var use = kind == "pnr" ? h : sh;
             // (fa: called in the backcourt - re-called once the ball crosses into the half court)
-            return new Play { kind = kind, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0, fa = cfg.NP >= 3 && cpuIQ(t) >= 1 && Hypot(hoop(t) - h.x, HY - h.y) > 330 ? 1 : 0 };
+            return new Play { kind = kind, t0 = T, scr = scr, use = use, def = manOf(use), ph = "go", sx = 0, sy = 0, setAt = 0, fa = cfg.TP != 0 && cfg.NP >= 3 && cpuIQ(t) >= 1 && Hypot(hoop(t) - h.x, HY - h.y) > 330 ? 1 : 0 };
         }
 
         public static readonly SpaState SPA = new SpaState();

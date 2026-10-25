@@ -54,7 +54,7 @@ namespace Hoops.Core
         public static int boxTarget(double tt)
         {
             int t = (int)tt;
-            if (cfg.NP != 5 || cfg.ASTAR != 0 || cfg.HALF != 0) return -1;
+            if (cfg.NP != 5 || cfg.ASTAR != 0 || cfg.HALF != 0 || cfg.TP == 0) return -1;
             int bi = -1, n = 0;
             for (int j = 0; j < 5; j++)
             {
@@ -97,7 +97,7 @@ namespace Hoops.Core
         /// <summary>Named sets (3+ a side) on top of the three base actions (sim.ts tpSet). null = the base play.</summary>
         public static Play tpSet(double t, Player h, List<Player> ms, Player big, Player sh, double pc)
         {
-            if (cfg.NP < 3 || pc == 4) return null;
+            if (cfg.NP < 3 || pc == 4 || cfg.TP == 0) return null;
             int ti = (int)t;
             bool cpu = !ctHas(t);
             double lv = cpuIQ(t);

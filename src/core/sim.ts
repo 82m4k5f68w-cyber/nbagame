@@ -61,6 +61,7 @@ export const cfg = {
   PLANT: 1, // stance feet pinned to the floor in the core pose (0 = off, for A/B tests)
   INZ: 1, // inertialized animation blending (0 = the old exponential smoothing, for A/B tests)
   AP: 1, // animation pack v5.4 (pose.ts, C# Pose.UP.cs): shot loads / follow-through by form, finishes, move anticipation, D variety, exact guide palm; 0 = v5.3 poses (A/B)
+  TP: 1, // team play pack v5.4 (named sets, ATO, ICE / blitz, box-and-one); 0 = off (A/B tests)
   PP: 2, // Pro Play level: 2 = v5.4 (defender reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (moves, gathers, floaters, stance D, deflections), 0 = the v5.2 game (A/B tests)
   physics: "rapier" as "rapier" | "legacy",
   hand: true, // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
@@ -583,6 +584,7 @@ export function gamePlan(t: number) {
     if (lv >= 2 && cov === 1 && st && hotNow(st)) cov = 3;
     else if (lv >= 1 && cov === 0 && rimHot) cov = 2;
     if (lv === 0) cov = 0; // (a rookie coach drops every time)
+    if (!cfg.TP) cov = cov === 1 || cov === 3 ? 1 : 0;
     if (cov !== TS.cov[t]) {
       TS.cov[t] = cov;
       txt(cl[t].toUpperCase() + (cov === 1 ? " HEDGE THE PICK-AND-ROLL" : cov === 2 ? " ICE THE PICK-AND-ROLL" : cov === 3 ? " BLITZ THE PICK-AND-ROLL" : " DROP ON THE PICK-AND-ROLL"), 480, 150, "#9fe7ff");
@@ -1523,6 +1525,12 @@ export function launch(p: Player) {
     dy = ty - y0,
     D = Math.hypot(dx, dy) || 1,
     dz = 100 - z0;
+  if (!hum && !lay && !isFT) {
+    // (tuning counters: CPU jumpers launched / meant to go in - tests/stats.ts compares them with what went in)
+    const k = three ? "j3" : "j2";
+    STAT[k + "n"] = (STAT[k + "n"] || 0) + 1;
+    if (mk) STAT[k + "mk"] = (STAT[k + "mk"] || 0) + 1;
+  }
   if (fd && (!mk || FLAG)) {
     B.owner = p;
     B.mode = "held";
@@ -4702,7 +4710,7 @@ function newPlay(t: number): Play | null {
     use = kind === "pnr" ? h : sh;
   // (fa: called while the ball was still coming up the floor - re-called once it crosses into the half court, when the
   // coach's named sets can start)
-  return { kind, t0: T, scr, use, def: manOf(use), ph: "go", sx: 0, sy: 0, setAt: 0, fa: cfg.NP >= 3 && cpuIQ(t) >= 1 && Math.hypot(hoop(t) - h.x, HY - h.y) > 330 ? 1 : 0 };
+  return { kind, t0: T, scr, use, def: manOf(use), ph: "go", sx: 0, sy: 0, setAt: 0, fa: cfg.TP && cfg.NP >= 3 && cpuIQ(t) >= 1 && Math.hypot(hoop(t) - h.x, HY - h.y) > 330 ? 1 : 0 };
 }
 function offBall(p: Player, t: number) {
   if (cfg.NP < 2) return false;
@@ -4969,7 +4977,7 @@ export const cpuIQ = (t: number) => (CT.some((c) => c.tm === t) ? 2 : clamp(cfg.
 /** Box-and-one target for team t's defense: the one opponent on fire from outside (heat 3+, a shooter) who carries
  *  their offense (35%+ of their points, 12+ scored) while nobody else is hot; -1 = none. */
 function boxTarget(t: number) {
-  if (cfg.NP !== 5 || cfg.ASTAR || cfg.HALF) return -1;
+  if (cfg.NP !== 5 || cfg.ASTAR || cfg.HALF || !cfg.TP) return -1;
   let bi = -1,
     n = 0;
   for (let j = 0; j < 5; j++) {
@@ -4997,7 +5005,7 @@ export function boxCh(t: number): Player | null {
  *  draws up his best action for his star (ATO). Human play calls 5-7 run horns / Spain / post-up. Returns null = the
  *  base play (pnr / pindown / flare). */
 function tpSet(t: number, h: Player, ms: Player[], big: Player, sh: Player, pc: number): Play | null {
-  if (cfg.NP < 3 || pc === 4) return null;
+  if (cfg.NP < 3 || pc === 4 || !cfg.TP) return null;
   const cpu = !CT.some((c) => c.tm === t),
     lv = cpuIQ(t);
   // personnel: a second big, a shooter to back-screen, a post scorer, the cross-screener (smallest), the star

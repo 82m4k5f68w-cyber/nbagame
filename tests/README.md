@@ -82,3 +82,10 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   breakers, no steals, no NaN.
 - sanity.ts (not in `npm test`, ~10 min) — seeded CPU games + a passive human: no dead-ball stalls, frozen handlers,
   auto-actions by an idle human, needless heaves, backcourt dawdling or bodies passing through each other.
+- chants.ts — crowd chants: scripted situations start the right chant (AIR BALL on a road airball / aww at home,
+  roar + M-V-P on fire, boos for road FTs and flagrant / goaltend / tech on the home team, clutch home FT hush, OVERTIME,
+  DE-FENSE on the sim cue / organ riff, CHARGE! answer, LET'S GO / ROCK YOU / WE WANT fillers, visitors' LET'S GO on a road
+  run, nothing in replays / with chants off / under the commentary voice); a 6-minute random game (no overlaps, cooldowns,
+  loud building chants more); every chant renders (finite, peak .9, length); the sim's "air" FX (iron / glass / in-and-out).
+  `CS=/tmp/x/chants.txt` also writes the script for `scripts/unity/cs.sh unity/CoreTests/ChantCheck.cs /tmp/x/chants.txt`
+  (C# director log identical, C# render RMS equal). browser.mjs also checks the chant buffers render and play.
