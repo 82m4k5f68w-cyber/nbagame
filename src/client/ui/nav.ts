@@ -8,6 +8,8 @@ type Base = {
   /** the element whose controls arrows move between */
   root: () => HTMLElement | null;
   back?: () => void;
+  /** Esc with no dialog open (the hub; the game handles Esc itself) */
+  esc?: () => void;
   /** Enter / A with nothing focused */
   primary?: () => void;
   /** gamepad extras: lb rb lt rt start select */
@@ -99,10 +101,13 @@ function key(e: KeyboardEvent) {
     nav(d[0], d[1]);
     return;
   }
-  if (e.key === "Escape" && top()) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    return back();
+  if (e.key === "Escape") {
+    if (top()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return back();
+    }
+    return BASE?.esc?.(); // (the game shell handles its own Esc: pause / resume)
   }
   if ((e.key === "Enter" || e.key === " ") && ctl(t) && t !== document.body) {
     // a focused control: let the browser activate it, keep the game's input layer out of it

@@ -140,7 +140,7 @@ const tab=(t)=>{document.querySelectorAll<HTMLElement>('#hub nav [data-t]').forE
 document.querySelectorAll<HTMLElement>('#hub nav [data-t]').forEach(b=>b.onclick=()=>tab(b.dataset.t));
 document.querySelectorAll<HTMLElement>('#hub [data-goto]').forEach(b=>b.onclick=()=>{tab(b.dataset.goto);($('#hub nav [data-t="'+b.dataset.goto+'"]') as HTMLElement).focus()});
 $('#hset').onclick=()=>openSettings(undefined,'hub');
-setNavBase({active:()=>!!document.getElementById('hub'),root:()=>document.getElementById('hub'),back:()=>$('#play').hidden&&tab('play'),primary:()=>$('#qpb').click(),pad:(b)=>b==='select'&&openSettings(undefined,'hub')});
+setNavBase({active:()=>!!document.getElementById('hub'),root:()=>document.getElementById('hub'),back:()=>$('#play').hidden&&tab('play'),esc:()=>$('#play').hidden&&tab('play'),primary:()=>$('#qpb').click(),pad:(b)=>b==='select'&&openSettings(undefined,'hub')});
 // ---- animated arena backdrop (static with reduced motion; colours follow the theme tokens)
 const cv=$('#bg'),c=cv.getContext('2d');let W,H,pts=[],tk={a:'#1c2257',b:'#0a0c1c',z:'#05060d',l:'255,170,80'};
 function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight;pts=Array.from({length:36},()=>({x:Math.random()*W,y:Math.random()*H,r:1+Math.random()*2.5,v:.12+Math.random()*.4}));const cs=getComputedStyle(document.documentElement),light=cs.colorScheme==='light';tk=light?{a:'#ffffff',b:'#eef0f6',z:'#e3e6f0',l:'255,120,40'}:{a:'#1a2160',b:'#0a0c1c',z:'#05060d',l:'255,170,80'}}

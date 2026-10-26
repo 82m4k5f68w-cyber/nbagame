@@ -12,7 +12,8 @@ const fp = () => V.focusP();
 /** Fonts: condensed display face for numbers / names, UI face for small print. */
 export const FD = (w: number, px: number) => `${w} ${px}px "H2K Display", Bahnschrift, "Arial Narrow", Impact, sans-serif`;
 const FU = (w: number, px: number) => `${w} ${px}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-const tk = () => [1, 1.15, 1.3][V.TXT] || 1;
+/** Text scale: the accessibility size x a boost on small screens (the 960-unit HUD is ~0.4 px/unit on a phone). */
+const tk = () => ([1, 1.15, 1.3][V.TXT] || 1) * ((X.canvas.clientWidth || 960) < 620 ? 1.5 : 1);
 const kn = (id: string) => (KMAP[id] || "?").replace(/^Key|^Digit/, "");
 function rr(x: number, y: number, w: number, h: number, r: number) {
   X.beginPath();

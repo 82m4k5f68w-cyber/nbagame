@@ -221,9 +221,12 @@ export function quiz(subj: string, lv: number, n: number, seed: number): Q[] {
   for (let i = 0; i < n; i++) out.push(bankQ(rows[i % rows.length], r));
   return out;
 }
-export function lessonOf(subj: string, seed: number): string {
-  const l = LESSONS[subj] || LESSONS.history;
-  return l[hashStr(subj + seed) % l.length];
+/** Lesson blurb for a class: LESSONS rows run from easy to hard, so the level picks the window (HS = first two). */
+export function lessonOf(subj: string, seed: number, lv = 0): string {
+  const l = LESSONS[subj] || LESSONS.history,
+    lo = Math.min(l.length - 1, Math.floor((Math.max(0, Math.min(4, lv)) / 4) * (l.length - 1)) - (lv <= 0 ? 0 : 1)),
+    i = Math.max(0, lo) + (hashStr(subj + seed) % 2);
+  return l[Math.min(l.length - 1, i)];
 }
 /** Total handwritten questions (for the record / tests). */
 export const bankSize = () => Object.values(BANK).reduce((a, b) => a + b.length, 0);

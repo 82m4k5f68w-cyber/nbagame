@@ -734,10 +734,10 @@ async function getQuiz(key: string, course: string, subj: string, n: number): Pr
     const s = screenAI(x, n);
     if (s) {
       const fill = s.qs.length < n ? quiz(subj, lv, n - s.qs.length, seed) : [];
-      return { lesson: s.lesson || lessonOf(subj, seed), qs: [...s.qs, ...fill], ai: true };
+      return { lesson: s.lesson || lessonOf(subj, seed, lv), qs: [...s.qs, ...fill], ai: true };
     }
   }
-  return { lesson: lessonOf(subj, seed), qs: quiz(subj, lv, n, seed), ai: false };
+  return { lesson: lessonOf(subj, seed, lv), qs: quiz(subj, lv, n, seed), ai: false };
 }
 function classFlow(p: Place, ev: S.Ev) {
   const c = L.courses[ev.c!],
@@ -756,7 +756,7 @@ function classFlow(p: Place, ev: S.Ev) {
   };
   const tm = setTimeout(() => {
     const b = root.querySelector("#qoff") as HTMLElement | null;
-    if (b) (b.hidden = false), (b.onclick = () => go2({ lesson: lessonOf(c.sj, ev.day), qs: quiz(c.sj, S.level(L), n, hashStr(ev.id + L.seed)), ai: false }));
+    if (b) (b.hidden = false), (b.onclick = () => go2({ lesson: lessonOf(c.sj, ev.day, S.level(L)), qs: quiz(c.sj, S.level(L), n, hashStr(ev.id + L.seed)), ai: false }));
   }, 4000);
   getQuiz(ev.id, c.n, c.sj, n).then((d) => (clearTimeout(tm), go2(d)));
 }

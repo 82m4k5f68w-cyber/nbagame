@@ -69,10 +69,10 @@ body{margin:0;background:var(--ink-0);color:var(--tx);font-family:var(--ff-ui);-
 #app{position:relative;width:min(100%,calc((100vh - 64px)*16/9));min-width:min(100%,960px);margin:0 auto}
 canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 #h{position:absolute;left:0;top:0;width:100%;height:auto;pointer-events:none;background:transparent!important}
-#bk{position:fixed;left:calc(8px + env(safe-area-inset-left,0px));top:calc(8px + env(safe-area-inset-top,0px));z-index:99;min-height:34px;padding:0 12px;border-radius:var(--r-pill);background:rgba(8,10,22,.7);color:#fff;border:1px solid rgba(255,255,255,.25);font:700 var(--fs-xs)/1 var(--ff-ui);letter-spacing:.04em;cursor:pointer;backdrop-filter:blur(8px)}
+#bk{position:fixed;left:calc(8px + env(safe-area-inset-left,0px));top:calc(8px + env(safe-area-inset-top,0px));z-index:60;min-height:34px;padding:0 12px;border-radius:var(--r-pill);background:rgba(8,10,22,.7);color:#fff;border:1px solid rgba(255,255,255,.25);font:700 var(--fs-xs)/1 var(--ff-ui);letter-spacing:.04em;cursor:pointer;backdrop-filter:blur(8px)}
 #bk:hover{border-color:var(--acc-2)}
 /* overlay: every menu screen sits on a scrim tinted by the home team */
-#ov{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:var(--sp-2);padding:calc(56px + env(safe-area-inset-top,0px)) var(--gutter) calc(var(--sp-8) + env(safe-area-inset-bottom,0px));overflow-y:auto;overscroll-behavior:contain;text-align:center;color:var(--tx);background:radial-gradient(1200px 600px at 20% -10%,color-mix(in srgb,var(--tc,#2a2f7a) 55%,transparent),transparent 70%),linear-gradient(180deg,color-mix(in srgb,var(--ink-0) 88%,transparent),var(--ink-0))}
+#ov{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:var(--sp-2);padding:calc(56px + env(safe-area-inset-top,0px)) var(--gutter) calc(var(--sp-8) + env(safe-area-inset-bottom,0px));overflow-y:auto;overscroll-behavior:contain;text-align:center;color:var(--tx);background:radial-gradient(1200px 600px at 20% -10%,color-mix(in srgb,var(--tc,#2a2f7a) 55%,transparent),transparent 70%),linear-gradient(180deg,color-mix(in srgb,var(--ink-0) 93%,transparent),var(--ink-0))}
 #ov[style*="none"]{display:none}
 #ov>*{position:relative}
 #ov h1,#ov h2{margin:0}
@@ -100,9 +100,12 @@ canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 #tc button[data-a="sd"]{background:var(--acc-grad);color:var(--tx-on-acc);border:0}
 #tc button:active{transform:scale(.96)}
 @media (pointer:coarse){#tc{display:flex}}
+.rot{display:none;margin:var(--sp-2) auto 0;text-align:center;font:700 var(--fs-xs)/1.3 var(--ff-ui);color:var(--acc-2)}
+@media (orientation:portrait) and (max-width:640px){.rot{display:block}}
 /* ---------- matchup ---------- */
 .mu,.ed,.fin,.pzw{width:100%;max-width:1240px;text-align:left}
 .mu{display:flex;flex-direction:column;gap:var(--sp-5)}
+.scr.mu{animation-name:kfade}
 .mu-top{display:flex;align-items:flex-end;gap:var(--sp-4);flex-wrap:wrap}
 .mu-title h1{font-size:var(--fs-4xl)}
 .mu-tools{margin-left:auto;display:flex;align-items:center;gap:var(--sp-2)}
@@ -134,7 +137,7 @@ canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 .frm{display:flex;flex-direction:column;gap:var(--sp-3)}
 .fr{display:flex;flex-direction:column;gap:6px}.sl{font:700 var(--fs-2xs)/1 var(--ff-ui);letter-spacing:var(--ls-caps);text-transform:uppercase;color:var(--tx-2)}
 #tip{width:100%;margin-top:var(--sp-1)}
-.hint.keys{text-align:center}
+.hint.keys{text-align:center}@media (pointer:coarse){.hint.keys{display:none}}
 .pick h2,.mstrip h2{margin-bottom:var(--sp-2)}
 .strip{display:flex;gap:var(--sp-2);overflow-x:auto;padding:4px 2px 10px;scroll-snap-type:x proximity;scrollbar-width:thin}
 .strip .card{position:relative;flex:none;scroll-snap-align:center;display:flex;align-items:center;gap:var(--sp-2);min-height:52px;padding:0 var(--sp-4) 0 var(--sp-2);border-radius:var(--r-md);border:1px solid color-mix(in srgb,var(--c) 40%,var(--line));background:linear-gradient(150deg,color-mix(in srgb,var(--c) 55%,var(--ink-2)),var(--ink-2) 80%);color:#fff;font:700 var(--fs-sm)/1 var(--ff-ui);cursor:pointer;transition:transform var(--dur-2) var(--ease),box-shadow var(--dur-2)}
@@ -150,7 +153,7 @@ canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 .mode .mic{grid-row:1/3;width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font-size:20px;background:color-mix(in srgb,var(--c) 45%,var(--ink-1))}
 .mode b{font:700 var(--fs-md)/1.1 var(--ff-display);text-transform:uppercase;letter-spacing:.03em}.mode small{font-size:var(--fs-xs);color:var(--tx-3);line-height:1.3}
 @media (max-width:980px){.vs{grid-template-columns:1fr 1fr}.vs .mid{grid-column:1/-1;order:3}}
-@media (max-width:640px){.vs{grid-template-columns:1fr}.vs .side.you{order:1}.vs .mid{order:2}.vs .side:not(.you){order:3}.mu-title h1{font-size:var(--fs-3xl)}.tn b{font-size:var(--fs-xl)}.modes{grid-template-columns:1fr 1fr}.mode small{display:none}.mu-tools .chip{display:none}}
+@media (max-width:640px){.mid{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--ink-1)}#tip{position:fixed;left:var(--gutter);right:var(--gutter);bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto;z-index:5;box-shadow:0 10px 40px rgba(0,0,0,.6),var(--glow-acc)}.mu{padding-bottom:76px}.vs{grid-template-columns:1fr}.vs .side.you{order:1}.vs .mid{order:2}.vs .side:not(.you){order:3}.mu-title h1{font-size:var(--fs-3xl)}.tn b{font-size:var(--fs-xl)}.modes{grid-template-columns:1fr 1fr}.mode small{display:none}.mu-tools .chip{display:none}}
 /* ---------- My Player ---------- */
 .ed{display:flex;flex-direction:column;gap:var(--sp-4)}
 .edg{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:var(--sp-4)}
@@ -245,7 +248,7 @@ canvas{display:block;width:100%;height:auto;background:#000;touch-action:none}
 </div>
 <div id="game" hidden><button type="button" id="bk">← Modes</button><div id="app"><canvas id="c" width="960" height="540"></canvas><canvas id="h" width="960" height="540"></canvas><div id="ov"><div class="logo">HOOPS<span>2K27</span></div><p class="hint">Loading…</p></div></div>
 <div id="tc"><button data-k="ArrowLeft">◀</button><button data-k="ArrowUp">▲</button><button data-k="ArrowDown">▼</button><button data-k="ArrowRight">▶</button><button data-a="sd">SHOOT / JUMP</button><button data-a="e">PASS</button><button data-a="q">SWITCH</button><button data-a="f">STEP-BACK</button><button data-a="cc">HESI</button><button data-a="x">SPIN</button><button data-a="vv">BTB</button><button data-a="post">POST</button><button data-a="g">FAKE</button><button data-a="r">LOB</button><button data-a="cam">CAM</button><button data-a="tmp">TEMPO</button><button data-a="mtr">METER</button><button data-a="to">T/O</button></div>
-<div class="note">Touch: thumb on the left half of the court = analog stick (edge = sprint), hold the right half = shoot. Move: WASD/arrows (Shift sprint) · Hold SPACE &amp; release on green = shoot (defense: jump/block) · E = pass toward your stick direction · Q = switch defender · F = step-back · G = pump fake · T = toggle TEMPO shooting · Z = defense / play call · Y = timeout · H = challenge · Esc = pause (keys can be remapped in Settings). Jumpers only go in if you hit GREEN. Unofficial fan project; rosters, ratings &amp; shot styles are approximate.</div>
+<p class="rot">↻ Turn your phone sideways for a bigger court</p><div class="note">Touch: thumb on the left half of the court = analog stick (edge = sprint), hold the right half = shoot. Move: WASD/arrows (Shift sprint) · Hold SPACE &amp; release on green = shoot (defense: jump/block) · E = pass toward your stick direction · Q = switch defender · F = step-back · G = pump fake · T = toggle TEMPO shooting · Z = defense / play call · Y = timeout · H = challenge · Esc = pause (keys can be remapped in Settings). Jumpers only go in if you hit GREEN. Unofficial fan project; rosters, ratings &amp; shot styles are approximate.</div>
 </div>
 <script type="module" src="/src/client/main.ts"></script>
 </body></html>

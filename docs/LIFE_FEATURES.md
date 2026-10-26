@@ -4,75 +4,79 @@ Rules for every item: fictional brands, schools, companies and celebrities only 
 likenesses); PG-13; works offline (AI via the artifact `sample` capability is optional, procedural fallback always);
 single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick items off here as they ship.
 
+> **Status / next item** (LIFE stage 1 shipped: `src/life/`, tests/life.ts + tests/browser_life.mjs).
+> `[x]` = shipped, `[~]` = partly (see CLAUDE.md LIFE section). **Next:** Tier 2 #28 campus visits, #42 group study,
+> #44 major, #49 coach trust -> minutes, #50 film sessions, #51-53 rankings / bracket / Final Four; then Tier 3 #56+.
+
 ## Tier 1 - core loop (must ship first)
-1. Character creation from My Player (face, hair, height, build, position, archetype)
-2. Hometown choice (3 fictional cities, each with its own court and family home)
-3. Day/time clock with configurable day length
-4. Energy, hunger, mood, health meters with HUD
-5. Sleep in bed to advance to morning (alarm clock time choice)
-6. Calendar with classes, practices, games, events
-7. Walkable town/campus with buildings and doors
-8. Third-person camera with collision against walls
-9. Sprint, walk, interact prompt
-10. Minimap with icons and objective marker
-11. Phone overlay (lock screen, home screen, apps)
-12. Messages app with coach/family/friends threads
-13. Map app with fast travel (costs time)
-14. Bank app with balance and transactions
-15. Stats app (ratings, career stats, badges)
-16. Game days: walk into the arena to play a real engine game
-17. Post-game summary (stats, grade, XP, followers, money)
-18. Save/load (localStorage) + 3 save slots
-19. Export/import save as a file (downloads capability)
-20. Tutorial first day with guided objectives
-21. Pause menu (resume, settings, save, quit to hub)
-22. Day/night lighting and street lamps
-23. NPC pedestrians with walk cycles (rig v6 low LOD)
-24. Fictional burrito restaurant and 3 more food spots
-25. Gym with workouts raising ratings (diminishing returns)
+1. [x] Character creation from My Player (face, hair, height, build, position, archetype)
+2. [~] Hometown choice (3 fictional cities, each with its own court and family home)
+3. [x] Day/time clock with configurable day length
+4. [x] Energy, hunger, mood, health meters with HUD
+5. [x] Sleep in bed to advance to morning (alarm clock time choice)
+6. [x] Calendar with classes, practices, games, events
+7. [x] Walkable town/campus with buildings and doors
+8. [x] Third-person camera with collision against walls
+9. [x] Sprint, walk, interact prompt
+10. [x] Minimap with icons and objective marker
+11. [x] Phone overlay (lock screen, home screen, apps)
+12. [x] Messages app with coach/family/friends threads
+13. [x] Map app with fast travel (costs time)
+14. [x] Bank app with balance and transactions
+15. [~] Stats app (ratings, career stats, badges)
+16. [x] Game days: walk into the arena to play a real engine game
+17. [x] Post-game summary (stats, grade, XP, followers, money)
+18. [x] Save/load (localStorage) + 3 save slots
+19. [x] Export/import save as a file (downloads capability)
+20. [x] Tutorial first day with guided objectives
+21. [x] Pause menu (resume, settings, save, quit to hub)
+22. [x] Day/night lighting and street lamps
+23. [x] NPC pedestrians with walk cycles (rig v6 low LOD)
+24. [x] Fictional burrito restaurant and 3 more food spots
+25. [x] Gym with workouts raising ratings (diminishing returns)
 
 ## Tier 2 - college & school
-26. High school senior year (5 games + state playoffs)
-27. Recruiting: offer letters from fictional colleges
+26. [x] High school senior year (5 games + state playoffs)
+27. [x] Recruiting: offer letters from fictional colleges
 28. Official campus visits (tour, meet coach, see dorm)
-29. Signing Day ceremony with hat pick
-30. Class schedule per semester (3-4 classes)
-31. Walk to the right classroom on time; late penalty
-32. Lessons as short slides
-33. AI-generated quiz questions with offline bank
-34. Subjects: Math, English, History, Science, Economics, Psychology, Art, Computer Science
-35. Difficulty grows by year (freshman..senior)
-36. Homework assignments due on dates
-37. Midterms and finals weeks
-38. GPA calculation and transcript screen
-39. Academic probation below 2.0 (can't play)
-40. Tutors you can book (costs money/time)
-41. Study at the library (raises next quiz odds)
+29. [x] Signing Day ceremony with hat pick
+30. [x] Class schedule per semester (3-4 classes)
+31. [x] Walk to the right classroom on time; late penalty
+32. [x] Lessons as short slides
+33. [x] AI-generated quiz questions with offline bank
+34. [x] Subjects: Math, English, History, Science, Economics, Psychology, Art, Computer Science
+35. [x] Difficulty grows by year (freshman..senior)
+36. [x] Homework assignments due on dates
+37. [x] Midterms and finals weeks
+38. [x] GPA calculation and transcript screen
+39. [x] Academic probation below 2.0 (can't play)
+40. [x] Tutors you can book (costs money/time)
+41. [x] Study at the library (raises next quiz odds)
 42. Group study with friends (relationship + grade)
-43. Professor relationships (office hours)
+43. [x] Professor relationships (office hours)
 44. Major choice affecting post-career options
-45. Dean's list award
-46. Academic All-American award
-47. Skipping class consequences (coach finds out)
-48. College team practices with drills
+45. [x] Dean's list award
+46. [x] Academic All-American award
+47. [x] Skipping class consequences (coach finds out)
+48. [x] College team practices with drills
 49. Coach trust meter controls minutes
 50. Film sessions teaching plays (quiz on the play)
-51. Conference games, rankings, AP poll
-52. March Madness bracket with your team
+51. [~] Conference games, rankings, AP poll
+52. [~] March Madness bracket with your team
 53. Final Four and title game cutscenes
-54. Declare for the draft vs stay in school decision
-55. Graduation ceremony if you finish 4 years
+54. [x] Declare for the draft vs stay in school decision
+55. [x] Graduation ceremony if you finish 4 years
 
 ## Tier 3 - draft & NBA career
 56. Draft combine (measurements, athletic tests, drills)
 57. Pre-draft team workouts and interviews
 58. Mock drafts on social media
-59. Draft night (green room, lottery reveal, hat, handshake)
-60. Rookie contract by draft slot
+59. [x] Draft night (green room, lottery reveal, hat, handshake)
+60. [x] Rookie contract by draft slot
 61. Rookie hazing events (carry bags, sing)
 62. Training camp competition for minutes
-63. NBA schedule (82 games, simulated or played)
-64. Sim-to-next-game option
+63. [~] NBA schedule (82 games, simulated or played)
+64. [x] Sim-to-next-game option
 65. Road trips with hotel stays
 66. Team flights with airport scene
 67. Coach role meeting (starter, sixth man, role)
@@ -81,7 +85,7 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 70. Trade deadline rumours and trades
 71. Free agency with offers and meetings
 72. Contract negotiation UI (years, money, options)
-73. Agent choice (3 fictional agents with styles)
+73. [~] Agent choice (3 fictional agents with styles)
 74. Trade request option
 75. Player option / team option decisions
 76. Max contract and supermax milestones
@@ -92,14 +96,14 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 
 ## Tier 4 - fame & media
 81. Fame levels (local -> national -> global)
-82. Fans recognise you on the street
-83. Autograph and selfie requests
+82. [~] Fans recognise you on the street
+83. [~] Autograph and selfie requests
 84. Paparazzi at higher fame
-85. Hoopr social app feed
-86. Post your own posts; replies
-87. Trending hashtags based on events
-88. Reporter, fan, hater, teammate, coach accounts
-89. Follower growth by performance and posts
+85. [x] Hoopr social app feed
+86. [x] Post your own posts; replies
+87. [x] Trending hashtags based on events
+88. [x] Reporter, fan, hater, teammate, coach accounts
+89. [x] Follower growth by performance and posts
 90. Verified badge at milestone
 91. Viral moments from posters/game-winners
 92. Post-game press conferences with choices
@@ -113,7 +117,7 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 100. Fan mail inbox
 
 ## Tier 5 - money, business & brands
-101. Endorsement offers at follower milestones
+101. [x] Endorsement offers at follower milestones
 102. Fictional shoe brand deal with signature shoe
 103. Design your signature shoe colourways
 104. Commercial shoots mini-event
@@ -152,11 +156,11 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 135. Moving day cutscene
 
 ## Tier 7 - travel & transport
-136. Walking and sprinting
+136. [~] Walking and sprinting
 137. Bike
 138. Scooter
 139. City bus with routes
-140. Taxi / ride app (fictional)
+140. [~] Taxi / ride app (fictional)
 141. Buy cars (fictional brands, 6 classes)
 142. Arcade driving physics
 143. Parking at destinations
@@ -169,17 +173,17 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 150. Fast travel unlocks
 
 ## Tier 8 - training science & health
-151. Workout types: strength, speed, shooting, handles, defense, vertical
+151. [x] Workout types: strength, speed, shooting, handles, defense, vertical
 152. Workout mini-games
-153. Diminishing returns + rating caps by level
+153. [x] Diminishing returns + rating caps by level
 154. Sleep quality affecting energy
-155. Diet tracking (fast food lowers stamina)
+155. [x] Diet tracking (fast food lowers stamina)
 156. Cooking healthy meals
 157. Supplements (legal, fictional)
-158. Overtraining injury risk
-159. Injury types and rehab days
+158. [x] Overtraining injury risk
+159. [x] Injury types and rehab days
 160. Physical therapist appointments
-161. Recovery items (ice bath, massage)
+161. [x] Recovery items (ice bath, massage)
 162. Fatigue carrying into games
 163. Weight and body composition
 164. Aging and decline late in career
@@ -202,13 +206,13 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 179. Old HS coach visits
 180. Pet dog adoption
 181. Walk and feed the dog
-182. Story cutscene cards
+182. [~] Story cutscene cards
 183. Dialogue choices with consequences
 184. Reputation alignment (humble vs flashy)
 185. Endings based on choices
 
 ## Tier 10 - side activities
-186. Park pickup games (3v3 engine)
+186. [x] Park pickup games (3v3 engine)
 187. Pro-am summer league
 188. Gym 3-point contest
 189. Arcade shooting game
@@ -216,8 +220,8 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 191. Golf driving range
 192. Video game nights with teammates
 193. Recording studio mini-game
-194. Barbershop (rig v6 hair styles)
-195. Clothing store (outfits on the rig)
+194. [x] Barbershop (rig v6 hair styles)
+195. [x] Clothing store (outfits on the rig)
 196. Sneaker drops (limited releases, timed)
 197. Jersey collection
 198. Celebrity games

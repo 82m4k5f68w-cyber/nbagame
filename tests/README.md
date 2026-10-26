@@ -89,3 +89,9 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   loud building chants more); every chant renders (finite, peak .9, length); the sim's "air" FX (iron / glass / in-and-out).
   `CS=/tmp/x/chants.txt` also writes the script for `scripts/unity/cs.sh unity/CoreTests/ChantCheck.cs /tmp/x/chants.txt`
   (C# director log identical, C# render RMS equal). browser.mjs also checks the chant buffers render and play.
+- life.ts — LIFE core (src/life, DOM-free): day/time + needs, schedule windows + late penalties, GPA/probation, sleep +
+  alarm, diet, workout gains, games/followers/deals, HS -> Signing Day -> college -> declare -> draft -> NBA, save/load +
+  migration, procedural questions (always valid) + the handwritten bank, Hoopr templates/moderation/AI screening.
+- browser_life.mjs — LIFE end to end in Chromium (`?life&lifetest`): create, walk, enter a class (offline bank), quiz,
+  phone (calendar, Hoopr post + replies, messages), sleep, a real engine game from the arena and back. SHOTS=dir saves
+  screenshots. ~5 min on SwiftShader.

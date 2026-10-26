@@ -584,6 +584,66 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   (GameAudio.CrowdVol) + "ch" toggle (Chants.On, PlayerPrefs h2k_chants). Debug: `H2K.crowd.stats()/play(id)`, `H2K.CC`.
 - Tests: tests/chants.ts, unity/CoreTests/ChantCheck.cs (parity), browser.mjs chant check.
 
+## LIFE (MyLife, `src/life/`; hub card "LIFE", `?life` opens it, `?lifetest` = no NPCs for SwiftShader tests)
+- Open-world life sim around the engine: HS senior (12 days, 5 games incl. STATE FINAL) -> Signing Day (3 offers from
+  fictional colleges by OVR/PPG/GPA/followers) -> college years (14 days: classes, midterms + finals, practices, 5
+  games, last two = "March Madness") -> declare after any year (or year 4 + graduation) -> Draft Night (lottery-style
+  reveal, 30 picks; > 30 = two-way deal) -> NBA seasons (rookie scale by pick, weekly paychecks, endless seasons).
+- `state.ts` (DOM-free, tests/life.ts): one JSON `Life` (save slots `h2k_life_<0..2>`, `h2k_life` = last slot,
+  `migrate()` fills new fields). Clock `t` = game minutes (day = t / 1440, weekday 0 = Mon); world time = 1 game
+  min per real s x `set.spd`; screens pause it, actions cost their own minutes (`advance(L, min, act)` drains
+  energy/hunger, drifts mood, `resolve()` marks closed events missed: class/exam 0, practice/game coach texts, game
+  simulated without you). Events `Ev` with join windows `evWin` (class -20..+30 min, game -120..+30); `lateness`
+  (5+ min x.9, 15+ x.75). Grades: quiz 50 / homework 20 / exam 30 renormalised, letter -> points, cumulative GPA;
+  `probation` (< 2.00 once 3+ grades) blocks games (`canPlay`, also injuries). `draftStock` (OVR, per-game line,
+  win%, GPA bonus, followers) -> `projPick`. Followers `followerGain` by perf/fame/highlights; `DEALS` at 2K..500K
+  (none in HS). `eat` (fast-food streak = less energy), `workout` (`gainOf` diminishing, overtraining injury),
+  `sleep` (to `set.alarm`, quality), `dailyTick` (paychecks, deals, league results, scripted texts).
+- `questions.ts` + `qbank.ts`: procedural math by level 0..4 (17 kinds, answers computed) + 216 handwritten rows
+  (english/history/science/econ/psych/art/cs/math word problems, bands HS / yr1-2 / yr3-4); `validQ` screens AI too.
+- `ai.ts`: artifact `sample` capability (`claude.use("sample")`, null off claude.ai) - `askJSON(key, prompt)` cached,
+  45 s timeout, `not_granted` disables, `rate_limited` backs off 90 s. Used on class start (lesson + quiz,
+  `aiQuizPrompt/screenAI`, "Use the textbook instead" after 4 s), Hoopr open / after events (`aiFeedPrompt`) and on
+  the player's posts (`aiReplyPrompt`); every path has the offline generator. Settings -> AI off.
+- `social.ts` Hoopr (fictional network): `postsFor(L, event)` voice templates (fans, haters, reporters, analysts,
+  teammate, coach, rival, brands, memes, news), `trending`, `myPost` (local only; `clean()` slur blocklist incl.
+  leetspeak + whole-word list, flagged posts limited), `scrub()` strips emails/phones/links before any AI call,
+  `screenPosts` drops real brands/platforms (REAL regex), slurs and bad shapes, clamps likes.
+- `places.ts` town (feet; Main St z=0, Market St z=168, Campus Ave x=0): campus halls (hale/wren/lab), library,
+  dining, dorm, Summit Arena (oval), Iron Temple Gym, Burrito Barn / Slice Society / Morning Grind / Green Leaf,
+  Threads, Corner Mart, Fade Factory, home + houses, Central High, The Cage. `doorOf`, `blocked` (collision),
+  `travelMin` (ZipRide $6), opening hours.
+- `world.ts` (three.js, its OWN WebGLRenderer on `#life canvas.w3`; the arena renderer is untouched): shared
+  window texture with world-unit UVs (`boxUV`) + night emissive twin, sign canvases, instanced trees/lamps/parked
+  cars, moving cars that brake for you, sidewalk-graph NPC walkers + idlers (rig v6 LOD 0 via `makeRig`, built one per
+  frame), sky dome vertex gradient + sun/moon/stars, `light(min)` (sunrise 6:00, sunset 19:30: windows, lamps,
+  glow points, exposure), shadow camera follows the player, third-person orbit camera (slab test vs footprints).
+  `anim.ts` decodes the CMU walk/run cycles itself (mocap.ts) + idle/sit/wave/phone/eat/lift/shoot/talk overlays.
+- `index.ts` shell: title (3 slots, import/export via `downloads` capability or a Blob link), creation (archetypes
+  `ARCH`, look, height/build, number, hometown, import My Player look), loop, HUD (time, 4 bars, money, followers,
+  GPA), objective line + gold beacon + minimap arrow, toasts from `L.notes`, tutorial (6 steps), place screens,
+  class flow (lesson -> 5-question quiz / 8 on exams, keys 1-4), homework, practice, pregame (play / sim / watch if
+  ineligible), postgame card (grade, XP via career.ts `gameXP` -> `addXP` skill points), Signing Day / declare /
+  Draft Night (`decide()` on `L.pend`), pause menu, touch stick (left half) + orbit drag, gamepad (A interact, Y phone).
+- Engine bridge (game.ts hooks only): `GS.idle` (shell loop + key handler sleep, crowd bed muted, music off), `GS.life`
+  (no hub record / My Player XP), `GS.onFx` (LIFE counts dunks/blocks/threes/airballs/game-winners), `GS.onQuit`
+  (pause Quit = forfeit), `lifeStart({kind, sel, opp, ql, diff})`. Fictional HS/college teams are written into
+  `TM[14]/TM[15]` (`teams.ts roster()` deterministic by name) for the game; NBA uses TM 0..13. My Player = the life
+  player (`MYP.d` set per game; `h2k_myp` restored after). The engine's final screen gets "Continue (LIFE)".
+  Pickup at The Cage = `street3`/`street` modes, practice drill = `3pt`, results via `GS.onMode`.
+- `phone.ts`: lock screen (time, notifications) -> home grid -> Messages (reply chips move affinity), Calendar,
+  Map (pins, ZipRide), Bank (txns, deals, salary), Hoopr (trending, compose + suggestions, feed with replies, AI
+  shimmer), School (GPA, courses, HW, transcript), Stats (ratings, skill points, career table, draft stock),
+  Contacts, Settings (day length, alarm, quarters, difficulty, AI, big text, colour-blind, reduce motion). P / Tab / 📱.
+- Tests: tests/life.ts (state machine, needs, schedule + late, GPA, probation, sleep/alarm, diet, gains, games +
+  followers + deals, HS -> college -> draft -> NBA, save/load + migration, question generator/bank, Hoopr posts,
+  moderation, AI screening); tests/browser_life.mjs (title -> create -> walk -> door -> offline class -> phone ->
+  Hoopr post + replies -> sleep -> arena game in the engine -> back in LIFE -> save). SwiftShader ~1 fps: drive via
+  `window.H2K_LIFE` (goto, setTime, enter, interact, L, W) and presence waits with `polling: 100`.
+- Roadmap + ticks: docs/LIFE_FEATURES.md (status/next item at the top). Known gaps: one shared town for every stage
+  (hometowns differ by name only), the player's hair override (`hs`) isn't used by the engine's game rig (formOf),
+  no interiors in 3D (place screens), NPCs don't path around buildings (sidewalk graph only).
+
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
 fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

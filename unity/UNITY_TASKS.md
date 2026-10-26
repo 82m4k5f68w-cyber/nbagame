@@ -180,3 +180,12 @@ sim.ts "Pro Play pack"); cfg.UP gates only Pose.UP.cs + PH2. Trace.cs [N] [hum] 
 - Pose-side changes the mesh should expect: standing players now keep soft knees (crouch 0.16), elbows ~0.3 rad,
   hands half curled (g .35), feet slightly wider than the hips; crouched stances put the feet up to 5 px ahead of the
   hip joints (hips sit back); armIK now follows pelvis + chest pitch (ln, cx).
+
+
+## LIFE mode (browser-only for now)
+A Unity port would need: the DOM-free `src/life/state.ts` / `questions.ts` / `qbank.ts` / `social.ts` / `places.ts` /
+`teams.ts` ported to C# (same names; tests/life.ts as the parity checklist), a town scene built from `places.ts`
+(footprints, doors, roads) with NavMesh pedestrians reusing RigMesh + the mocap walk/run cycles, a third-person
+camera with wall collision, a phone UI (UI Toolkit) for the nine apps, save slots in PlayerPrefs/JSON files, the AI
+`sample` path replaced by an optional HTTP call (offline bank by default), and a bridge that starts a Unity match with
+the life player as My Player and fictional teams injected into the roster table, returning the box line.

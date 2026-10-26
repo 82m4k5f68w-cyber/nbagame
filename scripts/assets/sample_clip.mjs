@@ -6,10 +6,10 @@ import path from "node:path";
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 const [ai = "2", secs = "3", out = "assets/mocap/sample_jog.mp4"] = process.argv.slice(2);
-const FPS = 30,
+const FPS = +(process.env.FPS || 15),
   tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "h2kclip-"));
 const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
-const pg = await b.newPage({ viewport: { width: 720, height: 720 } });
+const pg = await b.newPage({ viewport: { width: 480, height: 480 } });
 await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro");
 await pg.waitForTimeout(400);
 await pg.evaluate(() => document.querySelector('button[data-g="1v1-3d"][data-my="0"][data-mp="0"]').click());
@@ -34,6 +34,6 @@ for (let f = 0; f < n; f++) {
 }
 await b.close();
 fs.mkdirSync(path.dirname(out), { recursive: true });
-execFileSync("ffmpeg", ["-y", "-v", "error", "-framerate", String(FPS), "-i", path.join(tmp, "f%04d.png"), "-vf", "scale=480:480", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "26", out]);
+execFileSync("ffmpeg", ["-y", "-v", "error", "-framerate", String(FPS), "-i", path.join(tmp, "f%04d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "26", out]);
 fs.rmSync(tmp, { recursive: true });
 console.log(`sample_clip: ${n} frames -> ${out} (${(fs.statSync(out).size / 1024).toFixed(0)} KB)`);
