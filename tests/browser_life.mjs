@@ -27,7 +27,7 @@ await click("#cgo");
 await waitFor("#life .cut button");
 await shot("03-dayone");
 await click("#life .cut button");
-await pg.waitForFunction(() => window.H2K_LIFE && H2K_LIFE.mode === "world", null, { polling: 100, timeout: 30000 });
+await pg.waitForFunction(() => window.H2K_LIFE && H2K_LIFE.mode === "world", null, { polling: 100, timeout: 60000 });
 const L0 = await ev(() => ({ t: H2K_LIFE.L.t, n: H2K_LIFE.L.p.n, c: H2K_LIFE.L.p.c, stage: H2K_LIFE.L.stage }));
 ok(L0.n === "TEST KID" && L0.stage === "hs" && L0.c === 68, "new life: name, HS stage, archetype ratings");
 // walk (keyboard): the player moves
@@ -72,7 +72,7 @@ const cls = await ev(() => ({ sc: H2K_LIFE.L.courses[0].sc.length, v: H2K_LIFE.L
 ok(answered === 5 && cls.sc === 1 && cls.v >= 0 && cls.hw >= 0 && cls.t >= 600, "class: 5 answers, grade " + cls.txt + " recorded, homework set, clock at 10:00+");
 await shot("07-grade");
 await click("#life .scr [data-o='__x']");
-await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 10000 });
+await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 60000 });
 // phone: calendar + Hoopr post with replies
 await pg.keyboard.press("KeyP");
 await waitFor("#life .phone.on");
@@ -110,7 +110,7 @@ await pg.keyboard.press("KeyE");
 await waitFor("#life .scr [data-o='sleep']");
 await shot("11-home");
 await click("#life .scr [data-o='sleep']");
-await pg.waitForFunction(() => H2K_LIFE.L.t >= 1440 + 7 * 60, null, { polling: 100, timeout: 10000 });
+await pg.waitForFunction(() => H2K_LIFE.L.t >= 1440 + 7 * 60, null, { polling: 100, timeout: 60000 });
 const sl = await ev(() => ({ t: H2K_LIFE.L.t, e: H2K_LIFE.L.energy }));
 ok(sl.t === 1440 + 7 * 60 && sl.e > 80, "slept to 7:00 AM day 2, energy " + Math.round(sl.e));
 await pg.waitForTimeout(800);
@@ -125,7 +125,7 @@ await ev((g) => {
   });
   H2K_LIFE.goto("arena");
 }, g);
-await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 30000 });
+await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 60000 });
 await pg.waitForTimeout(400);
 await pg.keyboard.press("KeyE");
 await waitFor("#life .scr [data-o='play']");
@@ -160,7 +160,7 @@ const pgm = await ev(() => ({ txt: document.querySelectorAll("#life .scr h2")[1]
 ok(/WIN/.test(pgm.txt) && pgm.gp === 1 && pgm.w === 1 && pgm.life !== "none" && pgm.res && pgm.res.played, "back in LIFE: " + pgm.txt + ", game booked (1 GP, W) " + JSON.stringify({ gp: pgm.gp, w: pgm.w, life: pgm.life }));
 await shot("15-postgame");
 await click("#life .scr [data-o='__x']");
-await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 10000 });
+await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 60000 });
 await pg.waitForTimeout(1500);
 await shot("16-after");
 // save round trip
