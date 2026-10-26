@@ -538,8 +538,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   (`measureRefresh`, rAF 1 s, shown "Your screen: N Hz"); `V.FPSC` HUD FPS counter (game.ts `fpsHud`). Saved in
   h2k_set `hs` (only when picked: default discrete Off, others Auto) / `hm` / `tf` / `fc`.
 - WebGL temporal: Halton(2,3) jitter on `cam.projectionMatrix` (restored after the frame: HUD `proj()` stays
-  unjittered), composer at low res WITHOUT MSAA + `DepthTexture` on both composer buffers (`ScenePass.last` = the one
-  with this frame's depth; all full-screen pass materials have depthTest/Write off so they can't overwrite it),
+  unjittered), composer at low res WITHOUT MSAA + `DepthTexture` on both composer buffers; `ScenePass.after` runs
+  `hsr.pre()` right after the scene is drawn (later full-screen passes render with autoClear and WIPE the depth of
+  the buffer they write: reading it after the chain gave far-plane depth everywhere = ghosting on camera moves),
   velocity pass for `fx.dyn` (rig roots + ball + refs; borrowed as children of a private Scene, override material
   with previous model matrix AND previous bone texture per skeleton = exact limb motion), prep pass (camera
   reprojection of depth elsewhere), resolve at output res (MRT: color + [lock, weight]; 3x3 depth dilation,
@@ -551,6 +552,9 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   for 8 checks -> +.05, a failed scale is not re-probed for 8 s; range .45..1. The effects ladder only drops once
   the scale is at .45, and its 85/75% rungs scale the internal res (output never shrinks). rAF is capped at the
   refresh, so targets above it mean "every refresh".
+- Measured (SwiftShader, Medium, 1000x562 out): Performance-T 25% pixels -> ~.32x frame cost of native, +25 draw calls
+  (velocity pass); net close-up SSIM vs native .976 Quality / .971 Balanced / .964 Performance-T / .956 Performance-S /
+  .926 Ultra; net-cord flicker 10.3 (raw jittered) -> .32 with history. `hsrProbe(u,v)` reads a prep texel.
 - Composer render targets are w x pixelRatio UNROUNDED: always floor before using them as sizes (GL truncates).
 - Debug: `V.GL.stats()` (hsr sizes, draw calls per frame - `R.info.autoReset` is off and reset per draw), `V.GL.pin(lvl)`
   freezes the ladder (tests), `V.GL.hsrReset()`. tests/browser_hsr.mjs (+ `webgpu`), screenshots docs/hsr/.
