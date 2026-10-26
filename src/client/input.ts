@@ -46,7 +46,15 @@ const actOf = (code: string) => {
   for (const id in KMAP) if (KMAP[id] === code) return id;
   return "";
 };
-const held = (id: string) => !!K[KMAP[id]] || (id === "sp" && !!K.ShiftRight && !IN.MP2);
+/** Sprint toggle state (V.SPT = 1: a tap of the sprint key turns sprint on, the next one off). */
+let spOn = 0;
+const held = (id: string) => (id === "sp" && V.SPT ? !!spOn : !!K[KMAP[id]] || (id === "sp" && !!K.ShiftRight && !IN.MP2));
+/** Forget pending one-shot presses (menu keys / pad buttons pressed before a game starts). */
+export function clearEdges() {
+  for (const k in ev) ev[k] = 0;
+  for (const k in ev2) ev2[k] = 0;
+  spOn = 0;
+}
 /** Auto-release assist: lets go of the shot near the top of the meter (with a little human error). */
 export const AUTO = { rel: null as null | ((p: Player) => number | null) };
 /** Floating texts in the HUD (from sim FX). */
@@ -193,7 +201,9 @@ export function kd(c: string) {
     } else if (a === "mtr") {
       V.METER = (V.METER + 1) % 4;
       txtS("METER: " + MN[V.METER], 480, 200, "#ffd23f");
-    } else if (a && a !== "post" && a !== "sp") ev[a] = 1;
+    } else if (a === "sp") {
+      if (V.SPT) spOn = spOn ? 0 : 1;
+    } else if (a && a !== "post") ev[a] = 1;
   }
 }
 export function ku(c: string) {
@@ -264,6 +274,9 @@ export function bindInput() {
   if (bound) return;
   bound = 1;
   addEventListener("keydown", (e) => {
+    // a focused menu control keeps Enter / Space (ui/nav.ts also stops them while menus are up)
+    const t = e.target as HTMLElement;
+    if ((e.code === "Enter" || e.code === "Space") && t?.closest?.("button,select,summary,[role=tab],label") && (t as any).offsetParent !== null) return;
     if (["Space", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Slash", "Enter"].includes(e.code) && !(e.target as HTMLElement)?.closest?.("input")) e.preventDefault();
     if ((e.target as HTMLElement)?.closest?.("input")) return;
     kd(e.code);
