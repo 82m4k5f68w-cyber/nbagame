@@ -326,3 +326,5 @@ export function modeArt(kind: string, c1: string, c2 = "#ff6a1f", w = 720, h = 3
 /** Brand mark: a ball in a ring (hub header). */
 export const brandMark = (s = 34) =>
   `<svg width="${s}" height="${s}" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="bm" cx=".35" cy=".3"><stop offset="0" stop-color="#ffb070"/><stop offset=".6" stop-color="#ff6a1f"/><stop offset="1" stop-color="#8a3108"/></radialGradient></defs><circle cx="20" cy="20" r="17" fill="url(#bm)"/><g fill="none" stroke="#2a0e00" stroke-width="1.6" opacity=".8"><path d="M3 20h34M20 3v34"/><path d="M8 8c6 6 6 18 0 24M32 8c-6 6-6 18 0 24"/></g><circle cx="20" cy="20" r="19" fill="none" stroke="#ffc83d" stroke-width="1.5" opacity=".7"/></svg>`;
+/** A team colour readable as text on the dark UI (very dark colours are lifted). */
+export const light = (c: string) => (lum(c) < 0.42 ? shade(c, 1.55) : c);

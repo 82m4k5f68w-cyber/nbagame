@@ -5,18 +5,21 @@ import { cfg, P, B, CT, MYP, mkT, RO, ALL, nChoices, ovr } from "../core/sim";
 import { TM, PRE, ov2, formOf } from "../core/data";
 import { lookOf, faceOf } from "./look";
 import { rapInit } from "../core/physics";
-import { V, CAMN, MN, pr, HSRN } from "./view";
+import { V, CAMN, MN, pr, fmt } from "./view";
 import { measureRefresh } from "./hsr";
+import { ST, loadSet, saveSet, openSettings, settingsOpen, SETH } from "./ui/settings";
+import { setNavBase } from "./ui/nav";
+import { teamMark, light } from "./ui/art";
 import { glInit } from "./render3d";
 import { court2d, hoop2d, net2d, player2d, ball2d, scene3c, segs3c, paint3c, ball3c, pj, CP, setCanvasCtx } from "./canvas";
-import { setHudCtx, hud, hud2, contestFx, meter, openMark, assignMark, passMark, replayHud } from "./hud";
-import { IN, TX, hum, hum2, gpPoll, bindInput, ACTS, KMAP, saveKeys, AUTO } from "./input";
+import { setHudCtx, hud, hud2, contestFx, meter, openMark, assignMark, passMark, replayHud, scoreBug, nameTags } from "./hud";
+import { IN, TX, hum, hum2, gpPoll, bindInput, AUTO, clearEdges } from "./input";
 import { audio } from "./audio";
 import { voiceBusy } from "./voice";
 import { music } from "./music";
 import { crowd } from "./crowd";
 import type { CCtx } from "./chantdir";
-import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, drawBug, rumble, badgeStr, drawPlayerIntro, introLen, timingGrade, drawTiming } from "./broadcast";
+import { setBcCtx, banner, comment, bcTick, bcReset, drawBanners, drawIntro, rumble, badgeStr, drawPlayerIntro, introLen, timingGrade, drawTiming } from "./broadcast";
 import { NET } from "./net/session";
 import { openStudio, studioPose } from "./animview";
 import { M as MODE, stopMode } from "../core/modes";
@@ -25,8 +28,7 @@ import { bindModes, setModeCtx, modeHud, modeEvent, modeStrip, bindStrip, replay
 
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let C: HTMLCanvasElement, X: CanvasRenderingContext2D, ov: HTMLElement;
-let SEL = 0,
-  MYM = 0;
+let SEL = 0;
 export const GS = {
   mode: "5v5-3d",
   booted: 0,
@@ -57,7 +59,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   V.r3d = o.r3d;
   loadSet();
   if (/[?&]nointro\b/.test(location.search)) V.INTRO = 0; // tests
-  if (o.my != null && o.my) MYM = 1;
+  if (o.my != null && o.my) ST.MYM = 1;
   IN.MP2 = o.mp ? 1 : 0;
   C = $("#c") as HTMLCanvasElement;
   X = ($("#h") as HTMLCanvasElement).getContext("2d")!;
@@ -79,10 +81,10 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
       audio.crowdInit();
       music.start();
       bcReset();
-      cfg.MYM = MYM;
-      G.setCtrls([G.mkCtrl("p1", 0, !!MYM, IN.TEMPO)]);
+      cfg.MYM = ST.MYM;
+      G.setCtrls([G.mkCtrl("p1", 0, !!ST.MYM, IN.TEMPO)]);
       V.focus = 0;
-      G.setQtrLen(QLEN);
+      G.setQtrLen(ST.QLEN);
       lastFx = G.FX.length ? G.FX[G.FX.length - 1].id : 0;
     },
   });
@@ -118,6 +120,17 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     }
   };
   bindInput();
+  SETH.onEdit = () => (ov.classList.remove("mu-on"), edMy());
+  SETH.onOnline = () => (ov.classList.remove("mu-on"), NET.openLobby());
+  SETH.onReel = loadReel;
+  setNavBase({
+    active: () => !GS.idle && ov.style.display !== "none" && G.S !== "play" && G.S !== "intro" && !G.RPL,
+    root: () => ov,
+    back: () => (G.S === "pause" && !NET.role ? resume() : undefined),
+    primary: () => (ov.querySelector("[data-autofocus]") as HTMLElement | null)?.click(),
+    pad: (b) => menuPad && menuPad(b),
+  });
+  document.fonts?.load?.('700 20px "H2K Display"').catch(() => {});
   C.parentElement!.addEventListener("pointerdown", () => endIntro());
   addEventListener("keydown", (e) => {
     if (GS.idle) return;
@@ -126,14 +139,14 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
       return endIntro();
     }
     if (menuKeys) menuKeys(e);
-    if ((e.code === "Escape" || e.code === "KeyP") && !NET.role && !G.RPL && (G.S === "play" || G.S === "pause")) {
+    if ((e.code === "Escape" || e.code === "KeyP") && !NET.role && !G.RPL && !settingsOpen() && (G.S === "play" || G.S === "pause")) {
       e.preventDefault();
       G.S === "pause" ? resume() : pause();
     }
   });
   addEventListener("blur", () => !NET.role && !G.RPL && G.S === "play" && pause());
   GS.booted = 1;
-  (window as any).H2K = { G, V, NET, startLocal, menu, resetFx, studio, studioPose, openMode, MODE, shareLink, crowd, CC, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
+  (window as any).H2K = { G, V, NET, startLocal, menu, openSettings, resetFx, studio, studioPose, openMode, MODE, shareLink, crowd, CC, RAP: () => import("../core/physics").then((m) => !!m.RAP) };
   NET.setMenu(menu);
   if (o.quick) {
     SEL = o.quick.sel;
@@ -153,59 +166,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
   requestAnimationFrame(loop);
 }
 
-// ---------------- settings (remembered per browser) ----------------
-let QPICK = 0; // the player chose a graphics level (saved; otherwise the GPU-tier default applies)
-let HPICK = 0; // same for the HSR mode
-function loadSet() {
-  try {
-    const o = JSON.parse(localStorage.getItem("h2k_set") || "{}");
-    if (o.m != null) V.METER = o.m;
-    if (o.s != null) IN.TEMPO = o.s;
-    if (o.p != null) cfg.PRO = o.p;
-    if (o.cm != null) V.CAMM = o.cm;
-    if (o.q2 != null) (V.QL = o.q2), (QPICK = 1); // only an explicit pick (old saves always carried "q" = the default)
-    if (o.fx != null) V.FX = !!o.fx;
-    if (o.gp != null) V.GPU = o.gp ? 1 : 0;
-    if (o.hs != null) (V.HSR = o.hs), (HPICK = 1);
-    if (o.hm != null) V.HSRM = o.hm;
-    if (o.tf != null) V.TFPS = o.tf;
-    if (o.fc != null) V.FPSC = o.fc;
-    if (o.my != null) MYM = o.my;
-    if (o.df != null) cfg.DIFF = o.df;
-    if (o.ql) QLEN = o.ql;
-    if (o.ru) Object.assign(cfg, o.ru);
-    for (const k of ["COMM", "VOICE", "ANNV", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO"]) if (o[k] != null) (V as any)[k] = o[k];
-    if (o.CROWD != null) crowd.vol = o.CROWD;
-    if (o.CHANTS != null) crowd.on = o.CHANTS;
-  } catch (e) {}
-}
-function saveSet() {
-  try {
-    localStorage.setItem(
-      "h2k_set",
-      JSON.stringify({
-        m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q2: QPICK ? V.QL : undefined, fx: V.FX ? 1 : 0, gp: V.GPU, hs: HPICK ? V.HSR : undefined, hm: V.HSRM, tf: V.TFPS, fc: V.FPSC, my: MYM, df: cfg.DIFF, ql: QLEN,
-        ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
-        COMM: V.COMM, VOICE: V.VOICE, ANNV: V.ANNV, MUSIC: V.MUSIC, INTRO: V.INTRO, RUMBLE: V.RUMBLE, CB: V.CB, BIGM: V.BIGM, AUTO: V.AUTO,
-        CROWD: crowd.vol, CHANTS: crowd.on,
-      }),
-    );
-  } catch (e) {}
-}
-
-/** Display refresh line under Target FPS: browsers never draw faster than the screen refreshes. */
-const hzLine = () => {
-  const hz = V.HZ;
-  if (!hz) return "Auto resolution holds this frame rate. Browsers draw at most once per screen refresh.";
-  const t = V.TFPS || hz;
-  return `Your screen: ${hz} Hz. ` + (t > hz ? `Browsers can't draw faster than the screen, so ${V.TFPS} acts as Max (${hz} FPS).` : V.TFPS ? `Auto resolution aims for ${t} FPS.` : `Auto resolution aims for every refresh (${hz} FPS).`);
-};
-
-// ---------------- menus ----------------
-const CRN: [string, number][] = [["Off", 0], ["Low", 35], ["Medium", 70], ["Full", 100]]; // crowd volume
-const opt = (b: string, k: string, v: number, cur: number, l: string) => `<button data-${k}="${v}" class="${cur === v ? "on" : ""}">${l}</button>`;
-const onoff = (k: string, cur: number) => opt("", k, 1, cur ? 1 : 0, "On") + opt("", k, 0, cur ? 1 : 0, "Off");
-const keyName = (c: string) => (c || "?").replace(/^Key/, "").replace(/^Digit/, "").replace("ShiftLeft", "L-Shift").replace("ShiftRight", "R-Shift").replace("Space", "Space");
+// ---------------- settings: ui/settings.ts (loadSet / saveSet / the drawer; ST = ST.MYM, ST.QLEN, picks) ----------------
 // ---------------- portraits, records ----------------
 const AV = new Map<string, string>();
 /** Broadcast-style portrait drawn from the roster data and the player's deterministic look (look.ts: hair style and
@@ -395,12 +356,14 @@ const POS = ["PG", "SG", "SF", "PF", "C"],
   avg = (a: any[], k: number) => Math.round(a.reduce((s2, p) => s2 + p[k], 0) / a.length);
 let OPP = -1; // -1 = random opponent
 let NP0 = 5; // team size the hub booted with (5v5 hubs can also play 3v3 / 2v2)
-let QLEN = 60;
 
-/** The matchup screen: your team vs. the opponent, lineups, ratings, difficulty, and a settings drawer. */
-export function menu() {
+/** The matchup screen (UI v6): your team vs the opponent (team marks, lineups with portraits, tale of the tape),
+ *  difficulty / team size / quarter length, TIP OFF, the team carousel and the game-mode tiles. Arrows / d-pad move
+ *  focus (ui/nav.ts); Q E (LB RB) cycle your team, Z C (LT RT) the opponent, S opens settings. */
+export function menu(focus?: string) {
   stopMode();
   G.setS("menu");
+  const again = ov.style.display !== "none" && !!ov.querySelector(".mu");
   ov.style.display = "flex";
   ov.classList.add("mu-on");
   const NP = cfg.NP,
@@ -408,63 +371,63 @@ export function menu() {
   if (SEL >= N) SEL = 0;
   if (OPP >= N || OPP === SEL) OPP = -1;
   const R = rec.get(),
+    rat = (pl: any[]) => [avg(pl, 1), avg(pl, 2), avg(pl, 3), avg(pl, 4), Math.round(pl.reduce((a, p) => a + ov2(p), 0) / pl.length)],
     side = (i: number, you: boolean) => {
       const r = RO(i),
         pl = r[1],
-        ovr0 = Math.round(pl.reduce((a, p) => a + ov2(p), 0) / pl.length),
         name = r[2],
         sub = NP > 1 ? "" : TM[ALL[i].t][0],
-        bars: [string, number][] = [
-          ["3PT", avg(pl, 1)],
-          ["INSIDE", avg(pl, 2)],
-          ["SPEED", avg(pl, 3)],
-          ["DEFENSE", avg(pl, 4)],
-        ];
-      return `<section class="side${you ? " you" : ""}" style="--c:${r[0]}">
-        <div class="sh"><button class="arw" data-cy="${you ? "y" : "o"}" data-d="-1" aria-label="Previous">◀</button>
-        <div class="badge">${esc(name.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase())}</div>
-        <div class="tn"><small>${you ? (MYM ? "YOU · MY PLAYER" : "YOU") : "OPPONENT"}${sub ? " · " + esc(sub) : ""}</small><b>${esc(name)}</b></div>
-        <div class="ovr"><small>OVR</small>${ovr0}</div>
-        <button class="arw" data-cy="${you ? "y" : "o"}" data-d="1" aria-label="Next">▶</button></div>
-        <div class="rt">${bars.map(([k, v]) => `<div><span>${k}</span><i style="--w:${v}%"></i><em>${v}</em></div>`).join("")}</div>
+        cy = you ? "y" : "o";
+      return `<section class="side${you ? " you" : ""}" style="--c:${r[0]}" aria-label="${you ? "Your" : "Opponent"} ${NP > 1 ? "team" : "player"}">
+        <div class="sh"><button type="button" class="arw btn icon" data-cy="${cy}" data-d="-1" aria-label="Previous ${you ? "team" : "opponent"}">◀</button>
+        ${NP > 1 ? teamMark(name, r[0], 54) : `<img class="hs" alt="" src="${avatar(pl[0], r[0])}">`}
+        <div class="tn"><span class="eyebrow">${you ? (ST.MYM ? "You · My Player" : "You") : "Opponent"}${sub ? " · " + esc(sub) : ""}</span><b class="disp">${esc(name)}</b></div>
+        <div class="ovr"><small>OVR</small><b class="disp">${rat(pl)[4]}</b></div>
+        <button type="button" class="arw btn icon" data-cy="${cy}" data-d="1" aria-label="Next ${you ? "team" : "opponent"}">▶</button></div>
         <ol class="lu">${pl
           .map(
             (p, k) =>
-              `<li style="--d:${k * 60}ms"><img alt="" src="${avatar(p, r[0])}"><span class="pn">${NP >= 5 ? POS[k] : "#" + p[12]}</span><b>${esc(p[0])}</b><span class="po">${ov2(p)}</span></li>`,
+              `<li style="--d:${k * 50}ms"><img alt="" src="${avatar(p, r[0])}"><span class="pn">${NP >= 5 ? POS[k] : "#" + p[12]}</span><b>${esc(p[0])}</b><span class="po">${ov2(p)}</span><i class="pb" style="--w:${Math.max(0, (ov2(p) - 55) * 2.3)}%"></i></li>`,
           )
           .join("")}</ol></section>`;
     };
-  const oppI = OPP < 0 ? -1 : OPP;
-  ov.innerHTML = `<div class="mu">
-  <header class="mu-top"><div class="logo">HOOPS<span>2K27</span></div><div class="mu-sub">${NP > 1 ? NP + "V" + NP : "1V1 SHOWDOWN"} · ${V.r3d ? "3D ARENA" : "2D COURT"}</div>
-   <div class="rec" title="Your record vs the CPU">${R.w}W · ${R.l}L${R.st > 1 ? ` · 🔥 ${R.st} straight` : ""}</div><button id="set" class="gear">⚙ Settings</button></header>
+  const oppI = OPP < 0 ? -1 : OPP,
+    a = rat(RO(SEL)[1]),
+    b = oppI >= 0 ? rat(RO(oppI)[1]) : null,
+    tape = b
+      ? `<div class="cmp tape" style="--c0:${RO(SEL)[0]};--c1:${RO(oppI)[0]}">${["3PT", "INSIDE", "SPEED", "DEFENSE", "OVERALL"]
+          .map((k, j) => {
+            const t = a[j] + b[j] || 1;
+            return `<div><em class="${a[j] > b[j] ? "w" : ""}">${a[j]}</em><span><i style="--w:${(100 * a[j]) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b[j]) / t}%;background:var(--c1)"></i></span><em class="${b[j] > a[j] ? "w" : ""}">${b[j]}</em><small>${k}</small></div>`;
+          })
+          .join("")}</div>`
+      : `<p class="hint tape0">Random opponent: a surprise ${NP > 1 ? "team" : "star"} every game. Pick one with ▶ or Z / C.</p>`,
+    seg = (k: string, l: string, o: [number, string][], cur: number) =>
+      `<div class="fr"><span class="sl" id="fl-${k}">${l}</span><div class="seg" role="group" aria-labelledby="fl-${k}">${o.map(([v, n]) => `<button type="button" data-${k}="${v}" class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}">${n}</button>`).join("")}</div></div>`;
+  ov.innerHTML = `<div class="scr mu${again ? " re" : ""}">
+  <header class="mu-top"><div class="mu-title"><span class="eyebrow">${NP > 1 ? NP + "v" + NP : "1v1 Showdown"} · ${V.r3d ? "3D arena" : "2D court"}</span><h1 class="disp">Matchup</h1></div>
+   <div class="mu-tools"><span class="chip rec" title="Your record vs the CPU"><b>${R.w}</b>W <b>${R.l}</b>L${R.st > 1 ? ` · 🔥 <b>${R.st}</b>` : ""}</span><button type="button" id="set" class="btn"><span aria-hidden="true">⚙</span> Settings</button></div></header>
   <div class="vs">${side(SEL, true)}
-   <div class="mid"><div class="vsb">VS</div>
-    <div class="chips"><b>DIFFICULTY</b>${DIFFN.map((n, i) => opt("", "df", i, cfg.DIFF, n)).join("")}</div>
-    ${NP0 > 1 ? `<div class="chips"><b>TEAM SIZE</b>${[5, 3, 2].map((n) => `<button data-tsz="${n}" class="${NP === n ? "on" : ""}">${n}v${n}</button>`).join("")}</div>` : ""}
-    <div class="chips"><b>QUARTERS</b>${[30, 60, 120, 180].map((q) => `<button data-ql="${q}" class="${QLEN === q ? "on" : ""}">${q < 60 ? q + "s" : q / 60 + " min"}</button>`).join("")}</div>
-    <button class="big" id="tip">TIP OFF ▶</button><p class="hint">← → your ${NP > 1 ? "team" : "star"} · ↑ ↓ opponent · Enter tip off</p>${modeStrip()}</div>
-   ${oppI < 0 ? `<section class="side rnd"><div class="sh"><button class="arw" data-cy="o" data-d="-1" aria-label="Previous">◀</button><div class="badge">?</div><div class="tn"><small>OPPONENT</small><b>Random</b></div><button class="arw" data-cy="o" data-d="1" aria-label="Next">▶</button></div><p class="hint" style="margin:10px 0">A surprise ${NP > 1 ? "team" : "star"} every game. Use ▶ or ↑ ↓ to pick one.</p><ol class="lu q">${(NP > 1 ? POS : ["?"])
-        .map((ps, k) => `<li style="--d:${k * 60}ms"><span class="qa">?</span><span class="pn">${NP > 1 ? ps : ""}</span><b>Mystery ${NP > 1 ? "starter" : "star"}</b><span class="po">??</span></li>`)
-        .join("")}</ol></section>` : side(oppI, false)}</div>
-  <div id="g" class="strip" role="listbox" aria-label="Choose">${[...Array(N).keys()]
+   <div class="mid"><div class="vsb disp" aria-hidden="true">VS</div>${tape}
+    <div class="frm">${seg("df", "Difficulty", DIFFN.map((n, i) => [i, n] as [number, string]), cfg.DIFF)}
+    ${NP0 > 1 ? seg("tsz", "Team size", [5, 3, 2].map((n) => [n, n + "v" + n] as [number, string]), NP) : ""}
+    ${seg("ql", "Quarter length", [30, 60, 120, 180].map((q) => [q, q < 60 ? q + " s" : q / 60 + " min"] as [number, string]), ST.QLEN)}</div>
+    <button type="button" class="btn pri lg" id="tip" data-autofocus>Tip off <span aria-hidden="true">▶</span></button>
+    <p class="hint keys"><kbd>Q</kbd><kbd>E</kbd> your ${NP > 1 ? "team" : "star"} · <kbd>Z</kbd><kbd>C</kbd> opponent · <kbd>S</kbd> settings · <kbd>↑↓←→</kbd> move</p></div>
+   ${
+     oppI < 0
+       ? `<section class="side rnd" aria-label="Opponent"><div class="sh"><button type="button" class="arw btn icon" data-cy="o" data-d="-1" aria-label="Previous opponent">◀</button><div class="qmark disp" aria-hidden="true">?</div><div class="tn"><span class="eyebrow">Opponent</span><b class="disp">Random</b></div><button type="button" class="arw btn icon" data-cy="o" data-d="1" aria-label="Next opponent">▶</button></div><ol class="lu q">${(NP > 1 ? POS.slice(0, NP) : ["?"])
+           .map((ps, k) => `<li style="--d:${k * 50}ms"><span class="qa">?</span><span class="pn">${NP > 1 ? ps : ""}</span><b>Mystery ${NP > 1 ? "starter" : "star"}</b><span class="po">??</span></li>`)
+           .join("")}</ol></section>`
+       : side(oppI, false)
+   }</div>
+  <section class="pick"><h2 class="eyebrow">Choose your ${NP > 1 ? "team" : "star"}</h2><div id="g" class="strip" role="listbox" aria-label="Choose your ${NP > 1 ? "team" : "star"}">${[...Array(N).keys()]
     .map((i) => {
       const r = RO(i);
-      return `<button class="card${i === SEL ? " sel" : ""}" role="option" aria-selected="${i === SEL}" data-i="${i}" style="--i:${i % 12};--c:${r[0]}" title="${esc(r[2])}">${NP > 1 ? esc(r[2]) : `<img alt="" src="${avatar(r[1][0], r[0])}"><span>${esc(r[2].split(" ").pop()!)}</span>`}</button>`;
+      return `<button type="button" class="card${i === SEL ? " sel" : ""}${i === OPP ? " opp" : ""}" role="option" aria-selected="${i === SEL}" data-i="${i}" style="--c:${r[0]}" title="${esc(r[2])}">${NP > 1 ? teamMark(r[2], r[0], 30) : `<img alt="" src="${avatar(r[1][0], r[0])}">`}<span>${esc(NP > 1 ? r[2] : r[2].split(" ").pop()!)}</span><em>${NP > 1 ? Math.round(r[1].reduce((s, p) => s + ov2(p), 0) / r[1].length) : ov2(r[1][0])}</em>${i === SEL ? '<i class="tg">YOU</i>' : i === OPP ? '<i class="tg o">OPP</i>' : ""}</button>`;
     })
-    .join("")}</div>
-  <aside id="sd" hidden><div class="sdh"><b>SETTINGS</b><button id="sdx" aria-label="Close settings">✕</button></div>
-   <div class="opts"><h3>MATCH</h3><b>PLAYERS</b>${opt("", "mp", 0, IN.MP2, "1 Player")}${opt("", "mp", 1, IN.MP2, "2 Players (keyboard)")}<button id="online">🌐 Play online</button><label class="ld">📼 Watch a saved reel<input type="file" id="rlf" accept=".json,application/json" hidden></label>
-    <b>PLAYER MODE</b>${opt("", "my", 0, MYM, "Pick a team")}${opt("", "my", 1, MYM, "My Player")}<button id="edit">✎ Edit my player</button>
-    <b>PRO PLAY ENGINE</b>${opt("", "p", 1, cfg.PRO, "On")}${opt("", "p", 0, cfg.PRO, "Off")}</div>
-   <div class="opts"><h3>SHOOTING</h3><b>STYLE</b>${opt("", "s", 0, IN.TEMPO, "Hold &amp; release")}${opt("", "s", 1, IN.TEMPO, "Tempo")}<b>SHOT METER</b>${MN.map((n, i) => opt("", "m", i, V.METER, n)).join("")}</div>
-   <div class="opts"><h3>RULES</h3><b>FOULS</b>${onoff("rf", cfg.FOULS)}<b>SHOT CLOCK</b>${onoff("rc", cfg.SCLK)}<b>VIOLATIONS</b>${onoff("rv", cfg.VIOL)}<i class="sm">3 seconds · 8 seconds · goaltending</i><b>FATIGUE &amp; SUBS</b>${onoff("rs", cfg.SUBS)}<i class="sm">5v5: reserves check in, 6 fouls = out</i><b>BADGES &amp; HOT ZONES</b>${onoff("rb", cfg.BADGES)}</div>
-   <div class="opts"><h3>PRESENTATION</h3><b>COMMENTARY</b>${opt("", "cmt", 0, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Off")}${opt("", "cmt", 1, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions")}${opt("", "cmt", 2, V.COMM ? (V.VOICE ? 2 : 1) : 0, "Captions + voice")}<b>ANNOUNCER VOICE</b>${opt("", "anv", 2, V.ANNV, "AI")}${opt("", "anv", 1, V.ANNV, "Browser")}${opt("", "anv", 0, V.ANNV, "Off")}<b>PLAYER INTROS</b>${onoff("pi", V.INTRO)}<b>MUSIC</b>${onoff("mu", V.MUSIC)}<b>CROWD</b>${CRN.map(([l, v]) => opt("", "vc", v, crowd.vol, l)).join("")}<b>CROWD CHANTS</b>${onoff("ch", crowd.on)}<i class="sm">DE-FENSE · LET'S GO · M-V-P · AIR BALL · boos and roars</i><b>GAMEPAD RUMBLE</b>${onoff("ru", V.RUMBLE)}</div>
-   <div class="opts"><h3>ACCESSIBILITY</h3><b>METER COLORS</b>${opt("", "cb", 0, V.CB, "Standard")}${opt("", "cb", 1, V.CB, "Colorblind-safe")}<b>METER SIZE</b>${opt("", "bm", 0, V.BIGM, "Normal")}${opt("", "bm", 1, V.BIGM, "Large")}<b>AUTO-RELEASE ASSIST</b>${onoff("au", V.AUTO)}<i class="sm">hold &amp; release only: lets go near the top for you</i></div>
-   <div class="opts keys"><h3>CONTROLS</h3>${ACTS.map(([id, l]) => `<button data-key="${id}" title="Click, then press a key">${esc(l)} <kbd>${esc(keyName(KMAP[id]))}</kbd></button>`).join("")}<button id="krs" class="ghost">Reset keys</button></div>
-   ${V.r3d ? `<div class="opts"><h3>DISPLAY</h3><b>CAMERA</b>${CAMN.map((n, i) => opt("", "cm", i, V.CAMM, n)).join("")}<b>GRAPHICS</b>${opt("", "q", 0, V.QL, "Low")}${opt("", "q", 1, V.QL, "Medium")}${opt("", "q", 2, V.QL, "High")}<b>EFFECTS</b>${opt("", "fx", 1, V.FX ? 1 : 0, "On")}${opt("", "fx", 0, V.FX ? 1 : 0, "Off")}<b>RENDERER</b>${opt("", "gp", 0, V.GPU, "WebGL")}${opt("", "gp", 1, V.GPU, "WebGPU (beta)")}<i style="opacity:.6;font-size:11px;display:block">${V.backend ? "Now: " + V.backend : ""}${(V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : ""}</i><b>SUPER RESOLUTION (HSR)</b>${HSRN.map((n, i) => opt("", "hsr", i, V.HSR, n)).join("")}<i class="sm">Draws fewer pixels and rebuilds a sharp full-size image from several frames (temporal upscaling, like DLSS / FSR 2, no AI). Quality 67% · Balanced 58% · Performance 50% · Ultra 33% of the width; Auto moves it to hold your target.</i><b>UPSCALER</b>${opt("", "hsrm", 0, V.HSRM, "Auto")}${opt("", "hsrm", 1, V.HSRM, "Temporal")}${opt("", "hsrm", 2, V.HSRM, "Spatial")}<i class="sm">Spatial (FSR 1 style) is lighter for very old GPUs; Auto uses it on Low graphics.</i><b>TARGET FPS</b>${[60, 90, 120, 144, 240, 0].map((f) => opt("", "tfps", f, V.TFPS, f ? String(f) : "Max")).join("")}<i class="sm" id="hzline">${hzLine()}</i><b>FPS COUNTER</b>${onoff("fpsc", V.FPSC)}</div>` : ""}
-   <p class="hint">P2 (local) = right team: arrows move · Enter shoot · / pass · . spin · , hesi · Right Shift sprint</p></aside></div>`;
-  const re = () => (saveSet(), menu());
+    .join("")}</div></section>
+  <section class="mstrip"><h2 class="eyebrow">More ways to play</h2>${modeStrip()}</section></div>`;
   const cyc = (who: string, d: number) => {
     if (who === "y") {
       SEL = (SEL + d + N) % N;
@@ -476,9 +439,8 @@ export function menu() {
       if (o === SEL) o += d;
       OPP = o >= N ? -1 : o < -1 ? N - 1 : o;
     }
-    menu();
-    const f = ov.querySelector<HTMLElement>(`.arw[data-cy="${who}"][data-d="${d}"]`);
-    f && f.focus();
+    const f = document.activeElement as HTMLElement | null;
+    menu(f && f.dataset && f.dataset.cy ? `.arw[data-cy="${f.dataset.cy}"][data-d="${f.dataset.d}"]` : undefined);
   };
   ov.querySelectorAll<HTMLElement>(".arw").forEach((b) => (b.onclick = () => cyc(b.dataset.cy!, +b.dataset.d!)));
   ov.querySelectorAll<HTMLElement>(".strip .card").forEach(
@@ -486,9 +448,14 @@ export function menu() {
       (b.onclick = () => {
         SEL = +b.dataset.i!;
         if (OPP === SEL) OPP = -1;
-        menu();
+        menu(`.strip .card[data-i="${SEL}"]`);
       }),
   );
+  const cur = ov.querySelector<HTMLElement>(".strip .card.sel");
+  if (cur) {
+    const s = cur.parentElement!;
+    s.scrollLeft = cur.offsetLeft - s.clientWidth / 2 + cur.clientWidth / 2;
+  }
   const tip = () => {
     saveSet();
     try {
@@ -503,132 +470,74 @@ export function menu() {
         (b.onclick = () => {
           f(+b.dataset[k]!);
           saveSet();
-          if (again) menu();
-          else ov.querySelectorAll(`[data-${k}]`).forEach((c) => c.classList.toggle("on", c === b));
+          if (again) menu(`[data-${k}="${b.dataset[k]}"]`);
+          else
+            ov.querySelectorAll<HTMLElement>(`[data-${k}]`).forEach((c) => {
+              c.classList.toggle("on", c === b);
+              c.setAttribute("aria-pressed", String(c === b));
+            });
         }),
     );
   bindStrip();
   grp("df", (v) => (cfg.DIFF = v));
   grp("tsz", (v) => (cfg.NP = v), true);
-  grp("ql", (v) => (QLEN = v));
-  grp("m", (v) => (V.METER = v));
-  grp("s", (v) => (IN.TEMPO = v));
-  grp("p", (v) => (cfg.PRO = v));
-  grp("cm", (v) => (V.CAMM = v));
-  grp("q", (v) => ((V.QL = v), (QPICK = 1), (V.QAUTO = "")));
-  grp("fx", (v) => (V.FX = !!v));
-  grp("hsr", (v) => ((V.HSR = v), (HPICK = 1)));
-  grp("hsrm", (v) => (V.HSRM = v));
-  grp("tfps", (v) => {
-    V.TFPS = v;
-    const h = ov.querySelector("#hzline");
-    if (h) h.textContent = hzLine();
-  });
-  grp("fpsc", (v) => (V.FPSC = v));
-  grp("gp", (v) => {
-    // the renderer is created once at start: save, then reload into the menu with the new one
-    V.GPU = v;
-    saveSet();
-    setTimeout(() => location.reload(), 150);
-  });
-  grp("my", (v) => (MYM = v), true);
-  grp("rf", (v) => (cfg.FOULS = v));
-  grp("rc", (v) => (cfg.SCLK = v));
-  grp("rv", (v) => (cfg.VIOL = v));
-  grp("rs", (v) => (cfg.SUBS = v));
-  grp("rb", (v) => (cfg.BADGES = v));
-  grp("cmt", (v) => {
-    V.COMM = v ? 1 : 0;
-    V.VOICE = v === 2 ? 1 : 0;
-    if (v === 2) comment("clutch");
-  });
-  grp("anv", (v) => ((V.ANNV = v), v && V.VOICE && comment("clutch")));
-  grp("mu", (v) => (V.MUSIC = v));
-  grp("vc", (v) => (crowd.vol = v));
-  grp("ch", (v) => (crowd.on = v));
-  grp("pi", (v) => (V.INTRO = v));
-  grp("ru", (v) => ((V.RUMBLE = v), rumble(0.6, 200)));
-  grp("cb", (v) => (V.CB = v));
-  grp("bm", (v) => (V.BIGM = v));
-  grp("au", (v) => (V.AUTO = v));
-  ov.querySelectorAll<HTMLElement>("[data-key]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        const id = b.dataset.key!;
-        b.querySelector("kbd")!.textContent = "press a key…";
-        const h = (e: KeyboardEvent) => {
-          e.preventDefault();
-          e.stopPropagation();
-          removeEventListener("keydown", h, true);
-          if (e.code !== "Escape") {
-            for (const k in KMAP) if (KMAP[k] === e.code && k !== id) KMAP[k] = KMAP[id]; // swap a clash
-            KMAP[id] = e.code;
-            saveKeys();
-          }
-          menu();
-          $("#set").click();
-        };
-        addEventListener("keydown", h, true);
-      }),
-  );
-  $("#krs").onclick = () => {
-    for (const [id, , d] of ACTS) KMAP[id] = d;
-    saveKeys();
-    menu();
-    $("#set").click();
-  };
-  grp("mp", (v) => (IN.MP2 = v));
-  const sd = $("#sd");
-  $("#set").onclick = () => {
-    sd.hidden = false;
-    ($("#sdx") as HTMLElement).focus();
-  };
-  $("#sdx").onclick = () => {
-    sd.hidden = true;
-    ($("#set") as HTMLElement).focus();
-  };
-  $("#edit").onclick = () => (ov.classList.remove("mu-on"), edMy());
-  $("#online").onclick = () => (ov.classList.remove("mu-on"), NET.openLobby());
-  ($("#rlf") as HTMLInputElement).onchange = (e) => {
-    const f = (e.target as HTMLInputElement).files;
-    if (f && f[0]) loadReel(f[0]);
-  };
-  void re;
+  grp("ql", (v) => (ST.QLEN = v));
+  const openSet = () => openSettings(undefined, "menu", () => menu("#set"));
+  $("#set").onclick = openSet;
   menuKeys = (e: KeyboardEvent) => {
-    if (G.S !== "menu" || ov.style.display === "none" || !document.getElementById("tip")) return;
+    if (G.S !== "menu" || ov.style.display === "none" || !document.getElementById("tip") || settingsOpen()) return;
     if ((e.target as HTMLElement)?.closest?.("input,select")) return;
-    if (e.code === "Escape" && !sd.hidden) return $("#sdx").click();
-    if (!sd.hidden) return;
-    if (e.code === "ArrowRight") cyc("y", 1);
-    else if (e.code === "ArrowLeft") cyc("y", -1);
-    else if (e.code === "ArrowDown") cyc("o", 1);
-    else if (e.code === "ArrowUp") cyc("o", -1);
-    else if (e.code === "Enter" && !(e.target as HTMLElement)?.closest?.("button")) tip();
+    const m: Record<string, [string, number]> = { KeyQ: ["y", -1], KeyE: ["y", 1], KeyZ: ["o", -1], KeyC: ["o", 1] };
+    if (m[e.code]) cyc(m[e.code][0], m[e.code][1]);
+    else if (e.code === "KeyS") openSet();
     else return;
     e.preventDefault();
   };
+  menuPad = (b: string) => {
+    if (b === "lb") cyc("y", -1);
+    else if (b === "rb") cyc("y", 1);
+    else if (b === "lt") cyc("o", -1);
+    else if (b === "rt") cyc("o", 1);
+    else if (b === "start") tip();
+    else if (b === "select") openSet();
+  };
+  const f = (focus && ov.querySelector<HTMLElement>(focus)) || (again ? null : $("#tip"));
+  if (f) f.focus({ preventScroll: !focus });
 }
 function edMy() {
+  menuPad = null;
   const d = MYP.d,
     SKN = ["#f1c27d", "#c68642", "#8d5524", "#6b4226", "#e8b88f"],
     CAP = capOf(d), // (grows with My Player's level: career.ts)
-    ST = ["Standard", "Quick", "Fadeaway", "Step-back", "Touch"],
+    STY = ["Standard", "Quick", "Fadeaway", "Step-back", "Touch"],
     HR = ["Bald", "Short", "Long", "Afro"],
-    re = () => {
+    re = (f?: string) => {
       d.n = ($("#mn") as HTMLInputElement).value || d.n;
       edMy();
+      const e = f && ov.querySelector<HTMLElement>(f);
+      if (e) e.focus({ preventScroll: true });
     };
+  mkT();
   const sl = (k: string, l: string) =>
-    `<label>${l} <b id="v${k}">${d[k]}</b><input type="range" min="40" max="99" value="${d[k]}" data-k="${k}"></label>`;
-  ov.innerHTML = `<div class="logo" style="font-size:34px">MY PLAYER</div><div class="opts"><input id="mn" maxlength="12" value="${esc(d.n)}"><b>ARCHETYPE</b>${Object.keys(PRE)
-    .map((k) => `<button data-pre="${k}">${k}</button>`)
-    .join(
-      "",
-    )}</div>${xpBar(d)}${d.car && d.car.gp ? `<p class="hint">Career: ${d.car.gp} games · ${d.car.w} wins · ${(d.car.pts / d.car.gp).toFixed(1)} PPG · ${(d.car.reb / d.car.gp).toFixed(1)} RPG · ${(d.car.ast / d.car.gp).toFixed(1)} APG · career high ${d.car.hi}</p>` : `<p class="hint">Play games as My Player to earn XP: every level adds 3 attribute points.</p>`}<div class="opts ed">${sl("c", "3PT")}${sl("i", "INSIDE")}${sl("s", "SPEED")}${sl("d", "DEFENSE")}${sl("j", "JUMP")}<div id="pts"></div><div id="bdg" class="bdg"></div></div>
-<div class="opts"><b>SHOT FORM</b>${ST.map((n, i) => `<button data-st="${i}" class="${d.st === i ? "on" : ""}">${n}</button>`).join("")}<b>LOOK</b>${SKN.map((c) => `<button data-sk="${c}" style="background:${c};width:34px;height:34px;padding:0;${d.sk === c ? "outline:3px solid #ffd23f" : ""}"></button>`).join("")}${HR.map((n, i) => `<button data-hr="${i}" class="${d.hr === i ? "on" : ""}">${n}</button>`).join("")}<button data-bd="1" class="${d.bd ? "on" : ""}">Beard</button>
-<label>Height <b id="vh">${d.ht.toFixed(1)}</b> ft<input type="range" min="6" max="7.3" step=".1" value="${d.ht}" data-h="ht"></label><label>Build<input type="range" min=".9" max="1.3" step=".05" value="${d.bk}" data-h="bk"></label><label>Number<input id="mno" type="number" min="0" max="99" value="${d.no}"></label></div><button class="big" id="done">SAVE ▶</button>`;
+    `<label class="att"><span>${l}</span><input type="range" min="40" max="99" value="${d[k]}" data-k="${k}" aria-label="${l}"><b id="v${k}" class="disp">${d[k]}</b></label>`;
+  ov.innerHTML = `<div class="scr ed">
+  <header class="mu-top"><div class="mu-title"><span class="eyebrow">Create-a-player</span><h1 class="disp">My Player</h1></div><div class="mu-tools"><button type="button" class="btn" id="edb">◀ Back</button></div></header>
+  <div class="edg">
+   <section class="panel edl" style="--c:${d.col || "#e8541e"}"><img class="edav" alt="" src="${avatar(MYP.t, d.col || "#e8541e")}">
+    <label class="fld"><span class="sl">Name</span><input id="mn" maxlength="12" value="${esc(d.n)}" autocomplete="off"></label>
+    <label class="fld"><span class="sl">Number</span><input id="mno" type="number" min="0" max="99" value="${d.no}"></label>
+    ${xpBar(d)}${d.car && d.car.gp ? `<p class="hint">Career: ${d.car.gp} games · ${d.car.w} wins · ${(d.car.pts / d.car.gp).toFixed(1)} PPG · ${(d.car.reb / d.car.gp).toFixed(1)} RPG · ${(d.car.ast / d.car.gp).toFixed(1)} APG · high ${d.car.hi}</p>` : `<p class="hint">Play games as My Player to earn XP: every level adds 3 attribute points.</p>`}</section>
+   <section class="panel edr">
+    <div class="fr"><span class="sl">Archetype</span><div class="seg">${Object.keys(PRE).map((k) => `<button type="button" data-pre="${k}">${k}</button>`).join("")}</div></div>
+    <div class="atts">${sl("c", "3PT")}${sl("i", "Inside")}${sl("s", "Speed")}${sl("d", "Defense")}${sl("j", "Jump")}</div><div id="pts" class="pts"></div><div id="bdg" class="bdg"></div>
+    <div class="fr"><span class="sl">Shot form</span><div class="seg">${STY.map((n, i) => `<button type="button" data-st="${i}" class="${d.st === i ? "on" : ""}">${n}</button>`).join("")}</div></div>
+    <div class="fr"><span class="sl">Look</span><div class="look">${SKN.map((c) => `<button type="button" class="skn${d.sk === c ? " on" : ""}" data-sk="${c}" style="--s:${c}" aria-label="Skin tone ${c}"></button>`).join("")}<span class="seg">${HR.map((n, i) => `<button type="button" data-hr="${i}" class="${d.hr === i ? "on" : ""}">${n}</button>`).join("")}<button type="button" data-bd="1" class="${d.bd ? "on" : ""}">Beard</button></span></div></div>
+    <div class="atts"><label class="att"><span>Height</span><input type="range" min="6" max="7.3" step=".1" value="${d.ht}" data-h="ht" aria-label="Height"><b class="disp"><span id="vh">${d.ht.toFixed(1)}</span> ft</b></label><label class="att"><span>Build</span><input type="range" min=".9" max="1.3" step=".05" value="${d.bk}" data-h="bk" aria-label="Build"><b class="disp">${d.bk < 1 ? "Lean" : d.bk > 1.15 ? "Strong" : "Athletic"}</b></label></div>
+   </section></div>
+  <div class="row actions"><button type="button" class="btn pri lg" id="done" data-autofocus>Save player ▶</button></div></div>`;
   const up = () => {
-    $("#pts").textContent = "Points " + (CAP - (d.c + d.i + d.s + d.d + d.j)) + " left · OVR " + ovr({ n: "x", c: d.c, i: d.i });
+    const left = CAP - (d.c + d.i + d.s + d.d + d.j);
+    $("#pts").innerHTML = `<b class="disp">${left}</b> points left · OVR <b class="disp">${ovr({ n: "x", c: d.c, i: d.i })}</b>`;
     const bg = myBadges(d);
     $("#bdg").innerHTML = Object.keys(BREQ)
       .map((k) => `<span class="${bg.includes(k) ? "on" : ""}" title="${esc(BREQ[k])}">${bg.includes(k) ? "★ " : ""}${esc(G.BADGE[k][0])}${bg.includes(k) ? "" : " · " + esc(BREQ[k])}</span>`)
@@ -653,15 +562,15 @@ function edMy() {
       (b.onclick = () => {
         const a = PRE[b.dataset.pre!];
         [d.c, d.i, d.s, d.d, d.j, d.st] = a;
-        re();
+        re(`[data-pre="${b.dataset.pre}"]`);
       }),
   );
-  ov.querySelectorAll<HTMLElement>("[data-st]").forEach((b) => (b.onclick = () => ((d.st = +b.dataset.st!), re())));
-  ov.querySelectorAll<HTMLElement>("[data-sk]").forEach((b) => (b.onclick = () => ((d.sk = b.dataset.sk), re())));
-  ov.querySelectorAll<HTMLElement>("[data-hr]").forEach((b) => (b.onclick = () => ((d.hr = +b.dataset.hr!), re())));
+  ov.querySelectorAll<HTMLElement>("[data-st]").forEach((b) => (b.onclick = () => ((d.st = +b.dataset.st!), re(`[data-st="${d.st}"]`))));
+  ov.querySelectorAll<HTMLElement>("[data-sk]").forEach((b) => (b.onclick = () => ((d.sk = b.dataset.sk), re(`[data-sk="${d.sk}"]`))));
+  ov.querySelectorAll<HTMLElement>("[data-hr]").forEach((b) => (b.onclick = () => ((d.hr = +b.dataset.hr!), re(`[data-hr="${d.hr}"]`))));
   (ov.querySelector("[data-bd]") as HTMLElement).onclick = () => {
     d.bd = d.bd ? 0 : 1;
-    re();
+    re("[data-bd]");
   };
   ov.querySelectorAll<HTMLInputElement>("[data-h]").forEach(
     (e) =>
@@ -670,6 +579,7 @@ function edMy() {
         if (e.dataset.h === "ht") $("#vh").textContent = (+e.value).toFixed(1);
       }),
   );
+  $("#edb").onclick = () => menu();
   $("#done").onclick = () => {
     d.n = (($("#mn") as HTMLInputElement).value || "MY PLAYER").toUpperCase().slice(0, 12);
     d.no = +($("#mno") as HTMLInputElement).value || 0;
@@ -679,26 +589,50 @@ function edMy() {
     } catch (e) {}
     menu();
   };
+  $("#done").focus({ preventScroll: true });
 }
-let menuKeys: ((e: KeyboardEvent) => void) | null = null;
-/** Pause (offline games): the sim stops ticking; the menu offers resume / restart / settings / quit. */
-function pause() {
+let menuKeys: ((e: KeyboardEvent) => void) | null = null,
+  menuPad: ((b: string) => void) | null = null;
+/** Live box score table (pause): who is on the floor (●), PTS REB AST FG 3P PF. */
+function liveBox(t: number) {
+  const ps = G.ROST[t] && G.ROST[t].length ? G.ROST[t] : P.filter((p) => p.tm === t);
+  if (!ps.length) return "";
+  return `<table class="bx live"><thead><tr><th style="color:${light(G.PC[t])}">${esc(G.cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>PF</th></tr></thead><tbody>${ps
+    .map(
+      (p) =>
+        `<tr class="${P.includes(p) ? "on" : ""}${p.fo ? " fo" : ""}${CT.some((c) => P[c.idx] === p) ? " me" : ""}"><td>${esc(p.n)}</td><td><b>${p.stt.pts}</b></td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.pf}</td></tr>`,
+    )
+    .join("")}</tbody></table>`;
+}
+/** Broadcast scoreboard row: team marks, names, scores (pause / halftime / final). */
+function board(sub = "") {
+  const t = (i: number) => `<div class="bt${i ? " r" : ""}" style="--c:${G.PC[i]}">${teamMark(G.cl[i], G.PC[i], 44)}<b class="disp">${esc(G.cl[i])}</b><em class="disp num">${G.sc[i]}</em></div>`;
+  return `<div class="board">${t(0)}<span class="bmid">${sub}</span>${t(1)}</div>`;
+}
+/** Pause (offline games): the sim stops ticking; menu + live box score. */
+function pause(focus = "#pr") {
   G.setS("pause");
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
-  ov.innerHTML = `<div class="logo" style="font-size:38px">PAUSED</div><div class="sub">${esc(G.cl[0])} ${G.sc[0]} — ${G.sc[1]} ${esc(G.cl[1])} · Q${G.q}</div><div id="pz">
-  <button id="pr">▶ Resume</button>${V.r3d ? `<button id="pc">🎥 Camera: ${CAMN[V.CAMM]}</button><button id="pf">✨ Effects: ${V.FX ? "On" : "Off"}</button>` : ""}<button id="pm">🎯 Meter: ${MN[V.METER]}</button><button id="pt">⏱ Shooting: ${IN.TEMPO ? "Tempo" : "Hold & release"}</button>${cfg.NP > 1 && cfg.GM === "game" ? `<button id="pmu">🛡 Matchups</button>` : ""}${G.gameLike() ? `<button id="psc">📋 Scouting report</button>` : ""}<button id="prs">↻ Restart game</button>${V.r3d ? `<button id="pan">🎬 Animation Studio</button>` : ""}<button id="pq">✕ Quit to menu</button></div><p class="hint">Esc or P to resume</p>`;
+  menuPad = (b) => b === "start" && resume();
+  const bt = (id: string, ic: string, l: string, v = "") => `<button type="button" id="${id}" class="mi"><span class="mic" aria-hidden="true">${ic}</span><span>${l}</span>${v ? `<em>${v}</em>` : ""}</button>`;
+  ov.innerHTML = `<div class="scr pzw">
+  <section class="pzl panel"><span class="eyebrow">Game paused</span><div class="logo disp">Paused</div>${board(cfg.TO ? "TO " + cfg.TO : `${G.q > 4 ? "OT" : "Q" + G.q}<small>${fmt(G.clock)}</small>`)}
+   <div id="pz" class="mlist">${bt("pr", "▶", "Resume")}${bt("pse", "⚙", "Settings")}${V.r3d ? bt("pc", "🎥", "Camera", CAMN[V.CAMM]) + bt("pf", "✨", "Effects", V.FX ? "On" : "Off") : ""}${bt("pm", "🎯", "Meter", MN[V.METER])}${bt("pt", "⏱", "Shooting", IN.TEMPO ? "Tempo" : "Hold & release")}${cfg.NP > 1 && cfg.GM === "game" ? bt("pmu", "🛡", "Matchups") : ""}${G.gameLike() ? bt("psc", "📋", "Scouting report") : ""}${bt("prs", "↻", "Restart game")}${V.r3d ? bt("pan", "🎬", "Animation Studio") : ""}${bt("pq", "✕", "Quit to menu")}</div>
+   <p class="hint"><kbd>Esc</kbd> / <kbd>P</kbd> / Start to resume</p></section>
+  ${P.length && G.gameLike() ? `<section class="pzr panel"><h2 class="eyebrow">Box score</h2>${liveBox(0)}${liveBox(1)}</section>` : ""}</div>`;
   $("#pr").onclick = resume;
-  const re = () => (saveSet(), pause());
+  const re = (f: string) => (saveSet(), pause(f));
+  $("#pse").onclick = () => openSettings(undefined, "pause", () => pause("#pse"));
   if (V.r3d) {
-    $("#pc").onclick = () => ((V.CAMM = (V.CAMM + 1) % 4), re());
-    $("#pf").onclick = () => ((V.FX = !V.FX), re());
+    $("#pc").onclick = () => ((V.CAMM = (V.CAMM + 1) % 4), re("#pc"));
+    $("#pf").onclick = () => ((V.FX = !V.FX), re("#pf"));
   }
-  $("#pm").onclick = () => ((V.METER = (V.METER + 1) % 4), re());
+  $("#pm").onclick = () => ((V.METER = (V.METER + 1) % 4), re("#pm"));
   $("#pt").onclick = () => {
     IN.TEMPO = 1 - IN.TEMPO;
     for (const c of CT) c.tempo = IN.TEMPO;
-    re();
+    re("#pt");
   };
   const pmu = document.getElementById("pmu");
   if (pmu) pmu.onclick = matchups;
@@ -707,7 +641,7 @@ function pause() {
   $("#prs").onclick = () => (MODE.kind ? replayMode() : startLocal(SEL, { j: lastJ }));
   if (V.r3d) $("#pan").onclick = () => studio();
   $("#pq").onclick = () => (GS.onQuit ? GS.onQuit() : menu());
-  ($("#pr") as HTMLElement).focus();
+  (ov.querySelector(focus) as HTMLElement || $("#pr")).focus({ preventScroll: true });
 }
 /** Pause → Scouting report: what each side is living on lately (decayed shot records), who is hot / cold / smothered,
  *  and the CPU coach's current game plan and defense - the adaptive AI made visible. */
@@ -718,30 +652,32 @@ function scouting() {
     tag = (p: any) => {
       const f3 = G.form(p, 2);
       return (p.heat || 0) >= 3
-        ? `<b style="color:#ff9a2e">ON FIRE</b>`
+        ? `<span class="tag fire">On fire</span>`
         : (p.cold || 0) >= 3
-          ? `<b style="color:#7fd4ff">ICE COLD</b>`
+          ? `<span class="tag ice">Ice cold</span>`
           : f3.pct >= 0 && f3.ct > 0.6
-            ? `<b style="color:#ff6b6b">SMOTHERED</b>`
+            ? `<span class="tag smo">Smothered</span>`
             : p.hzm && Math.max(...p.hzm) >= 2
-              ? `<b style="color:#ffd23f">HOT ZONE: ${G.ZN[p.hzm.indexOf(Math.max(...p.hzm))]}</b>`
+              ? `<span class="tag hz">Hot zone: ${G.ZN[p.hzm.indexOf(Math.max(...p.hzm))]}</span>`
               : "";
     },
     team = (t: number) => {
       const k = G.TS.sk[t],
         cpu = !CT.some((c) => c.tm === t);
-      return `<h3 style="margin:10px 0 4px;color:${G.PC[t]}">${esc(G.cl[t])}${cpu ? " (CPU)" : ""}</h3>
-      <p class="hint" style="margin:2px 0">${cpu ? `Game plan: <b>${G.GPN[G.TS.gp[t]]}</b> · ` : ""}Play: <b>${G.PCN[G.TS.pc[t]]}</b> · Defense: <b>${G.DSN[G.TS.ds[t]]}</b>${cpu ? ` · Pick-and-roll: <b>${G.COVN[G.TS.cov[t]] || "DROP"}</b> · Coach IQ <b>${["ROOKIE", "PRO", "ALL-STAR", "HALL OF FAME"][G.cpuIQ(t)]}</b>${G.TS.dbl[t] >= 0 && P[G.TS.dbl[t]] ? ` · Doubling <b>${esc(P[G.TS.dbl[t]].n)}</b>` : ""}` : ""}<br>Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
-      <table class="bx" style="max-width:640px">${[...Array(NP).keys()]
+      return `<section class="panel scout" style="--c:${G.PC[t]}"><div class="sth">${teamMark(G.cl[t], G.PC[t], 36)}<h2 class="disp">${esc(G.cl[t])}${cpu ? " <small>CPU</small>" : ""}</h2></div>
+      <div class="chips">${cpu ? `<span class="chip">Plan <b>${G.GPN[G.TS.gp[t]]}</b></span>` : ""}<span class="chip">Play <b>${G.PCN[G.TS.pc[t]]}</b></span><span class="chip">Defense <b>${G.DSN[G.TS.ds[t]]}</b></span>${cpu ? `<span class="chip">P&amp;R <b>${G.COVN[G.TS.cov[t]] || "DROP"}</b></span><span class="chip">Coach IQ <b>${["ROOKIE", "PRO", "ALL-STAR", "HALL OF FAME"][G.cpuIQ(t)]}</b></span>${G.TS.dbl[t] >= 0 && P[G.TS.dbl[t]] ? `<span class="chip hot">Doubling ${esc(P[G.TS.dbl[t]].n)}</span>` : ""}` : ""}</div>
+      <p class="hint">Lately: ${RN.map((n, r) => `${n} ${rec(k, r)} (${G.pps(k, r).toFixed(2)} pts/shot)`).join(" · ")}</p>
+      <table class="bx"><thead><tr><th>Player</th>${RN.map((n) => `<th>${n}</th>`).join("")}<th></th></tr></thead><tbody>${[...Array(NP).keys()]
         .map((j) => {
           const p = P[t * NP + j];
-          return `<tr><td>${esc(p.n)}</td>${RN.map((n, r) => `<td><small>${n}</small> ${rec(p.sk, r)}</td>`).join("")}<td>${tag(p)}</td></tr>`;
+          return `<tr><td>${esc(p.n)}</td>${RN.map((n, r) => `<td>${rec(p.sk, r)}</td>`).join("")}<td>${tag(p)}</td></tr>`;
         })
-        .join("")}</table>`;
+        .join("")}</tbody></table></section>`;
     };
-  ov.innerHTML = `<div class="logo" style="font-size:34px">SCOUTING REPORT</div><p class="hint">Recent shots (older ones fade). The CPU reads the same sheet: cold or smothered shooters change their shots, its coach changes the plan.</p>
-   ${team(0)}${team(1)}<div id="pz"><button id="mub">◀ Back</button></div>`;
-  $("#mub").onclick = pause;
+  ov.innerHTML = `<div class="scr fin wide"><header class="fhead"><span class="eyebrow">Pause</span><div class="logo disp">Scouting report</div><p class="hint">Recent shots (older ones fade). The CPU reads the same sheet: cold or smothered shooters change their shots, its coach changes the plan.</p></header>
+   <div class="fgrid">${team(0)}${team(1)}</div><div class="row actions"><button type="button" class="btn" id="mub">◀ Back</button></div></div>`;
+  $("#mub").onclick = () => pause("#psc");
+  $("#mub").focus();
 }
 /** Pause → Matchups: pick who each of your defenders guards (or let the coach hide your weakest defender). */
 function matchups() {
@@ -750,16 +686,16 @@ function matchups() {
     mu = G.TS.mu[t] || [...Array(NP).keys()],
     me = (k: number) => P[t * NP + k],
     op = (k: number) => P[(1 - t) * NP + k];
-  ov.innerHTML = `<div class="logo" style="font-size:34px">MATCHUPS</div><p class="hint">Who guards whom on defense. Your CPU teammates follow it; switches on screens still happen.</p>
-   <table class="bx" style="max-width:520px">${[...Array(NP).keys()]
+  ov.innerHTML = `<div class="scr fin"><header class="fhead"><span class="eyebrow">Pause</span><div class="logo disp">Matchups</div><p class="hint">Who guards whom on defense. Your CPU teammates follow it; switches on screens still happen.</p></header>
+   <section class="panel"><table class="bx mut"><tbody>${[...Array(NP).keys()]
      .map(
        (k) =>
-         `<tr><td>${esc(me(k).n)} <small>DEF ${me(k).d}</small></td><td>guards</td><td><select data-mu="${k}">${[...Array(NP).keys()]
+         `<tr><td><b>${esc(me(k).n)}</b> <small>DEF ${me(k).d}</small></td><td class="muted">guards</td><td><select data-mu="${k}" aria-label="${esc(me(k).n)} guards">${[...Array(NP).keys()]
            .map((j) => `<option value="${j}" ${mu[k] === j ? "selected" : ""}>${esc(op(j).n)} (${ovr(op(j))})</option>`)
            .join("")}</select></td></tr>`,
      )
-     .join("")}</table>
-   <div id="pz"><button id="mua">⚙ Auto: best defender on their best scorer</button><button id="mub">◀ Back</button></div>`;
+     .join("")}</tbody></table></section>
+   <div class="row actions"><button type="button" class="btn" id="mua">⚙ Auto: best defender on their best scorer</button><button type="button" class="btn" id="mub">◀ Back</button></div></div>`;
   ov.querySelectorAll<HTMLSelectElement>("[data-mu]").forEach(
     (s) =>
       (s.onchange = () => {
@@ -771,14 +707,18 @@ function matchups() {
         m[k] = j;
         G.TS.mu[t] = m;
         matchups();
+        (ov.querySelector(`[data-mu="${k}"]`) as HTMLElement)?.focus();
       }),
   );
   $("#mua").onclick = () => ((G.TS.mu[t] = G.autoMatch(t)), matchups());
-  $("#mub").onclick = pause;
+  $("#mub").onclick = () => pause("#pmu");
+  $("#mub").focus();
 }
 function resume() {
   G.setS("play");
   ov.style.display = "none";
+  menuPad = null;
+  (document.activeElement as HTMLElement)?.blur?.();
 }
 let lastJ: number | undefined,
   introT = 0,
@@ -798,11 +738,11 @@ export function lifeStart(o: { kind: string; sel: number; opp: number; ql: numbe
   GS.life = 1;
   const cb = crowd.bus();
   if (cb) cb.gain.value = crowd.vol / 100;
-  MYM = 1;
+  ST.MYM = 1;
   IN.MP2 = 0;
   SEL = o.sel;
   OPP = o.opp;
-  QLEN = o.ql;
+  ST.QLEN = o.ql;
   cfg.DIFF = o.diff;
   cfg.NP = 5;
   NP0 = 5;
@@ -818,12 +758,12 @@ export function startLocal(i: number, o: { j?: number } = {}) {
   audio.crowdInit();
   music.start();
   bcReset();
-  cfg.MYM = MYM;
-  const cs = [G.mkCtrl("p1", 0, !!MYM, IN.TEMPO)];
+  cfg.MYM = ST.MYM;
+  const cs = [G.mkCtrl("p1", 0, !!ST.MYM, IN.TEMPO)];
   if (IN.MP2) cs.push(G.mkCtrl("p2", 1, false, IN.TEMPO));
   G.setCtrls(cs);
   V.focus = 0;
-  G.setQtrLen(QLEN);
+  G.setQtrLen(ST.QLEN);
   lastJ = G.start(i, o);
   // pre-game player introductions (offline games with an opening tip); the sim waits in S "intro"
   V.introDone = 0;
@@ -836,6 +776,9 @@ export function startLocal(i: number, o: { j?: number } = {}) {
   }
   ov.style.display = "none";
   ov.classList.remove("mu-on");
+  menuPad = null;
+  clearEdges();
+  (document.activeElement as HTMLElement)?.blur?.();
   lastFx = G.FX.length ? G.FX[G.FX.length - 1].id - 1 : 0;
 }
 
@@ -856,7 +799,7 @@ function drainFx() {
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
     else if (f.k === "x") audio.EXC = f.v;
     else if (f.k === "end" && cfg.GM === "game") endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200); // let the confetti fall first
-    else if (f.k === "shake") (V.shake && V.shake(f.v), rumble(f.v, 120 + f.v * 200));
+    else if (f.k === "shake") (V.shake && !V.RM && V.shake(f.v), rumble(f.v, 120 + f.v * 200));
     else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
     else if (f.k === "ban") {
       banner(f.s, f.sub, f.c);
@@ -969,9 +912,9 @@ function halftime() {
 function shotChart(t: number, maxQ = 99): string {
   const shots = G.SHOTS.filter((s) => s.t === t && s.q <= maxQ);
   if (!shots.length) return "";
-  const W = 220,
-    H = 196,
-    k = 0.42,
+  const W = 440,
+    H = 392,
+    k = 0.84,
     cv = document.createElement("canvas");
   cv.width = W;
   cv.height = H;
@@ -979,15 +922,20 @@ function shotChart(t: number, maxQ = 99): string {
   if (!x) return "";
   const hx = G.hoop(t),
     rx = W / 2,
-    ry = 16,
+    ry = 30,
     P2 = (gx: number, gy: number) => [rx + (gy - 250) * k, ry + Math.abs(gx - hx) * k];
-  x.fillStyle = "#1b1f36";
+  const bg = x.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#1a1f3a");
+  bg.addColorStop(1, "#0d1022");
+  x.fillStyle = bg;
   x.fillRect(0, 0, W, H);
-  x.strokeStyle = "rgba(255,255,255,.35)";
-  x.lineWidth = 1.2;
+  x.fillStyle = "rgba(255,255,255,.04)";
+  x.fillRect(rx - 80 * k, 0, 160 * k, 190 * k); // paint
+  x.strokeStyle = "rgba(255,255,255,.38)";
+  x.lineWidth = 2;
   x.strokeRect(rx - 80 * k, 0, 160 * k, 190 * k); // the lane
   x.beginPath();
-  x.arc(rx, ry + 190 * k - 16 * k, 60 * k, 0, Math.PI);
+  x.arc(rx, 190 * k, 60 * k, 0, Math.PI);
   x.stroke(); // free-throw circle
   x.beginPath();
   x.moveTo(rx - 220 * k, 0);
@@ -996,48 +944,70 @@ function shotChart(t: number, maxQ = 99): string {
   x.lineTo(rx + 220 * k, 0);
   x.stroke(); // three-point line
   x.strokeStyle = "#ff8a3a";
+  x.lineWidth = 2.5;
   x.beginPath();
-  x.arc(rx, ry, 7.5 * k + 1, 0, 7);
+  x.arc(rx, ry, 7.5 * k + 2, 0, 7);
   x.stroke(); // rim
   for (const s of shots) {
     const [px, py] = P2(s.x, s.y);
     if (s.m) {
       x.fillStyle = G.PC[t] || "#ffd23f";
       x.strokeStyle = "#fff";
-      x.lineWidth = 1;
+      x.lineWidth = 2;
       x.beginPath();
-      x.arc(px, py, 3.6, 0, 7);
+      x.arc(px, py, 7, 0, 7);
       x.fill();
       x.stroke();
     } else {
-      x.strokeStyle = "rgba(255,255,255,.55)";
-      x.lineWidth = 1.4;
+      x.strokeStyle = "rgba(255,255,255,.6)";
+      x.lineWidth = 2.6;
       x.beginPath();
-      x.moveTo(px - 2.8, py - 2.8);
-      x.lineTo(px + 2.8, py + 2.8);
-      x.moveTo(px + 2.8, py - 2.8);
-      x.lineTo(px - 2.8, py + 2.8);
+      x.moveTo(px - 5.5, py - 5.5);
+      x.lineTo(px + 5.5, py + 5.5);
+      x.moveTo(px + 5.5, py - 5.5);
+      x.lineTo(px - 5.5, py + 5.5);
       x.stroke();
     }
   }
   const m = shots.filter((s) => s.m).length;
-  return `<figure class="chart"><img alt="${esc(G.cl[t])} shot chart" src="${cv.toDataURL()}"><figcaption style="color:${G.PC[t]}">${esc(G.cl[t])} · ${m}/${shots.length}</figcaption></figure>`;
+  return `<figure class="chart"><img alt="${esc(G.cl[t])} shot chart: ${m} of ${shots.length} made" src="${cv.toDataURL()}"><figcaption><span style="color:${light(G.PC[t])}">${esc(G.cl[t])}</span> <b class="num">${m}/${shots.length}</b> <small>${Math.round((100 * m) / shots.length)}%</small></figcaption></figure>`;
 }
 const charts = (maxQ = 99) => {
   const a = shotChart(0, maxQ) + shotChart(1, maxQ);
   return a ? `<div class="charts">${a}</div>` : "";
 };
+/** Stat comparison bars (team colours, the leader's number highlighted). */
+const cmpBars = (rows: [string, number, number, string?][]) =>
+  `<div class="cmp">${rows
+    .map(([k, a2, b2, u]) => {
+      const t = a2 + b2 || 1;
+      return `<div><em class="${a2 > b2 ? "w" : ""}">${a2}${u || ""}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em class="${b2 > a2 ? "w" : ""}">${b2}${u || ""}</em><small>${k}</small></div>`;
+    })
+    .join("")}</div>`;
+/** Score by quarter from TS.qs (cumulative scores at each quarter end) + the current score. */
+function qtrTable(upTo = 99) {
+  const qs = (G.TS.qs || []).slice(0, upTo),
+    cols: number[][] = [];
+  let prev = [0, 0];
+  for (const c of qs) {
+    if (!c) continue;
+    cols.push([c[0] - prev[0], c[1] - prev[1]]);
+    prev = c;
+  }
+  cols.push([G.sc[0] - prev[0], G.sc[1] - prev[1]]);
+  const n = Math.max(cols.length, upTo < 99 ? upTo : 4);
+  while (cols.length < n) cols.push([NaN, NaN]);
+  const row = (t: number) => `<tr><td><span class="dot" style="background:${G.PC[t]}"></span>${esc(G.cl[t])}</td>${cols.map((c) => `<td>${isNaN(c[t]) ? "–" : c[t]}</td>`).join("")}<td><b>${G.sc[t]}</b></td></tr>`;
+  return `<table class="bx qtr"><thead><tr><th></th>${cols.map((_, i) => `<th>${i < 4 ? "Q" + (i + 1) : "OT" + (i - 3)}</th>`).join("")}<th>T</th></tr></thead><tbody>${row(0)}${row(1)}</tbody></table>`;
+}
 function halfStats() {
   if (G.S !== "half") return;
   ov.style.display = "flex";
   const top = (t: number, k: string) => G.ROST[t].slice().sort((a, b) => b.stt[k] - a.stt[k])[0],
-    row = (k: string, l: string) =>
-      `<tr><td>${esc(top(0, k).n)} <b>${top(0, k).stt[k]}</b></td><th>${l}</th><td><b>${top(1, k).stt[k]}</b> ${esc(top(1, k).n)}</td></tr>`,
+    lead = (k: string, l: string) =>
+      `<div class="ldr"><span class="l">${esc(top(0, k).n)} <b class="disp">${top(0, k).stt[k]}</b></span><small>${l}</small><span class="r"><b class="disp">${top(1, k).stt[k]}</b> ${esc(top(1, k).n)}</span></div>`,
     sum = (t: number, k: string) => G.ROST[t].reduce((a, p) => a + (p.stt[k] || 0), 0),
     pc = (m: number, a: number) => (a ? Math.round((100 * m) / a) : 0),
-    qs = G.TS.qs,
-    q1 = qs[0] || [0, 0],
-    q2 = [G.sc[0] - q1[0], G.sc[1] - q1[1]],
     bars: [string, number, number, string?][] = [
       ["FG%", pc(sum(0, "fgm"), sum(0, "fga")), pc(sum(1, "fgm"), sum(1, "fga")), "%"],
       ["3PT", sum(0, "tpm"), sum(1, "tpm")],
@@ -1047,18 +1017,14 @@ function halfStats() {
       ["PAINT PTS", G.TS.xs.paint[0], G.TS.xs.paint[1]],
       ["FAST BREAK", G.TS.xs.fb[0], G.TS.xs.fb[1]],
       ["HUSTLE", sum(0, "orb") + sum(0, "chg") + sum(0, "dv"), sum(1, "orb") + sum(1, "chg") + sum(1, "dv")],
-    ];
-  ov.innerHTML = `<div class="fin ht" style="--c0:${G.PC[0]};--c1:${G.PC[1]}"><div class="logo" style="font-size:40px;animation:none">HALFTIME</div>
-   <div class="sc"><span style="--c:${G.PC[0]}">${esc(G.cl[0])}</span><b>${G.sc[0]}</b><i>—</i><b>${G.sc[1]}</b><span style="--c:${G.PC[1]}">${esc(G.cl[1])}</span></div>
-   <table class="bx qtr"><tr><th></th><th>Q1</th><th>Q2</th><th>HALF</th></tr><tr><td>${esc(G.cl[0])}</td><td>${q1[0]}</td><td>${q2[0]}</td><td><b>${G.sc[0]}</b></td></tr><tr><td>${esc(G.cl[1])}</td><td>${q1[1]}</td><td>${q2[1]}</td><td><b>${G.sc[1]}</b></td></tr></table>
-   <div class="cmp">${bars
-     .map(([k, a2, b2, u]) => {
-       const t = a2 + b2 || 1;
-       return `<div><em>${a2}${u || ""}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em>${b2}${u || ""}</em><small>${k}</small></div>`;
-     })
-     .join("")}</div>
-   <table class="bx ldr">${row("pts", "POINTS")}${row("reb", "REBOUNDS")}${row("ast", "ASSISTS")}</table>${charts(2)}
-   <p class="hint">${esc(halfNote())}</p>${G.halftimeAdjust().map((s) => `<p class="hint" style="opacity:.8">📋 ${esc(s)}</p>`).join("")}<div class="row"><button class="big" id="h2">START 3RD QUARTER ▶</button>${G.HL.length ? `<button class="ghost" id="h3">▶ Highlights again</button>` : ""}</div></div>`;
+    ],
+    adj = G.halftimeAdjust(),
+    ch = charts(2);
+  ov.innerHTML = `<div class="scr fin ht" style="--c0:${G.PC[0]};--c1:${G.PC[1]}"><header class="fhead"><span class="eyebrow">Halftime show</span><div class="logo disp">Halftime</div>${board("HALF")}${qtrTable(2)}<p class="hint lead">${esc(halfNote())}</p></header>
+   <div class="fgrid"><div class="fcol"><section class="panel"><h2 class="eyebrow">First half</h2>${cmpBars(bars)}</section>
+    <section class="panel"><h2 class="eyebrow">Leaders</h2><div class="ldrs">${lead("pts", "POINTS")}${lead("reb", "REBOUNDS")}${lead("ast", "ASSISTS")}</div></section></div>
+    <div class="fcol">${ch ? `<section class="panel"><h2 class="eyebrow">Shot charts</h2>${ch}</section>` : ""}${adj.length ? `<section class="panel"><h2 class="eyebrow">Coach's adjustments</h2>${adj.map((s) => `<p class="hint">📋 ${esc(s)}</p>`).join("")}</section>` : ""}</div></div>
+   <div class="row actions"><button type="button" class="btn pri lg" id="h2" data-autofocus>Start 3rd quarter ▶</button>${G.HL.length ? `<button type="button" class="btn" id="h3">▶ Highlights again</button>` : ""}</div><p class="hint auto">The second half starts by itself in 15 s.</p></div>`;
   const go = () => {
     clearTimeout(ht);
     if (G.S !== "half") return;
@@ -1074,7 +1040,7 @@ function halfStats() {
       clearTimeout(ht);
       playReel(G.HL.filter((c) => (c.q || 1) <= 2).slice(-4), halfStats);
     };
-  ($("#h2") as HTMLElement).focus();
+  ($("#h2") as HTMLElement).focus({ preventScroll: true });
 }
 function halfNote() {
   const d = G.sc[0] - G.sc[1];
@@ -1110,6 +1076,7 @@ function endGame() {
     cl = G.cl;
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
+  menuPad = null;
   const me = (CT[V.focus] || CT[0]).tm,
     w = sc[me] > sc[1 - me],
     tm = (t: number) => (G.ROST[t] && G.ROST[t].length ? G.ROST[t] : P.filter((p) => p.tm === t)),
@@ -1134,9 +1101,9 @@ function endGame() {
     pl2 = best(1 - wt),
     pog = pw && pl2 && gmSc(pl2) >= gmSc(pw) + 10 ? pl2 : pw,
     pogTag = pog ? lineTag(pog.stt) : "";
-  const rows: [string, number, number][] = [
-    ["FG%", pct(sum(0, "fgm"), sum(0, "fga")), pct(sum(1, "fgm"), sum(1, "fga"))],
-    ["3P%", pct(sum(0, "tpm"), sum(0, "tpa")), pct(sum(1, "tpm"), sum(1, "tpa"))],
+  const rows: [string, number, number, string?][] = [
+    ["FG%", pct(sum(0, "fgm"), sum(0, "fga")), pct(sum(1, "fgm"), sum(1, "fga")), "%"],
+    ["3P%", pct(sum(0, "tpm"), sum(0, "tpa")), pct(sum(1, "tpm"), sum(1, "tpa")), "%"],
     ["REB", sum(0, "reb"), sum(1, "reb")],
     ["AST", sum(0, "ast"), sum(1, "ast")],
     ["BLK", sum(0, "blk"), sum(1, "blk")],
@@ -1147,31 +1114,32 @@ function endGame() {
     ["HUSTLE", sum(0, "chg") + sum(0, "dv") + sum(0, "sa"), sum(1, "chg") + sum(1, "dv") + sum(1, "sa")],
   ];
   const tb = (t: number) =>
-    `<table class="bx"><tr><th>${esc(cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>BLK</th><th>OREB</th><th>PF</th><th title="charges drawn + loose-ball dives + screen assists">HUS</th></tr>${tm(t)
+    `<table class="bx"><thead><tr><th style="color:${light(G.PC[t])}">${esc(cl[t])}</th><th>PTS</th><th>REB</th><th>AST</th><th>FG</th><th>3P</th><th>BLK</th><th>OREB</th><th>PF</th><th title="charges drawn + loose-ball dives + screen assists">HUS</th></tr></thead><tbody>${tm(t)
       .map(
         (p) =>
-          `<tr${p.fo ? ' class="fo"' : ""}><td>${esc(p.n)}${badgeStr(p) ? ` <small title="${esc(badgeStr(p))}">★${badgeStr(p).split(" · ").length}</small>` : ""}</td><td>${p.stt.pts}</td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.stt.blk}</td><td>${p.stt.orb || 0}</td><td>${p.pf}${p.fo ? " (out)" : ""}</td><td>${(p.stt.chg || 0) + (p.stt.dv || 0) + (p.stt.sa || 0)}</td></tr>`,
+          `<tr class="${p.fo ? "fo" : ""}${p.my || CT.some((c) => P[c.idx] === p) ? " me" : ""}"><td>${esc(p.n)}${badgeStr(p) ? ` <small title="${esc(badgeStr(p))}">★${badgeStr(p).split(" · ").length}</small>` : ""}</td><td><b>${p.stt.pts}</b></td><td>${p.stt.reb}</td><td>${p.stt.ast}</td><td>${p.stt.fgm}-${p.stt.fga}</td><td>${p.stt.tpm}-${p.stt.tpa}</td><td>${p.stt.blk}</td><td>${p.stt.orb || 0}</td><td>${p.pf}${p.fo ? " (out)" : ""}</td><td>${(p.stt.chg || 0) + (p.stt.dv || 0) + (p.stt.sa || 0)}</td></tr>`,
       )
-      .join("")}</table>`;
-  const r = rec.get();
-  ov.innerHTML = `<div class="fin" style="--c0:${G.PC[0]};--c1:${G.PC[1]}">
-   <div class="logo" style="font-size:44px;animation:none;color:${NET.role || IN.MP2 ? "#fff" : w ? "#ffd23f" : "#ff8a6b"}">${NET.role || IN.MP2 ? "FINAL" : w ? "VICTORY" : "DEFEAT"}</div>
-   <div class="sc"><span style="--c:${G.PC[0]}">${esc(cl[0])}</span><b>${sc[0]}</b><i>—</i><b>${sc[1]}</b><span style="--c:${G.PC[1]}">${esc(cl[1])}</span></div>
-   ${NET.role ? NET.rate() : ""}${!NET.role && !IN.MP2 ? `<p class="hint">Record ${r.w}W · ${r.l}L${r.st > 1 ? " · 🔥 " + r.st + " straight" : ""}${r.best > 1 ? " · best streak " + r.best : ""}</p>` : ""}
-   ${xpr ? `${xpBar(MYP.d)}<p class="hint">My Player +${xpr.xp} XP${xpr.lv1 > xpr.lv0 ? ` · <span class="lvup">LEVEL UP! ${xpr.lv0} → ${xpr.lv1}: +${xpr.pts} attribute points</span>` : ""}</p>` : ""}
-   ${pog ? `<div class="pog"><img alt="" src="${avatar([pog.n, pog.c, pog.i, pog.s, pog.d, pog.j, pog.st, pog.skin, pog.hr, pog.bd, pog.ht, pog.bk, pog.no], pog.col)}"><div><small>PLAYER OF THE GAME${pogTag ? " · " + pogTag : ""}</small><b>${esc(pog.n)}</b><span>${pog.stt.pts} PTS · ${pog.stt.reb} REB · ${pog.stt.ast} AST${pog.stt.blk ? " · " + pog.stt.blk + " BLK" : ""} · ${pog.stt.fgm}-${pog.stt.fga} FG · GmSc ${gmSc(pog).toFixed(1)}</span></div></div>` : ""}
-   <div class="cmp">${rows
-     .map(([k, a2, b2]) => {
-       const t = a2 + b2 || 1;
-       return `<div><em>${a2}</em><span><i style="--w:${(100 * a2) / t}%;background:var(--c0)"></i><i style="--w:${(100 * b2) / t}%;background:var(--c1)"></i></span><em>${b2}</em><small>${k}</small></div>`;
-     })
-     .join("")}</div>
-   ${charts()}<details class="bxw"><summary>Box score</summary>${tb(0)}${tb(1)}</details>
-   ${G.HL.length && !NET.role ? `<div class="row"><button class="ghost" id="hlp">▶ Highlights (${G.HL.length})</button><button class="ghost" id="hls">💾 Save reel</button><button class="ghost" id="hll" title="Works when the game page is opened directly (downloaded or self-hosted); on claude.ai use Save reel">🔗 Copy replay link</button></div>` : ""}
-   <div class="row">${NET.role ? NET.finalButtons() : inSeason ? `<button class="big" id="ssn">🏆 SEASON ▶</button><button id="pa" class="ghost">Menu</button>` : `<button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button>`}</div></div>`;
+      .join("")}</tbody></table>`;
+  const r = rec.get(),
+    neutral = !!(NET.role || IN.MP2),
+    head = neutral ? "FINAL" : w ? "VICTORY" : "DEFEAT",
+    ch = charts(),
+    pogC = pog ? G.PC[pog.tm] || G.PC[wt] : "",
+    tile = (v: any, l: string) => `<span><b class="disp num">${v}</b>${l}</span>`;
+  ov.innerHTML = `<div class="scr fin${neutral ? "" : w ? " won" : " lost"}" style="--c0:${G.PC[0]};--c1:${G.PC[1]}">
+   <header class="fhead"><span class="eyebrow">Final${!NET.role && !IN.MP2 ? ` · record ${r.w}-${r.l}${r.st > 1 ? " · 🔥 " + r.st + " straight" : ""}${r.best > 1 ? " · best streak " + r.best : ""}` : ""}</span>
+   <div class="logo disp">${head}</div>${board(G.q > 4 ? "F/OT" : "FINAL")}${G.gameLike() && !cfg.TO ? qtrTable() : ""}${NET.role ? NET.rate() : ""}</header>
+   <div class="fgrid"><div class="fcol">
+    ${pog ? `<section class="pog panel" style="--c:${pogC}"><img alt="" src="${avatar([pog.n, pog.c, pog.i, pog.s, pog.d, pog.j, pog.st, pog.skin, pog.hr, pog.bd, pog.ht, pog.bk, pog.no], pog.col)}"><div class="pgb"><small class="eyebrow">Player of the game${pogTag ? " · " + pogTag : ""}</small><b class="disp">${esc(pog.n)}</b><div class="pgs">${tile(pog.stt.pts, "PTS")}${tile(pog.stt.reb, "REB")}${tile(pog.stt.ast, "AST")}${pog.stt.blk ? tile(pog.stt.blk, "BLK") : ""}</div><span class="pgl">${pog.stt.fgm}-${pog.stt.fga} FG · ${pog.stt.tpm}-${pog.stt.tpa} 3P · GmSc ${gmSc(pog).toFixed(1)}</span></div></section>` : ""}
+    ${xpr ? `<section class="panel xpw">${xpBar(MYP.d)}<p class="hint">My Player +${xpr.xp} XP${xpr.lv1 > xpr.lv0 ? ` · <span class="lvup">LEVEL UP! ${xpr.lv0} → ${xpr.lv1}: +${xpr.pts} attribute points</span>` : ""}</p></section>` : ""}
+    <section class="panel"><h2 class="eyebrow">Team stats</h2>${cmpBars(rows)}</section></div>
+    <div class="fcol">${ch ? `<section class="panel"><h2 class="eyebrow">Shot charts</h2>${ch}</section>` : ""}
+    <details class="bxw panel"><summary>Box score</summary>${tb(0)}${tb(1)}</details></div></div>
+   ${G.HL.length && !NET.role ? `<div class="row hl"><button type="button" class="btn" id="hlp">▶ Highlights (${G.HL.length})</button><button type="button" class="btn ghost" id="hls">💾 Save reel</button><button type="button" class="btn ghost" id="hll" title="Works when the game page is opened directly (downloaded or self-hosted); on claude.ai use Save reel">🔗 Copy replay link</button></div>` : ""}
+   <div class="row actions">${NET.role ? NET.finalButtons() : inSeason ? `<button type="button" class="btn pri lg" id="ssn" data-autofocus>🏆 Season ▶</button><button type="button" id="pa" class="btn">Menu</button>` : `<button type="button" class="btn pri lg" id="rm" data-autofocus>↻ Rematch</button><button type="button" id="pa" class="btn">Change teams</button>`}</div></div>`;
   const hlp = document.getElementById("hlp");
   if (hlp) {
-    hlp.onclick = () => playReel(G.HL.slice(), () => (ov.style.display = "flex"));
+    hlp.onclick = () => playReel(G.HL.slice(), () => ((ov.style.display = "flex"), document.getElementById("hlp")?.focus()));
     $("#hls").onclick = saveReel;
     $("#hll").onclick = () => void shareLink();
   }
@@ -1182,6 +1150,7 @@ function endGame() {
   if (NET.role) NET.bindFinal();
   const rm = document.getElementById("rm");
   if (rm) rm.onclick = () => startLocal(SEL, { j: lastJ });
+  (ov.querySelector("[data-autofocus]") as HTMLElement)?.focus({ preventScroll: true });
   GS.onEnd && GS.onEnd(w);
 }
 
@@ -1219,7 +1188,7 @@ const unb64 = (s: string) => {
 };
 /** Save the game's highlights as a file (teams + clips); "Load reel" in the menu plays it back. */
 function saveReel() {
-  const o = { v: 1, np: cfg.NP, fst: G.FSTN(), i: SEL, j: lastJ, my: MYM, teams: G.cl, sc: G.sc, clips: G.HL.map((c) => ({ s: c.s, n: c.n, b: b64(c.buf) })) },
+  const o = { v: 1, np: cfg.NP, fst: G.FSTN(), i: SEL, j: lastJ, my: ST.MYM, teams: G.cl, sc: G.sc, clips: G.HL.map((c) => ({ s: c.s, n: c.n, b: b64(c.buf) })) },
     blob = new Blob([JSON.stringify(o)], { type: "application/json" }),
     name = "hoops2k27-" + G.cl[0].replace(/\W/g, "") + "-vs-" + G.cl[1].replace(/\W/g, "") + ".h2kreel.json",
     w = window as any,
@@ -1282,7 +1251,7 @@ async function shareLink() {
   const c = G.HL[G.HL.length - 1];
   if (!c) return;
   const p = await packClip(c),
-    q = new URLSearchParams({ m: GS.mode, np: String(cfg.NP), i: String(SEL), j: String(lastJ ?? -1), my: String(MYM), z: String(p.z), n: String(p.n), s: c.s });
+    q = new URLSearchParams({ m: GS.mode, np: String(cfg.NP), i: String(SEL), j: String(lastJ ?? -1), my: String(ST.MYM), z: String(p.z), n: String(p.n), s: c.s });
   const url = location.href.split("#")[0] + "#" + q.toString() + "&reel=" + p.d;
   (window as any).H2K.lastLink = url;
   const done = (ok: boolean) => banner(ok ? "REPLAY LINK COPIED" : "COPY THE LINK BELOW", Math.round(url.length / 1024) + " KB link · opens this highlight in the game", "#9fe7ff");
@@ -1426,22 +1395,13 @@ function draw2d() {
 function overlay() {
   hud();
   hud2();
-  drawBug(NET.role ? (CT[V.focus] || CT[0]).tm : CT.length ? CT[0].tm : -1);
+  scoreBug(NET.role ? (CT[V.focus] || CT[0]).tm : CT.length ? CT[0].tm : -1);
   modeHud();
   if (G.S === "intro") return drawPlayerIntro(introT, introRec);
   drawIntro();
   drawBanners();
   drawTiming();
-  X.textAlign = "center";
-  X.font = "700 11px system-ui";
-  X.fillStyle = "#fff";
-  const seen = new Set();
-  for (const p of [...CT.map((c) => P[c.idx]), B.owner])
-    if (p && !seen.has(p) && !p.off) {
-      seen.add(p);
-      const [sx, sy] = pr(p.x, p.y, p.z + 78);
-      X.fillText(p.n.toUpperCase() + " " + ovr(p), sx, sy);
-    }
+  nameTags([...CT.map((c) => P[c.idx]), B.owner]);
   const p0 = V.focusP();
   if (p0) {
     contestFx(p0);

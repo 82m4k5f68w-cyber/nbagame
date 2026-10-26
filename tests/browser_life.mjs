@@ -68,7 +68,7 @@ for (let i = 0; i < 5; i++) {
   await click("#life #qn");
 }
 await waitFor("#life .scr [data-o='__x']");
-const cls = await ev(() => ({ sc: H2K_LIFE.L.courses[0].sc.length, v: H2K_LIFE.L.courses[0].sc[0]?.v, hw: H2K_LIFE.L.courses[0].hw, t: H2K_LIFE.L.t, txt: document.querySelector("#life .scr h2").textContent }));
+const cls = await ev(() => ({ sc: H2K_LIFE.L.courses[0].sc.length, v: H2K_LIFE.L.courses[0].sc[0]?.v, hw: H2K_LIFE.L.courses[0].hw, t: H2K_LIFE.L.t, txt: document.querySelectorAll("#life .scr h2")[1].textContent }));
 ok(answered === 5 && cls.sc === 1 && cls.v >= 0 && cls.hw >= 0 && cls.t >= 600, "class: 5 answers, grade " + cls.txt + " recorded, homework set, clock at 10:00+");
 await shot("07-grade");
 await click("#life .scr [data-o='__x']");
@@ -120,9 +120,12 @@ await pg.waitForTimeout(500);
 const g = await ev(() => H2K_LIFE.L.cal.find((e) => e.k === "game"));
 await ev((g) => {
   H2K_LIFE.setTime(g.day * 1440 + g.st - 30);
-  H2K_LIFE.L.courses.forEach((c) => c.sc.push({ k: "q", v: 90, d: 0 })); // eligible
+  H2K_LIFE.L.courses.forEach((c) => {
+    for (let k = 0; k < 20; k++) c.sc.push({ k: "q", v: 95, d: 0 }); // eligible (the skipped classes count as zeros)
+  });
   H2K_LIFE.goto("arena");
 }, g);
+await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 30000 });
 await pg.waitForTimeout(400);
 await pg.keyboard.press("KeyE");
 await waitFor("#life .scr [data-o='play']");
@@ -153,8 +156,8 @@ await waitFor("#lifeback");
 await shot("14-final");
 await click("#lifeback");
 await waitFor("#life .scr h2");
-const pgm = await ev(() => ({ txt: document.querySelector("#life .scr h2").textContent, gp: H2K_LIFE.L.line.gp, w: H2K_LIFE.L.team.w, life: getComputedStyle(document.getElementById("life")).display, idle: window.H2K.G && true, feed: H2K_LIFE.L.feed.length, res: H2K_LIFE.L.cal.find((e) => e.k === "game").res }));
-ok(/WIN/.test(pgm.txt) && pgm.gp === 1 && pgm.w === 1 && pgm.life !== "none" && pgm.res && pgm.res.played, "back in LIFE: " + pgm.txt + ", game booked (1 GP, W)");
+const pgm = await ev(() => ({ txt: document.querySelectorAll("#life .scr h2")[1].textContent, gp: H2K_LIFE.L.line.gp, w: H2K_LIFE.L.team.w, life: getComputedStyle(document.getElementById("life")).display, idle: window.H2K.G && true, feed: H2K_LIFE.L.feed.length, res: H2K_LIFE.L.cal.find((e) => e.k === "game").res }));
+ok(/WIN/.test(pgm.txt) && pgm.gp === 1 && pgm.w === 1 && pgm.life !== "none" && pgm.res && pgm.res.played, "back in LIFE: " + pgm.txt + ", game booked (1 GP, W) " + JSON.stringify({ gp: pgm.gp, w: pgm.w, life: pgm.life }));
 await shot("15-postgame");
 await click("#life .scr [data-o='__x']");
 await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 10000 });

@@ -4,6 +4,8 @@ import * as G from "../core/sim";
 import { cfg, nChoices, RO } from "../core/sim";
 import { M, TUT, CLUTCH, startPractice, start3pt, startDunk, startHorse, startClutch, stopMode, startStreet, startKing, startAllStar, startDaily, dailySpec } from "../core/modes";
 import { ov2 } from "../core/data";
+import { V } from "./view";
+import { FD } from "./hud";
 
 let X: CanvasRenderingContext2D = null as any;
 export const setModeCtx = (x: CanvasRenderingContext2D) => (X = x);
@@ -37,8 +39,24 @@ const lsPut = (k: string, v: any) => {
     localStorage.setItem(k, JSON.stringify(v));
   } catch (e) {}
 };
-/** Mode picker strip for the matchup screen. */
-export const modeStrip = () => `<div class="modes" role="group" aria-label="Game modes">${MODES.map(([k, ic, n]) => `<button data-mode="${k}"><span>${ic}</span>${n}</button>`).join("")}</div>`;
+/** One line per mode for the tiles (UI v6) and the accent colour. */
+export const MDESC: Record<string, [string, string]> = {
+  season: ["Schedule, standings, playoffs", "#c99a1e"],
+  daily: ["One scenario a day for everybody", "#2f8fd8"],
+  clutch: ["Six late-game scenarios to beat", "#d8452f"],
+  allstar: ["Team Gold vs Team Ice", "#e0a526"],
+  street: ["Half court, 1s and 2s, first to 21", "#7b3fb5"],
+  street3: ["Outdoor 3-on-3, make it take it", "#9c4dcc"],
+  king: ["Beat a ladder of challengers to 11", "#b8860b"],
+  "3pt": ["Five racks, money balls, 60 seconds", "#1fa35b"],
+  dunk: ["Pick your dunk, five judges", "#e8541e"],
+  horse: ["Match the CPU's shots, letter by letter", "#8a6d3b"],
+  practice: ["Open gym with a shot lab", "#4f6bd8"],
+  tutorial: ["Learn the controls step by step", "#0b7a8a"],
+};
+/** Mode tiles for the matchup screen. */
+export const modeStrip = () =>
+  `<div class="modes" role="group" aria-label="Game modes">${MODES.map(([k, ic, n]) => `<button type="button" class="mode" data-mode="${k}" style="--c:${(MDESC[k] || ["", "#2a2f6a"])[1]}"><span class="mic" aria-hidden="true">${ic}</span><b>${n}</b><small>${(MDESC[k] || [""])[0]}</small></button>`).join("")}</div>`;
 export function bindStrip() {
   SH.ov.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => (b.onclick = () => openMode(b.dataset.mode!)));
 }
@@ -72,10 +90,13 @@ function go(k: string, arg = 0) {
 export const replayMode = () => lastKind && go(lastKind, lastArg);
 // ---------------- HUD ----------------
 function panel(x: number, y: number, w: number, h: number) {
-  X.fillStyle = "rgba(8,10,24,.86)";
-  X.fillRect(x, y, w, h);
-  X.fillStyle = "#ffd23f";
-  X.fillRect(x, y, w, 3);
+  X.beginPath();
+  X.roundRect(x, y, w, h, 8);
+  X.fillStyle = V.HC ? "#000" : "rgba(8,10,22,.86)";
+  X.fill();
+  if (V.HC) ((X.strokeStyle = "#fff"), (X.lineWidth = 1.5), X.stroke());
+  X.fillStyle = "#ffc83d";
+  X.fillRect(x + 8, y, w - 16, 3);
 }
 export function modeHud() {
   const k = M.kind;
@@ -85,7 +106,7 @@ export function modeHud() {
     const s = M.st;
     panel(300, 6, 360, k === "tutorial" ? 64 : 44);
     X.fillStyle = "#fff";
-    X.font = "800 15px system-ui";
+    X.font = FD(700, 16);
     X.fillText(`${k === "tutorial" ? "TUTORIAL" : "PRACTICE"} · ${s.made}/${s.att}${s.att ? " (" + Math.round((100 * s.made) / s.att) + "%)" : ""} · GREENS ${s.gr} · STREAK ${s.streak} (BEST ${s.best})`, 480, 30);
     X.font = "600 11px system-ui";
     X.fillStyle = "#9fe7ff";
@@ -131,7 +152,7 @@ export function modeHud() {
   } else if (k === "3pt") {
     panel(290, 6, 380, 74);
     X.fillStyle = M.time < 10 ? "#ff6b4a" : "#fff";
-    X.font = "900 26px system-ui";
+    X.font = FD(700, 28);
     X.fillText(M.time.toFixed(1), 380, 40);
     X.fillStyle = "#ffd23f";
     X.fillText(String(M.pts), 590, 40);
@@ -153,20 +174,20 @@ export function modeHud() {
   } else if (k === "dunk") {
     panel(300, 6, 360, 56);
     X.fillStyle = "#fff";
-    X.font = "800 16px system-ui";
+    X.font = FD(700, 17);
     X.fillText(`DUNK ${Math.min(3, M.dunk + 1)} OF 3 · TRY ${M.tries + 1}/2`, 480, 30);
     X.font = "700 12px system-ui";
     X.fillStyle = "#ffd23f";
     X.fillText(M.scores.length ? "SCORES " + M.scores.join(" + ") + " = " + M.scores.reduce((a: number, b: number) => a + b, 0) : "C tomahawk · X 360 · V windmill · G reverse", 480, 50);
   } else if (k === "horse") {
     panel(300, 6, 360, 56);
-    X.font = "900 22px system-ui";
+    X.font = FD(700, 22);
     for (let t = 0; t < 2; t++) {
       const x = t ? 600 : 360;
       X.fillStyle = "#cfd6ee";
       X.font = "700 11px system-ui";
       X.fillText(M.pl[t].n.toUpperCase() + (t ? " (CPU)" : " (YOU)"), x, 24);
-      X.font = "900 22px system-ui";
+      X.font = FD(700, 22);
       X.fillText(
         "HORSE".split("").map((c, i) => (i < M.let[t] ? c : "·")).join(" "),
         x,
@@ -191,7 +212,7 @@ export function modeEvent(f: any) {
     const all = [{ n: "YOU", s: r.pts, me: 1 }, ...r.field].sort((a: any, b: any) => b.s - a.s);
     good = all[0].me === 1;
     h = good ? "3-POINT CHAMPION" : "3-POINT CONTEST";
-    body = `<div class="sc"><b>${r.pts}</b><i>points</i></div><p class="hint">Racks: ${r.racks.join(" · ")}</p><table class="bx">${all.map((a: any, i: number) => `<tr${a.me ? ' style="color:#ffd23f"' : ""}><td>${i + 1}. ${E(a.n)}</td><td>${a.s}</td></tr>`).join("")}</table>`;
+    body = `<div class="sc"><b>${r.pts}</b><i>points</i></div><p class="hint">Racks: ${r.racks.join(" · ")}</p><table class="bx">${all.map((a: any, i: number) => `<tr class="${a.me ? "me" : ""}"><td>${i + 1}. ${E(a.n)}</td><td>${a.s}</td></tr>`).join("")}</table>`;
     const b = lsGet("h2k_3pt", 0);
     if (r.pts > b) lsPut("h2k_3pt", r.pts);
     body += `<p class="hint">Personal best: ${Math.max(b, r.pts)}</p>`;
@@ -199,7 +220,7 @@ export function modeEvent(f: any) {
     const all = [{ n: "YOU", s: r.total, me: 1 }, ...r.field].sort((a: any, b: any) => b.s - a.s);
     good = all[0].me === 1;
     h = good ? "DUNK CHAMPION" : "DUNK CONTEST";
-    body = `<div class="sc"><b>${r.total}</b><i>${r.scores.join(" + ")}</i></div><table class="bx">${all.map((a: any, i: number) => `<tr${a.me ? ' style="color:#ffd23f"' : ""}><td>${i + 1}. ${E(a.n)}</td><td>${a.s}</td></tr>`).join("")}</table>`;
+    body = `<div class="sc"><b>${r.total}</b><i>${r.scores.join(" + ")}</i></div><table class="bx">${all.map((a: any, i: number) => `<tr class="${a.me ? "me" : ""}"><td>${i + 1}. ${E(a.n)}</td><td>${a.s}</td></tr>`).join("")}</table>`;
   } else if (k === "horse") {
     good = r.win;
     h = r.win ? "YOU WIN H-O-R-S-E" : "H-O-R-S-E";
@@ -234,7 +255,7 @@ export function modeEvent(f: any) {
     h = r.win ? "DAILY CHALLENGE BEATEN" : "DAILY CHALLENGE FAILED";
     body = `<p class="hint">${E(s.c.n)} — ${E(s.c.d)}</p><div class="sc"><span>YOU</span><b>${G.sc[0]}</b><i>—</i><b>${G.sc[1]}</b><span>CPU</span></div>
      <table class="bx"><tr><th>DAY</th><th>TRIES</th><th>WINS</th><th>BEST MARGIN</th></tr>${days
-       .map((k2) => `<tr${+k2 === s.seed ? ' style="color:#ffd23f"' : ""}><td>${String(k2).replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}</td><td>${lb[k2].tries}</td><td>${lb[k2].wins}</td><td>${lb[k2].best > 0 ? "+" : ""}${lb[k2].best}</td></tr>`)
+       .map((k2) => `<tr class="${+k2 === s.seed ? "me" : ""}"><td>${String(k2).replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}</td><td>${lb[k2].tries}</td><td>${lb[k2].wins}</td><td>${lb[k2].best > 0 ? "+" : ""}${lb[k2].best}</td></tr>`)
        .join("")}</table><p class="hint">A new scenario every day — same one for everybody.</p>`;
   } else if (k === "clutch") {
     good = r.win;
@@ -250,8 +271,8 @@ export function modeEvent(f: any) {
     const ov = SH.ov;
     ov.style.display = "flex";
     ov.classList.remove("mu-on");
-    ov.innerHTML = `<div class="fin"><div class="logo" style="font-size:38px;animation:none;color:${good ? "#ffd23f" : "#ff8a6b"}">${h}</div>${body}
-     <div class="row"><button class="big" id="mag">${k === "king" && good && lastArg ? "NEXT CHALLENGER ▶" : "↻ AGAIN"}</button>${k === "clutch" ? `<button class="ghost" id="mcl">More challenges</button>` : ""}<button class="ghost" id="mme">Menu</button></div></div>`;
+    ov.innerHTML = `<div class="scr fin res ${good ? "won" : "lost"}"><header class="fhead"><span class="eyebrow">${E(MODES.find((m) => m[0] === k)?.[2] || "Result")}</span><div class="logo disp">${h}</div></header><section class="panel resb">${body}</section>
+     <div class="row actions"><button type="button" class="btn pri lg" id="mag">${k === "king" && good && lastArg ? "Next challenger ▶" : "↻ Again"}</button>${k === "clutch" ? `<button type="button" class="btn" id="mcl">More challenges</button>` : ""}<button type="button" class="btn" id="mme">Menu</button></div></div>`;
     $("#mag").onclick = () => go(lastKind, lastArg);
     $("#mme").onclick = () => SH.menu();
     const mc = document.getElementById("mcl");
@@ -267,11 +288,12 @@ function clutchScreen() {
     ov = SH.ov;
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
-  ov.innerHTML = `<div class="fin"><div class="logo" style="font-size:36px;animation:none">CLUTCH CHALLENGES</div><p class="hint">Your team vs your chosen opponent (or a random one). Beat the scenario.</p>
-  <div class="cc">${CLUTCH.map((c, i) => `<button data-cc="${i}"><b>${st[i] ? "★" : "☆"} ${SH.esc(c.n)}</b><small>${SH.esc(c.d)}</small></button>`).join("")}</div>
-  <div class="row"><button class="ghost" id="mme">Back</button></div></div>`;
+  ov.innerHTML = `<div class="scr fin"><header class="fhead"><span class="eyebrow">${Object.keys(st).length}/${CLUTCH.length} beaten</span><div class="logo disp">Clutch challenges</div><p class="hint">Your team vs your chosen opponent (or a random one). Beat the scenario.</p></header>
+  <div class="cc">${CLUTCH.map((c, i) => `<button type="button" data-cc="${i}" class="${st[i] ? "done" : ""}"><span class="ccs" aria-label="${st[i] ? "beaten" : "not beaten"}">${st[i] ? "★" : "☆"}</span><b>${SH.esc(c.n)}</b><small>${SH.esc(c.d)}</small></button>`).join("")}</div>
+  <div class="row actions"><button type="button" class="btn" id="mme">◀ Back</button></div></div>`;
   ov.querySelectorAll<HTMLElement>("[data-cc]").forEach((b) => (b.onclick = () => go("clutch", +b.dataset.cc!)));
   $("#mme").onclick = () => SH.menu();
+  (ov.querySelector("[data-cc]") as HTMLElement)?.focus({ preventScroll: true });
 }
 // ---------------- Season ----------------
 // Schedule (everyone once), standings with points for / against and streaks, league leaders (your games' real box
@@ -421,29 +443,28 @@ export function seasonScreen() {
     reg = S.round < S.sched.length,
     po = S.po;
   let next = "";
-  if (S.champ != null) next = `<p class="big-n">${S.champ === S.team ? "🏆 CHAMPIONS!" : "Season over — " + E(tName(S.champ)) + " won the title."}</p>`;
+  if (S.champ != null) next = `<p class="big-n disp">${S.champ === S.team ? "🏆 Champions!" : "Season over — " + E(tName(S.champ)) + " won the title."}</p>`;
   else if (reg) next = `<p class="hint">Game ${S.round + 1} of ${S.sched.length}: vs <b>${E(tName(S.sched[S.round].opp))}</b></p>`;
   else if (po) next = `<p class="hint">${po.stage === 0 ? "Semifinal" : "Final"} (best of 3, ${po.sw || 0}-${po.sl || 0}): vs <b>${E(tName(po.opp))}</b></p>`;
   const ld = (k: "pts" | "reb" | "ast", h: string) =>
     `<table class="bx"><tr><th>${h}</th><th></th></tr>${leaders(S, k)
-      .map((o) => `<tr${o.t === S.team ? ' style="color:#ffd23f"' : ""}><td>${E(o.n)} <small>${E(tName(o.t))}</small></td><td>${(o[k] / o.gp).toFixed(1)}</td></tr>`)
+      .map((o) => `<tr class="${o.t === S.team ? "me" : ""}"><td>${E(o.n)} <small>${E(tName(o.t))}</small></td><td>${(o[k] / o.gp).toFixed(1)}</td></tr>`)
       .join("")}</table>`;
   ov.style.display = "flex";
   ov.classList.remove("mu-on");
-  ov.innerHTML = `<div class="fin season"><div class="logo" style="font-size:36px;animation:none">SEASON</div>
-   <p class="hint">${E(tName(S.team))} · ${S.sched.length}-game schedule, then the top 4 make the playoffs (best of 3)</p>${next}
-   ${S.aw && S.aw.length ? `<div class="pog" style="flex-direction:column;align-items:flex-start;gap:2px">${S.aw.map((a) => `<span>${E(a)}</span>`).join("")}</div>` : ""}
+  ov.innerHTML = `<div class="scr fin season wide"><header class="fhead"><span class="eyebrow">${E(tName(S.team))} · ${S.sched.length}-game schedule · top 4 make the playoffs (best of 3)</span><div class="logo disp">Season</div>${next}</header>
+   ${S.aw && S.aw.length ? `<section class="panel awards">${S.aw.map((a) => `<span>${E(a)}</span>`).join("")}</section>` : ""}
    <div class="sg"><table class="bx"><tr><th>#</th><th>TEAM</th><th>W</th><th>L</th><th title="points per game for / against">PF</th><th>PA</th><th>STRK</th></tr>${st
      .map((r) => {
        const g = Math.max(1, r.w + r.l);
-       return `<tr${r.t === S.team ? ' style="color:#ffd23f"' : ""}><td>${st.indexOf(r) + 1}${st.indexOf(r) === 3 ? " ·" : ""}</td><td>${E(tName(r.t))}</td><td>${r.w}</td><td>${r.l}</td><td>${(r.pf / g).toFixed(1)}</td><td>${(r.pa / g).toFixed(1)}</td><td>${r.st > 0 ? "W" + r.st : r.st < 0 ? "L" + -r.st : "—"}</td></tr>`;
+       return `<tr class="${r.t === S.team ? "me" : ""}${st.indexOf(r) === 3 ? " cut" : ""}"><td>${st.indexOf(r) + 1}</td><td>${E(tName(r.t))}</td><td>${r.w}</td><td>${r.l}</td><td>${(r.pf / g).toFixed(1)}</td><td>${(r.pa / g).toFixed(1)}</td><td>${r.st > 0 ? "W" + r.st : r.st < 0 ? "L" + -r.st : "—"}</td></tr>`;
      })
      .join("")}</table>
    <table class="bx"><tr><th>SCHEDULE</th><th>RESULT</th></tr>${S.sched
      .map((g) => `<tr><td>vs ${E(tName(g.opp))}</td><td>${g.my == null ? "—" : (g.my > g.op! ? "W " : "L ") + g.my + "-" + g.op}</td></tr>`)
      .join("")}${po && po.res ? po.res.map((r: string) => `<tr><td colspan="2">${E(r)}</td></tr>`).join("") : ""}</table></div>
-   ${Object.keys(S.ps!).length ? `<h3 style="margin:6px 0 0;font:900 13px system-ui;letter-spacing:2px">LEAGUE LEADERS</h3><div class="sg">${ld("pts", "POINTS")}${ld("reb", "REBOUNDS")}${ld("ast", "ASSISTS")}</div>` : ""}
-   <div class="row">${S.champ == null ? `<button class="big" id="snx">▶ PLAY NEXT GAME</button>` : ""}<button class="ghost" id="srs">New season</button><button class="ghost" id="mme">Menu</button></div></div>`;
+   ${Object.keys(S.ps!).length ? `<h2 class="eyebrow">League leaders</h2><div class="sg">${ld("pts", "POINTS")}${ld("reb", "REBOUNDS")}${ld("ast", "ASSISTS")}</div>` : ""}
+   <div class="row actions">${S.champ == null ? `<button type="button" class="btn pri lg" id="snx">▶ Play next game</button>` : ""}<button type="button" class="btn" id="srs">New season</button><button type="button" class="btn" id="mme">Menu</button></div></div>`;
   const nx = document.getElementById("snx");
   if (nx)
     nx.onclick = () => {
@@ -456,7 +477,7 @@ export function seasonScreen() {
     seasonScreen();
   };
   $("#mme").onclick = () => SH.menu();
-  if (nx) nx.focus();
+  (nx || $("#mme")).focus({ preventScroll: true });
 }
 export const SEASON = { on: 0 };
 /** Called by the shell when a game ends: records the result and both box scores, sims the rest of the league,

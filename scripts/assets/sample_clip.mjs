@@ -10,13 +10,26 @@ const FPS = 30,
   tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "h2kclip-"));
 const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 const pg = await b.newPage({ viewport: { width: 720, height: 720 } });
-await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?anim&nointro");
-await pg.waitForFunction(() => window.H2K && window.H2K.studioPose, null, { timeout: 60000 });
-await pg.waitForTimeout(2500);
+await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?nointro");
+await pg.waitForTimeout(400);
+await pg.evaluate(() => document.querySelector('button[data-g="1v1-3d"][data-my="0"][data-mp="0"]').click());
+await pg.waitForTimeout(1200);
+await pg.evaluate(() => {
+  document.getElementById("tip")?.click();
+  window.H2K.studio();
+  const st = document.createElement("style");
+  st.textContent = "#h,#studio,#tc{visibility:hidden!important}"; // just the player, no UI
+  document.head.appendChild(st);
+});
+await pg.waitForTimeout(600);
 const n = Math.round(+secs * FPS);
 for (let f = 0; f < n; f++) {
-  await pg.evaluate(([i, t]) => window.H2K.studioPose(i, t, Math.PI / 2), [+ai, 1 + f / FPS]);
-  await pg.waitForTimeout(40);
+  await pg.evaluate(([i, t]) => {
+    const H = window.H2K;
+    H.studioPose(i, t, Math.PI / 2); // side view
+    Object.assign(H.V.studio, { d: 16 });
+    H.V.GL.render();
+  }, [+ai, 1 + f / FPS]);
   await pg.screenshot({ path: path.join(tmp, `f${String(f).padStart(4, "0")}.png`) });
 }
 await b.close();

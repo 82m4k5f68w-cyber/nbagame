@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike, stepLen } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike, stepLen, RR as SRR, chainNet } from "../core/sim";
 import { gar, CP } from "./canvas";
 import { V, fmt, HSRS, targetMs, hsrMode } from "./view";
 import { makeDynRes } from "./hsr";
@@ -855,7 +855,11 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     // ---------------- hoops: padded stanchion, arm, glass, shot clock, rim, tube net ----------------
     const shotClocks: { ctx: CanvasRenderingContext2D; tex: THREE.Texture; k: string }[] = [];
     // per hoop: the parts that shake on a dunk (rim, glass, frame, square, pad, bracket) with their rest heights
-    const hoopParts: { o: THREE.Object3D; y: number; k: number }[][] = [[], []];
+    const hoopParts: { o: THREE.Object3D; y: number; k: number; x: number }[][] = [[], []];
+    // Physics v3: the rim tilts with the sim's wobble (NETS[b].tx/ty), the board parts shake (NETS[b].bs), the glass
+    // vanishes into shards while a shattered board is replaced (NETS[b].shT)
+    const rimQ: { o: THREE.Object3D; q0: THREE.Quaternion }[] = [],
+      glassO: THREE.Object3D[] = [];
     const glints: THREE.Sprite[] = [];
     for (const b of [0, 1]) {
       const hx = (HXs[b] - 470) * 0.1,
@@ -880,6 +884,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       const bpad = ad(new THREE.BoxGeometry(0.2, 0.2, 6.1), M(0xd23b1a, { roughness: 0.5 }), sg * 43, 9.68, 0); // bottom pad
       const rim = ad(new THREE.TorusGeometry(0.75, 0.07, 14, 48), M(0xff4d1a, { metalness: 0.7, roughness: 0.22 }), hx, 10, 0);
       rim.rotation.x = Math.PI / 2;
+      rimQ.push({ o: rim, q0: rim.quaternion.clone() });
+      glassO.push(bb);
       const brk = ad(new THREE.BoxGeometry(0.6, 0.14, 0.42), M(0xff4d1a, { metalness: 0.5, roughness: 0.35 }), sg * 42.6, 10, 0);
       for (const [o, k] of [
         [rim, 1],
@@ -889,7 +895,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         [sq, 0.35],
         [bpad, 0.35],
       ] as [THREE.Object3D, number][])
-        hoopParts[b].push({ o, y: o.position.y, k });
+        hoopParts[b].push({ o, y: o.position.y, k, x: o.position.x });
       // shot clock box on top of the backboard, facing the court
       const [sc2, sx2] = cv(128, 64),
         stx = TX2(sc2);
@@ -942,7 +948,62 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     let cfOn = 0,
       wasDk = 0;
     const hoopShake = [0, 0];
+    // shattered glass: shards burst off the board toward the court, fall and lie on the floor until the new board is up
+    const SHN = 160,
+      shI = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.16), new THREE.MeshPhysicalMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.6, roughness: 0.05, metalness: 0.1, clearcoat: 1 }), SHN),
+      shS: number[][] = [],
+      shWas = [0, 0],
+      TE = new THREE.Euler(),
+      TQ = new THREE.Quaternion();
+    shI.frustumCulled = false;
+    shI.count = 0;
+    S.add(shI);
+    function ph3Hoops(dt: number) {
+      for (const b of [0, 1]) {
+        const N = NETS[b],
+          r = rimQ[b];
+        if (r) {
+          TE.set((N.ty || 0) / SRR, 0, -(N.tx || 0) / SRR);
+          r.o.quaternion.copy(TQ.setFromEuler(TE)).multiply(r.q0);
+        }
+        for (const h of hoopParts[b]) if (h.k < 0.5) h.o.position.x = h.x + (N.bs || 0) * 0.06;
+        const sh = (N.shT || 0) > 0;
+        if (glassO[b]) glassO[b].visible = !sh;
+        if (sh && !shWas[b]) {
+          const sg = b ? 1 : -1;
+          for (let k = 0; k < SHN / 2; k++) {
+            const y = 9.8 + Math.random() * 3.4,
+              z = (Math.random() - 0.5) * 5.8;
+            shS.push([sg * 42.9, y, z, -sg * (1.5 + Math.random() * 6), 1 + Math.random() * 5, z * 0.8 + (Math.random() - 0.5) * 3, Math.random() * 6, Math.random() * 6]);
+          }
+          while (shS.length > SHN) shS.shift();
+        }
+        shWas[b] = sh ? 1 : 0;
+      }
+      if (!shWas[0] && !shWas[1]) shS.length = 0;
+      shI.count = shS.length;
+      for (let k = 0; k < shS.length; k++) {
+        const s = shS[k];
+        if (s[1] > 0.03) {
+          s[4] -= 32 * dt;
+          s[0] += s[3] * dt;
+          s[1] = Math.max(0.03, s[1] + s[4] * dt);
+          s[2] += s[5] * dt;
+          s[6] += dt * 9;
+          if (s[1] <= 0.03) (s[3] *= 0.2), (s[5] *= 0.2);
+        }
+        dm.position.set(s[0], s[1], s[2]);
+        dm.rotation.set(s[6], s[7], 0);
+        dm.scale.setScalar(0.6 + (k % 5) * 0.2);
+        dm.updateMatrix();
+        shI.setMatrixAt(k, dm.matrix);
+      }
+      dm.rotation.set(0, 0, 0);
+      dm.scale.setScalar(1);
+      if (shS.length) shI.instanceMatrix.needsUpdate = true;
+    }
     function polish(dt: number) {
+      ph3Hoops(dt);
       // rim shake: the sim's rim flex (NETS[b].fz, px down: a dunk yanks it, a hard hit rings it, a player hanging on
       // it holds it bent) - the net's top ring rides the same iron, so rim and net move together
       wasDk = B.dk ? 1 : 0;
@@ -1045,8 +1106,18 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         ball.quaternion.premultiply(BQ);
       }
     }
+    let netChain = 0;
     function netUpd() {
       let i = 0;
+      // Physics v3: street games hang chain nets (heavier, metal links)
+      const ch = chainNet() ? 1 : 0;
+      if (ch !== netChain) {
+        netChain = ch;
+        const m = netI.material as THREE.MeshStandardMaterial;
+        m.color.set(ch ? 0xa7adb5 : 0xf4f4f4);
+        m.metalness = ch ? 0.9 : 0;
+        m.roughness = ch ? 0.35 : 0.9;
+      }
       for (const N of NETS)
         for (const c of N.c) {
           if (!c[4]) continue;
@@ -1059,7 +1130,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           NQ.setFromUnitVectors(UP, ND.multiplyScalar(1 / len));
           dm.position.copy(NA).add(NB).multiplyScalar(0.5);
           dm.quaternion.copy(NQ);
-          dm.scale.set(1, len, 1);
+          dm.scale.set(netChain ? 1.9 : 1, len, netChain ? 1.9 : 1);
           dm.updateMatrix();
           netI.setMatrixAt(i++, dm.matrix);
         }
