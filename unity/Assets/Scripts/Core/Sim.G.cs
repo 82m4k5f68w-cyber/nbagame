@@ -57,6 +57,9 @@ namespace Hoops.Core
         /// none / 1 position / 2 both); r*: the reaction the net handed the ball; w*: idle-sway oscillators; hold: how
         /// long a ball has sat slow in the mesh (then the net lets go of it).</summary>
         public double fz, fv, dk, bx, by, bz, bvx, bvy, bvz, bok, rvx, rvy, rvz, wx, wy, wx2, wy2, hold;
+        /// <summary>Physics v3: rim tilt (px the edge at +x / +y dips) + rates, board shake (px) + rate, shattered-glass
+        /// timer (s), last chain clank (T).</summary>
+        public double tx, ty, tvx, tvy, bs, bsv, shT, chT = -9;
     }
 
     /// <summary>A saved highlight (copy of the replay buffer): label, frame count, frames, quarter, speed.</summary>
@@ -666,6 +669,7 @@ namespace Hoops.Core
 
         public static void collide()
         {
+            if (cfg.PH3 != 0 && !Util.T(PREDICT)) ph3Sweat(1 / 60.0); // (Physics v3: sweat spots)
             for (int a = 0; a < P.Count; a++)
                 for (int b = a + 1; b < P.Count; b++)
                 {
@@ -702,7 +706,7 @@ namespace Hoops.Core
                             rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny,
                             ov = dm - d;
                         // PH2 box-out (Sim.PH.cs): the defender sealing his man on a shot / rebound plays heavy
-                        int bxo = phOn() ? phBox(A, C) : 0;
+                        int bxo = cfg.PH3 != 0 ? ph3Box(A, C) : phOn() ? phBox(A, C) : 0; // (Physics v3: shared with the TS)
                         if (bxo == 1) mA *= PH_BOXM; else if (bxo == 2) mC *= PH_BOXM;
                         for (int w = 0; w < 2; w++)
                         {
@@ -718,6 +722,7 @@ namespace Hoops.Core
                                     df.hitT = 0.35;
                                     df.hitX = -nx * (df == A ? -1 : 1);
                                     df.hitY = -ny * (df == A ? -1 : 1);
+                                    if (cfg.PH3 != 0) ph3Screen(sc0, df); // (Physics v3: the screen eats his run - or a big man runs through it)
                                     if (isH(B.owner) || isH(df)) txtW("SCREEN", sc0.x, sc0.y, 88, "#9ad");
                                     var pl = PLAY[(int)sc0.tm];
                                     // the screener's defender switches onto the ball handler some of the time
@@ -746,8 +751,8 @@ namespace Hoops.Core
                         A.y += (ny * ov * mC) / (mA + mC);
                         C.x -= (nx * ov * mA) / (mA + mC);
                         C.y -= (ny * ov * mA) / (mA + mC);
-                        if (bxo == 1) phShove(A, C, -nx, -ny, mA, mC);
-                        else if (bxo == 2) phShove(C, A, nx, ny, mC, mA);
+                        if (bxo == 1) { if (cfg.PH3 != 0) ph3Shove(A, C, -nx, -ny, mA, mC); else phShove(A, C, -nx, -ny, mA, mC); }
+                        else if (bxo == 2) { if (cfg.PH3 != 0) ph3Shove(C, A, nx, ny, mC, mA); else phShove(C, A, nx, ny, mC, mA); }
                         if (rv < 0)
                         {
                             double j = (-1.05 * rv) / (1 / mA + 1 / mC),
@@ -787,6 +792,7 @@ namespace Hoops.Core
                                     if (hit > 120) q.slow = Math.Max(q.slow, 0.12);
                                     if (q.mode == "c" || q.mode == "s") q.bmp = Math.Min(1, q.bmp + hit / 260);
                                 }
+                                if (cfg.PH3 != 0 && hit > 150) ph3Hit(A, C, j, mA, mC); // (Physics v3: stumbles, knockdowns)
                                 var h = B.owner;
                                 if (hit > 170 && fc <= 0 && rs <= 0 && ftq == null && inb <= 0 && h != null && (A == h || C == h) && cfg.FOULS != 0)
                                 {
@@ -855,6 +861,16 @@ namespace Hoops.Core
             BRS = 0.010999778168008754,
             BRC2 = 0.9999804688135782,
             BRS2 = 0.006249959309975306;
+        // net materials (Physics v3: street games hang chain nets): damp per tick, strand stretch, its 3-pass twin, stretch
+        // limit, ball friction, reaction, drop cap, sway
+        static readonly double[][] NETMAT =
+        {
+            new[] { NET_DAMP, NET_STR, NET_STR3, NET_MAXS, NET_MU, NET_RK, NET_VCAP, NET_BRZ },
+            new[] { 0.993, 0.85, 0.9880450910966956, 1.02, 0.25, 1.4, 22, 3 },
+        };
+        static double[] NM_ = null;
+        static double[] NM { get => NM_ ?? NETMAT[0]; set => NM_ = value; }
+        public static bool chainNet() => cfg.PH3 != 0 && cfg.HALF != 0;
         static Net[] G_nets;
         /// <summary>One net per hoop (built on first use: partial-class static initializer order across files is not
         /// guaranteed, and this reads HXs).</summary>
@@ -911,11 +927,11 @@ namespace Hoops.Core
         {
             int SUB = !touch ? 1 : Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0)) > 4 ? 4 : 2; // (TS: Math.sqrt of the sum, not hypot - bit parity)
             double h = dt / SUB,
-                damp = SUB == 1 ? NET_DAMP : SUB == 2 ? Math.Sqrt(NET_DAMP) : Math.Sqrt(Math.Sqrt(NET_DAMP)),
+                damp = SUB == 1 ? NM[0] : SUB == 2 ? Math.Sqrt(NM[0]) : Math.Sqrt(Math.Sqrt(NM[0])),
                 gz = g * h * h,
                 fzz = 100 - N.fz,
-                ax = settle ? 0 : NET_BRZ * (N.wx * 0.7 + N.wx2 * 0.3) * h * h,
-                ay = settle ? 0 : NET_BRZ * (N.wy * 0.5 + N.wy2 * 0.5) * h * h;
+                ax = settle ? 0 : NM[7] * (N.wx * 0.7 + N.wx2 * 0.3) * h * h,
+                ay = settle ? 0 : NM[7] * (N.wy * 0.5 + N.wy2 * 0.5) * h * h;
             int its = touch || N.quiet < 120 ? 7 : 3; // (a net nothing has touched for 2 s only sways: a cheaper solve)
             NRX0 = NRX1 = NRX2 = 0;
             for (int sub = 0; sub < SUB; sub++)
@@ -931,8 +947,8 @@ namespace Hoops.Core
                 {
                     if (q.f)
                     {
-                        q.pz = q.z; // the rim ring rides the iron
-                        q.z = fzz;
+                        q.pz = q.z; // the rim ring rides the iron (and its wobble: Physics v3)
+                        q.z = N.tx != 0 || N.ty != 0 ? fzz - (N.tx * (q.x - N.hx) + N.ty * (q.y - HY)) / RR : fzz;
                         continue;
                     }
                     double vx = (q.x - q.px) * damp,
@@ -962,8 +978,8 @@ namespace Hoops.Core
                         {
                             // nylon strand: slack in compression, elastic when stretched, a rope again past the stretch limit
                             if (d <= c.rest) continue;
-                            double lim = c.rest * NET_MAXS,
-                                st = its == 7 ? NET_STR : NET_STR3;
+                            double lim = c.rest * NM[3],
+                                st = its == 7 ? NM[1] : NM[2];
                             f = d > lim ? ((d - lim + (lim - c.rest) * st) / d) * 0.5 : ((d - c.rest) / d) * 0.5 * st;
                         }
                         else f = ((d - c.rest) / d) * 0.5 * (its == 7 ? c.k : c.k > 0.5 ? NET_HEM3 : NET_TIE3);
@@ -1011,9 +1027,9 @@ namespace Hoops.Core
                                         ny = cy / d,
                                         nz = cz / d,
                                         sn = sx * nx + sy * ny + sz * nz;
-                                    fx = (sx - sn * nx) * NET_MU;
-                                    fy = (sy - sn * ny) * NET_MU;
-                                    fz = (sz - sn * nz) * NET_MU;
+                                    fx = (sx - sn * nx) * NM[4];
+                                    fy = (sy - sn * ny) * NM[4];
+                                    fz = (sz - sn * nz) * NM[4];
                                 }
                                 for (int e = 0; e < 2; e++)
                                 {
@@ -1048,6 +1064,7 @@ namespace Hoops.Core
         public static void netSim(double dt, bool rp = false)
         {
             if (!(dt > 0)) return;
+            NM = NETMAT[chainNet() ? 1 : 0];
             foreach (var N in NETS)
             {
                 // the ball's path this tick, from its positions (a teleport - setup, a replay cut - is no motion)
@@ -1105,19 +1122,36 @@ namespace Hoops.Core
                             q.py += dvy * s;
                             q.pz -= J * s * 0.6;
                         }
+                        if (cfg.PH3 != 0)
+                        {
+                            // (Physics v3: the hit tips the ring - the side it struck dips - and it wobbles)
+                            double k = clamp(J * 0.02 * ((B.z - 100) / (Util.T(rd) ? rd : 1) + 0.25), -10, 20);
+                            N.tvx += ux * k;
+                            N.tvy += uy * k;
+                        }
                     }
                     else if (Math.Abs(B.x - (N.hx > 470 ? 900 : 40)) < BR + 2.5 && B.z > 93)
                     {
                         N.ring = 0.1;
                         N.fv += Math.Min(12, J * 0.012); // off the glass: the board shakes the iron a little
+                        if (cfg.PH3 != 0) N.bsv += Math.Min(30, J * 0.03); // (Physics v3: and the board itself)
                     }
                 }
                 if (N.ring > 0) N.ring -= dt;
                 // a dunk yanks the iron down (once per dunk); a player hanging on it holds it bent
-                if (Util.T(B.dk) && N.dk == 0 && near && B.z < 106 && dxy < 10) { N.dk = 1; N.fv += 55; }
+                if (Util.T(B.dk) && N.dk == 0 && near && B.z < 106 && dxy < 10) { N.dk = 1; N.fv += 55; if (cfg.PH3 != 0) ph3Yank(N); }
                 if (!Util.T(B.dk)) N.dk = 0;
-                double hang = 0;
-                foreach (var p in P) if (p.hangT > 0 && p.z > 15 && (p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY) < 26 * 26) hang = 2.2;
+                double hang = 0, hgx = 0, hgy = 0;
+                foreach (var p in P)
+                    if (p.hangT > 0 && p.z > 15 && (p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY) < 26 * 26)
+                    {
+                        hang = 2.2;
+                        double hd = Math.Sqrt((p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY));
+                        if (!Util.T(hd)) hd = 1;
+                        hgx = ((p.x - N.hx) / hd) * 0.9; // (he hangs on the front of the ring: it tips toward him)
+                        hgy = ((p.y - HY) / hd) * 0.9;
+                    }
+                if (cfg.PH3 != 0) ph3Wobble(N, dt, hgx, hgy);
                 N.fv += (-RIM_W * RIM_W * (N.fz - hang) - 2 * RIM_Z * RIM_W * N.fv) * dt;
                 N.fz += N.fv * dt;
                 if (N.fz > 4) { N.fz = 4; N.fv = Math.Min(0, N.fv); }
@@ -1138,6 +1172,12 @@ namespace Hoops.Core
                     N.wy2 = b2 / l2;
                 }
                 N.quiet = near ? 0 : N.quiet + 1;
+                // (Physics v3: a chain net clanks when the ball goes through or rattles it)
+                if (NM != NETMAT[0] && near && !rp && !Util.T(PREDICT) && B.z < 100 && T - N.chT > 0.35 && Math.Sqrt(vx * vx + vy * vy + vz * vz) > 60)
+                {
+                    N.chT = T;
+                    fx(new Fx { k = "chain", x = N.hx, y = HY, v = Math.Min(1, Math.Sqrt(vx * vx + vy * vy + vz * vz) / 400) });
+                }
                 netTick(N, dt, x0, y0, z0, B.x, B.y, B.z, near, false);
                 // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon); a
                 // ball that sits slow in the mesh for half a second is let go (nothing may hold a live ball forever)
@@ -1145,11 +1185,11 @@ namespace Hoops.Core
                 N.hold = slow ? N.hold + dt : 0;
                 if (near && free && !rp && B.z < 99 && N.hold < 0.5 && (Util.T(NRX0) || Util.T(NRX1) || Util.T(NRX2)))
                 {
-                    double K = NET_RK / dt,
+                    double K = NM[5] / dt,
                         cap = 45,
                         ex = -clamp(NRX0 * K, -cap, cap),
                         ey = -clamp(NRX1 * K, -cap, cap),
-                        ez = -clamp(NRX2 * K, -NET_VCAP, NET_VCAP); // (the nylon kills the sideways speed but only slows the drop)
+                        ez = -clamp(NRX2 * K, -NM[6], NM[6]); // (the nylon kills the sideways speed but only slows the drop)
                     // the funnel of the mesh steers a ball pressing into it back to the middle (it falls out of the hem there)
                     double ux = dxy > 0.3 ? ox / dxy : 0,
                         uy = dxy > 0.3 ? oy / dxy : 0,

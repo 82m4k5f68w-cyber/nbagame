@@ -1416,6 +1416,7 @@ export function launch(p: Player) {
   B.gn = 0;
   B.abv = -1;
   B.wv = [0, 0, 0];
+  ph3Launch(p, three);
   B.gt = B.gtc = 0;
   B.gd = 0; // (green guide: set below for an intended green make)
   const fd = isFT ? null : shootingFoul(p, lay);
@@ -1520,7 +1521,7 @@ export function launch(p: Player) {
     // shooting fouls like the NBA, not a third; a human's green still counts, and dunks went through above)
     mk = dunkMiss ? false : lay ? (gr && hum) || Math.random() < clamp(b + (gr ? 0.15 : 0), 0.03, 0.97) * (fd && cfg.PP >= 2 ? 0.5 : 1) : gr && (p.perf || hum || Math.random() < (0.98 - cx * 0.25) * (fd && cfg.PP >= 2 && !hum ? 0.35 : 1)), // (a human's green is a make: the contest already shrank his window)
     a = Math.random() * 6.28,
-    off = mk ? (rap ? 0.3 : 1.2) : 9 + Math.random() * 7,
+    off = mk ? (rap || cfg.PH3 ? 0.3 : 1.2) : 9 + Math.random() * 7, // (Physics v3: the legacy ball is pre-simulated too)
     tx = hx + Math.cos(a) * off,
     ty = HY + Math.sin(a) * off,
     dx = tx - x0,
@@ -1559,7 +1560,10 @@ export function launch(p: Player) {
   for (let k = 0; k < 8 && D * Math.tan(th) - dz < 8 && th < 1.45; k++) th += 0.08;
   let ge = g,
     v = Math.sqrt((ge * D * D) / (2 * Math.cos(th) ** 2 * Math.max(1, D * Math.tan(th) - dz)));
-  if (rap) {
+  if (cfg.PH3) {
+    ge = g - AIR_KM * 16 * v * Math.cos(th);
+    v = Math.sqrt((ge * D * D) / (2 * Math.cos(th) ** 2 * Math.max(1, D * Math.tan(th) - dz)));
+  } else if (rap) {
     ge = g - 0.0032 * 16 * v * Math.cos(th);
     v = Math.sqrt((ge * D * D) / (2 * Math.cos(th) ** 2 * Math.max(1, D * Math.tan(th) - dz)));
   }
@@ -1574,7 +1578,59 @@ export function launch(p: Player) {
     const h3 = Math.hypot(B.vx, B.vy) || 1;
     B.wv = [(16 * B.vy) / h3, (-16 * B.vx) / h3, 0];
   }
-  if (rap) {
+  if (cfg.PH3) {
+    // Physics v3 (Rapier and legacy alike): pre-simulate the same air step as bstep / rapStep (quadratic drag + Magnus,
+    // then gravity, the spin's slow decay) and correct range and sideways error; an arc that would not get back down
+    // through the rim height (drag eats the apex of a soft one) gets more lift first
+    for (let it = 0; it < 6; it++) {
+      let x = x0,
+        y = y0,
+        z = z0,
+        vx = B.vx,
+        vy = B.vy,
+        vz = B.vz,
+        T2 = 0,
+        w0 = B.wv[0],
+        w1 = B.wv[1],
+        zm = z0,
+        hit = 0;
+      const h = 1 / 120,
+        wd = 1 / (1 + h * AIR_WD);
+      while (T2 < 4) {
+        AV[0] = vx;
+        AV[1] = vy;
+        AV[2] = vz;
+        AV[3] = w0;
+        AV[4] = w1;
+        AV[5] = 0;
+        airAcc(h);
+        vx = AV[0];
+        vy = AV[1];
+        vz = AV[2] - g * h;
+        const qz = z;
+        x += vx * h;
+        y += vy * h;
+        z += vz * h;
+        w0 *= wd;
+        w1 *= wd;
+        T2 += h;
+        if (z > zm) zm = z;
+        if (qz >= 100 && z < 100 && vz < 0) {
+          hit = 1;
+          break;
+        }
+        if (z < 0) break;
+      }
+      if (!hit || zm < 103) {
+        B.vz *= 1.06;
+        continue;
+      }
+      B.vx += ((tx - x) / Math.max(0.2, T2)) * 0.9;
+      B.vy += ((ty - y) / Math.max(0.2, T2)) * 0.9;
+      const h4 = Math.hypot(B.vx, B.vy) || 1;
+      B.wv = [(16 * B.vy) / h4, (-16 * B.vx) / h4, 0];
+    }
+  } else if (rap) {
     // Pre-simulate drag + Magnus and correct range and sideways error so perfect timing still goes in.
     for (let it = 0; it < 6; it++) {
       let x = x0,
@@ -1611,6 +1667,7 @@ export function launch(p: Player) {
   }
   B.gn = gr;
   B.gd = gr && mk && hum ? 1 : 0; // a human's green (CPU odds stay calibrated with the iron): greenGuide (bstep) sees it through the iron, bodies and spin drift
+  if (cfg.PH3 && !B.gd && !lay && !isFT) ph3Short(p); // (Physics v3: tired legs - never a human's green)
   B.ghx = hx;
   if (gr && hum) txtW("GREEN!", p.x, p.y, 95, "#2ecc71");
   if (gr && !PREDICT && !(p.celT > 0)) {
@@ -2016,6 +2073,7 @@ function ppDeflect() {
       B.vz = Math.max(B.vz, 0) + 55;
       o.swpT = 0.3;
       B.dfl = 2; // (really tipped)
+      if (cfg.PH3) ph3DeflSpin(w);
       STAT.defl = (STAT.defl || 0) + 1;
       ppc("deflect");
       if (isH(o) || isH(L)) txtW("DEFLECTED!", o.x, o.y, 95, "#9fe7ff");
@@ -2717,7 +2775,7 @@ export function step(p: Player, dt: number) {
         if (cfg.PP >= 2) pp2Gather(p, i, ux, uy, D, hum); // (pull-up out of a move; balance of the jumper; stick-picked fade / leaner)
       } else if (!has && p.z <= 0 && !(cfg.PP >= 2 && pp2CsBuf(p, hum))) {
         // (Pro Play v2: not with a pass about to arrive - that press is a catch-and-shoot)
-        p.vz = 126 + p.j * 0.9;
+        p.vz = (126 + p.j * 0.9) * (1 - 0.12 * ph3Fat(p)); // (Physics v3: tired legs jump lower)
         // jumping at a shot that's already gone: he lands off balance
         if (B.sh && B.last && B.last.tm !== p.tm && B.age > 0.12 && Math.hypot(B.last.x - p.x, B.last.y - p.y) < 40) p.lateJ = 1;
       }
@@ -2777,7 +2835,7 @@ export function step(p: Player, dt: number) {
                   : 0;
       if (cfg.PP) upAfterClip(p, D, lay), ppRelease(p, cto[0], cto[1], D);
       p.tp = null;
-      p.vz = ftq ? 60 : ((lay ? 150 : 126) + p.j * 0.9) * (cfg.PRO && p.st === 1 && !lay ? 0.75 : 1);
+      p.vz = ftq ? 60 : ((lay ? 150 : 126) + p.j * 0.9) * (cfg.PRO && p.st === 1 && !lay ? 0.75 : 1) * (1 - 0.12 * ph3Fat(p)); // (Physics v3: tired legs)
       p.vx = ftq ? 0 : lay ? (ux / D) * 100 : cfg.PRO && p.sv === 8 ? p.vx * 0.5 : (-ux / D) * k;
       p.vy = ftq ? 0 : lay ? (uy / D) * 100 : (-uy / D) * k;
     }
@@ -2827,17 +2885,19 @@ export function step(p: Player, dt: number) {
         cur = Math.hypot(p.vx, p.vy),
         brk = cur > 40 && dx * p.vx + dy * p.vy < 0,
         first = (p.fsT || 0) > 0,
-        ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (p.stc ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : p.coT > 0 ? 1.35 : 1) * dt, // (+ stance slides / sprint burst / cut / closeout)
+        ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (p.stc ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : p.coT > 0 ? 1.35 : 1) * (1 - 0.22 * ph3Fat(p)) * dt, // (+ stance slides / sprint burst / cut / closeout; Physics v3: tired = slower to get going and to stop)
         mm = Math.min(dl, ac);
       // a hard cut at speed: plant the outside foot (two-three steps to stop), and sometimes slip
       if (brk && cur > 170 && !(p.plantT > 0) && !(p.brk > 0.5)) {
         p.plantT = 0.2;
-        if (!PREDICT && cur > 235 && Math.random() < 0.025 + (78 - p.s) / 1500) {
+        ph3Squeak(p, cur); // (Physics v3: shoe squeak, FX for the audio)
+        if (!PREDICT && cur > 235 && Math.random() < 0.025 + (78 - p.s) / 1500 + 0.2 * wetAt(p.x, p.y)) {
           p.hitT = 0.3;
           p.hitX = p.vx / cur;
           p.hitY = p.vy / cur;
           p.slow = Math.max(p.slow, 0.35);
           if (isH(p)) txtW("SLIPPED!", p.x, p.y, 90, "#ff9966");
+          if (cfg.PH3) ph3Slip(p); // (a sweat spot: Physics v3)
         }
       }
       // explosive first step out of a standstill
@@ -2887,6 +2947,7 @@ export function step(p: Player, dt: number) {
     if (p.z <= 0) {
       if (cfg.PP) upLanding(p);
       else if (p.vz < -120) p.landT = Math.min(0.28, -p.vz / 900); // absorb the landing
+      if (cfg.PH3) ph3Land(p, -p.vz); // (tired legs land heavy)
       if (p.lateJ && !PREDICT) {
         p.lateJ = 0;
         const d = Math.hypot(p.vx, p.vy) || 1;
@@ -3725,6 +3786,410 @@ function dribHand(o: Player, dt: number): [number, number] {
   return [lat, fwd];
 }
 const SORTP: Player[] = [];
+// ---------------- Physics v3 (cfg.PH3; C# Core/Sim.PH3.cs - same names, same order, same random draws) ----------------
+// Air: quadratic drag + Magnus k (w x v) + slow spin decay (a 9.4" ball, Cd .54, air 1.2 kg/m^3); passes keep the old
+// model (pass() aims for it). Surfaces: hardwood / street asphalt (cfg.HALF): bounce, grip, rolling resistance, iron,
+// glass. Every legacy contact couples spin and velocity (spinHit); the shooter's touch (B.tch) softens the iron for his
+// shot. Bodies: momentum by mass in collide (stumbles, knockdowns), screens that eat a defender's run (or get run
+// through), box-outs; loose-ball scrums, bobbled hard passes, balls off feet; fatigue (lower jumps, slower first steps,
+// heavy landings, tired jumpers fall short - never a human green); sweat spots late in games; shoe squeaks (FX).
+export const AIR_KD = 7.2e-4, // quadratic drag per px: a = KD |v| v (~19% of g on a 30 ft/s three)
+  AIR_KM = 0.005, // Magnus: a = KM (w x v)
+  AIR_WD = 0.12; // spin decay in the air (1/s)
+/** By surface (0 hardwood, 1 street asphalt): [bounce e, grip mu, rolling resistance px/s^2, rim e x, rim soak x, glass e]. */
+export const SURF = [
+  [0.8, 0.55, 42, 1, 1, 0.6],
+  [0.76, 0.85, 80, 1.12, 0.45, 0.5],
+];
+export const surf = () => (cfg.PH3 && cfg.HALF ? 1 : 0);
+/** Event counters (tests/physics2.ts; C# Sim.PH3C). */
+export const PH3C: Record<string, number> = {};
+const ph3c = (k: string) => (PH3C[k] = (PH3C[k] || 0) + 1);
+/** Scratch for airAcc: vx vy vz w0 w1 w2. */
+export const AV = [0, 0, 0, 0, 0, 0];
+/** One step of v3 air on AV (drag + Magnus, no gravity): the same arithmetic in bstep, rapStep and launch's pre-sim. */
+export function airAcc(h: number) {
+  const vx = AV[0],
+    vy = AV[1],
+    vz = AV[2],
+    w0 = AV[3],
+    w1 = AV[4],
+    w2 = AV[5],
+    d = 1 - AIR_KD * Math.sqrt(vx * vx + vy * vy + vz * vz) * h;
+  AV[0] = vx * d + AIR_KM * (w1 * vz - w2 * vy) * h;
+  AV[1] = vy * d + AIR_KM * (w2 * vx - w0 * vz) * h;
+  AV[2] = vz * d + AIR_KM * (w0 * vy - w1 * vx) * h;
+}
+/** v3 air for the free ball (passes keep the old model: pass() aims with it). */
+export const airV3 = () => !!cfg.PH3 && B.mode !== "pass";
+/** Coulomb friction at a legacy contact (ball mass 1, solid sphere I = .4 R^2), capped where the contact point stops
+ *  slipping: spin <-> velocity (backspin checks a bounce up, english off the iron). n = outward normal, jn = impulse. */
+function spinHit(nx: number, ny: number, nz: number, jn: number, mu: number) {
+  const W = B.wv || (B.wv = [0, 0, 0]),
+    R = BR,
+    rx = -nx * R,
+    ry = -ny * R,
+    rz = -nz * R,
+    cvx = B.vx + (W[1] * rz - W[2] * ry),
+    cvy = B.vy + (W[2] * rx - W[0] * rz),
+    cvz = B.vz + (W[0] * ry - W[1] * rx),
+    vn = cvx * nx + cvy * ny + cvz * nz,
+    tx = cvx - vn * nx,
+    ty = cvy - vn * ny,
+    tz = cvz - vn * nz,
+    vt = Math.sqrt(tx * tx + ty * ty + tz * tz);
+  if (vt < 1e-9) return;
+  const jt = Math.min(mu * jn, vt / 3.5),
+    Jx = (-jt * tx) / vt,
+    Jy = (-jt * ty) / vt,
+    Jz = (-jt * tz) / vt,
+    iI = 1 / (0.4 * R * R);
+  B.vx += Jx;
+  B.vy += Jy;
+  B.vz += Jz;
+  W[0] += (ry * Jz - rz * Jy) * iI;
+  W[1] += (rz * Jx - rx * Jz) * iI;
+  W[2] += (rx * Jy - ry * Jx) * iI;
+}
+/** Legacy floor bounce: the surface's restitution + the friction / spin kick. */
+function ph3Floor() {
+  const s = SURF[surf()],
+    vn = -B.vz;
+  if (vn <= 0) return;
+  B.vz = vn * s[0];
+  spinHit(0, 0, 1, (1 + s[0]) * vn, s[1]);
+  B.wv[2] /= 1.5;
+  if (B.vz < 25) B.vz = 0;
+}
+/** Legacy rolling: the surface's rolling resistance, rolling without slipping, the spin about the vertical dies. */
+function ph3Roll(dt: number) {
+  const vh = Math.sqrt(B.vx * B.vx + B.vy * B.vy),
+    k = vh > 1.5 ? Math.max(0, vh - SURF[surf()][2] * dt) / vh : 0,
+    W = B.wv || (B.wv = [0, 0, 0]);
+  B.vx *= k;
+  B.vy *= k;
+  W[0] = -B.vy / BR;
+  W[1] = B.vx / BR;
+  W[2] /= 1 + dt * 3;
+}
+/** Legacy rim restitution: the surface's iron (street: stiffer, soaks less), the flex soak, the shooter's touch. */
+function ph3RimE(back: boolean, dot: number) {
+  const s = SURF[surf()];
+  return Math.min(0.9, (back ? 0.4 : 0.55) * s[3]) * (1 - 0.3 * s[4] * clamp((-dot - 250) / 700, 0, 1)) * (B.sh ? 1 - (B.tch || 0) : 1);
+}
+/** A touch of the iron, counted once per contact (make captions: shooter's roll / rolled in). */
+export function ph3RimHit() {
+  if (B.age - (B.rhA ?? -9) > 0.08) B.rh = (B.rh || 0) + 1;
+  B.rhA = B.age;
+}
+/** At the release: the shooter's touch (soft hands = a softer iron for this shot), rim-touch counter reset. */
+function ph3Launch(p: Player, three: boolean) {
+  const tc = three ? p.c : (p.c + p.i) / 2;
+  B.tch = cfg.PH3 ? clamp((tc - 60) / 35, 0, 1) * 0.18 : 0;
+  B.rh = 0;
+  B.rhA = -9;
+}
+function ph3MakeTxt(hx: number) {
+  if (!B.ft && !B.dk && (B.rh || 0) >= 2) txtW(B.rh >= 3 ? "ROLLED IN!" : "SHOOTER'S ROLL!", hx, HY, 140, "#9fe7ff");
+}
+/** Tiredness 0 (energy .7+) .. 1 (energy .2). */
+export function ph3Fat(p: Player) {
+  return cfg.PH3 ? clamp((0.7 - (p.en ?? 1)) / 0.5, 0, 1) : 0;
+}
+/** Tired legs: a jumper that is not a human's green comes up a touch short (up to 1.2% of the range). */
+function ph3Short(p: Player) {
+  const f = ph3Fat(p);
+  if (f <= 0) return;
+  const k = 1 - 0.012 * f;
+  B.vx *= k;
+  B.vy *= k;
+  ph3c("short");
+}
+/** Tired legs land heavy: a longer absorb and a slower first step. */
+function ph3Land(p: Player, v: number) {
+  const f = ph3Fat(p);
+  if (f <= 0 || v < 100) return;
+  p.landT = Math.max(p.landT || 0, Math.min(0.4, 0.1 + 0.2 * f));
+  p.slow = Math.max(p.slow, 0.12 * f);
+  ph3c("heavyLand");
+}
+/** A monster dunk (power from build x height x hops) very rarely shatters the glass: a stoppage while it is replaced. */
+function ph3Shatter(hx: number) {
+  const L = B.last;
+  if (!cfg.SHATTER || PREDICT || !L || cfg.HALF || !gameLike() || S !== "play") return false;
+  const pw = L.bk * L.ht * (0.6 + L.j / 200);
+  if (pw < 7.2 || Math.random() >= 0.006 * Math.min(1, (pw - 7.2) / 2)) return false;
+  const b = hx > 470 ? 1 : 0,
+    N = NETS[b];
+  N.shT = SHAT_T;
+  N.bsv += 90;
+  N.fv += 40;
+  ph3c("shatter");
+  STAT.shatter = (STAT.shatter || 0) + 1;
+  fx({ k: "shatter", v: b, x: hx, y: HY });
+  fx({ k: "shake", v: 1.2 });
+  fx({ k: "slow", v: 1.5 });
+  exc(1);
+  ban("SHATTERED THE BACKBOARD!", L.n.toUpperCase() + " · DELAY WHILE THE GLASS IS REPLACED", "#9fe7ff");
+  txtW("GLASS!", hx, HY, 150, "#9fe7ff");
+  if (cfg.replays) (RQ = 1), (HLN = "Glass breaker — " + L.n);
+  return true;
+}
+export const SHAT_T = 7; // s the board is gone (renderers hide the glass, shards on the floor)
+/** A dunk tilts the iron toward the dunker (heavier = harder) and shakes the board. */
+function ph3Yank(N: any) {
+  const L = B.last;
+  if (!L) return;
+  const dx = L.x - N.hx,
+    dy = L.y - HY,
+    dl = Math.sqrt(dx * dx + dy * dy) || 1,
+    m = (L.bk * L.ht) / 6.5;
+  N.tvx += (dx / dl) * 28 * m;
+  N.tvy += (dy / dl) * 28 * m;
+  N.bsv += 22 * m;
+}
+const RW_W = 30, // rim wobble (tilt) spring (rad/s) + damping ratio: rings about a second after a dunk
+  RW_Z = 0.08,
+  BS_W = 45, // backboard shake spring + damping
+  BS_Z = 0.06;
+/** Rim tilt (tx/ty: px the edge at +x / +y dips) toward (gx, gy) - a hanging dunker holds it - and the board shake. */
+function ph3Wobble(N: any, dt: number, gx: number, gy: number) {
+  N.tvx += (-RW_W * RW_W * (N.tx - gx) - 2 * RW_Z * RW_W * N.tvx) * dt;
+  N.tvy += (-RW_W * RW_W * (N.ty - gy) - 2 * RW_Z * RW_W * N.tvy) * dt;
+  N.tx += N.tvx * dt;
+  N.ty += N.tvy * dt;
+  if (N.tx > 1.2 || N.tx < -1.2) (N.tx = clamp(N.tx, -1.2, 1.2)), (N.tvx = 0);
+  if (N.ty > 1.2 || N.ty < -1.2) (N.ty = clamp(N.ty, -1.2, 1.2)), (N.tvy = 0);
+  N.bsv += (-BS_W * BS_W * N.bs - 2 * BS_Z * BS_W * N.bsv) * dt;
+  N.bs += N.bsv * dt;
+  if (N.bs > 3 || N.bs < -3) (N.bs = clamp(N.bs, -3, 3)), (N.bsv = 0);
+  if (N.shT > 0) N.shT -= dt;
+}
+// ---- bodies ----
+const PH_BOXM = 3, // a seated box-out plays this much heavier (C# Sim.PH.cs, shared now)
+  PHK = 0.5; // (C# phK(): the arcade .. sim slider at its default)
+/** 1 = A boxes C out, 2 = C boxes A out, 0 = none (a shot / miss in the air, the defender between his man and the rim). */
+function phBox(A: Player, C: Player) {
+  const L = B.last;
+  if (!L || B.owner || B.mode !== "air" || B.sc || !(B.sh || B.age < 1.6) || A.tm === C.tm) return 0;
+  const hx = hoop(L.tm),
+    dA = Math.hypot(A.x - hx, A.y - HY),
+    dC = Math.hypot(C.x - hx, C.y - HY);
+  if (A.tm !== L.tm && dA < dC && dA < 170) return 1;
+  if (C.tm !== L.tm && dC < dA && dC < 170) return 2;
+  return 0;
+}
+/** The boxer X sits into his man O: O moves away from the rim by the mass ratio and loses the speed he had into X. */
+function phShove(X: Player, O: Player, ux: number, uy: number, mX: number, mO: number) {
+  const sh = ((1.6 * mX) / (mX + mO) - 0.5) * (0.6 + 0.8 * PHK);
+  if (sh > 0) {
+    O.x += ux * sh;
+    O.y += uy * sh;
+  }
+  const vin = -(O.vx * ux + O.vy * uy);
+  if (vin > 0) {
+    O.vx += ux * vin * 0.5;
+    O.vy += uy * vin * 0.5;
+  }
+  ph3c("box");
+}
+/** A hard collision (impulse j): whoever takes the bigger jolt (j / mass) stumbles; a huge one can put him on the floor. */
+function ph3Hit(A: Player, C: Player, j: number, mA: number, mC: number) {
+  for (let w = 0; w < 2; w++) {
+    const q = w === 0 ? A : C,
+      dv = j / (w === 0 ? mA : mC);
+    if (dv > 110) {
+      q.slow = Math.max(q.slow, 0.22);
+      ph3c("stumble");
+    }
+    if (dv > 200 && q.z <= 0 && q !== B.owner && q.mode === "i" && !(q.actT > 0) && !PREDICT && rs <= 0 && !ftq && inb <= 0 && gameLike() && Math.random() < Math.min(0.6, (dv - 200) / 300)) {
+      q.act = 3; // on the floor; gets up (a teammate helps him up at a dead ball)
+      q.actT = 1.15;
+      ph3c("down");
+      STAT.kd = (STAT.kd || 0) + 1;
+      txtW("KNOCKED DOWN!", q.x, q.y, 90, "#ff9966");
+      fx({ k: "ooh" });
+    }
+  }
+}
+/** A defender runs into a planted screen: his run into the screener is eaten (heavier screener = longer stop); a much
+ *  heavier defender at speed fights through it and rocks the screener. */
+function ph3Screen(sc0: Player, df: Player) {
+  const mS = sc0.bk * sc0.ht,
+    mD = df.bk * df.ht,
+    ux = sc0.x - df.x,
+    uy = sc0.y - df.y,
+    ul = Math.sqrt(ux * ux + uy * uy) || 1,
+    vin = (df.vx * ux + df.vy * uy) / ul,
+    r = mD / mS;
+  if (r > 1.12 && vin > 140) {
+    df.scr = 0.3;
+    sc0.hitT = 0.35;
+    sc0.hitX = ux / ul;
+    sc0.hitY = uy / ul;
+    sc0.slow = Math.max(sc0.slow, 0.3);
+    ph3c("fight");
+    if (isH(df) || isH(B.owner)) txtW("FIGHTS THROUGH", df.x, df.y, 92, "#9ad");
+  } else df.scr = 0.55 * clamp(1 / r, 0.8, 1.3);
+  if (vin > 0) {
+    df.vx -= (ux / ul) * vin;
+    df.vy -= (uy / ul) * vin;
+  }
+}
+// ---- ball handling ----
+/** A hard pass (relative speed 520+ px/s), a fancy one (no-look / behind the back / wraparound) or one from behind can
+ *  be bobbled: it pops up off his hands - no steal, he or a teammate usually gets it back. */
+function ph3Bobble(p: Player) {
+  const rx = B.vx - p.vx,
+    ry = B.vy - p.vy,
+    rz = B.vz - p.vz,
+    rel = Math.sqrt(rx * rx + ry * ry + rz * rz),
+    pp = B.pp ? B.pp.p : null,
+    pk = pp && pp.pk ? (pp.pk === 1 ? 0.04 : 0.08) : 0,
+    f = Math.cos(p.f) * rx + Math.sin(p.f) * ry,
+    back = f > 0.3 * rel ? 0.06 : 0,
+    c = (clamp((rel - 520) / 500, 0, 1) * 0.3 + pk + back) * (1.25 - p.s / 140);
+  if (c <= 0 || Math.random() >= c) return false;
+  const a = Math.random() * 6.283,
+    W = B.wv || (B.wv = [0, 0, 0]);
+  B.mode = "air";
+  B.to = null;
+  B.sh = 0;
+  B.last = p;
+  B.age = 0.15;
+  B.vx = p.vx * 0.8 + rx * 0.1 + Math.cos(a) * 30;
+  B.vy = p.vy * 0.8 + ry * 0.1 + Math.sin(a) * 30;
+  B.vz = 90 + rel * 0.08;
+  W[0] = Math.sin(a) * 25;
+  W[1] = -Math.cos(a) * 25;
+  W[2] = 12;
+  p.act = 5;
+  p.actT = 0.35;
+  txtW("BOBBLED!", p.x, p.y, 95, "#ff9966");
+  ph3c("bobble");
+  return true;
+}
+/** A low pass / loose ball skidding into somebody's feet kicks off them (he touched it last: out of bounds is on him). */
+function ph3Legs() {
+  const sp = Math.sqrt(B.vx * B.vx + B.vy * B.vy);
+  if (sp < 150) return;
+  for (const q of P) {
+    if (q.off || q === B.to || q === B.last || q.z > 4) continue;
+    const dx = B.x - q.x,
+      dy = B.y - q.y,
+      d = Math.sqrt(dx * dx + dy * dy);
+    if (d > 6.5 || d < 1e-6) continue;
+    const nx = dx / d,
+      ny = dy / d,
+      vn = B.vx * nx + B.vy * ny;
+    if (vn >= 0) continue;
+    const W = B.wv || (B.wv = [0, 0, 0]),
+      side = (B.vx * ny - B.vy * nx) / BR;
+    B.vx = (B.vx - 1.5 * vn * nx) * 0.7;
+    B.vy = (B.vy - 1.5 * vn * ny) * 0.7;
+    B.vz = Math.abs(B.vz) * 0.3 + 30;
+    W[0] = (-B.vy / BR) * 0.5;
+    W[1] = (B.vx / BR) * 0.5;
+    W[2] = side * 0.3;
+    if (isH(q) || isH(B.last)) txtW("OFF HIS FOOT", q.x, q.y, 70, "#ff9966");
+    B.mode = "air";
+    B.to = null;
+    B.sh = 0;
+    B.last = q;
+    B.age = 0;
+    ph3c("legs");
+    return;
+  }
+}
+/** Loose ball on the floor with a rival in reach too: a scramble - it can squirt out (each loose ball twice at most). */
+function ph3Scrum(p: Player) {
+  let r: Player | null = null;
+  for (const q of P)
+    if (q.tm !== p.tm && !q.off && !(q.actT > 0) && q.z < 20) {
+      const dx = q.x - B.x,
+        dy = q.y - B.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 14) {
+        r = q;
+        break;
+      }
+    }
+  if (!r || Math.random() >= 0.3) return false;
+  const a = Math.random() * 6.283,
+    W = B.wv || (B.wv = [0, 0, 0]);
+  B.vx = Math.cos(a) * 110;
+  B.vy = Math.sin(a) * 110;
+  B.vz = 70;
+  B.last = a < 3.1415 ? p : r;
+  B.age = 0;
+  B.scm = (B.scm || 0) + 1;
+  W[0] = Math.sin(a) * 28;
+  W[1] = -Math.cos(a) * 28;
+  W[2] = 0;
+  p.hitT = 0.25;
+  r.hitT = 0.25;
+  if (isH(p) || isH(r)) txtW("LOOSE BALL!", B.x, B.y, 60, "#ffd23f");
+  ph3c("scrum");
+  return true;
+}
+/** A tipped pass spins off the fingers (the bounce kicks with it). */
+function ph3DeflSpin(w: number) {
+  const W = B.wv || (B.wv = [0, 0, 0]);
+  W[0] = W[0] * 0.3 - w * 40;
+  W[1] = W[1] * 0.3 + w * 40;
+  W[2] = w * 120;
+}
+// ---- floor ----
+/** Sweat spots (wetness 0..1) in the paint at both ends (3 each), from Q3 on: players standing on them wet them; the
+ *  ball kids mop them in timeouts (all) and between quarters (most). */
+export const SW = [0, 0, 0, 0, 0, 0];
+const SWOX = [45, 45, 110],
+  SWOY = [-30, 30, 0];
+let SWQ = 0;
+const swX = (i: number) => (i < 3 ? HXs[0] + SWOX[i] : HXs[1] - SWOX[i - 3]),
+  swY = (i: number) => HY + SWOY[i % 3];
+export const swPos = (i: number) => [swX(i), swY(i)];
+function ph3Sweat(dt: number) {
+  if (q !== SWQ) {
+    const k = q < SWQ ? 0 : 0.2; // (a new game starts dry)
+    SWQ = q;
+    for (let i = 0; i < 6; i++) SW[i] *= k;
+  }
+  if (TS.hud > 0) for (let i = 0; i < 6; i++) SW[i] = 0;
+  if (q < 3 || cfg.HALF || !gameLike() || S !== "play" || rs > 0) return;
+  for (let i = 0; i < 6; i++) {
+    let n = 0;
+    const x = swX(i),
+      y = swY(i);
+    for (const p of P) if (!p.off && p.z <= 0 && Math.sqrt((p.x - x) * (p.x - x) + (p.y - y) * (p.y - y)) < 25) n++;
+    SW[i] = Math.min(1, SW[i] + dt * 0.0022 * n);
+  }
+}
+/** How wet the floor is under (x, y). */
+export function wetAt(x: number, y: number) {
+  if (!cfg.PH3) return 0;
+  let w = 0;
+  for (let i = 0; i < 6; i++) {
+    const dx = x - swX(i),
+      dy = y - swY(i),
+      d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 24) w = Math.max(w, SW[i] * (1 - d / 24));
+  }
+  return w;
+}
+/** A slip on a wet spot: FX for the audio / renderer, a little speed lost. */
+function ph3Slip(p: Player) {
+  const w = wetAt(p.x, p.y);
+  if (w <= 0.2) return;
+  if (!PREDICT) fx({ k: "slip", x: p.x, y: p.y, v: w });
+  p.vx *= 0.75;
+  p.vy *= 0.75;
+  ph3c("sweatSlip");
+  if (!isH(p)) txtW("SLIPPED ON THE WET SPOT", p.x, p.y, 90, "#ff9966");
+}
+/** Shoe squeak on a hard plant (FX for audio.ts). */
+function ph3Squeak(p: Player, v: number) {
+  if (cfg.PH3 && !PREDICT) fx({ k: "squeak", x: p.x, y: p.y, v: Math.min(1, v / 320) });
+}
 /** Green guide: a green release that was meant to go in (B.gd: not blocked, launch's make) is re-aimed at the middle
  *  of the rim on its way down, every half step, from .9 s out - the ballistic time to rim height, so drag, Magnus drift,
  *  aim rounding (legacy), a brush with a body and Unity's PhysX all wash out and nothing but a block can miss it. The
@@ -3808,9 +4273,28 @@ export function bstep(dt: number) {
   // Shots, loose balls AND passes fly through Rapier (passes bounce off the real floor; bodies ignore passes).
   const RA = useRap() && (B.mode === "air" || B.mode === "pass");
   if (!RA) {
-    B.vz -= g * dt;
-    B.vx *= 1 - 0.1 * dt;
-    B.vy *= 1 - 0.1 * dt;
+    if (airV3()) {
+      // (Physics v3: the same air step as launch's pre-sim - drag + Magnus, then gravity; the spin decays slowly)
+      const W = B.wv || (B.wv = [0, 0, 0]),
+        wd = 1 / (1 + dt * AIR_WD);
+      AV[0] = B.vx;
+      AV[1] = B.vy;
+      AV[2] = B.vz;
+      AV[3] = W[0];
+      AV[4] = W[1];
+      AV[5] = W[2];
+      airAcc(dt);
+      B.vx = AV[0];
+      B.vy = AV[1];
+      B.vz = AV[2] - g * dt;
+      W[0] *= wd;
+      W[1] *= wd;
+      W[2] *= wd;
+    } else {
+      B.vz -= g * dt;
+      B.vx *= 1 - 0.1 * dt;
+      B.vy *= 1 - 0.1 * dt;
+    }
   }
   // a pass that died (rolling slowly on the floor, or stopped against a wall) is a loose ball: anyone can get it.
   // Without this, only its target could catch it and a dead pass in a corner froze the game.
@@ -3861,12 +4345,19 @@ export function bstep(dt: number) {
         const dot = B.vx * nx + B.vy * ny + B.vz * nz;
         if (dot < 0) {
           // the back quarter (on the bracket) is deader iron; a hard hit bends the rim and loses more of its bounce
-          const e = ((rx / d) * (b ? 1 : -1) > 0.82 ? 0.4 : 0.55) * (1 - 0.3 * clamp((-dot - 250) / 700, 0, 1));
+          const back = (rx / d) * (b ? 1 : -1) > 0.82,
+            e = cfg.PH3 ? ph3RimE(back, dot) : (back ? 0.4 : 0.55) * (1 - 0.3 * clamp((-dot - 250) / 700, 0, 1));
           B.vx -= (1 + e) * dot * nx;
           B.vy -= (1 + e) * dot * ny;
           B.vz -= (1 + e) * dot * nz;
-          B.vx *= 0.93;
-          B.vy *= 0.93;
+          if (cfg.PH3) {
+            // (Physics v3: the iron grips the ball - english, rattles and roll-arounds instead of a flat 7% loss)
+            spinHit(nx, ny, nz, -(1 + e) * dot, back ? 0.45 : 0.4);
+            ph3RimHit();
+          } else {
+            B.vx *= 0.93;
+            B.vy *= 0.93;
+          }
           snd(300, 0.06, "triangle");
         }
       }
@@ -3874,7 +4365,14 @@ export function bstep(dt: number) {
     const bx = b ? 900 : 40;
     if (!RA && (b ? B.x > bx - BR && B.x < bx + 6 : B.x < bx + BR && B.x > bx - 6) && Math.abs(B.y - HY) < 30 && B.z > 93 && B.z < 136) {
       B.x = b ? bx - BR : bx + BR;
-      B.vx = -B.vx * 0.6;
+      const vn = b ? B.vx : -B.vx;
+      if (!cfg.PH3) B.vx = -B.vx * 0.6;
+      else if (vn > 0) {
+        // (Physics v3: the surface's board; backspin kicks it down off the glass)
+        const e = SURF[surf()][5];
+        B.vx = -B.vx * e;
+        spinHit(b ? -1 : 1, 0, 0, (1 + e) * vn, 0.3);
+      }
       snd(200, 0.05, "square");
     }
     if (B.sh && B.z >= 100 && d < RR + 2) B.abv = b; // was above this rim
@@ -3915,6 +4413,7 @@ export function bstep(dt: number) {
       }
       txtW("+" + pts, hx > 470 ? hx - 50 : hx + 20, HY, 125, pts === 3 ? "#ffd23f" : "#fff");
       if (!B.ft && !B.dk && (B.rim ?? 99) > BR + 1.1) txtW(pts === 3 ? "SPLASH!" : "SWISH!", hx, HY, 140, "#9fe7ff");
+      if (cfg.PH3) ph3MakeTxt(hx);
       if (!B.ft && B.clk != null && B.clk < 1.5 && clock <= 0.05) {
         const lead = sc[t] > sc[1 - t] && sc[t] - pts <= sc[1 - t];
         txt(B.q >= 4 && lead ? "GAME WINNER!" : "BUZZER BEATER!", 480, 170, "#ffd23f");
@@ -3979,6 +4478,7 @@ export function bstep(dt: number) {
           RQ = 1;
           HLN = (B.dk ? (B.oop ? "Alley-oop — " : "Slam — ") : "From deep — ") + (B.last ? B.last.n : "");
         }
+        if (cfg.PH3 && B.dk && ph3Shatter(hx)) rs = Math.max(rs, SHAT_T); // (glass everywhere: a long stoppage)
       }
       B.sh = 0;
       fin = 0;
@@ -3993,12 +4493,16 @@ export function bstep(dt: number) {
   if (!RA && B.z < BR) {
     B.z = BR;
     if (Math.abs(B.vz) > 60) snd(110, 0.05, "sine", 0.1);
-    B.vz *= -0.72;
-    B.vx *= 0.9;
-    B.vy *= 0.9;
-    if (Math.abs(B.vz) < 25) B.vz = 0;
+    if (cfg.PH3) ph3Floor();
+    else {
+      B.vz *= -0.72;
+      B.vx *= 0.9;
+      B.vy *= 0.9;
+      if (Math.abs(B.vz) < 25) B.vz = 0;
+    }
   }
-  if (!RA && B.z <= BR + 0.5 && Math.abs(B.vz) < 30) {
+  if (!RA && cfg.PH3 && B.z <= BR + 0.5 && Math.abs(B.vz) < 30) ph3Roll(dt);
+  else if (!RA && B.z <= BR + 0.5 && Math.abs(B.vz) < 30) {
     // rolling on the wood: rolling resistance (42 px/s^2), then it stops
     const vh = Math.sqrt(B.vx * B.vx + B.vy * B.vy),
       k = vh > 1.5 ? Math.max(0, vh - 42 * dt) / vh : 0;
@@ -4094,6 +4598,8 @@ export function bstep(dt: number) {
     }
     return;
   }
+  // (Physics v3: a low pass / loose ball skidding into somebody's feet kicks off them)
+  if (cfg.PH3 && !PREDICT && !ftq && inb <= 0 && B.z < 14 && B.age > 0.12 && (B.mode === "pass" || (B.mode === "air" && !B.sh))) ph3Legs();
   // Contest for the loose ball: jumpers and defenders first, with some randomness.
   SORTP.length = 0;
   for (const p of P) {
@@ -4116,6 +4622,9 @@ export function bstep(dt: number) {
     if (d < (rc ? 26 : 12) && B.z > p.z + (rc ? -8 : 2) && B.z < p.z + 68 + p.j * 0.2 + (rc && B.ptype === 2 ? 55 : 0) + (cfg.PP && !rc ? (p.ht - 6.5) * 10 : 0)) {
       if (B.mode === "pass" && p !== B.to) continue;
       if (B.mode === "air" && B.age < 0.5 && (B.vz > 0 || p.tm === B.last.tm)) continue;
+      // (Physics v3: a loose ball on the floor with a rival in reach too is a scramble; a hard / fancy pass can be bobbled)
+      if (cfg.PH3 && B.mode === "air" && !B.sh && !PREDICT && !ftq && B.z < 40 && (B.scm || 0) < 2 && ph3Scrum(p)) break;
+      if (cfg.PH3 && B.mode === "pass" && p === B.to && !PREDICT && !ftq && inb <= 0 && B.age > 0.1 && ph3Bobble(p)) break;
       // a contested catch can be fumbled (accidental turnover - steals stay off)
       if (B.mode === "pass" && p === B.to && !PREDICT && !ftq && inb <= 0 && B.age > 0.15) {
         let near = 1e9;
@@ -4178,6 +4687,7 @@ export function bstep(dt: number) {
       if (B.mode === "pass" && B.kick && p === B.to && !PREDICT) (p.kickT = 2.5), (STAT.kick = (STAT.kick || 0) + 1);
       if (B.ctl != null && !PREDICT) (p.tm === B.ctl && (STAT.ctlKeep = (STAT.ctlKeep || 0) + 1)), (B.ctl = null);
       B.owner = p;
+      B.scm = 0;
       B.mode = "held";
       B.sh = 0;
       B.to = null;
@@ -5352,6 +5862,7 @@ export function contestOf(p: Player): [number, Player | null] {
   return [Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1) * (cfg.PP >= 2 && p.fade && (p.mode === "c" || p.mode === "s") ? (p.fade === 1 ? 0.82 : 0.9) : 1)), o2];
 }
 function collide() {
+  if (cfg.PH3 && !PREDICT) ph3Sweat(1 / 60); // (Physics v3: sweat spots)
   for (let a = 0; a < P.length; a++)
     for (let b = a + 1; b < P.length; b++) {
       const A = P[a],
@@ -5377,12 +5888,16 @@ function collide() {
           C.y -= dy * s;
           continue;
         }
-        const nx = dx / d,
+        let nx = dx / d, // (let: Physics v3 box-outs make the boxer heavier)
           ny = dy / d,
           mA = A.bk * A.ht * (A.setT > 0 ? 3 : A.postA ? 1.7 : 1),
           mC = C.bk * C.ht * (C.setT > 0 ? 3 : C.postA ? 1.7 : 1),
           rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny,
           ov = dm - d;
+        // (Physics v3: the defender sealing his man on a shot / rebound plays heavy and moves him off the rim)
+        const bxo = cfg.PH3 ? phBox(A, C) : 0;
+        if (bxo === 1) mA *= PH_BOXM;
+        else if (bxo === 2) mC *= PH_BOXM;
         for (const [sc0, df] of [
           [A, C],
           [C, A],
@@ -5395,6 +5910,7 @@ function collide() {
               df.hitT = 0.35;
               df.hitX = -nx * (df === A ? -1 : 1);
               df.hitY = -ny * (df === A ? -1 : 1);
+              if (cfg.PH3) ph3Screen(sc0, df); // (Physics v3: the screen eats his run - or a big man runs through it)
               if (isH(B.owner) || isH(df)) txtW("SCREEN", sc0.x, sc0.y, 88, "#9ad");
               const pl = PLAY[sc0.tm];
               // the screener's defender switches onto the ball handler some of the time
@@ -5415,6 +5931,8 @@ function collide() {
         A.y += (ny * ov * mC) / (mA + mC);
         C.x -= (nx * ov * mA) / (mA + mC);
         C.y -= (ny * ov * mA) / (mA + mC);
+        if (bxo === 1) phShove(A, C, -nx, -ny, mA, mC);
+        else if (bxo === 2) phShove(C, A, nx, ny, mC, mA);
         if (rv < 0) {
           const j = (-1.05 * rv) / (1 / mA + 1 / mC),
             hit = -rv;
@@ -5447,6 +5965,7 @@ function collide() {
               if (hit > 120) q.slow = Math.max(q.slow, 0.12);
               if (q.mode === "c" || q.mode === "s") q.bmp = Math.min(1, (q.bmp || 0) + hit / 260);
             }
+            if (cfg.PH3 && hit > 150) ph3Hit(A, C, j, mA, mC); // (Physics v3: stumbles, knockdowns by the jolt each one takes)
             const h = B.owner;
             if (hit > 170 && fc <= 0 && rs <= 0 && !ftq && inb <= 0 && h && (A === h || C === h) && cfg.FOULS) {
               const o = A === h ? C : A;
@@ -5510,6 +6029,14 @@ const NET_DAMP = 0.984, // velocity kept per 1/60 s tick (nylon + air): a whippe
   BRS = 0.010999778168008754,
   BRC2 = 0.9999804688135782,
   BRS2 = 0.006249959309975306;
+// net materials (Physics v3: street games hang chain nets): [damp per tick, strand stretch, its 3-pass twin, stretch
+// limit, ball friction, reaction, drop cap, sway]
+const NETMAT = [
+  [NET_DAMP, NET_STR, NET_STR3, NET_MAXS, NET_MU, NET_RK, NET_VCAP, NET_BRZ], // nylon
+  [0.993, 0.85, 0.9880450910966956, 1.02, 0.25, 1.4, 22, 3], // chain: heavy, no stretch, swings long, barely sways, clanks
+];
+let NM = NETMAT[0];
+export const chainNet = () => !!cfg.PH3 && !!cfg.HALF;
 const SEGR = BR + 0.45,
   NRX = [0, 0, 0];
 export const NETS = HXs.map((hx) => {
@@ -5546,7 +6073,7 @@ export const NETS = HXs.map((hx) => {
   // fz/fv: rim flex (px, + = bent down) and its rate; dk: this dunk already yanked it; b*: the ball as the net last
   // saw it (position, velocity, bok 0 none / 1 position / 2 both); r*: the reaction it handed the ball; w*: sway
   // oscillators; hold: how long a ball has sat slow in the mesh (then the net lets go of it)
-  const N: any = { p, c, hx, quiet: 0, ring: 0, fz: 0, fv: 0, dk: 0, bx: 0, by: 0, bz: 0, bvx: 0, bvy: 0, bvz: 0, bok: 0, rvx: 0, rvy: 0, rvz: 0, wx: 1, wy: 0, wx2: 0, wy2: 1, hold: 0 };
+  const N: any = { p, c, hx, quiet: 0, ring: 0, fz: 0, fv: 0, dk: 0, bx: 0, by: 0, bz: 0, bvx: 0, bvy: 0, bvz: 0, bok: 0, rvx: 0, rvy: 0, rvz: 0, wx: 1, wy: 0, wx2: 0, wy2: 1, hold: 0, tx: 0, ty: 0, tvx: 0, tvy: 0, bs: 0, bsv: 0, shT: 0, chT: -9 };
   for (let i = 0; i < 240; i++) netTick(N, 1 / 60, 0, 0, 0, 0, 0, 0, 0, 1); // let it hang: the rest pose is its equilibrium
   for (const q of p) (q.px = q.x), (q.py = q.y), (q.pz = q.z);
   return N;
@@ -5556,11 +6083,11 @@ export const NETS = HXs.map((hx) => {
 function netTick(N: any, dt: number, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, touch: number, settle: number) {
   const SUB = !touch ? 1 : Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0)) > 4 ? 4 : 2,
     h = dt / SUB,
-    damp = SUB === 1 ? NET_DAMP : SUB === 2 ? Math.sqrt(NET_DAMP) : Math.sqrt(Math.sqrt(NET_DAMP)),
+    damp = SUB === 1 ? NM[0] : SUB === 2 ? Math.sqrt(NM[0]) : Math.sqrt(Math.sqrt(NM[0])),
     gz = g * h * h,
     fzz = 100 - N.fz,
-    ax = settle ? 0 : NET_BRZ * (N.wx * 0.7 + N.wx2 * 0.3) * h * h,
-    ay = settle ? 0 : NET_BRZ * (N.wy * 0.5 + N.wy2 * 0.5) * h * h,
+    ax = settle ? 0 : NM[7] * (N.wx * 0.7 + N.wx2 * 0.3) * h * h,
+    ay = settle ? 0 : NM[7] * (N.wy * 0.5 + N.wy2 * 0.5) * h * h,
     its = touch || N.quiet < 120 ? 7 : 3; // (a net nothing has touched for 2 s only sways: a cheaper solve)
   NRX[0] = NRX[1] = NRX[2] = 0;
   for (let sub = 0; sub < SUB; sub++) {
@@ -5573,8 +6100,8 @@ function netTick(N: any, dt: number, x0: number, y0: number, z0: number, x1: num
       sz = (z1 - z0) / SUB;
     for (const q of N.p) {
       if (q.f) {
-        q.pz = q.z; // the rim ring rides the iron
-        q.z = fzz;
+        q.pz = q.z; // the rim ring rides the iron (and its wobble: Physics v3)
+        q.z = N.tx || N.ty ? fzz - (N.tx * (q.x - N.hx) + N.ty * (q.y - HY)) / RR : fzz;
         continue;
       }
       const vx = (q.x - q.px) * damp,
@@ -5600,8 +6127,8 @@ function netTick(N: any, dt: number, x0: number, y0: number, z0: number, x1: num
         if (c[3] >= 1) {
           // nylon strand: slack in compression, elastic when stretched, a rope again past the stretch limit
           if (d <= c[2]) continue;
-          const lim = c[2] * NET_MAXS,
-            st = its === 7 ? NET_STR : NET_STR3;
+          const lim = c[2] * NM[3],
+            st = its === 7 ? NM[1] : NM[2];
           f = d > lim ? ((d - lim + (lim - c[2]) * st) / d) * 0.5 : ((d - c[2]) / d) * 0.5 * st;
         } else f = ((d - c[2]) / d) * 0.5 * (its === 7 ? c[3] : c[3] > 0.5 ? NET_HEM3 : NET_TIE3);
         if (!a.f) {
@@ -5641,9 +6168,9 @@ function netTick(N: any, dt: number, x0: number, y0: number, z0: number, x1: num
                 ny = cy / d,
                 nz = cz / d,
                 sn = sx * nx + sy * ny + sz * nz;
-              fx = (sx - sn * nx) * NET_MU;
-              fy = (sy - sn * ny) * NET_MU;
-              fz = (sz - sn * nz) * NET_MU;
+              fx = (sx - sn * nx) * NM[4];
+              fy = (sy - sn * ny) * NM[4];
+              fz = (sz - sn * nz) * NM[4];
             }
             for (let e = 0; e < 2; e++) {
               const q = e === 0 ? a : b,
@@ -5675,6 +6202,7 @@ function netTick(N: any, dt: number, x0: number, y0: number, z0: number, x1: num
  *  the replay speed) and online guests drive the net the same way. */
 export function netSim(dt: number, rp = 0) {
   if (!(dt > 0)) return;
+  NM = NETMAT[chainNet() ? 1 : 0];
   for (const N of NETS) {
     // the ball's path this tick, from its positions (a teleport - setup, a replay cut - is no motion)
     const jx = B.x - N.bx,
@@ -5727,17 +6255,37 @@ export function netSim(dt: number, rp = 0) {
           q.py += dvy * s;
           q.pz -= J * s * 0.6;
         }
+        if (cfg.PH3) {
+          // (Physics v3: the hit tips the ring - the side it struck dips - and it wobbles)
+          const k = clamp(J * 0.02 * ((B.z - 100) / (rd || 1) + 0.25), -10, 20);
+          N.tvx += ux * k;
+          N.tvy += uy * k;
+        }
       } else if (Math.abs(B.x - (N.hx > 470 ? 900 : 40)) < BR + 2.5 && B.z > 93) {
         N.ring = 0.1;
         N.fv += Math.min(12, J * 0.012); // off the glass: the board shakes the iron a little
+        if (cfg.PH3) N.bsv += Math.min(30, J * 0.03); // (Physics v3: and the board itself)
       }
     }
     if (N.ring > 0) N.ring -= dt;
     // a dunk yanks the iron down (once per dunk); a player hanging on it holds it bent
-    if (B.dk && !N.dk && near && B.z < 106 && dxy < 10) (N.dk = 1), (N.fv += 55);
+    if (B.dk && !N.dk && near && B.z < 106 && dxy < 10) {
+      N.dk = 1;
+      N.fv += 55;
+      if (cfg.PH3) ph3Yank(N);
+    }
     if (!B.dk) N.dk = 0;
-    let hang = 0;
-    for (const p of P) if (p.hangT > 0 && p.z > 15 && (p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY) < 26 * 26) hang = 2.2;
+    let hang = 0,
+      hgx = 0,
+      hgy = 0;
+    for (const p of P)
+      if (p.hangT > 0 && p.z > 15 && (p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY) < 26 * 26) {
+        hang = 2.2;
+        const hd = Math.sqrt((p.x - N.hx) * (p.x - N.hx) + (p.y - HY) * (p.y - HY)) || 1;
+        hgx = ((p.x - N.hx) / hd) * 0.9; // (he hangs on the front of the ring: it tips toward him)
+        hgy = ((p.y - HY) / hd) * 0.9;
+      }
+    if (cfg.PH3) ph3Wobble(N, dt, hgx, hgy);
     N.fv += (-RIM_W * RIM_W * (N.fz - hang) - 2 * RIM_Z * RIM_W * N.fv) * dt;
     N.fz += N.fv * dt;
     if (N.fz > 4) (N.fz = 4), (N.fv = Math.min(0, N.fv));
@@ -5756,17 +6304,22 @@ export function netSim(dt: number, rp = 0) {
       N.wy2 = b2 / l2;
     }
     N.quiet = near ? 0 : N.quiet + 1;
+    // (Physics v3: a chain net clanks when the ball goes through or rattles it)
+    if (NM !== NETMAT[0] && near && !rp && !PREDICT && B.z < 100 && T - N.chT > 0.35 && Math.sqrt(vx * vx + vy * vy + vz * vz) > 60) {
+      N.chT = T;
+      fx({ k: "chain", x: N.hx, y: HY, v: Math.min(1, Math.sqrt(vx * vx + vy * vy + vz * vz) / 400) });
+    }
     netTick(N, dt, x0, y0, z0, B.x, B.y, B.z, near ? 1 : 0, 0);
     // reaction on the ball (below the rim only: rim rolls and makes are decided by the iron, not the nylon); a ball
     // that sits slow in the mesh for half a second is let go (nothing may hold a live ball forever)
     const slow = near && B.z < 99 && dxy < RR && Math.sqrt(vx * vx + vy * vy + vz * vz) < 25;
     N.hold = slow ? N.hold + dt : 0;
     if (near && free && !rp && B.z < 99 && N.hold < 0.5 && (NRX[0] || NRX[1] || NRX[2])) {
-      const K = NET_RK / dt,
+      const K = NM[5] / dt,
         cap = 45,
         ex = -clamp(NRX[0] * K, -cap, cap),
         ey = -clamp(NRX[1] * K, -cap, cap),
-        ez = -clamp(NRX[2] * K, -NET_VCAP, NET_VCAP); // (the nylon kills the sideways speed but only slows the drop)
+        ez = -clamp(NRX[2] * K, -NM[6], NM[6]); // (the nylon kills the sideways speed but only slows the drop)
       // the funnel of the mesh steers a ball pressing into it back to the middle (it falls out of the hem there)
       const ux = dxy > 0.3 ? ox / dxy : 0,
         uy = dxy > 0.3 ? oy / dxy : 0,

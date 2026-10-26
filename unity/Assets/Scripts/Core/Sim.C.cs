@@ -419,7 +419,7 @@ namespace Hoops.Core
                     else if (!has && p.z <= 0 && !(cfg.PP >= 2 && pp2CsBuf(p, hum)))
                     {
                         // (Pro Play v2: not with a pass about to arrive - that press is a catch-and-shoot)
-                        p.vz = 126 + p.j * 0.9;
+                        p.vz = (126 + p.j * 0.9) * (1 - 0.12 * ph3Fat(p)); // (Physics v3: tired legs jump lower)
                         // jumping at a shot that's already gone: he lands off balance
                         if (Util.T(B.sh) && B.last != null && B.last.tm != p.tm && B.age > 0.12 && Hypot(B.last.x - p.x, B.last.y - p.y) < 40) p.lateJ = 1;
                     }
@@ -490,7 +490,7 @@ namespace Hoops.Core
                                             : 0;
                     if (cfg.PP != 0) { upAfterClip(p, D, lay); ppRelease(p, cto.Item1, cto.Item2, D); }
                     p.tp = null;
-                    p.vz = ftq != null ? 60 : ((lay ? 150 : 126) + p.j * 0.9) * (pro && p.st == 1 && !lay ? 0.75 : 1);
+                    p.vz = ftq != null ? 60 : ((lay ? 150 : 126) + p.j * 0.9) * (pro && p.st == 1 && !lay ? 0.75 : 1) * (1 - 0.12 * ph3Fat(p)); // (Physics v3: tired legs)
                     p.vx = ftq != null ? 0 : lay ? (ux / D) * 100 : pro && p.sv == 8 ? p.vx * 0.5 : (-ux / D) * k;
                     p.vy = ftq != null ? 0 : lay ? (uy / D) * 100 : (-uy / D) * k;
                 }
@@ -552,19 +552,21 @@ namespace Hoops.Core
                         cur = Hypot(p.vx, p.vy);
                     bool brk = cur > 40 && dx * p.vx + dy * p.vy < 0,
                         first = p.fsT > 0;
-                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : p.coT > 0 ? 1.35 : 1) * dt, // (+ stance slides / sprint burst / cut / closeout)
+                    double ac = (brk ? (p.plantT > 0 ? 1500 : 1100) : (620 + p.s * 3) * (first ? 1.55 : 1)) * (p.mvT > 0 ? 2.6 : 1) * (Util.T(p.stc) ? 1.3 : p.spT > 0 && p.spT < 0.35 ? 1.35 : 1) * (p.cutT > 0 ? 1.4 : p.coT > 0 ? 1.35 : 1) * (1 - 0.22 * ph3Fat(p)) * dt, // (+ stance slides / sprint burst / cut / closeout; Physics v3: tired)
                         mm = Math.Min(dl, ac);
                     // a hard cut at speed: plant the outside foot (two-three steps to stop), and sometimes slip
                     if (brk && cur > 170 && !(p.plantT > 0) && !(p.brk > 0.5))
                     {
                         p.plantT = 0.2;
-                        if (PREDICT == 0 && cur > 235 && Rng.R() < 0.025 + (78 - p.s) / 1500)
+                        ph3Squeak(p, cur); // (Physics v3: shoe squeak, FX for the audio)
+                        if (PREDICT == 0 && cur > 235 && Rng.R() < 0.025 + (78 - p.s) / 1500 + 0.2 * wetAt(p.x, p.y))
                         {
                             p.hitT = 0.3;
                             p.hitX = p.vx / cur;
                             p.hitY = p.vy / cur;
                             p.slow = Math.Max(p.slow, 0.35);
                             if (isH(p)) txtW("SLIPPED!", p.x, p.y, 90, "#ff9966");
+                            if (cfg.PH3 != 0) ph3Slip(p); // (a sweat spot: Physics v3)
                         }
                     }
                     // explosive first step out of a standstill
@@ -623,6 +625,7 @@ namespace Hoops.Core
                 {
                     if (cfg.PP != 0) upLanding(p);
                     else if (p.vz < -120) p.landT = Math.Min(0.28, -p.vz / 900); // absorb the landing
+                    if (cfg.PH3 != 0) ph3Land(p, -p.vz); // (tired legs land heavy)
                     if (Util.T(p.lateJ) && PREDICT == 0)
                     {
                         p.lateJ = 0;

@@ -13,6 +13,7 @@ import crypto from "node:crypto";
 import { execFileSync, execFile } from "node:child_process";
 import { TM } from "../../src/core/data";
 import { vnorm, type VoiceIndex } from "../../src/client/voicekey";
+import { commentaryPieces } from "./lines";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const TOOLS = process.env.H2K_TOOLS || "/home/user/tools";
@@ -29,58 +30,7 @@ fs.mkdirSync(CACHE, { recursive: true });
 fs.mkdirSync(OUT, { recursive: true });
 
 // ---------- 1. template literal fragments from broadcast.ts ----------
-/** All string pieces of the JS/TS source region: plain strings and the literal parts of template strings. */
-function pieces(src: string): string[] {
-  const out: string[] = [];
-  let i = 0;
-  const str = (q: string) => {
-    let s = "";
-    i++;
-    while (i < src.length && src[i] !== q) {
-      if (src[i] === "\\") (s += src[i + 1]), (i += 2);
-      else s += src[i++];
-    }
-    i++;
-    return s;
-  };
-  const tpl = () => {
-    let s = "";
-    i++;
-    while (i < src.length && src[i] !== "`") {
-      if (src[i] === "\\") (s += src[i + 1]), (i += 2);
-      else if (src[i] === "$" && src[i + 1] === "{") {
-        out.push(s), (s = "");
-        i += 2;
-        let d = 1;
-        while (i < src.length && d > 0) {
-          const c = src[i];
-          if (c === "`") tpl();
-          else if (c === '"' || c === "'") out.push(str(c));
-          else (c === "{" ? d++ : c === "}" ? d-- : 0), i++;
-        }
-      } else s += src[i++];
-    }
-    out.push(s);
-    i++;
-  };
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "/" && src[i + 1] === "/") while (i < src.length && src[i] !== "\n") i++;
-    else if (c === "`") tpl();
-    else if (c === '"') out.push(str(c));
-    else i++;
-  }
-  return out;
-}
-const bc = fs.readFileSync(path.join(ROOT, "src/client/broadcast.ts"), "utf8");
-const region = (a: string, b: string) => {
-  const s = bc.indexOf(a),
-    e = bc.indexOf(b, s);
-  if (s < 0 || e < 0) throw new Error("broadcast.ts: cannot find " + a);
-  return bc.slice(s, e);
-};
-// keys of LINES/RISE/TAIL objects themselves are identifiers, not strings, so only spoken text is collected
-const comm = [...pieces(region("const LINES", "const CAP")), ...pieces(region("const RISE", "const BIG"))];
+const comm = commentaryPieces(fs.readFileSync(path.join(ROOT, "src/client/broadcast.ts"), "utf8"));
 
 // ---------- 2. sim strings that end up inside commentary ----------
 const sim = fs.readFileSync(path.join(ROOT, "src/core/sim.ts"), "utf8");

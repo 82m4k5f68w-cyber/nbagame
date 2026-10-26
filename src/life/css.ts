@@ -11,7 +11,7 @@ export const LIFE_CSS = `
 #life button{font:inherit;color:inherit;cursor:pointer}
 #life .hud{position:absolute;left:12px;top:12px;z-index:5;display:flex;flex-direction:column;gap:6px;pointer-events:none;max-width:min(320px,60vw)}
 #life .clk{display:flex;align-items:baseline;gap:8px;background:var(--pn);border:1px solid var(--ln);border-radius:14px;padding:8px 12px;backdrop-filter:blur(8px)}
-#life .clk b{font:800 22px system-ui;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+#life .clk b{white-space:nowrap;font:800 22px system-ui;font-variant-numeric:tabular-nums;letter-spacing:.5px}
 #life .clk small{opacity:.75;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase}
 #life .bars{background:var(--pn);border:1px solid var(--ln);border-radius:14px;padding:8px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;font:700 11px system-ui}
 #life .bars i{height:7px;border-radius:4px;background:#ffffff1a;overflow:hidden;display:block;min-width:90px}

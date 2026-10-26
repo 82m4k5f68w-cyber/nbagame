@@ -128,9 +128,24 @@ namespace Hoops.Core
             bool RA = useRap() && (B.mode == "air" || B.mode == "pass");
             if (!RA)
             {
-                B.vz -= g * dt;
-                B.vx *= 1 - 0.1 * dt;
-                B.vy *= 1 - 0.1 * dt;
+                if (airV3())
+                {
+                    // (Physics v3: the same air step as launch's pre-sim - drag + Magnus, then gravity; the spin decays slowly)
+                    var W = B.wv ?? (B.wv = new double[3]);
+                    double wd = 1 / (1 + dt * AIR_WD);
+                    AV[0] = B.vx; AV[1] = B.vy; AV[2] = B.vz; AV[3] = W[0]; AV[4] = W[1]; AV[5] = W[2];
+                    airAcc(dt);
+                    B.vx = AV[0];
+                    B.vy = AV[1];
+                    B.vz = AV[2] - g * dt;
+                    W[0] *= wd; W[1] *= wd; W[2] *= wd;
+                }
+                else
+                {
+                    B.vz -= g * dt;
+                    B.vx *= 1 - 0.1 * dt;
+                    B.vy *= 1 - 0.1 * dt;
+                }
             }
             // a pass that died (rolling slowly on the floor, or stopped against a wall) is a loose ball: anyone can get it.
             if (B.mode == "pass" && !Util.T(PREDICT) && (B.age > 3 || (B.age > 0.5 && B.z < 12 && Hypot(B.vx, B.vy) < 45 && B.dfl != 2))) // (a deflected pass keeps homing in until the 3 s fallback)
@@ -188,12 +203,22 @@ namespace Hoops.Core
                         if (dot < 0)
                         {
                             // the back quarter (on the bracket) is deader iron; a hard hit bends the rim and loses more of its bounce
-                            double e = ((rx / d) * (b != 0 ? 1 : -1) > 0.82 ? 0.4 : 0.55) * (1 - 0.3 * clamp((-dot - 250) / 700, 0, 1));
+                            bool back = (rx / d) * (b != 0 ? 1 : -1) > 0.82;
+                            double e = cfg.PH3 != 0 ? ph3RimE(back, dot) : (back ? 0.4 : 0.55) * (1 - 0.3 * clamp((-dot - 250) / 700, 0, 1));
                             B.vx -= (1 + e) * dot * nx;
                             B.vy -= (1 + e) * dot * ny;
                             B.vz -= (1 + e) * dot * nz;
-                            B.vx *= 0.93;
-                            B.vy *= 0.93;
+                            if (cfg.PH3 != 0)
+                            {
+                                // (Physics v3: the iron grips the ball - english, rattles and roll-arounds)
+                                spinHit(nx, ny, nz, -(1 + e) * dot, back ? 0.45 : 0.4);
+                                ph3RimHit();
+                            }
+                            else
+                            {
+                                B.vx *= 0.93;
+                                B.vy *= 0.93;
+                            }
                             snd(300, 0.06, "triangle");
                         }
                     }
@@ -202,7 +227,15 @@ namespace Hoops.Core
                 if (!RA && (b != 0 ? B.x > bx - BR && B.x < bx + 6 : B.x < bx + BR && B.x > bx - 6) && Math.Abs(B.y - HY) < 30 && B.z > 93 && B.z < 136)
                 {
                     B.x = b != 0 ? bx - BR : bx + BR;
-                    B.vx = -B.vx * 0.6;
+                    double vng = b != 0 ? B.vx : -B.vx;
+                    if (cfg.PH3 == 0) B.vx = -B.vx * 0.6;
+                    else if (vng > 0)
+                    {
+                        // (Physics v3: the surface's board; backspin kicks it down off the glass)
+                        double e = SURF[surf()][5];
+                        B.vx = -B.vx * e;
+                        spinHit(b != 0 ? -1 : 1, 0, 0, (1 + e) * vng, 0.3);
+                    }
                     snd(200, 0.05, "square");
                 }
                 if (Util.T(B.sh) && B.z >= 100 && d < RR + 2) B.abv = b; // was above this rim
@@ -251,6 +284,7 @@ namespace Hoops.Core
                     }
                     txtW("+" + pts, hx > 470 ? hx - 50 : hx + 20, HY, 125, pts == 3 ? "#ffd23f" : "#fff");
                     if (!Util.T(B.ft) && !Util.T(B.dk) && (B.rim ?? 99) > BR + 1.1) txtW(pts == 3 ? "SPLASH!" : "SWISH!", hx, HY, 140, "#9fe7ff");
+                    if (cfg.PH3 != 0) ph3MakeTxt(hx);
                     if (!Util.T(B.ft) && B.clk != null && B.clk.Value < 1.5 && clock <= 0.05)
                     {
                         bool lead = sc[ti] > sc[1 - ti] && sc[ti] - pts <= sc[1 - ti];
@@ -327,6 +361,7 @@ namespace Hoops.Core
                             RQ = 1;
                             HLN = (Util.T(B.dk) ? (Util.T(B.oop) ? "Alley-oop — " : "Slam — ") : "From deep — ") + (B.last != null ? B.last.n : "");
                         }
+                        if (cfg.PH3 != 0 && Util.T(B.dk) && ph3Shatter(hx)) rs = Math.Max(rs, SHAT_T); // (glass everywhere: a long stoppage)
                     }
                     B.sh = 0;
                     fin = 0;
@@ -344,12 +379,17 @@ namespace Hoops.Core
             {
                 B.z = BR;
                 if (Math.Abs(B.vz) > 60) snd(110, 0.05, "sine", 0.1);
-                B.vz *= -0.72;
-                B.vx *= 0.9;
-                B.vy *= 0.9;
-                if (Math.Abs(B.vz) < 25) B.vz = 0;
+                if (cfg.PH3 != 0) ph3Floor();
+                else
+                {
+                    B.vz *= -0.72;
+                    B.vx *= 0.9;
+                    B.vy *= 0.9;
+                    if (Math.Abs(B.vz) < 25) B.vz = 0;
+                }
             }
-            if (!RA && B.z <= BR + 0.5 && Math.Abs(B.vz) < 30)
+            if (!RA && cfg.PH3 != 0 && B.z <= BR + 0.5 && Math.Abs(B.vz) < 30) ph3Roll(dt);
+            else if (!RA && B.z <= BR + 0.5 && Math.Abs(B.vz) < 30)
             {
                 // rolling on the wood: rolling resistance (42 px/s^2), then it stops
                 double vh = Math.Sqrt(B.vx * B.vx + B.vy * B.vy),
@@ -458,6 +498,8 @@ namespace Hoops.Core
                 }
                 return;
             }
+            // (Physics v3: a low pass / loose ball skidding into somebody's feet kicks off them)
+            if (cfg.PH3 != 0 && !Util.T(PREDICT) && ftq == null && inb <= 0 && B.z < 14 && B.age > 0.12 && (B.mode == "pass" || (B.mode == "air" && !Util.T(B.sh)))) ph3Legs();
             // Contest for the loose ball: jumpers and defenders first, with some randomness.
             SORTP.Clear();
             foreach (var p in P)
@@ -483,6 +525,9 @@ namespace Hoops.Core
                 {
                     if (B.mode == "pass" && p != B.to) continue;
                     if (B.mode == "air" && B.age < 0.5 && (B.vz > 0 || p.tm == B.last.tm)) continue;
+                    // (Physics v3: a loose ball on the floor with a rival in reach too is a scramble; a hard / fancy pass can be bobbled)
+                    if (cfg.PH3 != 0 && B.mode == "air" && !Util.T(B.sh) && !Util.T(PREDICT) && ftq == null && B.z < 40 && B.scm < 2 && ph3Scrum(p)) break;
+                    if (cfg.PH3 != 0 && B.mode == "pass" && p == B.to && !Util.T(PREDICT) && ftq == null && inb <= 0 && B.age > 0.1 && ph3Bobble(p)) break;
                     // a contested catch can be fumbled (accidental turnover - steals stay off)
                     if (B.mode == "pass" && p == B.to && !Util.T(PREDICT) && ftq == null && inb <= 0 && B.age > 0.15)
                     {
@@ -554,6 +599,7 @@ namespace Hoops.Core
                     if (B.mode == "pass" && Util.T(B.kick) && p == B.to && !Util.T(PREDICT)) { p.kickT = 2.5; statAdd("kick", 1); }
                     if (B.ctl != null && !Util.T(PREDICT)) { if (p.tm == B.ctl.Value) statAdd("ctlKeep", 1); B.ctl = null; }
                     B.owner = p;
+                    B.scm = 0;
                     B.mode = "held";
                     B.sh = 0;
                     B.to = null;

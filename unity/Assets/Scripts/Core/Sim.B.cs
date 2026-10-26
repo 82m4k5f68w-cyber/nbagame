@@ -381,6 +381,7 @@ namespace Hoops.Core
             B.gn = 0;
             B.abv = -1;
             B.wv = new double[] { 0, 0, 0 };
+            ph3Launch(p, three);
             B.gt = B.gtc = 0;
             B.gd = 0; // (green guide: set below for an intended green make)
             Player fd = isFT ? null : shootingFoul(p, lay);
@@ -508,7 +509,7 @@ namespace Hoops.Core
                 if (mk) statAdd(jk + "mk", 1);
             }
             double a = Rng.R() * 6.28,
-                off = mk ? (rap ? 0.3 : 1.2) : 9 + Rng.R() * 7,
+                off = mk ? (rap || cfg.PH3 != 0 ? 0.3 : 1.2) : 9 + Rng.R() * 7, // (Physics v3: the legacy ball is pre-simulated too)
                 tx = hx + JsMath.Cos(a) * off,
                 ty = HY + JsMath.Sin(a) * off,
                 dx = tx - x0,
@@ -546,7 +547,12 @@ namespace Hoops.Core
             for (int k = 0; k < 8 && D * JsMath.Tan(th) - dz < 8 && th < 1.45; k++) th += 0.08;
             double ge = g,
                 v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(JsMath.Cos(th), 2) * Math.Max(1, D * JsMath.Tan(th) - dz)));
-            if (rap)
+            if (cfg.PH3 != 0)
+            {
+                ge = g - AIR_KM * 16 * v * JsMath.Cos(th);
+                v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(JsMath.Cos(th), 2) * Math.Max(1, D * JsMath.Tan(th) - dz)));
+            }
+            else if (rap)
             {
                 ge = g - 0.0032 * 16 * v * JsMath.Cos(th);
                 v = Math.Sqrt((ge * D * D) / (2 * Math.Pow(JsMath.Cos(th), 2) * Math.Max(1, D * JsMath.Tan(th) - dz)));
@@ -562,7 +568,46 @@ namespace Hoops.Core
                 double h3v = Hypot(B.vx, B.vy), h3 = Util.T(h3v) ? h3v : 1;
                 B.wv = new double[] { (16 * B.vy) / h3, (-16 * B.vx) / h3, 0 };
             }
-            if (rap)
+            if (cfg.PH3 != 0)
+            {
+                // Physics v3 (engine and legacy alike): pre-simulate the same air step as bstep / the engine (quadratic drag
+                // + Magnus, then gravity, the spin's slow decay) and correct range and sideways error; an arc that would not
+                // get back down through the rim height gets more lift first
+                for (int it = 0; it < 6; it++)
+                {
+                    double x = x0, y = y0, z = z0, vx = B.vx, vy = B.vy, vz = B.vz, T2 = 0, w0 = B.wv[0], w1 = B.wv[1], zm = z0;
+                    bool hit = false;
+                    double h = 1.0 / 120, wd = 1 / (1 + h * AIR_WD);
+                    while (T2 < 4)
+                    {
+                        AV[0] = vx; AV[1] = vy; AV[2] = vz; AV[3] = w0; AV[4] = w1; AV[5] = 0;
+                        airAcc(h);
+                        vx = AV[0];
+                        vy = AV[1];
+                        vz = AV[2] - g * h;
+                        double qz = z;
+                        x += vx * h;
+                        y += vy * h;
+                        z += vz * h;
+                        w0 *= wd;
+                        w1 *= wd;
+                        T2 += h;
+                        if (z > zm) zm = z;
+                        if (qz >= 100 && z < 100 && vz < 0) { hit = true; break; }
+                        if (z < 0) break;
+                    }
+                    if (!hit || zm < 103)
+                    {
+                        B.vz *= 1.06;
+                        continue;
+                    }
+                    B.vx += ((tx - x) / Math.Max(0.2, T2)) * 0.9;
+                    B.vy += ((ty - y) / Math.Max(0.2, T2)) * 0.9;
+                    double h4v = Hypot(B.vx, B.vy), h4 = Util.T(h4v) ? h4v : 1;
+                    B.wv = new double[] { (16 * B.vy) / h4, (-16 * B.vx) / h4, 0 };
+                }
+            }
+            else if (rap)
             {
                 // Pre-simulate drag + Magnus and correct range and sideways error so perfect timing still goes in.
                 for (int it = 0; it < 6; it++)
@@ -593,6 +638,7 @@ namespace Hoops.Core
             }
             B.gn = gr ? 1 : 0;
             B.gd = gr && mk && hum ? 1 : 0; // a human's green (CPU odds stay calibrated with the iron): greenGuide (bstep) sees it through the iron, bodies and spin drift
+            if (cfg.PH3 != 0 && !Util.T(B.gd) && !lay && !isFT) ph3Short(p); // (Physics v3: tired legs - never a human's green)
             B.ghx = hx;
             if (gr && hum) txtW("GREEN!", p.x, p.y, 95, "#2ecc71");
             if (gr && PREDICT == 0 && !(p.celT > 0))

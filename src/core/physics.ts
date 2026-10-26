@@ -1,9 +1,11 @@
 // Rapier ball world: floor, walls, glass backboards, 24-capsule rims, and (optionally) kinematic player capsules.
 // Units are game units (10 = 1 ft), z up, g = 320. Initialised asynchronously; RAP is null until ready.
 import RAPIER from "@dimforge/rapier3d-compat";
-import { HXs, HY, RR, BR, g, type Player, type Ball } from "./sim";
+import { HXs, HY, RR, BR, g, cfg, SURF, surf, AV, airAcc, airV3, AIR_WD, ph3RimHit, type Player, type Ball } from "./sim";
 
-export let RAP: null | { w: any; bb: any; R: typeof RAPIER; pl: any[] } = null;
+/** fl floor, rims [collider, back iron?], gl glass colliders (Physics v3 swaps their materials by surface), mk = the
+ *  material set now in use (-1 = v5.4). */
+export let RAP: null | { w: any; bb: any; bc: any; R: typeof RAPIER; pl: any[]; fl: any; rims: [any, boolean][]; gl: any[]; mk: number } = null;
 let initP: Promise<void> | null = null;
 
 export function rapInit(): Promise<void> {
@@ -13,7 +15,9 @@ export function rapInit(): Promise<void> {
       const R2 = RAPIER,
         w = new R2.World({ x: 0, y: 0, z: -g }),
         fix = (d: any) => w.createCollider(d);
-      fix(R2.ColliderDesc.cuboid(700, 500, 10).setTranslation(470, 250, -10).setRestitution(0.8).setFriction(0.6));
+      const fl = fix(R2.ColliderDesc.cuboid(700, 500, 10).setTranslation(470, 250, -10).setRestitution(0.8).setFriction(0.6)),
+        rims: [any, boolean][] = [],
+        gl: any[] = [];
       for (const [x, y, hx, hy] of [
         [-5, 250, 5, 500],
         [945, 250, 5, 500],
@@ -27,7 +31,7 @@ export function rapInit(): Promise<void> {
           sd = b ? 1 : -1,
           gx = bx + sd * 0.6;
         // glass (lively) inside the frame strip round its edge (duller), padding wrapped round the bottom edge (dead)
-        fix(R2.ColliderDesc.cuboid(0.6, 28.6, 19.3).setTranslation(gx, HY, 115.3).setRestitution(0.62).setFriction(0.3));
+        gl.push(fix(R2.ColliderDesc.cuboid(0.6, 28.6, 19.3).setTranslation(gx, HY, 115.3).setRestitution(0.62).setFriction(0.3)));
         fix(R2.ColliderDesc.cuboid(0.6, 30, 0.7).setTranslation(gx, HY, 135.3).setRestitution(0.42).setFriction(0.5));
         for (const sy of [-1, 1]) fix(R2.ColliderDesc.cuboid(0.6, 0.7, 20).setTranslation(gx, HY + sy * 29.3, 116).setRestitution(0.42).setFriction(0.5));
         fix(R2.ColliderDesc.cuboid(1.4, 30.5, 1.7).setTranslation(bx + sd * 0.4, HY, 94.3).setRestitution(0.08).setFriction(0.9));
@@ -47,18 +51,19 @@ export function rapInit(): Promise<void> {
             ang = Math.atan2(y1 - y0, x1 - x0) - Math.PI / 2;
           // the back quarter of the ring (toward the glass) sits on the bracket: deader iron (soft back-rim bounces drop)
           const back = (sd * ((x0 + x1) / 2 - hx)) / RR > 0.82;
-          fix(
+          const rc = fix(
             R2.ColliderDesc.capsule(Math.hypot(x1 - x0, y1 - y0) / 2, 0.55)
               .setTranslation((x0 + x1) / 2, (y0 + y1) / 2, 100)
               .setRotation({ x: 0, y: 0, z: Math.sin(ang / 2), w: Math.cos(ang / 2) })
               .setRestitution(back ? 0.4 : 0.55)
               .setFriction(back ? 0.45 : 0.4),
           );
+          rims.push([rc, back]);
         }
       }
       const bb = w.createRigidBody(R2.RigidBodyDesc.dynamic().setTranslation(470, 250, 50).setLinearDamping(0).setAngularDamping(0.3).setCcdEnabled(true));
-      w.createCollider(R2.ColliderDesc.ball(BR).setRestitution(0.72).setFriction(0.55).setDensity(0.02), bb);
-      RAP = { w, bb, R: R2, pl: [] };
+      const bc = w.createCollider(R2.ColliderDesc.ball(BR).setRestitution(0.72).setFriction(0.55).setDensity(0.02), bb);
+      RAP = { w, bb, bc, R: R2, pl: [], fl, rims, gl, mk: -1 };
     })
     .catch((e) => console.error("rapier off", e));
   return initP;
@@ -69,9 +74,24 @@ export function rapStep(dt: number, B: Ball) {
   const { w, bb } = RAP!,
     W = B.wv || [0, 0, 0],
     k = 0.0032;
-  B.vx *= 1 - 0.1 * dt;
-  B.vy *= 1 - 0.1 * dt;
-  B.vz += k * (W[0] * B.vy - W[1] * B.vx) * dt;
+  rapMat();
+  if (airV3()) {
+    // Physics v3: launch's pre-sim air step (quadratic drag + Magnus k (w x v)); Rapier adds gravity and decays the spin
+    AV[0] = B.vx;
+    AV[1] = B.vy;
+    AV[2] = B.vz;
+    AV[3] = W[0];
+    AV[4] = W[1];
+    AV[5] = W[2];
+    airAcc(dt);
+    B.vx = AV[0];
+    B.vy = AV[1];
+    B.vz = AV[2];
+  } else {
+    B.vx *= 1 - 0.1 * dt;
+    B.vy *= 1 - 0.1 * dt;
+    B.vz += k * (W[0] * B.vy - W[1] * B.vx) * dt;
+  }
   bb.setTranslation({ x: B.x, y: B.y, z: B.z }, true);
   bb.setLinvel({ x: B.vx, y: B.vy, z: B.vz }, true);
   bb.setAngvel({ x: W[0], y: W[1], z: W[2] }, true);
@@ -95,6 +115,20 @@ export function rapStep(dt: number, B: Ball) {
   B.a += Math.hypot(a.x, a.y, a.z) * dt * 0.5;
 }
 
+/** Physics v3 materials by surface (hardwood / street asphalt): floor bounce + grip (Average combine with the ball's
+ *  .72 / .55), rim iron (street stiffer), glass; the ball's air spin decay. Swapped only when the set changes. */
+function rapMat() {
+  const R = RAP!,
+    k = cfg.PH3 ? surf() : -1;
+  if (k === R.mk) return;
+  R.mk = k;
+  const s = k < 0 ? null : SURF[k];
+  R.fl.setRestitution(s ? 2 * s[0] - 0.72 : 0.8);
+  R.fl.setFriction(s ? 2 * s[1] - 0.55 : 0.6);
+  for (const [c, back] of R.rims) c.setRestitution(Math.min(0.9, (back ? 0.4 : 0.55) * (s ? s[3] : 1)));
+  for (const c of R.gl) c.setRestitution(s ? 0.62 - 2 * (0.6 - s[5]) : 0.62); // (wood: the v5.4 glass; a street board is deader)
+  R.bb.setAngularDamping(s ? AIR_WD : 0.3);
+}
 /** A hard hit bends the iron: the rim flex soaks up part of the rebound (restitution falls with the impact speed, up to
  *  -30% at 950 px/s), so a hard-thrown brick dies off the rim instead of flying; soft touches are unchanged. */
 function rimSoak(B: Ball, ux: number, uy: number, uz: number, dt: number) {
@@ -115,8 +149,18 @@ function rimSoak(B: Ball, ux: number, uy: number, uz: number, dt: number) {
       nz = nz0 / nl,
       vin = ux * nx + uy * ny + (uz - g * dt) * nz, // approach speed along the contact normal (< 0)
       vout = B.vx * nx + B.vy * ny + B.vz * nz;
+    if (cfg.PH3 && vin < 0 && vout > 0) {
+      // Physics v3: count the touch (make captions) and the shooter's touch takes some bounce out of his shot
+      ph3RimHit();
+      if (B.sh && B.tch) {
+        B.vx -= nx * vout * B.tch;
+        B.vy -= ny * vout * B.tch;
+        B.vz -= nz * vout * B.tch;
+        RAP!.bb.setLinvel({ x: B.vx, y: B.vy, z: B.vz }, true);
+      }
+    }
     if (vin > -250 || vout <= 0) continue;
-    const k = 0.3 * Math.min(1, (-vin - 250) / 700);
+    const k = 0.3 * Math.min(1, (-vin - 250) / 700) * (cfg.PH3 ? SURF[surf()][4] : 1);
     B.vx -= nx * vout * k;
     B.vy -= ny * vout * k;
     B.vz -= nz * vout * k;
@@ -131,7 +175,7 @@ function floorRoll(B: Ball, dt: number) {
     vh = Math.hypot(B.vx, B.vy);
   let k = 1;
   if (vh > 1e-9) {
-    k = Math.max(0, vh - 42 * dt) / vh;
+    k = Math.max(0, vh - (cfg.PH3 ? SURF[surf()][2] : 42) * dt) / vh; // (Physics v3: asphalt rolls out sooner)
     B.vx *= k;
     B.vy *= k;
   }

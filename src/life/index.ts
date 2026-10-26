@@ -278,7 +278,7 @@ function begin(l: S.Life, fresh = false) {
   buildShell();
   applySettings();
   try {
-    W = createWorld(canvas, { ql: V.QL });
+    W = createWorld(canvas, { ql: V.QL, npc: /[?&]lifetest\b/.test(location.search) ? 0 : undefined });
   } catch (e) {
     root.innerHTML = `<div class="scr"><div class="card"><h2>3D unavailable</h2><p class="note">LIFE needs WebGL. ${esc(String(e))}</p><button class="gh" onclick="location.reload()">Back</button></div></div>`;
     return;

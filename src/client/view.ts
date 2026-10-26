@@ -44,7 +44,7 @@ export const V = {
   ANNV: 2, // announcer voice: 2 AI (Piper voice bank, client/voice.ts; falls back to browser), 1 browser speech, 0 off
   MUSIC: 1, // dynamic arena music
   RUMBLE: 1, // gamepad rumble
-  CB: 0, // colorblind-safe meter colors
+  CB: 0, // meter palette (see THEME below)
   BIGM: 0, // bigger shot meter
   AUTO: 0, // auto-release assist (hold & release style)
   // H2K Super Resolution (render3d / fx3d / hsr.ts): 0 Off (native), 1 Auto (dynamic resolution), 2 Quality 67%,
@@ -55,6 +55,15 @@ export const V = {
   TFPS: 60, // dynamic-resolution target: 60 / 90 / 120 / 144 / 240, 0 = the display refresh ("Max")
   HZ: 0, // measured display refresh (rAF intervals); 0 = not measured yet
   FPSC: 0, // FPS counter on the HUD
+  // UI v6 (ui/settings.ts; saved in h2k_set): menu theme 0 dark / 1 light / 2 auto, text size 0..2, reduce motion
+  // (also no camera shake), high-contrast HUD, minimal HUD (score bug + meter only), sprint 0 hold / 1 toggle.
+  // CB (above) = meter palette 0 standard, 1 red-green safe, 2 blue-yellow safe, 3 monochrome.
+  THEME: 0,
+  TXT: 0,
+  RM: 0,
+  HC: 0,
+  MINHUD: 0,
+  SPT: 0,
   focusP: () => P[(CT[V.focus] || CT[0] || { idx: 0 }).idx],
 };
 /** HSR mode names and fixed internal scales (index = V.HSR). */
@@ -66,6 +75,14 @@ export const targetMs = () => Math.max(V.TFPS ? 1000 / V.TFPS : 0, 1000 / (V.HZ 
 export const hsrMode = () => (!V.HSR ? 0 : V.HSRM === 2 || (V.HSRM === 0 && V.QL === 0) ? 2 : 1);
 export const CAMN = ["Broadcast", "2K Style", "Baseline", "Player Lock"];
 export const MN = ["Arrow 2", "Bar (feet)", "Bar (head)", "Ring"];
+/** Shot meter palettes (V.CB): name, green window, fill inside the window, fill outside it, window band. Green stays
+ *  at the TOP of every meter; only the colours change. */
+export const PAL: { n: string; g: string; w: string; f: string; band: string }[] = [
+  { n: "Standard", g: "#2ecc71", w: "#1fd6c0", f: "#f5c542", band: "rgba(46,204,113,.75)" },
+  { n: "Red-green safe", g: "#4ea8ff", w: "#4ea8ff", f: "#ff9f1c", band: "rgba(78,168,255,.75)" },
+  { n: "Blue-yellow safe", g: "#ff3da6", w: "#ff3da6", f: "#20c4c4", band: "rgba(255,61,166,.75)" },
+  { n: "Monochrome", g: "#ffffff", w: "#ffffff", f: "#8a8a8a", band: "rgba(255,255,255,.85)" },
+];
 
 /** Project game coords to HUD pixels (960x540) for whichever renderer is active. */
 export function pr(x: number, y: number, z = 0): number[] {

@@ -18,7 +18,8 @@ const V = await pg.evaluate(async () => {
   document.getElementById("line").value = "Curry from downtown... BANG!";
   document.getElementById("say").click();
   document.getElementById("intro").click();
-  await new Promise((r) => setTimeout(r, 300));
+  await new Promise((r) => setTimeout(r, 1500)); // clips decode on demand: a decode failure flips voiceInfo().failed
+  if (window.__ASSETS.vi().failed) return "decode failed";
   return document.getElementById("info").textContent.startsWith("no full match") ? "nomatch" : "ok";
 });
 await pg.screenshot({ path: "docs/asset-lab.png" }).catch(() => {});
@@ -30,7 +31,7 @@ if (tex.length < 9) fails.push("texture sets loaded: " + tex.length);
 for (const [k, t] of tex) if (!t.ktx2 || !t.normal) fails.push(`tex ${k}: ktx2=${t.ktx2} normal=${t.normal}`);
 for (const k of ["city", "roads", "cars", "furniture"]) if (!(A.models[k] > 5)) fails.push("models " + k + ": " + A.models[k]);
 if (!A.voice || A.voice.failed || !(A.voice.c > 300)) fails.push("voice bank: " + JSON.stringify(A.voice));
-if (V !== "ok") fails.push("voice line did not match the bank");
+if (V !== "ok") fails.push("voice: " + V);
 if (!A.gpu || typeof A.gpu.tier !== "number") fails.push("detect-gpu: " + JSON.stringify(A.gpu));
 fails.push(...A.errors, ...errs.filter((e) => !/AudioContext|autoplay/i.test(e)));
 console.log(JSON.stringify({ ktx2: A.tex.ktx2, tex: tex.length, models: A.models, voice: A.voice, gpu: A.gpu && { tier: A.gpu.tier, gpu: A.gpu.gpu, type: A.gpu.type } }));

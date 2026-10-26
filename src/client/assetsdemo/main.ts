@@ -7,7 +7,7 @@ import { loadKit, model, KITS, type KitName } from "../models";
 import { voiceReady, aiSay, paIntro, paEvent, voiceInfo } from "../voice";
 import { gpuTierDetect } from "../gpudetect";
 
-const A: any = ((window as any).__ASSETS = { tex: {}, models: {}, voice: null, gpu: null, errors: [] as string[], done: false });
+const A: any = ((window as any).__ASSETS = { tex: {}, models: {}, voice: null, gpu: null, errors: [] as string[], done: false, vi: () => voiceInfo() });
 const cv = document.getElementById("c") as HTMLCanvasElement,
   info = document.getElementById("info")!;
 const R = new THREE.WebGLRenderer({ canvas: cv, antialias: true });

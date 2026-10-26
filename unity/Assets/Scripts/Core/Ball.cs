@@ -13,6 +13,7 @@ namespace Hoops.Core
         public double sh, sc, three, ptype, fl, ft, gt, gtc, gn, sc2, fb, kk, kick, q, abv, dcd, dh, dhd, dhn = 1, dk, dlat, dmv, dsw, dswd, dswk, dsz, dfl, dvv, dvx, dvy, stk, duckT, tgx, tgy, tgz, oop;
         public double? clk, ctl, cx, d0, dtop, dswf, fr0, lx, ly, rim, gl; // gl: when the shot touched the glass (airball check)
         public double[] wv = new double[3];
+        public double tch, rh, rhA = -9, scm; // physics v3: shooter's touch, rim touches (+ the flight age of the last), scramble squirts
         public PassPlan pp;
         public Ball Clone()
         {

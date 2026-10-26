@@ -26,6 +26,8 @@ namespace Hoops.Core
         public int PP = 2; // Pro Play level (shared with the TS sim: cfg.PP): 2 = v5.4 (Sim.PP2.cs: reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (Sim.UP.cs), 0 = the v5.2 game
         public int UP = 0; // Unity Pro Play upgrades (Sim.UP.cs / Pose.UP.cs): new moves, finishes, reactions. 0 = TS parity
         public double PHYS = 0.5; // ball physics feel with UP (Sim.PH.cs / BallSim): 0 arcade .. 1 sim (restitution, spin, contact strength)
+        public int PH3 = 1; // physics v3 (Sim.PH3.cs, shared with the TS cfg.PH3); 0 = v5.4 physics (A/B)
+        public int SHATTER = 1; // (physics v3) a monster dunk can very rarely shatter the backboard; 0 = never
         public string physics = "rapier"; // "rapier" | "legacy"
         public bool hand = true; // release from the rig's real hand (3D) instead of a fixed height (2D legacy)
         public bool replays = true;

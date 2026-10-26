@@ -438,6 +438,7 @@ namespace Hoops.Core
                     B.vz = Math.Max(B.vz, 0) + 55;
                     o.swpT = 0.3;
                     B.dfl = 2; // (really tipped)
+                    if (cfg.PH3 != 0) ph3DeflSpin(w);
                     statAdd("defl", 1);
                     upc("deflect");
                     if (isH(o) || isH(L)) txtW("DEFLECTED!", o.x, o.y, 95, "#9fe7ff");

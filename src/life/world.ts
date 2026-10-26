@@ -197,7 +197,7 @@ for (let zi = 0; zi < ZS.length; zi++) for (let xi = 0; xi < XS.length - 1; xi++
 for (let xi = 1; xi <= 2; xi++) for (let zi = 0; zi < ZS.length - 1; zi++) link(zi * 4 + xi, (zi + 1) * 4 + xi);
 link(16, 1), link(17, 2), link(18, 13), link(19, 14);
 
-export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number }) {
+export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: number }) {
   const QL = opt.ql;
   const R = new THREE.WebGLRenderer({ canvas, antialias: QL >= 1, powerPreference: "high-performance" });
   R.setPixelRatio(Math.min(devicePixelRatio || 1, [1, 1.25, 1.75][QL] || 1));
@@ -720,7 +720,7 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number }) {
     S.add(meRig.G);
   }
   const npcs: Npc[] = [];
-  const NPCN0 = [6, 10, 14][QL] || 10;
+  const NPCN0 = opt.npc ?? ([6, 10, 14][QL] || 10);
   const npcR = mkRng(123);
   const IDLE: [number, number, Act][] = [
     [court.x - 6, court.z - 10, "shoot"],
@@ -773,7 +773,7 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number }) {
   ring.visible = false;
 
   // ---------------- camera rig
-  const camS = { yaw: 0, pitch: 0.32, dist: 15, manualT: 0, fov: 58 };
+  const camS = { yaw: 0, pitch: 0.3, dist: 18, manualT: 0, fov: 58 };
   const T = new THREE.Vector3(),
     CP = new THREE.Vector3(),
     TMP = new THREE.Vector3();
