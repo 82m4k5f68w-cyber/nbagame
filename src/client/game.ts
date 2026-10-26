@@ -391,6 +391,7 @@ export function menu(focus?: string) {
           )
           .join("")}</ol></section>`;
     };
+  ov.style.setProperty("--tc", RO(SEL)[0]);
   const oppI = OPP < 0 ? -1 : OPP,
     a = rat(RO(SEL)[1]),
     b = oppI >= 0 ? rat(RO(oppI)[1]) : null,

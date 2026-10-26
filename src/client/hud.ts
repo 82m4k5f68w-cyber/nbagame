@@ -277,10 +277,10 @@ export function hud2() {
   }
   if (!p || V.MINHUD) return;
   const k = tk(),
-    W = 250 * k,
+    W = 286 * k,
     H = 50 * k,
-    x0 = 12,
-    y0 = 528 - H,
+    x0 = 948 - W,
+    y0 = 520 - H,
     col = PC[p.tm] || "#ff6a1f";
   X.save();
   plate(x0, y0, W, H, 8);
@@ -312,12 +312,12 @@ export function hud2() {
   X.fillStyle = "#c9cfe8";
   X.fillText(`${p.stt.pts} PTS · ${p.stt.reb} REB · ${p.stt.ast} AST · ${p.pf} PF`, x0 + 13, y0 + H - 9 * k);
   const en = p.en == null ? 1 : p.en,
-    bx = x0 + W - 70 * k,
+    bx = x0 + W - 62 * k,
     by = y0 + H - 15 * k;
   X.fillStyle = "rgba(255,255,255,.15)";
-  X.fillRect(bx, by, 58 * k, 5);
+  X.fillRect(bx, by, 50 * k, 5);
   X.fillStyle = en > 0.6 ? "#2ee07a" : en > 0.35 ? "#ffc83d" : "#ff5d5d";
-  X.fillRect(bx, by, 58 * k * en, 5);
+  X.fillRect(bx, by, 50 * k * en, 5);
   X.font = FU(700, 8 * k);
   X.fillStyle = "#8d95b8";
   X.fillText("ENERGY", bx, by - 3);
@@ -326,9 +326,9 @@ export function hud2() {
   X.font = FU(700, 10 * k);
   X.textAlign = "right";
   const rw = X.measureText(r).width + 18;
-  plate(948 - rw, 528 - 20 * k, rw, 20 * k, 10 * k, 0.6);
+  plate(948 - rw, y0 - 26 * k, rw, 20 * k, 10 * k, 0.6);
   X.fillStyle = "#c9cfe8";
-  X.fillText(r, 939, 528 - 6.5 * k);
+  X.fillText(r, 939, y0 - 12.5 * k);
   X.restore();
 }
 /** Floating texts + the touch stick (score bug: scoreBug). */
@@ -479,7 +479,7 @@ export function scoreBug(me: number) {
   X.font = FU(700, 10 * k);
   X.textAlign = "left";
   X.fillStyle = V.HC ? "#fff" : "rgba(255,255,255,.72)";
-  txt(s, 14, 528 - 54 * k - 6);
+  txt(s, 14, 530);
 }
 /** Name + OVR tags over the humans and the ball handler. */
 export function nameTags(list: (Player | null | undefined)[]) {
