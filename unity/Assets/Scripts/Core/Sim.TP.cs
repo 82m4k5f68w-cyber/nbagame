@@ -222,7 +222,7 @@ namespace Hoops.Core
             }
             else
             {
-                mv(p, hx + dir * 215, HY + sd * 185, 1.25);
+                mv(p, hx + dir * 200, HY + sd * 170, 1.25); // (the wing, just behind the line)
                 if (Hypot(def.x - p.x, def.y - p.y) > 34 && Hypot(p.x - hx, p.y - HY) > 180) { OFFS[ti] = p; tpCall(pl, t); }
             }
             return true;
@@ -265,7 +265,7 @@ namespace Hoops.Core
                 }
                 else
                 {
-                    mv(p, hx + dir * 245, HY - sd * 45, 1.05);
+                    mv(p, hx + dir * (p.c >= 76 ? 245 : 195), HY - sd * 45, 1.05); // (a non-shooter lifts to the elbow)
                     if (md > 40) OFFS[ti] = p;
                 }
                 return true;

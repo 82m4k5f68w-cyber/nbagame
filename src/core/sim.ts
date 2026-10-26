@@ -5634,7 +5634,7 @@ function tpUse(p: Player, pl: Play, t: number, hx: number, dir: number) {
     mv(p, s2.x + dir * 6, s2.y + sd * 10, 1.3);
     if (Math.hypot(p.x - s2.x - dir * 6, p.y - s2.y - sd * 10) < 22 || T - (pl.stT || 0) > 1.3) (pl.st = 2), (pl.stT = T), (STAT.stagger = (STAT.stagger || 0) + 1);
   } else {
-    mv(p, hx + dir * 215, HY + sd * 185, 1.25);
+    mv(p, hx + dir * 200, HY + sd * 170, 1.25); // (the wing, just behind the line)
     if (Math.hypot(def.x - p.x, def.y - p.y) > 34 && Math.hypot(p.x - hx, p.y - HY) > 180) (OFFS[t] = p), tpCall(pl, t);
   }
   return true;
@@ -5666,7 +5666,7 @@ function tpS2(p: Player, pl: Play, t: number, hx: number, dir: number) {
       mv(p, hx + dir * 35, HY - sd * 25, 1.2);
       if (Math.hypot(p.x - hx, p.y - HY) < 80 && md > 30) OFFS[t] = p;
     } else {
-      mv(p, hx + dir * 245, HY - sd * 45, 1.05);
+      mv(p, hx + dir * (p.c >= 76 ? 245 : 195), HY - sd * 45, 1.05); // (a non-shooter lifts to the elbow, not the arc)
       if (md > 40) OFFS[t] = p;
     }
     return true;

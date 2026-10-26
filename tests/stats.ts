@@ -11,6 +11,7 @@ const NBA = { astr: 63.5, ftr: 0.216, pace: 98.5, pts: 113.8, fga: 89.2, fgp: 47
   Math.random = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
   Object.assign(G.cfg, { NP: 5, physics: "rapier", hand: true, MYM: 0, DIFF: 2 });
   if (process.env.PP != null) G.cfg.PP = +process.env.PP; // (A/B the Pro Play pack: PP=0 | 1)
+  if (process.env.PH3 != null) G.cfg.PH3 = +process.env.PH3; // (A/B physics v3: PH3=0 | 1)
   if (process.env.TP != null) G.cfg.TP = +process.env.TP; // (A/B the team play pack: TP=0 | 1)
   if (process.env.DIFF != null) G.cfg.DIFF = +process.env.DIFF; // (CPU coach IQ / difficulty 0..3)
   G.cfg.input = () => ({ dx: 0, dy: 0 });
@@ -114,6 +115,7 @@ const NBA = { astr: 63.5, ftr: 0.216, pace: 98.5, pts: 113.8, fga: 89.2, fgp: 47
   console.log(Object.entries(CTX).sort((a, b) => b[1][0] - a[1][0]).map(([k, [n, e]]) => `${k}:${n} (${(e / n).toFixed(1)}s)`).join("  "));
   console.log(Object.entries(KS).map(([k, [n, m, c]]) => `${k}: ${n} att ${((100 * m) / n).toFixed(0)}% cw ${(c / n).toFixed(2)}`).join("  "));
   console.log("STAT", JSON.stringify(G.STAT), "FTA total", T.fta * 2);
+  if (G.cfg.PH3) console.log("PH3C", JSON.stringify(G.PH3C));
   console.log("spacing: two teammates within 7 ft (no screen)", ((SPC.crowd / SPC.t) * 100).toFixed(0) + "% of half-court ticks; mean nearest teammate", (SPC.nn / SPC.t / 10).toFixed(1), "ft; offensive players in the paint", (SPC.paint / SPC.t).toFixed(2));
   console.log("ORtg (pts/100 poss):", ((100 * T.pts) / T.teams / (T.poss / (T.teams / 2))).toFixed(1), "NBA 114.5");
 })();

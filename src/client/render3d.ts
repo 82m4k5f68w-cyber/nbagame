@@ -1433,6 +1433,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       // tests / FPS counter: HSR state (mode, scale, internal + output size), last frame's draw calls, the ladder rung
       stats: () => ({ hsr: { ...fx.hsr, core: undefined, st: fx.hsr.core ? fx.hsr.core.stats : null }, calls: R.info.render.calls, tris: R.info.render.triangles, lvl, pr: R.getPixelRatio(), dyn: fx.dyn.length }),
       hsrReset: () => fx.hsr.core && fx.hsr.core.reset(),
+      hsrProbe: (u: number, v: number) => (fx.hsr.core ? fx.hsr.core.probe(u, v) : null),
       /** tests: pin the frame-rate ladder at a rung (equal-scene comparisons on a slow software GPU); -1 = release */
       pin: (l: number) => ((pinned = l >= 0), pinned && (lvl = l), fxLevel()),
       dbg: () => ({ refs: refs.map((r) => [Math.round(r.x), Math.round(r.y), r.gl.G.visible]), street: streetOn, cs: !!CS.react }),

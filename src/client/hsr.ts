@@ -215,6 +215,8 @@ export interface HSR {
   reset(): void;
   sharp: number; // RCAS strength 0 (none) .. 1 (max)
   stats: { resets: number; frames: number; jitter: number[] };
+  /** debug: the last prep texel at uv (motion x/y in uv, view depth now, expected previous depth) */
+  probe(u: number, v: number): number[];
   dispose(): void;
 }
 
@@ -423,6 +425,12 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
     },
     reset() {
       doReset = true;
+    },
+    probe(u, v) {
+      const rt = prep[1 - cur],
+        b = new Uint16Array(4);
+      R.readRenderTargetPixels(rt, Math.floor(u * rt.width), Math.floor(v * rt.height), 1, 1, b);
+      return Array.from(b, (h) => THREE.DataUtils.fromHalfFloat(h));
     },
     dispose() {
       [...hist, ...prep, vel, up].forEach((r) => r.dispose());
