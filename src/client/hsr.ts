@@ -208,8 +208,11 @@ export interface HSR {
   /** jitter the camera's projection for this frame (temporal) */
   jitter(cam: THREE.PerspectiveCamera, inW: number, inH: number): void;
   unjitter(cam: THREE.PerspectiveCamera): void;
-  /** temporal resolve + RCAS to the screen */
-  temporal(col: THREE.Texture, depth: THREE.Texture, inW: number, inH: number, cam: THREE.PerspectiveCamera, S: THREE.Scene, dyn: THREE.Object3D[]): void;
+  /** temporal, part 1 - call right after the scene pass, while its depth is intact (later full-screen passes
+   *  auto-clear the buffers they render into): camera-cut check, velocity pass, per-pixel motion + depth */
+  pre(depth: THREE.Texture, inW: number, inH: number, cam: THREE.PerspectiveCamera, dyn: THREE.Object3D[]): void;
+  /** temporal, part 2 - after the effect chain: resolve into the history + RCAS to the screen */
+  temporal(col: THREE.Texture, inW: number, inH: number): void;
   /** EASU + RCAS to the screen */
   spatial(col: THREE.Texture, inW: number, inH: number): void;
   reset(): void;
@@ -283,6 +286,7 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
     doReset = true,
     prevOk = false,
     jittered = false,
+    preOk = false,
     havePrev = false,
     lastIn = "";
   const fit = (rt: THREE.WebGLRenderTarget, w: number, h: number) => {
@@ -324,11 +328,7 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
       cam.projectionMatrixInverse.copy(projI0);
       jittered = false;
     },
-    temporal(col, depth, inW, inH, cam, S, dyn) {
-      R.getDrawingBufferSize(sz);
-      const W = sz.x,
-        H = sz.y;
-      if (fit(hist[0], W, H) || fit(hist[1], W, H)) doReset = true;
+    pre(depth, inW, inH, cam, dyn) {
       const k = inW + "x" + inH;
       if (k !== lastIn) (lastIn = k), (prevOk = false);
       fit(prep[0], inW, inH);
@@ -380,6 +380,23 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
       q.material = prepM;
       R.setRenderTarget(pr);
       q.render(R);
+      prevVP.copy(curVP);
+      havePrev = true;
+      R.autoClear = ac;
+      R.setClearColor(cc, ca);
+      R.setRenderTarget(rt0);
+      preOk = true;
+    },
+    temporal(col, inW, inH) {
+      if (!preOk) return api.spatial(col, inW, inH);
+      preOk = false;
+      R.getDrawingBufferSize(sz);
+      const W = sz.x,
+        H = sz.y;
+      if (fit(hist[0], W, H) || fit(hist[1], W, H)) doReset = true;
+      const rt0 = R.getRenderTarget(),
+        pr = prep[cur],
+        pp = prep[1 - cur];
       // 3) resolve at output res into the history (MRT)
       const hNew = hist[cur],
         hOld = hist[1 - cur];
@@ -401,13 +418,9 @@ export function makeHSR(R: THREE.WebGLRenderer): HSR {
       rcas(hNew.textures[0], null);
       if (doReset) api.stats.resets++;
       api.stats.frames++;
-      prevVP.copy(curVP);
-      havePrev = true;
       prevOk = true;
       doReset = false;
       cur = 1 - cur;
-      R.autoClear = ac;
-      R.setClearColor(cc, ca);
       R.setRenderTarget(rt0);
     },
     spatial(col, inW, inH) {

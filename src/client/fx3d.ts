@@ -14,9 +14,12 @@ import { makeHSR, type HSR } from "./hsr";
 /** The scene pass, remembering which composer buffer holds this frame's depth (HSR temporal reads it). */
 class ScenePass extends RenderPass {
   last: THREE.WebGLRenderTarget | null = null;
+  /** runs right after the scene is drawn (HSR temporal reads the depth here: later passes auto-clear it) */
+  after: ((rt: THREE.WebGLRenderTarget) => void) | null = null;
   render(r: THREE.WebGLRenderer, w: THREE.WebGLRenderTarget, rb: THREE.WebGLRenderTarget, dt?: number, mask?: boolean) {
     this.last = rb;
     super.render(r, w, rb, dt as any, mask as any);
+    if (this.after) this.after(rb);
   }
 }
 
@@ -151,12 +154,17 @@ export function makeFx(R: THREE.WebGLRenderer, S: THREE.Scene, cam: THREE.Perspe
       const w = Math.floor(C.renderTarget1.width),
         h = Math.floor(C.renderTarget1.height);
       try {
-        if (hm === 1) core.jitter(cam, w, h);
+        if (hm === 1) {
+          core.jitter(cam, w, h);
+          const c = core;
+          rp.after = (rt) => c.pre(rt.depthTexture!, w, h, cam, fx.dyn);
+        }
         C.render();
         const col = C.readBuffer.texture;
-        if (hm === 1) core.temporal(col, (rp.last || C.renderTarget1).depthTexture!, w, h, cam, S, fx.dyn);
+        if (hm === 1) core.temporal(col, w, h);
         else core.spatial(col, w, h);
       } finally {
+        rp.after = null;
         core.unjitter(cam);
         [ao.enabled, dof.enabled, bloom.enabled, mb.enabled, gr.enabled, aa.enabled] = keep;
       }

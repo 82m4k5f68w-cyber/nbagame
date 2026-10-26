@@ -12,19 +12,19 @@ pg.on("pageerror", (e) => errs.push(String(e)));
 const ev = (f, a) => pg.evaluate(f, a);
 const click = (sel) => ev((s) => document.querySelector(s).click(), sel);
 // SwiftShader frames are slow and the panels fade in: wait for presence, not visibility
-const waitFor = (sel, ms = 10000) => pg.waitForFunction((s) => !!document.querySelector(s), sel, { timeout: ms, polling: 100 });
+const waitFor = (sel, ms = 60000) => pg.waitForFunction((s) => !!document.querySelector(s), sel, { timeout: ms, polling: 100 });
 const shot = async (n) => SHOTS && (await pg.screenshot({ path: path.join(SHOTS, n + ".png") }));
 const fails = [];
 const ok = (c, m) => (c ? console.log("ok  ", m) : (fails.push(m), console.log("FAIL", m)));
 await pg.goto("file://" + path.resolve("dist/hoops2k27-hub.html") + "?life&nointro&lifetest");
-await waitFor("#life [data-new]", 30000);
+await waitFor("#life [data-new]");
 await shot("01-title");
 await click("#life [data-new='0']");
 await pg.fill("#cn", "Test Kid");
 await click("[data-ar='Sharpshooter']");
 await shot("02-create");
 await click("#cgo");
-await waitFor("#life .cut button", 120000);
+await waitFor("#life .cut button");
 await shot("03-dayone");
 await click("#life .cut button");
 await pg.waitForFunction(() => window.H2K_LIFE && H2K_LIFE.mode === "world", null, { polling: 100, timeout: 30000 });
@@ -47,27 +47,27 @@ await pg.waitForTimeout(300);
 const prompt = await ev(() => !document.querySelector("#life .prompt").hidden && document.querySelector("#life .prompt").textContent);
 ok(prompt && /Central High/.test(prompt), "door prompt at Central High: " + prompt);
 await pg.keyboard.press("KeyE");
-await waitFor("#life #lq", 20000);
+await waitFor("#life #lq");
 const lesson = await ev(() => document.querySelector("#life .slide").textContent);
 ok(lesson.length > 20, "lesson slide (offline): " + lesson.slice(0, 50));
 await shot("05-lesson");
 await click("#life #lq");
 let answered = 0;
 for (let i = 0; i < 5; i++) {
-  await waitFor("#life .ans button", 5000).catch(async (e) => {
+  await waitFor("#life .ans button").catch(async (e) => {
     console.log("DBG0", i, await ev(() => ({ html: document.querySelector("#life .scr") && document.querySelector("#life .scr").innerText.slice(0, 300), mode: H2K_LIFE.mode })));
     throw e;
   });
   if (i === 0) await shot("06-quiz");
   await pg.keyboard.press("Digit" + ((i % 4) + 1));
-  await waitFor("#life #qn", 5000).catch(async (e) => {
+  await waitFor("#life #qn").catch(async (e) => {
     console.log("DBG", i, await ev(() => ({ a: document.activeElement && document.activeElement.outerHTML.slice(0, 80), qx: document.querySelector("#qx") && document.querySelector("#qx").innerHTML, mode: H2K_LIFE.mode, n: document.querySelectorAll("#life .scr").length })));
     throw e;
   });
   answered++;
   await click("#life #qn");
 }
-await waitFor("#life .scr [data-o='__x']", 5000);
+await waitFor("#life .scr [data-o='__x']");
 const cls = await ev(() => ({ sc: H2K_LIFE.L.courses[0].sc.length, v: H2K_LIFE.L.courses[0].sc[0]?.v, hw: H2K_LIFE.L.courses[0].hw, t: H2K_LIFE.L.t, txt: document.querySelector("#life .scr h2").textContent }));
 ok(answered === 5 && cls.sc === 1 && cls.v >= 0 && cls.hw >= 0 && cls.t >= 600, "class: 5 answers, grade " + cls.txt + " recorded, homework set, clock at 10:00+");
 await shot("07-grade");
@@ -75,7 +75,7 @@ await click("#life .scr [data-o='__x']");
 await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, timeout: 10000 });
 // phone: calendar + Hoopr post with replies
 await pg.keyboard.press("KeyP");
-await waitFor("#life .phone.on", 5000);
+await waitFor("#life .phone.on");
 await click("#life .phone .lock");
 await waitFor("#life [data-app='cal']");
 await shot("08-phone");
@@ -107,7 +107,7 @@ await ev(() => {
 });
 await pg.waitForTimeout(300);
 await pg.keyboard.press("KeyE");
-await waitFor("#life .scr [data-o='sleep']", 10000);
+await waitFor("#life .scr [data-o='sleep']");
 await shot("11-home");
 await click("#life .scr [data-o='sleep']");
 await pg.waitForFunction(() => H2K_LIFE.L.t >= 1440 + 7 * 60, null, { polling: 100, timeout: 10000 });
@@ -125,7 +125,7 @@ await ev((g) => {
 }, g);
 await pg.waitForTimeout(400);
 await pg.keyboard.press("KeyE");
-await waitFor("#life .scr [data-o='play']", 15000);
+await waitFor("#life .scr [data-o='play']");
 await shot("12-pregame");
 await click("#life .scr [data-o='play']");
 await pg.waitForFunction(() => window.H2K && window.H2K.G && window.H2K.G.S === "play", null, { polling: 100, timeout: 180000 });
@@ -149,10 +149,10 @@ await ev(() => {
     for (let i = 0; i < 30 && G.S === "play"; i++) G.upd(1 / 60);
   }
 });
-await waitFor("#lifeback", 60000);
+await waitFor("#lifeback");
 await shot("14-final");
 await click("#lifeback");
-await waitFor("#life .scr h2", 20000);
+await waitFor("#life .scr h2");
 const pgm = await ev(() => ({ txt: document.querySelector("#life .scr h2").textContent, gp: H2K_LIFE.L.line.gp, w: H2K_LIFE.L.team.w, life: getComputedStyle(document.getElementById("life")).display, idle: window.H2K.G && true, feed: H2K_LIFE.L.feed.length, res: H2K_LIFE.L.cal.find((e) => e.k === "game").res }));
 ok(/WIN/.test(pgm.txt) && pgm.gp === 1 && pgm.w === 1 && pgm.life !== "none" && pgm.res && pgm.res.played, "back in LIFE: " + pgm.txt + ", game booked (1 GP, W)");
 await shot("15-postgame");

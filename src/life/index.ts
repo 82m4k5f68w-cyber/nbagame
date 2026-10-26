@@ -51,7 +51,8 @@ let raf = 0,
   accMin = 0,
   saveAcc = 0,
   hudAcc = 0,
-  movedFt = 0;
+  movedFt = 0,
+  coverN = 0;
 const KEYS: Record<string, number> = {};
 const TOUCH = { id: -1, cx: 0, cy: 0, x: 0, y: 0, on: false, sprint: false, look: -1, lx: 0, ly: 0 };
 let near: { p: Place | null; npc: any } = { p: null, npc: null };
@@ -335,7 +336,8 @@ function loop(now: number) {
   L.pos.z = W!.P.z;
   L.pos.f = W!.P.f;
   (window as any).__lifePos = L.pos;
-  W!.render();
+  // a panel covers the town: redraw it rarely (the blurred backdrop barely changes)
+  if (free || ++coverN % 20 === 0) W!.render();
   hudAcc += dt;
   if (hudAcc > 0.2) {
     hudAcc = 0;
