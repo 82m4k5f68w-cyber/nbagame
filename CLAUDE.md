@@ -599,7 +599,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   win%, GPA bonus, followers) -> `projPick`. Followers `followerGain` by perf/fame/highlights; `DEALS` at 2K..500K
   (none in HS). `eat` (fast-food streak = less energy), `workout` (`gainOf` diminishing, overtraining injury),
   `sleep` (to `set.alarm`, quality), `dailyTick` (paychecks, deals, league results, scripted texts).
-- `questions.ts` + `qbank.ts`: procedural math by level 0..4 (17 kinds, answers computed) + 216 handwritten rows
+- `questions.ts` + `qbank.ts`: procedural math by level 0..4 (17 kinds, answers computed) + 313 handwritten rows
   (english/history/science/econ/psych/art/cs/math word problems, bands HS / yr1-2 / yr3-4); `validQ` screens AI too.
 - `ai.ts`: artifact `sample` capability (`claude.use("sample")`, null off claude.ai) - `askJSON(key, prompt)` cached,
   45 s timeout, `not_granted` disables, `rate_limited` backs off 90 s. Used on class start (lesson + quiz,

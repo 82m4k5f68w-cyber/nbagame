@@ -26,6 +26,10 @@ fi
 
 if want python; then
   echo "== python venv $T/venv"
+  # MediaPipe Tasks needs EGL/GLES even on CPU (Debian/Ubuntu); harmless when present or apt is unavailable
+  if command -v apt-get >/dev/null && ! ldconfig -p | grep -q libEGL.so.1; then
+    apt-get install -y -qq libegl1 libgles2 libgl1 >/dev/null 2>&1 || (apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq libegl1 libgles2 libgl1 >/dev/null 2>&1) || true
+  fi
   [ -x "$T/venv/bin/python" ] || python3 -m venv "$T/venv"
   "$T/venv/bin/pip" install -q --upgrade pip
   "$T/venv/bin/pip" install -q $PY_PKGS
