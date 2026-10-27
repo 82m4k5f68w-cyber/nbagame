@@ -287,7 +287,7 @@ function begin(l: S.Life, fresh = false) {
   W.setLook(look());
   if (fresh || (!L.pos.x && !L.pos.z)) {
     const d = doorOf(placeById(bedOf(L.stage))!);
-    W.put(d.x, d.z - 3, -Math.PI / 2);
+    W.put(d.x - Math.cos(d.f) * 3, d.z - Math.sin(d.f) * 3, d.f + Math.PI);
   } else W.put(L.pos.x, L.pos.z, L.pos.f);
   resize();
   addEventListener("resize", resize);
@@ -354,7 +354,7 @@ function lateNight() {
   if (m >= 2 * 60 && m < 5 * 60 && mode === "world") {
     fade(() => {
       const d = doorOf(placeById(bedOf(L.stage))!);
-      W!.put(d.x, d.z - 3, -Math.PI / 2);
+      W!.put(d.x - Math.cos(d.f) * 3, d.z - Math.sin(d.f) * 3, d.f + Math.PI);
       S.sleep(L);
       L.energy = Math.min(L.energy, 55);
       L.mood = clamp(L.mood - 10, 0, 100);
@@ -416,7 +416,21 @@ function drawMini() {
     rot = -Math.PI / 2 - Math.atan2(-Math.cos(yaw), -Math.sin(yaw));
   drawMap(miniC, L, W.P, target, 3.4, rot);
 }
+const seenLog = new WeakSet<object>();
+let logInit = false;
+/** New log entries that deserve Hoopr posts (rumours, trades). */
+function logPosts() {
+  if (!logInit) (logInit = true), L.log.forEach((e) => seenLog.add(e));
+  for (const e of L.log) {
+    if (seenLog.has(e)) continue;
+    seenLog.add(e);
+    if (e.k === "rumor") PH.event({ k: "rumor" });
+    else if (e.k === "trade") PH.event({ k: "news", text: `BREAKING: ${L.p.n} ${e.d}.` });
+    else if (e.k === "fa") PH.event({ k: "news", text: `${L.p.n} ${e.d}. 🖊️` });
+  }
+}
 function notes() {
+  logPosts();
   for (const n of L.notes)
     if (!shownNotes.has(n)) {
       shownNotes.add(n);
@@ -1091,12 +1105,47 @@ function postgame(p: Place, ev: S.Ev, r: S.GameRes, xp: number) {
    <h2 style="font-size:44px;margin:4px 0;color:${r.won ? "#ffd23f" : "#ff8a6b"}">${r.won ? "WIN" : "LOSS"} ${r.us}-${r.them}</h2>${big ? `<p><span class="tag y">🏆 ${big}</span></p>` : ""}
    ${r.played ? `<p style="font:800 18px system-ui">${r.pts} PTS · ${r.reb} REB · ${r.ast} AST${r.blk ? " · " + r.blk + " BLK" : ""} · ${r.fgm}-${r.fga} FG · ${r.tpm}-${r.tpa} 3P</p><p>Game grade <b style="color:#ffd23f;font-size:22px">${r.grade || "C"}</b>${r.hl.length ? " · " + r.hl.map((h) => ({ dunk: "💥 dunk", gamewinner: "🧊 game-winner", airball: "😬 airball", block: "🛑 block", three: "🎯 three", tech: "🟥 tech", foulout: "🚫 fouled out" } as any)[h] || h).join(" · ") : ""}</p>` : ""}
    <p class="note">${xp ? `+${xp} XP${lv ? ` · <b style="color:#ffd23f">LEVEL UP! +${lv * 2} skill points (Stats app)</b>` : ""} · ` : ""}👥 ${kfmt(L.followers)} followers · Record ${L.team.w}-${L.team.l}</p>
-   <div class="row"><button class="go" data-o="__x">Continue ▶</button><button class="gh" id="pgh">📱 See Hoopr</button></div>`);
+   <div class="row"><button class="go" data-o="__x">Continue ▶</button>${r.played && L.stage !== "hs" ? '<button class="gh" id="pgp">🎤 Press conference</button>' : ""}<button class="gh" id="pgh">📱 See Hoopr</button></div>`);
   void f0;
+  const pc = root.querySelector("#pgp") as HTMLElement | null;
+  if (pc) pc.onclick = () => press(p, ev, r);
   on(".scr [data-o]", () => fade(() => leave(p), 200));
   (root.querySelector("#pgh") as HTMLElement).onclick = () => (fade(() => leave(p), 200), setTimeout(() => PH.open("hoopr"), 650));
   if (champ) setTimeout(() => cut(ev.big === "state" ? "HIGH SCHOOL" : "MARCH MADNESS", big, ev.big === "state" ? `${esc(L.team.name)} are state champions. The whole town is outside the arena and your name is on every sign.` : `${esc(L.team.name)} cut down the nets. Confetti, a ladder, a piece of the net in your hand: national champions.`, "🏆 Celebrate ▶"), 400);
   else if (ev.rd && r.won) setTimeout(() => toast(`${esc(L.team.name)} advance to the ${S.ROUNDS[ev.big!][ev.rd!]}!`, "🔥"), 400);
+}
+/** Post-game press conference: two questions, three tones (humble / confident / spicy) -> reputation, followers,
+ *  coach + teammate chemistry. */
+const PQ = {
+  win: ["\"What was working for you tonight?\"", "\"Is this team for real?\""],
+  loss: ["\"What went wrong out there?\"", "\"Do you trust this group to turn it around?\""],
+  big: ["\"Did you know it was going in?\"", "\"Where does this rank in your career?\""],
+  bad: ["\"Rough night - what happened?\"", "\"Are you worried about your shot?\""],
+};
+function press(p: Place, ev: S.Ev, r: S.GameRes) {
+  const kind = r.hl.includes("gamewinner") ? "big" : r.won ? (r.pts >= 6 ? "win" : "win") : r.pts <= 2 ? "bad" : "loss";
+  const qs = PQ[kind as keyof typeof PQ];
+  let i = 0;
+  const A: [string, string, () => void][] = [
+    ["Humble", "\"It's about the team. My guys made it easy.\"", () => ((L.rep = clamp(L.rep + 2, 0, 100)), aff("coach", 2), aff("tm1", 3))],
+    ["Confident", "\"I put the work in. This is what happens.\"", () => (L.followers += Math.round(40 + L.followers * 0.01))],
+    ["Spicy", "\"Honestly? Some guys need to step up. Not me.\"", () => ((L.followers += Math.round(80 + L.followers * 0.03)), (L.rep = clamp(L.rep - 3, 0, 100)), aff("coach", -4), aff("tm1", -5))],
+  ];
+  const show = () => {
+    scr(`${head(p, "🎤 Press conference")}<div class="q">${esc(qs[i])}</div><div class="ans">${A.map((a, k) => `<button data-pq="${k}"><kbd>${k + 1}</kbd><b>${a[0]}:</b> ${esc(a[1])}</button>`).join("")}</div>`);
+    on(".scr [data-pq]", (b) => {
+      const a = A[+b.dataset.pq!];
+      a[2]();
+      if (a[0] === "Spicy") PH.event({ k: "news", text: `${L.p.n} after the game: ${a[1].replace(/\\"/g, "")} 👀🍿` });
+      if (++i < qs.length) return show();
+      S.advance(L, 15);
+      save();
+      toast("Press conference done", "🎤");
+      fade(() => leave(p), 200);
+    });
+    QKEY = (k) => (root.querySelector(`.scr [data-pq="${k}"]`) as HTMLElement | null)?.click();
+  };
+  show();
 }
 // ---------------------------------------------------------------- story decisions (Signing Day, declare, Draft Night)
 let deciding = false;
@@ -1115,7 +1164,7 @@ async function decide() {
     mode = "world";
     W!.setLook(look());
     const d = doorOf(placeById(bedOf(L.stage))!);
-    W!.put(d.x, d.z - 3, -Math.PI / 2);
+    W!.put(d.x - Math.cos(d.f) * 3, d.z - Math.sin(d.f) * 3, d.f + Math.PI);
     save();
     hud();
   }
@@ -1308,7 +1357,9 @@ async function story() {
         ["Carry the bags, sing the song 🎤", () => ((L.mood = clamp(L.mood - 4, 0, 100)), aff("tm1", 6), (L.rep = clamp(L.rep + 2, 0, 100)), "The vets love it. Hoopr loves it more.")],
         ["Politely pass", () => (aff("tm1", -6), "Awkward silence. The vets will remember."),],
       ]);
-    } else if (s0 === "allstar") await cut("NBA", "ALL-STAR", `${esc(L.p.n)} is an All-Star. The game is tonight at Summit Arena - check your calendar.`);
+    } else if (s0 === "parade") await cut("CHAMPIONS", "Parade Day", `Confetti cannons, a sea of fans, and ${esc(L.p.n)} on top of a bus holding the trophy. Somebody hands you a megaphone.`, "🏆 Soak it in ▶");
+    else if (s0 === "ring") await cut("BANNER NIGHT", "Ring Ceremony", `The banner rises to the rafters. One by one the names are called. Yours gets the loudest cheer. 💍`);
+    else if (s0 === "allstar") await cut("NBA", "ALL-STAR", `${esc(L.p.n)} is an All-Star. The game is tonight at Summit Arena - check your calendar.`);
     else if (s0 === "trade") await cut("BREAKING", "TRADED", `${esc(L.p.n)} is headed to the ${esc(L.team.name)}. New locker, new teammates, same town on the map.`);
     else if (s0.startsWith("award:")) {
       const a = s0.slice(6);

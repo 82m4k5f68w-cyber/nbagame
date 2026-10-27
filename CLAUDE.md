@@ -594,7 +594,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 ## LIFE (MyLife, `src/life/`; hub card "LIFE", `?life` opens it, `?lifetest` = no NPCs for SwiftShader tests)
 - Open-world life sim around the engine: HS senior (12 days, 5 games incl. STATE FINAL) -> Signing Day (3 offers from
   fictional colleges by OVR/PPG/GPA/followers) -> college years (14 days: classes, midterms + finals, practices, 5
-  games, last two = "March Madness") -> declare after any year (or year 4 + graduation) -> Draft Night (lottery-style
+  games, last three = March Madness rounds) -> declare after any year (or year 4 + graduation) -> Draft Night (lottery-style
   reveal, 30 picks; > 30 = two-way deal) -> NBA seasons (rookie scale by pick, weekly paychecks, endless seasons).
 - `state.ts` (DOM-free, tests/life.ts): one JSON `Life` (save slots `h2k_life_<0..2>`, `h2k_life` = last slot,
   `migrate()` fills new fields). Clock `t` = game minutes (day = t / 1440, weekday 0 = Mon); world time = 1 game
@@ -606,7 +606,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   win%, GPA bonus, followers) -> `projPick`. Followers `followerGain` by perf/fame/highlights; `DEALS` at 2K..500K
   (none in HS). `eat` (fast-food streak = less energy), `workout` (`gainOf` diminishing, overtraining injury),
   `sleep` (to `set.alarm`, quality), `dailyTick` (paychecks, deals, league results, scripted texts).
-- `questions.ts` + `qbank.ts`: procedural math by level 0..4 (17 kinds, answers computed) + 313 handwritten rows
+- `questions.ts` + `qbank.ts`: procedural math by level 0..4 (17 kinds, answers computed) + 329 handwritten rows
   (english/history/science/econ/psych/art/cs/math word problems, bands HS / yr1-2 / yr3-4); `validQ` screens AI too.
 - `ai.ts`: artifact `sample` capability (`claude.use("sample")`, null off claude.ai) - `askJSON(key, prompt)` cached,
   45 s timeout, `not_granted` disables, `rate_limited` backs off 90 s. Used on class start (lesson + quiz,
@@ -655,6 +655,20 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   `groupStudy` (library, Dre/Kofi), film sessions at practice (`BANK.film` basketball-IQ quiz -> coach trust + D),
   `role(L)` from coach trust (Starter / Sixth man / Bench: shown pregame, scales simulated lines), `standings` +
   phone League app (NBA table built in `beginYear`, `oppClub`).
+- Stage 3 (draft & NBA): pre-draft (`flags.predraft`) = `combine()` (measurements/tests from ratings -> `flags.combo`
+  stock change), 3 team interviews (`IVQ`, `interview()` -> `L.fav`: a team that loved you trades into +-5 picks in
+  `runDraft`), agent pick (`AGENTS`: fee / contract x / deal x / rep), mock-draft Hoopr posts. NBA season = 3 games +
+  playoffs `big` "po" (Conf Semis / Conf Finals / NBA Finals; title -> "parade" card, next season "ring" card), an
+  All-Star game event (`k "allstar"`, selected at `dailyTick` by PPG >= 12 or 60K followers; engine game with the
+  league's top 10 split into Team Gold / Team Ice in TM[14]/[15], you replace Gold's lowest), paychecks net of `TAX`
+  30% + agent fee, awards at `endYear` (ROY, MVP / All-NBA, DPOY, MIP, Finals MVP) queued as `award:` story cards
+  (MVP speech choice). Contract ends -> `pend "fa"`: `faOffers` (your team + 3, `marketValue`), counter with a slider
+  (`acceptChance`: 100% at the offer .. 0 at +40%, one try per team), `signFA` (new team -> table + coach reset).
+  `requestTrade` (Stats app) -> `tradeTo` a few days later. Away NBA games: `roadReturn` (hotel, home 9:00 next day).
+  `legacy()` vs `HOF` in Stats. Story queue `L.story` -> `story()` cut / choice cards when the player is free
+  (role meeting, rookie duty, All-Star, trade, awards, parade, ring). Rumour / trade / FA log entries feed Hoopr.
+  Test: tests/browser_life_career.mjs (Signing Day -> college -> declare -> combine/interviews/agent -> draft -> story
+  cards -> free agency).
 - Roadmap + ticks: docs/LIFE_FEATURES.md (status/next item at the top). Known gaps: one shared town for every stage
   (hometowns differ by name only), the player's hair override (`hs`) isn't used by the engine's game rig (formOf),
   no interiors in 3D (place screens), NPCs don't path around buildings (sidewalk graph only).

@@ -298,7 +298,7 @@ export function myPost(L: Life, text: string, seed = L.t): { post: Post; gain: n
     v = postValue(L, c.x) * (c.hit ? 0.2 : 1);
   const lk = Math.round(Math.max(3, L.followers) * 0.08 * v * (0.6 + r() * 0.8)),
     gain = Math.round(Math.max(1, L.followers * 0.004 * v * (0.5 + r())) + (r() < 0.1 ? L.followers * 0.02 : 0));
-  const p: Post = { id: "me" + L.t + "_" + PID++, t: L.t, h: handleOf(L), n: L.p.n, x: c.x, lk, rp: Math.round(lk * 0.1), k: "me", me: 1, re: replies(L, c.x, r, c.hit) };
+  const p: Post = { id: "me" + L.t + "_" + PID++, t: L.t, h: handleOf(L), n: L.p.n, x: c.x, lk, rp: Math.round(lk * 0.1), k: "me", me: 1, v: L.followers >= 100000 ? 1 : undefined, re: replies(L, c.x, r, c.hit) };
   L.followers += gain;
   pushPosts(L, [p]);
   return { post: p, gain };

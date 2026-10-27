@@ -458,6 +458,8 @@ export function beginYear(L: Life) {
     while (gd.includes(asd - y0)) asd++;
     L.cal.push({ id: `as${asd}`, day: asd, st: 20 * 60, en: 22 * 60, k: "allstar", place: "arena", title: "ALL-STAR GAME", s: 0 });
     L.story.push("role");
+    const last = L.hist[L.hist.length - 1];
+    if (last && last.stage === "nba" && last.aw.includes("NBA Champions")) L.story.unshift("ring");
   }
   L.cal.sort((a, b) => a.day - b.day || a.st - b.st);
 }
@@ -604,6 +606,8 @@ export function dailyTick(L: Life) {
     money(L, Math.round(gross * (1 - TAX - fee)), `Paycheck · ${NBA_NAMES[L.contract.team] || "team"} (after ${Math.round(TAX * 100)}% tax${fee ? " + " + Math.round(fee * 100) + "% agent" : ""})`);
   }
   if (wdOf(d) === 0) for (const dl of L.deals) money(L, dl.pay, "Endorsement · " + dl.b);
+  // trade-deadline chatter (NBA): rumours feed Hoopr
+  if (L.stage === "nba" && (d - L.y0) % 5 === 2) logE(L, "rumor", pick(mkRng(d + L.seed), ["trade rumours swirl around the " + L.team.name, "scouts from three teams at practice", "front office 'listening to offers'"]));
   // trade request: the front office finds a deal a few days later
   if (L.stage === "nba" && L.flags.treq && d >= L.y0 + 3) {
     const r = mkRng(hashStr("trade" + d + L.seed));
@@ -879,6 +883,7 @@ function bracket(L: Life, e: Ev, res: GameRes) {
     logE(L, "elim", "eliminated in the " + e.title.toLowerCase());
   } else if (e.rd === ROUNDS[e.big].length) {
     L.flags.champ = 1;
+    if (e.big === "po") L.story.push("parade");
     note(L, e.big === "mm" ? "NATIONAL CHAMPIONS! 🏆" : "STATE CHAMPIONS! 🏆", "🏆");
     logE(L, "title", e.big === "mm" ? "won the national title" : "won the state title");
   }
@@ -965,6 +970,7 @@ export function endYear(L: Life) {
   const aw: string[] = [];
   if (g != null && g >= 3.5 && L.stage !== "nba") aw.push("Dean's List");
   if (L.flags.champ) aw.push(L.stage === "hs" ? "State Champions" : L.stage === "college" ? "National Champions" : "NBA Champions");
+  if (L.flags.champ && L.stage === "nba" && L.line.gp && L.line.pts / L.line.gp >= 15) aw.push("Finals MVP");
   L.flags.champ = 0;
   const ppg = L.line.gp ? L.line.pts / L.line.gp : 0,
     wp = L.team.w / Math.max(1, L.team.w + L.team.l);

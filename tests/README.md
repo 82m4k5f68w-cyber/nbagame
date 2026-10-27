@@ -104,3 +104,5 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   pause -> settings / scouting, halftime, final + box score), gamepad menu navigation (stubbed pad), settings persist
   across a reload, accessibility toggles apply (text size, contrast, motion, light theme, palette, minimal HUD, sprint
   toggle), no console errors, phone 390x844: no horizontal scroll anywhere, TIP OFF stays on screen, tap targets >= 40 px.
+- browser_life_career.mjs — LIFE career flows: Signing Day (official visit, commit, major), League app, declare ->
+  combine -> interviews -> agent -> Draft Night board -> NBA story cards -> free agency (counter-offer + sign).

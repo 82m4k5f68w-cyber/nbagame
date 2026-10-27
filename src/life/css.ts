@@ -1,8 +1,12 @@
 // LIFE stylesheet (injected once; everything scoped under #life). Same palette as the hub: ink #06070e, panels
 // #0b0d1b, gold #ffd23f, orange #e8541e. Big-text (.big) and colour-blind (.cb) variants; reduced motion (.rm).
 export const LIFE_CSS = `
-#life{position:fixed;inset:0;z-index:40;background:#06070e;color:#fff;font:500 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;--gold:#ffd23f;--org:#e8541e;--ok:#3ddc84;--bad:#ff5a4f;--pn:#0b0d1bee;--ln:#ffffff1f}
-#life.cb{--ok:#4fb3ff;--bad:#ffb000}
+#life{position:fixed;inset:0;z-index:40;background:var(--ink-0,#06070e);color:var(--tx,#fff);font:500 14px var(--ff-ui,system-ui),-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;--gold:var(--acc,#ffd23f);--org:var(--acc-2,#e8541e);--pn:#0b0d1bee;--ln:var(--line,#ffffff1f)}
+#life{--okc:#3ddc84;--badc:#ff5a4f}
+#life .card h2,#life .cut .cc h1,#life .clk b,#life .big2,#life .lock .t{font-family:var(--ff-display,system-ui);letter-spacing:.02em}
+html[data-motion=reduce] #life *{animation:none!important;transition:none!important}
+html[data-contrast=high] #life{--pn:#000;--ln:#ffffff80}
+#life.cb{--okc:#4fb3ff;--badc:#ffb000}
 #life.big{font-size:17px}
 #life.rm *{animation:none!important;transition:none!important}
 #life canvas.w3{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -19,7 +23,7 @@ export const LIFE_CSS = `
 #life .bars em{font-style:normal;font-variant-numeric:tabular-nums;opacity:.85}
 #life .chips{display:flex;gap:6px;flex-wrap:wrap}
 #life .chip{background:var(--pn);border:1px solid var(--ln);border-radius:999px;padding:4px 10px;font:800 12px system-ui;font-variant-numeric:tabular-nums}
-#life .chip.warn{border-color:var(--bad);color:var(--bad)}
+#life .chip.warn{border-color:var(--badc);color:var(--badc)}
 #life .mini{position:absolute;right:12px;top:12px;z-index:5;width:170px;height:170px;border-radius:50%;overflow:hidden;border:2px solid #ffffff40;box-shadow:0 6px 24px #0008;background:#1d2a1d}
 #life .mini canvas{width:100%;height:100%;display:block}
 #life .obj{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:5;background:var(--pn);border:1px solid #ffd23f55;border-radius:12px;padding:7px 14px;font:700 13px system-ui;max-width:min(560px,calc(100vw - 420px));text-align:center;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -66,7 +70,7 @@ export const LIFE_CSS = `
 #life .gh:focus-visible{outline:2px solid var(--gold)}
 #life .note{opacity:.75;font-size:12.5px;line-height:1.45}
 #life .tag{display:inline-block;font:800 10px system-ui;letter-spacing:1.5px;padding:3px 7px;border-radius:6px;background:#ffffff1a}
-#life .tag.g{background:#3ddc8433;color:var(--ok)}#life .tag.r{background:#ff5a4f33;color:var(--bad)}#life .tag.y{background:#ffd23f33;color:var(--gold)}
+#life .tag.g{background:#3ddc8433;color:var(--okc)}#life .tag.r{background:#ff5a4f33;color:var(--badc)}#life .tag.y{background:#ffd23f33;color:var(--gold)}
 #life table{border-collapse:collapse;width:100%;font-size:13px}
 #life td,#life th{padding:5px 6px;border-bottom:1px solid #ffffff14;text-align:left}
 #life th{font:800 10px system-ui;letter-spacing:1.5px;opacity:.65}
@@ -74,8 +78,8 @@ export const LIFE_CSS = `
 #life .ans{display:grid;gap:8px}
 #life .ans button{text-align:left;background:#ffffff0d;border:1px solid #ffffff2a;border-radius:12px;padding:11px 14px;font:700 15px system-ui}
 #life .ans button:hover,#life .ans button:focus-visible{border-color:var(--gold);outline:none}
-#life .ans button.ok{background:#3ddc8433;border-color:var(--ok)}
-#life .ans button.no{background:#ff5a4f33;border-color:var(--bad)}
+#life .ans button.ok{background:#3ddc8433;border-color:var(--okc)}
+#life .ans button.no{background:#ff5a4f33;border-color:var(--badc)}
 #life .ans kbd{display:inline-block;width:22px;text-align:center;margin-right:8px;background:#ffffff22;border-radius:6px;font:800 12px system-ui}
 #life .slide{font:600 16px/1.5 system-ui;background:#ffffff0a;border:1px solid #ffffff1a;border-radius:16px;padding:16px 18px}
 #life .think{display:flex;align-items:center;gap:10px;font-weight:700;opacity:.85}

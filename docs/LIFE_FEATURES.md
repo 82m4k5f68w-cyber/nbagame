@@ -4,8 +4,10 @@ Rules for every item: fictional brands, schools, companies and celebrities only 
 likenesses); PG-13; works offline (AI via the artifact `sample` capability is optional, procedural fallback always);
 single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick items off here as they ship.
 
-> **Status / next item** (LIFE stage 1 shipped: `src/life/`, tests/life.ts + tests/browser_life.mjs).
-> `[x]` = shipped, `[~]` = partly (see CLAUDE.md LIFE section). **Next:** Tier 3 #56 draft combine, #57 team workouts, #58 mock drafts, #61-62 rookie events / camp, #65-69 road trips, coach role meeting, All-Star; then #70+ (trades, free agency, contract UI, agents, awards, playoffs).
+> **Status / next item** (LIFE stages 1-3 shipped: `src/life/`; tests/life.ts, tests/browser_life.mjs,
+> tests/browser_life_career.mjs). `[x]` = shipped, `[~]` = partly (see CLAUDE.md LIFE section). **Next:** Tier 4 fame &
+> media (#81 fame levels, #84 paparazzi, #90 verified badge, #92-93 press conferences, #94-100), then Tier 5 money /
+> brands. Unfinished in Tier 3: #62 camp battle, #63 full schedule, #75 options, #77 6MOY.
 
 ## Tier 1 - core loop (must ship first)
 1. [x] Character creation from My Player (face, hair, height, build, position, archetype)
@@ -67,31 +69,31 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 55. [x] Graduation ceremony if you finish 4 years
 
 ## Tier 3 - draft & NBA career
-56. Draft combine (measurements, athletic tests, drills)
-57. Pre-draft team workouts and interviews
-58. Mock drafts on social media
+56. [x] Draft combine (measurements, athletic tests, drills)
+57. [x] Pre-draft team workouts and interviews
+58. [x] Mock drafts on social media
 59. [x] Draft night (green room, lottery reveal, hat, handshake)
 60. [x] Rookie contract by draft slot
-61. Rookie hazing events (carry bags, sing)
-62. Training camp competition for minutes
+61. [x] Rookie hazing events (carry bags, sing)
+62. [~] Training camp competition for minutes
 63. [~] NBA schedule (82 games, simulated or played)
 64. [x] Sim-to-next-game option
-65. Road trips with hotel stays
-66. Team flights with airport scene
-67. Coach role meeting (starter, sixth man, role)
-68. All-Star voting and selection
-69. All-Star weekend events
-70. Trade deadline rumours and trades
-71. Free agency with offers and meetings
-72. Contract negotiation UI (years, money, options)
-73. [~] Agent choice (3 fictional agents with styles)
-74. Trade request option
+65. [~] Road trips with hotel stays
+66. [~] Team flights with airport scene
+67. [x] Coach role meeting (starter, sixth man, role)
+68. [x] All-Star voting and selection
+69. [x] All-Star weekend events
+70. [x] Trade deadline rumours and trades
+71. [x] Free agency with offers and meetings
+72. [x] Contract negotiation UI (years, money, options)
+73. [x] Agent choice (3 fictional agents with styles)
+74. [x] Trade request option
 75. Player option / team option decisions
-76. Max contract and supermax milestones
-77. Awards: ROY, MIP, 6MOY, DPOY, MVP, Finals MVP
-78. Playoffs and Finals with ring ceremony
-79. Championship parade
-80. Hall of Fame tracker
+76. [x] Max contract and supermax milestones
+77. [~] Awards: ROY, MIP, 6MOY, DPOY, MVP, Finals MVP
+78. [x] Playoffs and Finals with ring ceremony
+79. [x] Championship parade
+80. [x] Hall of Fame tracker
 
 ## Tier 4 - fame & media
 81. Fame levels (local -> national -> global)
