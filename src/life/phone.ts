@@ -468,10 +468,21 @@ export function drawMap(c: HTMLCanvasElement, l: S.Life, me: { x: number; z: num
       r2 = (W / 2) * 0.86,
       d = Math.hypot(dx, dz) * k;
     if (d > r2) {
+      // a gold triangle at the rim pointing out toward the objective
+      g.save();
+      g.translate(W / 2 + Math.cos(a) * r2, H / 2 + Math.sin(a) * r2);
+      g.rotate(a);
       g.fillStyle = "#ffd23f";
+      g.strokeStyle = "#111";
+      g.lineWidth = 2;
       g.beginPath();
-      g.arc(W / 2 + Math.cos(a) * r2, H / 2 + Math.sin(a) * r2, 7, 0, 6.3);
+      g.moveTo(14, 0);
+      g.lineTo(-8, 10);
+      g.lineTo(-8, -10);
+      g.closePath();
       g.fill();
+      g.stroke();
+      g.restore();
     }
   }
 }

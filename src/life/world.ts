@@ -764,9 +764,15 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
   }
 
   // ---------------- objective beacon
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 70, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  // normal blending: the old additive column vanished against a daytime sky
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 70, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide, fog: false }));
   beacon.visible = false;
   S.add(beacon);
+  // a solid gold arrow bobbing over the door, pointing down at it
+  const chev = new THREE.Mesh(new THREE.ConeGeometry(2.4, 4.5, 4), new THREE.MeshBasicMaterial({ color: 0xffd23f, fog: false }));
+  chev.rotation.x = Math.PI;
+  chev.visible = false;
+  S.add(chev);
   const ring = new THREE.Mesh(new THREE.RingGeometry(3.2, 4, 32), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.8, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   S.add(ring);
@@ -1028,11 +1034,24 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
       camS.dist = Math.max(7, Math.min(32, camS.dist * (1 + d * 0.001)));
     },
     beacon(x: number | null, z = 0) {
-      beacon.visible = ring.visible = x != null;
+      beacon.visible = ring.visible = chev.visible = x != null;
       if (x != null) {
         beacon.position.set(x, 35, z);
         ring.position.set(x, 0.7, z);
+        chev.position.x = x;
+        chev.position.z = z;
       }
+    },
+    /** Screen angle (radians, 0 = straight ahead / up, + = clockwise) from the player toward (x, z), and the distance in ft. */
+    navTo(x: number, z: number) {
+      let fx = P.x - cam.position.x,
+        fz = P.z - cam.position.z;
+      const fl = Math.hypot(fx, fz) || 1;
+      fx /= fl;
+      fz /= fl;
+      const dx = x - P.x,
+        dz = z - P.z;
+      return { a: Math.atan2(dx * -fz + dz * fx, dx * fx + dz * fz), d: Math.hypot(dx, dz) };
     },
     resize(w: number, h: number) {
       R.setSize(w, h, false);
@@ -1080,7 +1099,11 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
       key.position.set(P.x + sd.x * 200, sd.y * 200, P.z + sd.z * 200);
       key.target.position.set(P.x, 0, P.z);
       sky.position.copy(cam.position);
-      if (beacon.visible) (beacon.material as THREE.MeshBasicMaterial).opacity = 0.16 + Math.sin(tSec * 3) * 0.06;
+      if (beacon.visible) {
+        (beacon.material as THREE.MeshBasicMaterial).opacity = 0.34 + Math.sin(tSec * 3) * 0.08;
+        chev.position.y = 16 + Math.sin(tSec * 2.5) * 1.2;
+        chev.rotation.y = tSec * 1.5;
+      }
       last.min = min;
     },
     render() {

@@ -28,6 +28,11 @@ html[data-contrast=high] #life{--pn:#000;--ln:#ffffff80}
 #life .mini canvas{width:100%;height:100%;display:block}
 #life .obj{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:5;background:var(--pn);border:1px solid #ffd23f55;border-radius:12px;padding:7px 14px;font:700 13px system-ui;max-width:min(560px,calc(100vw - 420px));text-align:center;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #life .obj b{color:var(--gold)}
+#life .navar{position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:5;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none}
+#life .navar[hidden]{display:none}
+#life .navar svg{width:46px;height:46px;fill:#ffd23f;stroke:#111;stroke-width:2.5;stroke-linejoin:round;filter:drop-shadow(0 3px 6px #000a)}
+#life .navar b{background:#000a;border-radius:999px;padding:1px 9px;font:800 12px system-ui;color:#ffd23f;font-variant-numeric:tabular-nums}
+@media (max-width:820px){#life .navar{top:12px}}
 @media (max-width:820px){#life .obj{top:auto;bottom:96px;max-width:calc(100vw - 24px)}#life .mini{width:118px;height:118px}}
 #life .prompt{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:10px;background:#000c;border:1px solid #ffffff40;border-radius:999px;padding:8px 16px 8px 8px;font:800 15px system-ui;animation:lpop .2s both}
 #life .prompt kbd{background:var(--gold);color:#111;border-radius:8px;padding:3px 9px;font:900 14px system-ui}

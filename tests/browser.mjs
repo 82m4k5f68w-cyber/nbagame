@@ -35,8 +35,11 @@ for (const m of modes) {
   const ch = await pg.evaluate(async () => {
     const { crowd, CC } = window.H2K;
     for (let i = 0; i < 100 && crowd.stats().ready.length < 6; i++) await new Promise((r) => setTimeout(r, 100));
+    // a chant already running (busy) would hold the airball until it expires: start from an idle director, then
+    // poll (SwiftShader 3D runs a few frames per second and the director only advances in the game loop)
+    crowd.dir.busy = 0;
     crowd.fx({ k: "air", v: 1, tm: 1, n: "x" }, CC);
-    await new Promise((r) => setTimeout(r, 400));
+    for (let i = 0; i < 30 && !crowd.stats().log.some((l) => l.id === "airball"); i++) await new Promise((r) => setTimeout(r, 100));
     const played = crowd.play("defense");
     const s = crowd.stats();
     return { ready: s.ready.length, renderMs: s.renderMs, errors: s.errors, air: s.log.some((l) => l.id === "airball"), played, live: CC.live };

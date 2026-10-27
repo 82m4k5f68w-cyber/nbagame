@@ -40,6 +40,7 @@ let root: HTMLElement,
   hudEl: HTMLElement,
   miniC: HTMLCanvasElement,
   objEl: HTMLElement,
+  navEl: HTMLElement,
   promptEl: HTMLElement,
   toastEl: HTMLElement,
   tutEl: HTMLElement,
@@ -237,6 +238,7 @@ function buildShell() {
    <div class="chips"><span class="chip" id="hmn"></span><span class="chip" id="hfo"></span><span class="chip" id="hgp"></span></div></div>
   <div class="mini"><canvas width="340" height="340"></canvas></div>
   <div class="obj" id="hobj"></div>
+  <div class="navar" hidden><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3 L35 34 L20 26 L5 34 Z"/></svg><b></b></div>
   <div class="toasts"></div>
   <div class="btns"><button class="rb ph" id="bph" aria-label="Phone (P)">📱</button><div class="tbtns" style="gap:10px"><button class="rb" id="bsp">RUN</button><button class="rb big" id="bact">E</button></div></div>
   <div class="stk" hidden><i></i></div>
@@ -245,6 +247,7 @@ function buildShell() {
   hudEl = root.querySelector(".hud") as HTMLElement;
   miniC = root.querySelector(".mini canvas") as HTMLCanvasElement;
   objEl = root.querySelector("#hobj") as HTMLElement;
+  navEl = root.querySelector(".navar") as HTMLElement;
   toastEl = root.querySelector(".toasts") as HTMLElement;
   fadeEl = root.querySelector(".fade") as HTMLElement;
   stkEl = root.querySelector(".stk") as HTMLElement;
@@ -404,7 +407,7 @@ function hud() {
       p = placeById(nx.place)!;
     const when = dm > 0 ? (dm >= 60 ? `in ${Math.floor(dm / 60)}h ${dm % 60}m` : `in ${dm} min`) : `<b style="color:#ff5a4f">started ${-dm} min ago</b>`;
     html = `${nx.k === "game" ? "🏀" : nx.k === "practice" ? "💪" : nx.k === "exam" ? "📝" : "📚"} Next: <b>${esc(nx.k === "game" ? (nx.home ? "vs " : "@ ") + S.oppName(L, nx) : nx.title)}</b> · ${esc(p.n)} · ${S.hhmm(nx.st)}${S.dayOf(at) !== S.dayOf(L.t) ? " " + S.WD[S.wdOf(S.dayOf(at))] : ""} (${when})`;
-    if (S.dayOf(at) === S.dayOf(L.t) && dm < 180) target = doorOf(p);
+    target = doorOf(p);
   } else if (L.pend) html = "⭐ A big decision is waiting…";
   else html = "Free time - work out, eat, hoop at <b>The Cage</b>, or post on Hoopr";
   if (objEl.innerHTML !== html) objEl.innerHTML = html;
@@ -415,6 +418,16 @@ function drawMini() {
   const yaw = W.camS.yaw,
     rot = -Math.PI / 2 - Math.atan2(-Math.cos(yaw), -Math.sin(yaw));
   drawMap(miniC, L, W.P, target, 3.4, rot);
+  // on-screen arrow toward the objective (hidden when there is none, on a screen, or once you're at the door)
+  const n = target && mode === "world" ? W.navTo(target.x, target.z) : null;
+  const show = !!n && n.d > 12;
+  if (navEl.hidden === show) navEl.hidden = !show;
+  if (show) {
+    (navEl.firstElementChild as HTMLElement).style.transform = `rotate(${n!.a.toFixed(3)}rad)`;
+    const t = Math.round(n!.d) + " ft";
+    const b = navEl.lastElementChild as HTMLElement;
+    if (b.textContent !== t) b.textContent = t;
+  }
 }
 const seenLog = new WeakSet<object>();
 let logInit = false;
