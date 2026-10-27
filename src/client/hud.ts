@@ -321,7 +321,9 @@ export function hud2() {
   X.fillRect(bx, by, 50 * k * en, 5);
   X.font = FU(700, 8 * k);
   X.fillStyle = "#8d95b8";
-  X.fillText("ENERGY", bx, by - 3);
+  X.textAlign = "right";
+  X.fillText("EN", bx - 4, by + 5);
+  X.textAlign = "left";
   // right: shooting style + meter
   const r = (tempoOf(p) ? "TEMPO" : "HOLD & RELEASE") + " · " + MN[V.METER].toUpperCase();
   X.font = FU(700, 10 * k);

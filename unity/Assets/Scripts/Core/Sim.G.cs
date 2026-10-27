@@ -747,6 +747,7 @@ namespace Hoops.Core
                                 }
                             }
                         }
+                        if (cfg.PH3 != 0) rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny; // (Physics v3: a screen ate the defender's run - no bounce off a speed he no longer has)
                         A.x += (nx * ov * mC) / (mA + mC);
                         A.y += (ny * ov * mC) / (mA + mC);
                         C.x -= (nx * ov * mA) / (mA + mC);

@@ -49,6 +49,10 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   worst single one) while following the pose targets about as closely.
 - street_stalls.ts (not in `npm test`, slow) — seeded Street 3v3 games must keep scoring (no 90 s without a basket);
   `N=40 npx tsx tests/street_stalls.ts`.
+- physics2.ts — physics v3 (`cfg.PH3`): quadratic drag + Magnus, hardwood vs asphalt bounce / roll-out, backspin bites
+  a bounce pass, shooter's touch, rim tilt + board shake ring out, the shattered backboard (monster dunk only, setting
+  off = never), chain nets clank, head-on crash floors the lighter man, screens run through / stop dead, box-outs,
+  bobbled hard pass, ball off a foot, tired jumpers short, sweat spots build and get mopped.
 - rim_wedge.ts — a ball resting on the iron or wedged between the back iron and the glass comes free (both hoops).
 - footslide.ts — procedural stepping A/B (cfg.PLANT 0/1) on a seeded 5v5 stretch: how fast feet on the floor skate
   (must drop >= 80%), and the leg-joint jerk budget (p99.9, teleports excluded).
@@ -61,6 +65,7 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - contact.ts — contact QA on a seeded 5v5 stretch: the dribble hand meets the ball at the top of the bounce (p50 < 6,
   p90 < 22 px), a ball held in both hands sits between the palms (p90 < 6 px, one tick behind), toes never sink more
   than 4 px into the floor (lying after a dive included).
+- stats.ts env: `N` games, `QL` quarter length, `SEED`, `PP=0|1|2`, `TP=0|1` (team play pack), `DIFF=0..3`.
 - teamplay.ts — team play pack (v5.4): named sets run and complete (horns / Spain back screens / staggers / zipper /
   post entries), Rookie coaches know none, play calls 5-7, ATO for the star, coverages by IQ (hedge / ICE / blitz / drop),
   box-and-one chaser, rotations (foul trouble, closers, garbage time), bonus rules (last 2 minutes, OT) and OT timeouts.
@@ -95,3 +100,7 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - browser_life.mjs — LIFE end to end in Chromium (`?life&lifetest`): create, walk, enter a class (offline bank), quiz,
   phone (calendar, Hoopr post + replies, messages), sleep, a real engine game from the arena and back. SHOTS=dir saves
   screenshots. ~5 min on SwiftShader.
+- browser_ui.mjs — UI v6: every screen with the keyboard only (hub tabs, settings tabs, matchup, My Player, clutch list,
+  pause -> settings / scouting, halftime, final + box score), gamepad menu navigation (stubbed pad), settings persist
+  across a reload, accessibility toggles apply (text size, contrast, motion, light theme, palette, minimal HUD, sprint
+  toggle), no console errors, phone 390x844: no horizontal scroll anywhere, TIP OFF stays on screen, tap targets >= 40 px.

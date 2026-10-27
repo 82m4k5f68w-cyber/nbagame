@@ -239,7 +239,7 @@ export const BANK: Record<string, QRow[]> = {
 };
 /** Lesson blurbs by subject (shown as the class's slide before the quiz in offline mode). */
 export const LESSONS: Record<string, string[]> = {
-  math: ["Today: solving equations step by step - undo operations in reverse order and check your answer.", "Today: rates of change. The derivative tells you how fast something is changing right now.", "Today: data. Mean, median and spread tell different stories about the same numbers.", "Today: area under a curve - adding up tiny slices is what integrals do."],
+  math: ["Today: solving equations step by step - undo operations in reverse order and check your answer.", "Today: data. Mean, median and spread tell different stories about the same numbers.", "Today: rates of change. The derivative tells you how fast something is changing right now.", "Today: area under a curve - adding up tiny slices is what integrals do."],
   english: ["Today: building an argument - claim, evidence, reasoning, and answering the other side.", "Today: figurative language. Similes, metaphors and imagery make writing hit harder.", "Today: clear sentences. Active voice, agreement and the right punctuation.", "Today: reading closely - narrator, point of view and what the text implies."],
   history: ["Today: how the Constitution splits power - three branches, checks and balances, federalism.", "Today: revolutions and the ideas that drove them.", "Today: the 20th century - two world wars, the Cold War and the fight for civil rights.", "Today: empires, trade routes and how ideas travel."],
   science: ["Today: Newton's laws - why a jump shot flies in a parabola.", "Today: cells, DNA and how traits are inherited.", "Today: atoms, bonds and reactions.", "Today: the athlete's body - muscles, energy systems and recovery."],
@@ -365,4 +365,23 @@ const MORE: Record<string, QRow[]> = {
     [2, "The identity matrix multiplied by a matrix A gives:", "A", "Zero", "A transposed", "The inverse of A", "I acts like 1 for matrices."],
   ],
 };
+// ---- film room (basketball IQ: coach's film sessions at practice)
+MORE.film = [
+  [0, "Your man is guarding a pick-and-roll in 'drop' coverage. Where does the big defender sit?", "Back near the paint, protecting the rim", "Up at the level of the screen", "Switched onto the ball handler", "Under the opposite basket", "Drop = the screener's defender sags to protect the rim."],
+  [0, "On a 'hedge', the screener's defender:", "Jumps out at the ball handler, then recovers", "Stays in the paint", "Switches permanently", "Fouls on purpose", "A hard hedge slows the handler so the on-ball defender can recover."],
+  [0, "A 'backdoor cut' works best when your defender is:", "Overplaying the passing lane", "Sagging far off you", "Guarding the post", "On the bench", "Cut behind a denying defender toward the rim."],
+  [0, "In transition, the first big down the floor should usually:", "Run to the rim", "Stop at half court", "Go to the corner", "Bring the ball up", "The rim runner pulls the defense in and opens lanes."],
+  [0, "Against a 2-3 zone, a good spot to attack is the:", "High post / free-throw line", "Opposite baseline out of bounds", "Back court", "Bench area", "The middle of a 2-3 zone is its soft spot."],
+  [0, "Boxing out means:", "Getting your body between your man and the basket on a shot", "Guarding the ball full court", "Setting a screen", "Calling a timeout", "Contact first, then go get the ball."],
+  [1, "A 'pin-down' screen is set for a player moving:", "Toward the ball, away from the baseline", "Toward the baseline", "Out of bounds", "Into the backcourt", "The shooter curls or pops off a down screen."],
+  [1, "'ICE' coverage on a side pick-and-roll means:", "Force the handler to the sideline, away from the screen", "Switch everything", "Trap at half court", "Leave the shooter open", "ICE keeps the ball out of the middle."],
+  [1, "What is a 'blitz' on a pick-and-roll?", "Both defenders trap the ball handler", "The big drops to the rim", "Nobody guards the screener", "A full-court press", "Two on the ball - the back line must rotate behind it."],
+  [1, "When your defender helps on a drive, the open man is usually:", "The player he left", "The ball handler", "Nobody", "The referee", "Help leaves somebody open - kick it to him."],
+  [1, "'Horns' is a set with:", "Two bigs at the elbows", "Five players in the corners", "Everyone under the rim", "A full-court press", "Both elbows filled, handler at the top."],
+  [1, "On a 'Spain' pick-and-roll, the third player:", "Back-screens the roller's defender", "Stands in the backcourt", "Shoots immediately", "Inbounds the ball", "The back screen frees the roller or pops the screener."],
+  [2, "Late in a close game, 'two-for-one' means:", "Shoot early so you get the last possession too", "Foul twice", "Take two free throws", "Play two point guards", "With ~30+ seconds left you can fit two shots to their one."],
+  [2, "Why might a team foul when up 3 with 5 seconds left?", "To prevent a game-tying three", "To stop the clock for themselves", "To get a technical", "It's required", "Two free throws can't tie it; a three could."],
+  [2, "A 'box-and-one' defense means:", "Four in a zone box, one face-guarding the star", "Five in man-to-man", "Everyone in the paint", "Full-court trap only", "Built to take away one hot scorer."],
+  [2, "When the defense switches every screen, a smart offense often:", "Hunts a mismatch (big on small or small on big)", "Stops screening", "Passes backward only", "Holds for the shot clock", "Switching creates mismatches to attack."],
+];
 for (const k of Object.keys(MORE)) (BANK[k] = BANK[k] || []).push(...MORE[k]);

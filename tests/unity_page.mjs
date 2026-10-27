@@ -63,9 +63,9 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
 {
   const { pg, errs } = await page();
   await pg.waitForFunction(() => H2KUI.state().ready, null, { timeout: 5000 });
-  ok(await pg.locator("#grid .m").count() >= 4, "hub: mode cards");
+  ok(await pg.locator("#grid .m").count() >= 3 && (await pg.locator("#feat .fb").count()) === 1, "hub: featured mode + mode cards");
   ok(await pg.locator("#logp .rel").count() > 10, "hub: update log from main.ts");
-  ok((await pg.locator("#hst").innerText()).includes("teams"), "hub: stats line");
+  ok((await pg.locator("#hst").innerText()).toLowerCase().includes("teams"), "hub: stats line");
   const cfg = await pg.evaluate(() => window.__cfg);
   ok(cfg && /^Build\//.test(cfg.dataUrl) && /^Build\//.test(cfg.codeUrl), "loader config passed to createUnityInstance");
   await pg.click('#grid button[data-g="5"]', { force: true });
@@ -102,11 +102,11 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   ok(await pg.locator("#sd").isVisible(), "settings drawer opens");
   await pg.click('#sd [data-m="3"]', { force: true });
   await pg.click('#sd [data-rf="0"]', { force: true });
-  ok(await pg.locator("#sd .tabs [data-tab]").count() === 4, "settings: four tabs");
+  ok(await pg.locator("#sd .tabs [data-tab]").count() === 5, "settings: five tabs");
   await pg.click('#sd [data-tab="audio"]', { force: true });
   ok(await pg.locator('#sd input[type=range][data-v]').count() === 4, "audio tab: four volume sliders");
   await pg.$eval('#sd input[data-v="vv"]', (r) => { r.value = "40"; r.dispatchEvent(new Event("input")); r.dispatchEvent(new Event("change")); });
-  await pg.click('#sd [data-tab="graphics"]', { force: true });
+  await pg.click('#sd [data-tab="display"]', { force: true });
   await pg.click('#sd [data-q="1"]', { force: true });
   await pg.click('#sd [data-tab="controls"]', { force: true });
   ok((await pg.locator("#sd .tbody").innerText()).includes("GAMEPAD"), "controls tab: key + gamepad bindings");
@@ -186,9 +186,9 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   await pg.waitForFunction(() => H2KUI.state().ready, null, { timeout: 5000 });
   const tapB = async (k) => {
     await pg.evaluate((k) => (window.__pad.buttons[k].pressed = true), k);
-    await pg.waitForTimeout(80);
+    await pg.waitForTimeout(200);
     await pg.evaluate((k) => (window.__pad.buttons[k].pressed = false), k);
-    await pg.waitForTimeout(80);
+    await pg.waitForTimeout(200);
   };
   await pg.focus('#grid button[data-g="5"]');
   await tapB(0); // A
@@ -226,7 +226,7 @@ const st = (pg) => pg.evaluate(() => H2KUI.state());
   const sd = await pg.evaluate(() => document.getElementById("sd").getBoundingClientRect().width);
   ok(sd >= 380, "phone: settings full width");
   await pg.waitForTimeout(450); // slide-in
-  const sdr = await pg.evaluate(() => { const r = document.getElementById("sd").getBoundingClientRect(), h = document.querySelector("#sd .opts h3"); return { l: r.left, r: r.right, h: parseFloat(getComputedStyle(h).fontSize) }; });
+  const sdr = await pg.evaluate(() => { const r = document.getElementById("sd").getBoundingClientRect(), h = document.querySelector("#sd .sgrp h3"); return { l: r.left, r: r.right, h: parseFloat(getComputedStyle(h).fontSize) }; });
   ok(sdr.l >= 0 && sdr.r <= 390.5 && sdr.h <= 12, "phone: settings drawer inside the screen, small section titles (" + JSON.stringify(sdr) + ")");
   if (process.env.SHOTS) await pg.screenshot({ path: process.env.SHOTS + "/unity-page-phone.png" });
   await pg.keyboard.press("Escape");

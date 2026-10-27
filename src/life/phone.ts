@@ -25,6 +25,7 @@ const APPS: [string, string, string, string][] = [
   ["hoopr", "Hoopr", "🏀", "linear-gradient(160deg,#ff8a3d,#e8541e)"],
   ["school", "School", "🎓", "linear-gradient(160deg,#ffd76a,#e0a526)"],
   ["stats", "Stats", "📊", "linear-gradient(160deg,#4a4f6a,#1c1f2e)"],
+  ["lg", "League", "🏆", "linear-gradient(160deg,#ffcf5a,#c0392b)"],
   ["con", "Contacts", "👥", "linear-gradient(160deg,#c9ced6,#8a919c)"],
   ["set", "Settings", "⚙️", "linear-gradient(160deg,#9aa0aa,#5b616b)"],
 ];
@@ -250,6 +251,20 @@ export function makePhone(cx: PhoneCtx) {
         <span>Career</span><span>${ln.gp} GP · ${pg(ln.pts)} PPG · ${pg(ln.reb)} RPG · ${pg(ln.ast)} APG</span><span>FG / 3P</span><span>${ln.fga ? Math.round((100 * ln.fgm) / ln.fga) : 0}% / ${ln.tpa ? Math.round((100 * ln.tpm) / ln.tpa) : 0}%</span>
         ${l.stage === "college" || l.stage === "draft" ? `<span>Draft stock</span><span>${st} · proj. ${S.projPick(st) > 60 ? "undrafted" : "#" + S.projPick(st)}</span>` : ""}${l.draft ? `<span>Drafted</span><span>#${l.draft.pick} · ${esc(S.NBA_NAMES[l.draft.team])}</span>` : ""}</div>
         ${l.hist.length ? `<table style="margin:6px 8px 20px;width:calc(100% - 16px)"><tr><th>YEAR</th><th>TEAM</th><th>REC</th><th>PPG</th><th>GPA</th></tr>${l.hist.map((h) => `<tr><td>${esc(S.STAGE_N[h.stage])} ${h.yr}</td><td>${esc(h.team.split(" ").slice(-1)[0])}</td><td>${h.rec}</td><td>${pg(h.line.pts, h.line.gp)}</td><td>${h.gpa == null ? "—" : h.gpa.toFixed(2)}</td></tr><tr><td colspan="5" style="opacity:.7;font-size:11px">${h.aw.map((a) => "🏅 " + esc(a)).join(" · ")}</td></tr>`).join("")}</table>` : ""}`;
+      const lg = S.legacy(l);
+      app.insertAdjacentHTML(
+        "beforeend",
+        `<div style="padding:4px 16px 20px"><div class="note">Hall of Fame tracker · legacy ${lg} / ${S.HOF}</div><div class="bar2"><i style="width:${Math.min(100, (lg / S.HOF) * 100)}%"></i></div>${l.stage === "nba" ? `<div class="row"><span class="note">Agent: ${esc(l.agent || "none")} · contract $${l.contract ? (l.contract.sal / 1e6).toFixed(1) + "M x " + l.contract.yrs + " yrs" : "-"}</span>${l.flags.treq ? '<span class="tag y">TRADE REQUESTED</span>' : '<button class="gh" id="ptr">Request a trade</button>'}</div>` : ""}</div>`,
+      );
+      const tr = app.querySelector("#ptr") as HTMLElement | null;
+      if (tr)
+        tr.onclick = () => {
+          if (!confirm("Request a trade? Your coach won't like it.")) return;
+          S.requestTrade(L());
+          cx.save();
+          cx.toast("Your agent told the front office. Expect a move soon.", "📞");
+          render();
+        };
       app.querySelectorAll<HTMLElement>("[data-sp]").forEach(
         (b) =>
           (b.onclick = () => {
@@ -257,6 +272,18 @@ export function makePhone(cx: PhoneCtx) {
             render();
           }),
       );
+    },
+    lg() {
+      const l = L(),
+        st = S.standings(l),
+        tour = l.cal.filter((e) => e.rd && e.big);
+      app.innerHTML =
+        hdr("League") +
+        `<div class="note" style="padding:2px 16px 8px">${esc(S.STAGE_N[l.stage])}${l.stage === "college" ? " · Year " + l.yr : l.stage === "nba" ? " · Season " + l.yr : ""} · you're <b style="color:#ffd23f">#${st.me || "-"}</b></div>
+        <table style="margin:0 8px;width:calc(100% - 16px)"><tr><th>#</th><th>TEAM</th><th>W-L</th></tr>${st.rows
+          .map((c, i) => `<tr${c === l.league[0] ? ' style="color:#ffd23f;font-weight:800"' : ""}><td>${i + 1}</td><td><span class="sw" style="display:inline-block;width:10px;height:10px;background:${c.col};border:0;margin-right:6px"></span>${esc(c.name)}</td><td>${c.w}-${c.l}</td></tr>`)
+          .join("")}</table>
+        ${tour.length ? `<h3 style="padding:10px 16px 0;font:800 11px system-ui;letter-spacing:2px;opacity:.7">${tour[0].big === "mm" ? "MARCH MADNESS" : "STATE PLAYOFFS"}</h3>${tour.map((e) => `<div class="li"><span class="tx"><b>${esc(e.title)}</b><span>${S.WD[S.wdOf(e.day)]} ${S.hhmm(e.st)} · vs ${esc(S.oppName(l, e))}</span></span>${e.res ? `<span class="tag ${e.res.won ? "g" : "r"}">${e.res.won ? "W" : "L"} ${e.res.us}-${e.res.them}</span>` : '<span class="tag">UPCOMING</span>'}</div>`).join("")}` : ""}`;
     },
     con() {
       const l = L();

@@ -359,7 +359,11 @@ namespace Hoops.Core
                 SWQ = q;
                 for (int i = 0; i < 6; i++) SW[i] *= k;
             }
-            if (TS.hud > 0) for (int i = 0; i < 6; i++) SW[i] = 0;
+            if (TS.hud > 0)
+            {
+                for (int i = 0; i < 6; i++) SW[i] = 0;
+                return;
+            }
             if (q < 3 || cfg.HALF != 0 || !gameLike() || S != "play" || rs > 0) return;
             for (int i = 0; i < 6; i++)
             {
@@ -392,7 +396,7 @@ namespace Hoops.Core
         }
         static void ph3Squeak(Player p, double v)
         {
-            if (cfg.PH3 == 0 || Util.T(PREDICT) || v < 200 || T - p.sqkT < 0.9) return; // (one per player per .9 s: hard plants only)
+            if (cfg.PH3 == 0 || Util.T(PREDICT) || v < 230 || T - p.sqkT < 1.5) return; // (one per player per 1.5 s: hard plants only)
             p.sqkT = T;
             fx(new Fx { k = "squeak", x = p.x, y = p.y, v = Math.Min(1, v / 320) });
         }

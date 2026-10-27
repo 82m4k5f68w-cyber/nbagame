@@ -3918,7 +3918,7 @@ function ph3Land(p: Player, v: number) {
   ph3c("heavyLand");
 }
 /** A monster dunk (power from build x height x hops) very rarely shatters the glass: a stoppage while it is replaced. */
-function ph3Shatter(hx: number) {
+export function ph3Shatter(hx: number) {
   const L = B.last;
   if (!cfg.SHATTER || PREDICT || !L || cfg.HALF || !gameLike() || S !== "play") return false;
   const pw = L.bk * L.ht * (0.6 + L.j / 200);
@@ -4158,7 +4158,10 @@ function ph3Sweat(dt: number) {
     SWQ = q;
     for (let i = 0; i < 6; i++) SW[i] *= k;
   }
-  if (TS.hud > 0) for (let i = 0; i < 6; i++) SW[i] = 0;
+  if (TS.hud > 0) {
+    for (let i = 0; i < 6; i++) SW[i] = 0;
+    return;
+  }
   if (q < 3 || cfg.HALF || !gameLike() || S !== "play" || rs > 0) return;
   for (let i = 0; i < 6; i++) {
     let n = 0;
@@ -4192,7 +4195,7 @@ function ph3Slip(p: Player) {
 }
 /** Shoe squeak on a hard plant (FX for audio.ts). */
 function ph3Squeak(p: Player, v: number) {
-  if (!cfg.PH3 || PREDICT || v < 200 || T - (p.sqkT ?? -9) < 0.9) return; // (one per player per .9 s: hard plants only)
+  if (!cfg.PH3 || PREDICT || v < 230 || T - (p.sqkT ?? -9) < 1.5) return; // (one per player per 1.5 s: hard plants only)
   p.sqkT = T;
   fx({ k: "squeak", x: p.x, y: p.y, v: Math.min(1, v / 320) });
 }
@@ -5867,7 +5870,7 @@ export function contestOf(p: Player): [number, Player | null] {
   // (Pro Play v2: a stick-picked fadeaway / leaner creates separation - here, so the meter shows it while charging)
   return [Math.min(1, ct * (p.sbw > 0 ? 0.25 : 1) * (cfg.PP >= 2 && p.fade && (p.mode === "c" || p.mode === "s") ? (p.fade === 1 ? 0.82 : 0.9) : 1)), o2];
 }
-function collide() {
+export function collide() {
   if (cfg.PH3 && !PREDICT) ph3Sweat(1 / 60); // (Physics v3: sweat spots)
   for (let a = 0; a < P.length; a++)
     for (let b = a + 1; b < P.length; b++) {
@@ -5933,6 +5936,7 @@ function collide() {
               }
             }
           }
+        if (cfg.PH3) rv = (A.vx - C.vx) * nx + (A.vy - C.vy) * ny; // (Physics v3: a screen ate the defender's run - no bounce off a speed he no longer has)
         A.x += (nx * ov * mC) / (mA + mC);
         A.y += (ny * ov * mC) / (mA + mC);
         C.x -= (nx * ov * mA) / (mA + mC);

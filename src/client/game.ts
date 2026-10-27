@@ -996,7 +996,8 @@ function qtrTable(upTo = 99) {
     prev = c;
   }
   cols.push([G.sc[0] - prev[0], G.sc[1] - prev[1]]);
-  const n = Math.max(cols.length, upTo < 99 ? upTo : 4);
+  const n = upTo < 99 ? upTo : Math.max(4, G.q);
+  cols.length = Math.min(cols.length, n);
   while (cols.length < n) cols.push([NaN, NaN]);
   const row = (t: number) => `<tr><td><span class="dot" style="background:${G.PC[t]}"></span>${esc(G.cl[t])}</td>${cols.map((c) => `<td>${isNaN(c[t]) ? "–" : c[t]}</td>`).join("")}<td><b>${G.sc[t]}</b></td></tr>`;
   return `<table class="bx qtr"><thead><tr><th></th>${cols.map((_, i) => `<th>${i < 4 ? "Q" + (i + 1) : "OT" + (i - 3)}</th>`).join("")}<th>T</th></tr></thead><tbody>${row(0)}${row(1)}</tbody></table>`;

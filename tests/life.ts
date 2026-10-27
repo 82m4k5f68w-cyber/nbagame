@@ -235,7 +235,7 @@ ok(ps.some((p) => p.k === "reporter" && p.x.includes("22")), "reporter posts the
 const badG: S.GameRes = { ...big, pts: 2, reb: 1, ast: 0, blk: 0, fgm: 1, fga: 9, hl: ["airball"], won: false };
 const pb = postsFor(P, { k: "game", res: badG, opp: "X" });
 ok(pb.some((p) => p.k === "hater") && pb.some((p) => p.k === "meme"), "bad game: haters + airball meme");
-for (const k of ["workout", "late", "skip", "outfit", "eat", "deal", "signing", "declare", "draft", "injury", "rumor", "rank"] as const) {
+for (const k of ["workout", "late", "skip", "outfit", "eat", "deal", "signing", "declare", "draft", "injury", "rumor", "rank", "mock"] as const) {
   const ev: any = { k, what: "x", course: "Calculus I", name: "Gold Chain Drip", place: "Burrito Barn", brand: "Apex Kicks", school: "Northvale University Owls", pick: 7, team: "Lakers" };
   let n = 0;
   for (let s = 0; s < 10; s++) n += postsFor(P, ev, s).length;
@@ -263,5 +263,132 @@ const ai = screenPosts(P, [
 ok(ai.length === 1 && ai[0].lk <= Math.max(50, P.followers * 0.5) && ai[0].ai === 1, "AI posts screened (real brands, slurs, shape, likes capped)");
 ok(/PG-13/.test(aiFeedPrompt(P, S.aiSummary(P))) && !/@/.test(JSON.stringify(S.aiSummary(P))), "feed prompt PG-13, summary has no emails");
 
+// ---- tournaments (state playoffs / March Madness), majors, group study, film room, standings
+{
+  const T = S.newLife({ seed: 31 });
+  const st = T.cal.filter((e) => e.big === "state");
+  ok(st.length === 2 && st[0].rd === 1 && st[1].rd === 2 && st[1].title === "STATE FINAL", "HS: semifinal + state final");
+  const w = (won: boolean): S.GameRes => ({ us: won ? 30 : 20, them: won ? 20 : 30, won, pts: 10, reb: 3, ast: 2, blk: 0, fgm: 4, fga: 8, tpm: 1, tpa: 2, hl: [], played: true });
+  S.recordGame(T, st[0], w(false));
+  ok(!T.cal.some((e) => e === st[1]) && T.log.some((e) => e.k === "elim"), "semifinal loss removes the final");
+  const T2 = S.newLife({ seed: 32 });
+  const s2 = T2.cal.filter((e) => e.big === "state");
+  S.recordGame(T2, s2[0], w(true));
+  S.recordGame(T2, s2[1], w(true));
+  ok(T2.flags.champ === 1, "winning the final = title");
+  T2.t = (T2.y0 + T2.ylen) * S.DAY + 600;
+  S.resolve(T2);
+  ok(T2.hist[0].aw.includes("State Champions") && T2.flags.champ === 0, "State Champions award at year end");
+  // qualification: a losing record misses the tournament
+  const Q = S.newLife({ seed: 33 });
+  Q.team.w = 0;
+  Q.team.l = 3;
+  const q1 = Q.cal.find((e) => e.rd === 1)!;
+  Q.t = q1.day * S.DAY + 7 * 60;
+  Q.flags.lastDay = -1;
+  S.dailyTick(Q);
+  ok(!Q.cal.some((e) => e.big === "state" && e.s === 0), "losing record: no playoffs");
+  // college: 6 games, the last 3 are March Madness rounds
+  const C = S.newLife({ seed: 34 });
+  C.t = (C.y0 + C.ylen) * S.DAY + 480;
+  S.resolve(C);
+  S.sign(C, C.offers[0]);
+  const mm = C.cal.filter((e) => e.big === "mm");
+  ok(C.cal.filter((e) => e.k === "game").length === 6 && mm.length === 3 && mm[2].title === "NATIONAL TITLE", "college: 3 regular + Elite Eight / Final Four / title");
+  ok(S.chooseMajor(C, "Kinesiology") && C.major === "Kinesiology" && !S.chooseMajor(C, "Underwater Basketry"), "majors");
+  const C2 = JSON.parse(JSON.stringify(C)) as S.Life;
+  C2.major = "";
+  C.energy = C2.energy = 100;
+  const g1 = S.workout(C, "shoot").g!,
+    g2 = S.workout(C2, "shoot").g!;
+  ok(g1 > g2, "Kinesiology: bigger workout gains (" + g1 + " vs " + g2 + ")");
+  const st0 = C.courses.map((c) => c.study),
+    aff0 = C.contacts.find((c) => c.id === "dre")!.aff;
+  ok(S.groupStudy(C, "dre") == null && C.courses.every((c, i) => c.study > st0[i]) && C.contacts.find((c) => c.id === "dre")!.aff > aff0, "group study: every course + friendship");
+  ok(S.groupStudy(C, "nobody") != null, "group study needs a friend");
+  const sd = S.standings(C);
+  ok(sd.rows.length === C.league.length && sd.me >= 1, "standings with my rank");
+  const fq = quiz("film", 2, 4, 9);
+  ok(fq.length === 4 && fq.every(validQ), "film-room questions");
+  // NBA league table: my team first, results land on the opponent's row
+  const N = JSON.parse(JSON.stringify(Y)) as S.Life;
+  ok(N.league.length === 14 && N.league[0].name === S.NBA_NAMES[N.team.tm], "NBA table, my team first");
+  const ng = N.cal.find((e) => e.k === "game" && e.s === 0)!,
+    oc = S.oppClub(N, ng)!,
+    ol = oc.l;
+  S.recordGame(N, ng, w(true));
+  ok(oc.l === ol + 1, "NBA result booked on the opponent's row");
+}
+// ---- Tier 3: combine, interviews, agents, playoffs, awards, free agency, trades, legacy
+{
+  const D2 = S.newLife({ seed: 41 });
+  D2.p.j = 90;
+  D2.p.s = 90;
+  const cb = S.combine(D2);
+  const D3 = S.newLife({ seed: 41 });
+  D3.p.j = 45;
+  D3.p.s = 45;
+  const cb2 = S.combine(D3);
+  ok(cb.vert > cb2.vert && cb.lane < cb2.lane && cb.d > cb2.d && D2.flags.combo === cb.d, "combine: athletes test better and gain stock");
+  ok(S.draftStock(D2) - S.draftStock(D3) >= cb.d - cb2.d, "combine moves the draft stock");
+  S.interview(D2, 7, 0.9);
+  S.interview(D2, 3, 0.4);
+  ok(D2.fav === 7, "great interview = favourite suitor");
+  ok(S.chooseAgent(D2, "Priya Vance") && D2.agent === "Priya Vance" && !S.chooseAgent(D2, "Nobody"), "agent choice");
+  // NBA season: playoffs rounds + All-Star game on the calendar
+  const Nb = S.newLife({ seed: 42 });
+  S.joinNBA(Nb, 5, 3);
+  const po = Nb.cal.filter((e) => e.big === "po");
+  ok(po.length === 3 && po[2].title === "NBA FINALS" && Nb.cal.some((e) => e.k === "allstar"), "NBA: 3 playoff rounds + All-Star game");
+  // paycheck net of tax + agent fee
+  const Pc = JSON.parse(JSON.stringify(Y)) as S.Life;
+  Pc.agent = "Max Sterling";
+  const before = Pc.money;
+  let fri = S.dayOf(Pc.t) + 1;
+  while (S.wdOf(fri) !== 4) fri++;
+  Pc.t = fri * S.DAY + 7 * 60;
+  Pc.flags.lastDay = -1;
+  Pc.deals = [];
+  S.dailyTick(Pc);
+  const pay = Pc.money - before;
+  ok(Math.abs(pay - Math.round((Pc.contract!.sal / 26) * (1 - S.TAX - 0.05))) <= 1, "paycheck after 30% tax + 5% agent fee (" + pay + ")");
+  // awards at the end of an NBA season
+  const Aw = JSON.parse(JSON.stringify(Y)) as S.Life;
+  Aw.line = { gp: 6, w: 5, pts: 150, reb: 30, ast: 20, blk: 12, fgm: 60, fga: 110, tpm: 10, tpa: 30 };
+  Aw.team.w = 5;
+  Aw.team.l = 1;
+  Aw.contract!.yrs = 1;
+  Aw.t = (Aw.y0 + Aw.ylen) * S.DAY + 600;
+  S.resolve(Aw);
+  const ha = Aw.hist[Aw.hist.length - 1].aw;
+  ok(ha.includes("MVP") && ha.includes("Rookie of the Year") && ha.includes("Defensive Player of the Year") && Aw.story.some((x) => x === "award:MVP"), "NBA awards: " + ha.join(", "));
+  // contract ran out -> free agency
+  ok(Aw.pend === "fa", "expired contract -> free agency");
+  const offs = S.faOffers(Aw);
+  ok(offs.length === 4 && offs[0].tm === Aw.team.tm && new Set(offs.map((o) => o.tm)).size === 4 && offs.every((o) => o.sal >= 1_100_000), "4 offers incl. your team");
+  ok(S.acceptChance(offs[1], offs[1].sal) === 1 && S.acceptChance(offs[1], offs[1].sal * 1.4) < 0.01 && S.acceptChance(offs[1], offs[1].sal * 1.2) > 0.4, "acceptance curve");
+  const o = { ...offs[1] },
+    ask = o.sal * 1.1;
+  ok(S.negotiate(Aw, o, ask, () => 0) && Math.abs(o.sal - ask) < 1e4 && !S.negotiate(Aw, { ...offs[1] }, offs[1].sal * 1.3, () => 0.99), "negotiation: accepted / refused");
+  S.signFA(Aw, o);
+  ok(Aw.pend === "" && Aw.team.tm === o.tm && Aw.contract!.sal === o.sal && Aw.league[0].name === S.NBA_NAMES[o.tm] && Aw.cal.some((e) => e.k === "game"), "signed elsewhere: new team, table, schedule");
+  const Mv = JSON.parse(JSON.stringify(Aw)) as S.Life;
+  Mv.line = { gp: 6, w: 3, pts: 140, reb: 20, ast: 20, blk: 2, fgm: 50, fga: 100, tpm: 10, tpa: 30 };
+  ok(S.marketValue(Mv) > S.marketValue(Aw), "market value grows with production");
+  // trades
+  const Tr = JSON.parse(JSON.stringify(Y)) as S.Life;
+  ok(S.requestTrade(Tr) && Tr.flags.treq === 1, "trade request");
+  const old = Tr.team.tm;
+  Tr.t = (Tr.y0 + 4) * S.DAY + 7 * 60;
+  Tr.flags.lastDay = -1;
+  S.dailyTick(Tr);
+  ok(Tr.team.tm !== old && Tr.flags.treq === 0 && Tr.story.includes("trade") && !Tr.cal.some((e) => e.k === "game" && e.s === 0 && e.opp === Tr.team.tm), "traded: new team, no games vs yourself");
+  // road trip, legacy
+  const Rd = JSON.parse(JSON.stringify(Y)) as S.Life;
+  const d0 = S.dayOf(Rd.t);
+  S.roadReturn(Rd);
+  ok(S.dayOf(Rd.t) === d0 + 1 && S.minOf(Rd.t) === 9 * 60, "road trip: home next morning 9:00");
+  ok(S.legacy(Aw) > S.legacy(S.newLife({ seed: 2 })) && S.HOF > 0, "legacy score");
+}
 console.log(fails.length ? "LIFE FAIL\n" + fails.join("\n") : "LIFE OK (" + bankSize() + " bank questions)");
 process.exit(fails.length ? 1 : 0);

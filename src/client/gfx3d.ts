@@ -243,13 +243,13 @@ export function scorerTable(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.
   const sk = [0x8d5524, 0xe0ac69, 0xc68642];
   for (let k = 0; k < 3; k++) {
     const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.6, 3, 8), new THREE.MeshStandardMaterial({ color: k === 1 ? 0x1b2340 : 0x22252e, roughness: 0.8 }));
-    b.position.set(-3 + k * 3, 2.75, -1.1);
+    b.position.set(-3 + k * 3, 2.75, -0.95);
     const h = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 8), new THREE.MeshStandardMaterial({ color: sk[k], roughness: 0.6 }));
-    h.position.set(-3 + k * 3, 3.55, -1.1);
+    h.position.set(-3 + k * 3, 3.55, -0.95);
     b.castShadow = true;
     g.add(b, h);
   }
-  g.position.set(0, 0, -28);
+  g.position.set(0, 0, -26.2);
   S.add(g);
   ARENA.push(g);
   return g;

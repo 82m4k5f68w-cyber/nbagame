@@ -39,7 +39,7 @@ export interface Course {
   hw: number; // homework due: day index of the next class, -1 none
   study: number; // library / tutor boost for the next quiz (0..1)
 }
-export type EvK = "class" | "exam" | "practice" | "game" | "draft" | "signing" | "visit";
+export type EvK = "class" | "exam" | "practice" | "game" | "draft" | "signing" | "visit" | "allstar";
 export interface Ev {
   id: string;
   day: number;
@@ -54,7 +54,8 @@ export interface Ev {
   s: 0 | 1 | 2 | 3; // 0 upcoming, 1 done, 2 missed, 3 in progress
   arr?: number; // arrival (absolute minute)
   res?: GameRes;
-  big?: string; // story tag: "state" (HS state final), "mm" (March Madness), "rival"
+  big?: string; // story tag: "state" (HS state playoffs), "mm" (March Madness), "rival"
+  rd?: number; // tournament round (1 = first); a loss removes the later rounds
 }
 export interface GameRes {
   us: number;
@@ -195,6 +196,10 @@ export interface Life {
   inj: { k: string; days: number } | null;
   notes: { t: number; x: string; ic: string }[]; // notification queue (drained by the UI)
   set: { spd: number; ql: number; diff: number; alarm: number; ai: number; big: number; cb: number; rm: number };
+  major: string; // college major ("" = undeclared)
+  agent: string; // NBA agent (AGENTS key, "" = none yet)
+  story: string[]; // queued story cards (UI shows them when the player is free)
+  fav: number; // team (TM index) that loved your pre-draft interview, -1 none
 }
 
 export const TOWNS = [
@@ -302,6 +307,10 @@ export function newLife(o: { seed?: number; slot?: number; p?: Partial<LifeP>; t
     inj: null,
     notes: [],
     set: { spd: 1, ql: 60, diff: -1, alarm: 7 * 60, ai: 1, big: 0, cb: 0, rm: 0 },
+    major: "",
+    agent: "",
+    story: [],
+    fav: -1,
   };
   L.p.col = OUTFITS.tee.col;
   L.contacts = [
@@ -373,7 +382,23 @@ export function money(L: Life, a: number, x: string) {
 }
 
 // ---------------------------------------------------------------- schedule
-const GAME_DAYS: Record<string, number[]> = { hs: [1, 3, 5, 8, 10], college: [1, 5, 8, 10, 12], nba: [1, 3, 5, 8, 10, 12] };
+const GAME_DAYS: Record<string, number[]> = { hs: [1, 3, 5, 8, 10], college: [1, 3, 5, 8, 10, 12], nba: [1, 3, 5, 8, 10, 12] };
+/** Tournament rounds at the end of a season: HS state playoffs (2), college March Madness (3). */
+export const ROUNDS: Record<string, string[]> = { state: ["STATE SEMIFINAL", "STATE FINAL"], mm: ["ELITE EIGHT", "FINAL FOUR", "NATIONAL TITLE"], po: ["CONFERENCE SEMIFINALS", "CONFERENCE FINALS", "NBA FINALS"] };
+/** Fictional agents: fee (share of salary), contract and endorsement multipliers, reputation effect. */
+export const AGENTS: Record<string, { style: string; fee: number; con: number; deal: number; rep: number; c: string }> = {
+  "Dana Cole": { style: "Steady: fair deals, no drama", fee: 0.03, con: 1, deal: 1, rep: 1, c: "#2c3e50" },
+  "Max Sterling": { style: "Shark: squeezes every dollar out of contracts", fee: 0.05, con: 1.12, deal: 1, rep: -2, c: "#8e1b1b" },
+  "Priya Vance": { style: "Brand builder: endorsements, magazine covers", fee: 0.05, con: 1, deal: 1.25, rep: 2, c: "#7d3c98" },
+};
+export const TAX = 0.3;
+export const MAJORS: Record<string, string> = {
+  Business: "Endorsement deals pay 10% more",
+  Kinesiology: "Workouts build 10% more",
+  Communications: "Games earn 10% more followers",
+  Education: "+3% on every class quiz",
+  "Computer Science": "+5 on every homework",
+};
 /** Build this stage-year's courses + calendar (deterministic from the seed, stage and year). */
 export function beginYear(L: Life) {
   const r = mkRng(hashStr(L.seed + ":" + L.stage + ":" + L.yr));
@@ -388,7 +413,9 @@ export function beginYear(L: Life) {
     L.league = makeLeague(L.stage, L.team.name, hashStr(L.seed + "lg" + L.yr));
   } else {
     L.courses = [];
-    L.league = [];
+    // NBA table: your team first, the rest of the league after it
+    const nr = mkRng(hashStr(L.seed + "nba" + L.yr));
+    L.league = NBA_NAMES.map((n, i) => ({ name: n, short: n.slice(0, 3).toUpperCase(), col: "#1d428a", rt: 60 + Math.round(nr() * 6), w: 0, l: 0, i })).sort((a, b) => (a.i === L.team.tm ? -1 : b.i === L.team.tm ? 1 : 0)).map(({ i, ...c }) => c);
   }
   const gd = GAME_DAYS[L.stage === "nba" ? "nba" : L.stage === "college" ? "college" : "hs"];
   // finals: the last weekday at least 3 days before the year wraps; midterms (college): first weekday past halfway
@@ -420,16 +447,24 @@ export function beginYear(L: Life) {
         nOpp = L.stage === "nba" ? 14 : L.league.length;
       let opp = L.stage === "nba" ? (L.team.tm + 1 + rint(r, 0, 12)) % 14 : 1 + ((gi + rint(r, 0, nOpp - 2)) % (nOpp - 1));
       if (L.stage === "nba" && opp === L.team.tm) opp = (opp + 1) % 14;
-      const big = L.stage === "hs" && gi === gd.length - 1 ? "state" : L.stage === "college" && gi >= gd.length - 2 ? "mm" : "";
-      L.cal.push({ id: `g${day}`, day, st: wd >= 5 ? 14 * 60 : 19 * 60, en: (wd >= 5 ? 14 : 19) * 60 + 120, k: "game", place: "arena", title: big === "state" ? "STATE FINAL" : big === "mm" ? "MARCH MADNESS" : "Game", opp, home: gi % 2 === 0 ? 1 : 0, s: 0, big: big || undefined });
+      const big = L.stage === "hs" ? "state" : L.stage === "college" ? "mm" : L.stage === "nba" ? "po" : "",
+        nr = big ? ROUNDS[big].length : 0,
+        rd = big && gi >= gd.length - nr ? gi - (gd.length - nr) + 1 : 0;
+      L.cal.push({ id: `g${day}`, day, st: wd >= 5 ? 14 * 60 : 19 * 60, en: (wd >= 5 ? 14 : 19) * 60 + 120, k: "game", place: "arena", title: rd ? ROUNDS[big][rd - 1] : "Game", opp, home: gi % 2 === 0 ? 1 : 0, s: 0, big: rd ? big : undefined, rd: rd || undefined });
     }
+  }
+  if (L.stage === "nba") {
+    let asd = y0 + 6;
+    while (gd.includes(asd - y0)) asd++;
+    L.cal.push({ id: `as${asd}`, day: asd, st: 20 * 60, en: 22 * 60, k: "allstar", place: "arena", title: "ALL-STAR GAME", s: 0 });
+    L.story.push("role");
   }
   L.cal.sort((a, b) => a.day - b.day || a.st - b.st);
 }
 /** Window in which an event can be joined at its place: [open, close) absolute minutes. */
 export function evWin(e: Ev): [number, number] {
   const s = e.day * DAY + e.st;
-  if (e.k === "game") return [s - 120, s + 30];
+  if (e.k === "game" || e.k === "allstar") return [s - 120, s + 30];
   if (e.k === "practice") return [s - 30, s + 45];
   if (e.k === "draft") return [s - 240, s + 600];
   return [s - 20, s + 30];
@@ -506,6 +541,21 @@ function miss(L: Life, e: Ev) {
     msg(L, "coach", "You missed the game. We'll talk tomorrow.", [["I'm sorry coach", "We'll talk.", 1], ["...", "...", -2]]);
   }
 }
+/** Coach trust -> role: starter (55+), sixth man (35+), bench. Simulated lines scale with it. */
+export function role(L: Life): { n: string; k: number } {
+  const a = (L.contacts.find((c) => c.id === "coach") || { aff: 50 }).aff;
+  return a >= 55 ? { n: "Starter", k: 1 } : a >= 35 ? { n: "Sixth man", k: 0.8 } : { n: "Bench", k: 0.55 };
+}
+/** The opponent's row in the league table. */
+export function oppClub(L: Life, e: Ev): Club | null {
+  if (L.stage === "nba") return L.league.find((c) => c.name === NBA_NAMES[e.opp ?? 0]) || null;
+  return L.league[e.opp ?? 1] || null;
+}
+/** League table sorted by win% (ties: wins), with your rank. */
+export function standings(L: Life): { rows: Club[]; me: number } {
+  const rows = L.league.slice().sort((a, b) => b.w / Math.max(1, b.w + b.l) - a.w / Math.max(1, a.w + a.l) || b.w - a.w || b.rt - a.rt);
+  return { rows, me: rows.indexOf(L.league[0]) + 1 };
+}
 /** Opponent display name of a game event. */
 export function oppName(L: Life, e: Ev): string {
   if (L.stage === "nba") return NBA_NAMES[e.opp ?? 0] || "Opponent";
@@ -548,10 +598,42 @@ export function dailyTick(L: Life) {
   if (L.flags.lastDay === d) return;
   L.flags.lastDay = d;
   // salary (NBA: weekly on Fridays), endorsement deals (weekly on Mondays)
-  if (L.stage === "nba" && L.contract && wdOf(d) === 4) money(L, Math.round(L.contract.sal / 26), "Paycheck · " + (NBA_NAMES[L.contract.team] || "team"));
+  if (L.stage === "nba" && L.contract && wdOf(d) === 4) {
+    const gross = L.contract.sal / 26,
+      fee = (AGENTS[L.agent] || { fee: 0 }).fee;
+    money(L, Math.round(gross * (1 - TAX - fee)), `Paycheck · ${NBA_NAMES[L.contract.team] || "team"} (after ${Math.round(TAX * 100)}% tax${fee ? " + " + Math.round(fee * 100) + "% agent" : ""})`);
+  }
   if (wdOf(d) === 0) for (const dl of L.deals) money(L, dl.pay, "Endorsement · " + dl.b);
+  // trade request: the front office finds a deal a few days later
+  if (L.stage === "nba" && L.flags.treq && d >= L.y0 + 3) {
+    const r = mkRng(hashStr("trade" + d + L.seed));
+    let tm = rint(r, 0, 13);
+    if (tm === L.team.tm) tm = (tm + 5) % 14;
+    tradeTo(L, tm);
+  }
+  // All-Star selection (NBA, the morning of the All-Star game): your numbers or your fans get you in
+  const asg = L.cal.find((e) => e.k === "allstar" && e.day === d && e.s === 0);
+  if (asg) {
+    const ppg = L.line.gp ? L.line.pts / L.line.gp : 0;
+    if (ppg >= 12 || L.followers >= 60000) {
+      L.story.push("allstar");
+      logE(L, "allstar", "named an All-Star");
+      msg(L, "agent", "You're an ALL-STAR. Tonight, 8 PM, Summit Arena. Wear something nice. 🌟");
+    } else {
+      L.cal = L.cal.filter((e) => e !== asg);
+      note(L, "All-Star rosters are out. Not this year.", "⭐");
+    }
+  }
   simLeagueDay(L, d - 1);
-  const ev = L.cal.filter((e) => e.day === d && e.s === 0);
+  let ev = L.cal.filter((e) => e.day === d && e.s === 0);
+  // tournament qualification: a losing record misses the playoffs / March Madness
+  const r1 = ev.find((e) => e.k === "game" && e.rd === 1);
+  if (r1 && L.team.w < L.team.l) {
+    L.cal = L.cal.filter((e) => !(e.big === r1.big && e.s === 0));
+    ev = ev.filter((e) => e !== r1);
+    msg(L, "coach", r1.big === "mm" ? "We didn't make the tournament. That one stings. Use it." : "We missed the state playoffs. Next year starts today.");
+    logE(L, "elim", "missed the " + (r1.big === "mm" ? "tournament" : "state playoffs"));
+  }
   const g = ev.find((e) => e.k === "game");
   if (g) msg(L, "coach", `Game day. ${oppName(L, g)} at ${hhmm(g.st)}. Be at the arena early.${probation(L) ? " ...if you were eligible." : ""}`, [["Locked in 🔒", "That's what I like to hear.", 2], ["Ready coach", "Let's go.", 1]]);
   else if (ev.some((e) => e.k === "exam")) msg(L, "prof", "Finals today. Eat breakfast, get there early, breathe. You've got this.", [["Thanks!", "Good luck!", 2]]);
@@ -603,7 +685,7 @@ export function workout(L: Life, id: string): { err?: string; k?: string; g?: nu
   const d = dayOf(L.t),
     key = "wo" + d + id;
   const reps = (L.flags[key] = (L.flags[key] || 0) + 1);
-  const rt = (L.energy < 35 ? 0.6 : 1) * (reps > 2 ? 0.3 : 1);
+  const rt = (L.energy < 35 ? 0.6 : 1) * (reps > 2 ? 0.3 : 1) * (L.major === "Kinesiology" ? 1.1 : 1);
   let g = 0;
   if (w.k === "bk") {
     g = +(0.01 * rt).toFixed(3);
@@ -661,7 +743,7 @@ export function attend(L: Life, e: Ev) {
 export function finishClass(L: Life, e: Ev, frac: number): number {
   const c = L.courses[e.c!],
     lt = lateness(e, e.arr ?? L.t);
-  const v = Math.round(clamp(frac, 0, 1) * 100 * lt.mul);
+  const v = Math.round(clamp(frac + (L.major === "Education" ? 0.03 : 0), 0, 1) * 100 * lt.mul);
   if (c) {
     c.sc.push({ k: e.k === "exam" ? "e" : "q", v, d: e.day });
     c.study = 0;
@@ -680,7 +762,7 @@ export function finishClass(L: Life, e: Ev, frac: number): number {
 export function doHomework(L: Life, ci: number, frac: number): number {
   const c = L.courses[ci];
   if (!c || c.hw < 0) return -1;
-  const v = Math.round(clamp(frac, 0, 1) * 100);
+  const v = Math.round(clamp(frac * 100 + (L.major === "Computer Science" ? 5 : 0), 0, 100));
   c.sc.push({ k: "h", v, d: dayOf(L.t) });
   c.hw = -1;
   advance(L, 45, "idle");
@@ -698,6 +780,25 @@ export function study(L: Life, ci: number, tutor = false): string | null {
   advance(L, tutor ? 60 : 90, "idle");
   L.energy = clamp(L.energy - 6, 0, 100);
   return null;
+}
+/** Group study with a friend: every course gets a smaller boost, the friendship grows. */
+export function groupStudy(L: Life, friend: string): string | null {
+  if (!L.courses.length) return "No classes";
+  const c = L.contacts.find((x) => x.id === friend);
+  if (!c) return "Nobody to study with";
+  for (const k of L.courses) k.study = clamp(k.study + 0.2, 0, 1);
+  c.aff = clamp(c.aff + 3, 0, 100);
+  L.mood = clamp(L.mood + 4, 0, 100);
+  L.energy = clamp(L.energy - 5, 0, 100);
+  advance(L, 90, "idle");
+  logE(L, "study", "group study with " + c.n);
+  return null;
+}
+export function chooseMajor(L: Life, m: string) {
+  if (!MAJORS[m]) return false;
+  L.major = m;
+  logE(L, "major", "declared a " + m + " major");
+  return true;
 }
 const W: Record<string, number> = { q: 0.5, h: 0.2, e: 0.3 };
 /** Course percentage: category averages weighted quiz 50 / homework 20 / exam 30, renormalised over present ones. */
@@ -769,13 +870,28 @@ export function simTeamGame(L: Life, e: Ev, line: Partial<GameRes> | null): Game
   return res;
 }
 /** Book a finished game: team record, the player's line, followers, mood, coach trust. */
+/** Tournament bookkeeping after a result: a loss ends the run (later rounds removed), winning the last round = title. */
+function bracket(L: Life, e: Ev, res: GameRes) {
+  if (!e.rd || !e.big || !ROUNDS[e.big]) return;
+  if (!res.won) {
+    L.cal = L.cal.filter((x) => !(x.big === e.big && x.s === 0 && x !== e));
+    note(L, (e.big === "mm" ? "Eliminated in the " : "Out in the ") + e.title.toLowerCase(), "💔");
+    logE(L, "elim", "eliminated in the " + e.title.toLowerCase());
+  } else if (e.rd === ROUNDS[e.big].length) {
+    L.flags.champ = 1;
+    note(L, e.big === "mm" ? "NATIONAL CHAMPIONS! 🏆" : "STATE CHAMPIONS! 🏆", "🏆");
+    logE(L, "title", e.big === "mm" ? "won the national title" : "won the state title");
+  }
+}
 export function recordGame(L: Life, e: Ev, res: GameRes) {
+  bracketQ.push(() => bracket(L, e, res));
   e.res = res;
   e.s = res.played ? 1 : e.s || 2;
   if (res.won) L.team.w++;
   else L.team.l++;
   if (L.league[0]) res.won ? L.league[0].w++ : L.league[0].l++;
-  if (L.stage !== "nba" && L.league[e.opp ?? 1]) res.won ? L.league[e.opp ?? 1].l++ : L.league[e.opp ?? 1].w++;
+  const oc = oppClub(L, e);
+  if (oc) res.won ? oc.l++ : oc.w++;
   if (res.played) {
     for (const ln of [L.line, L.career]) {
       ln.gp++;
@@ -801,7 +917,9 @@ export function recordGame(L: Life, e: Ev, res: GameRes) {
     logE(L, "game", `${res.won ? "W" : "L"} ${res.us}-${res.them} vs ${oppName(L, e)}: ${res.pts} pts ${res.reb} reb ${res.ast} ast${res.hl.length ? " (" + res.hl.join(", ") + ")" : ""}`);
     checkDeals(L);
   } else logE(L, "teamgame", `${res.won ? "W" : "L"} ${res.us}-${res.them} vs ${oppName(L, e)} (did not play)`);
+  while (bracketQ.length) bracketQ.shift()!();
 }
+const bracketQ: (() => void)[] = [];
 /** Performance index (about -5 .. +10) from a stat line (short arcade games: per-game numbers are small). */
 export function perfOf(r: GameRes): number {
   const eff = r.fga ? (r.fgm / r.fga - 0.45) * 8 : 0;
@@ -814,7 +932,8 @@ export function followerGain(L: Life, perf: number, r?: GameRes): number {
     fame = 1 + Math.log10(1 + L.followers / 1000),
     hl = r ? r.hl.reduce((a, h) => a + (h === "dunk" ? 0.25 : h === "gamewinner" ? 1.5 : h === "block" ? 0.15 : h === "three" ? 0.08 : 0), 0) : 0;
   if (perf < -1) return -Math.round(base * 0.15 * -perf * 0.5);
-  return Math.round(base * fame * (0.5 + perf * 0.25 + hl) * (r && r.won ? 1.15 : 1));
+  const mj = L.major === "Communications" ? 1.1 : 1;
+  return Math.round(base * fame * (0.5 + perf * 0.25 + hl) * (r && r.won ? 1.15 : 1) * mj);
 }
 /** Endorsements unlock at follower milestones (college: NIL deals; HS: none - amateur rules). */
 export const DEALS: [number, string, number][] = [
@@ -828,7 +947,7 @@ export function checkDeals(L: Life) {
   if (L.stage === "hs") return;
   for (const [n, b, pay] of DEALS) {
     if (L.followers < n || L.deals.some((d) => d.b === b)) continue;
-    const p = L.stage === "nba" ? pay * 6 : pay;
+    const p = Math.round((L.stage === "nba" ? pay * 6 : pay) * (L.major === "Business" ? 1.1 : 1));
     L.deals.push({ b, pay: p, t: L.t });
     msg(L, "agent" in L.msgs ? "agent" : "coach", `${b} reached out: ${L.stage === "college" ? "NIL deal" : "endorsement"} worth $${p.toLocaleString()} a week. Signed it for you to review in the Bank app.`);
     note(L, "New deal: " + b + " · $" + p + "/wk", "🤝");
@@ -845,7 +964,21 @@ export function endYear(L: Life) {
   }
   const aw: string[] = [];
   if (g != null && g >= 3.5 && L.stage !== "nba") aw.push("Dean's List");
-  if (L.line.gp && L.line.pts / L.line.gp >= 14) aw.push(L.stage === "hs" ? "All-State" : L.stage === "college" ? "All-Conference" : "All-NBA");
+  if (L.flags.champ) aw.push(L.stage === "hs" ? "State Champions" : L.stage === "college" ? "National Champions" : "NBA Champions");
+  L.flags.champ = 0;
+  const ppg = L.line.gp ? L.line.pts / L.line.gp : 0,
+    wp = L.team.w / Math.max(1, L.team.w + L.team.l);
+  if (L.stage !== "nba" && ppg >= 14) aw.push(L.stage === "hs" ? "All-State" : "All-Conference");
+  if (L.stage === "nba" && L.line.gp) {
+    const prev = L.hist.filter((h) => h.stage === "nba").pop(),
+      pp = prev && prev.line.gp ? prev.line.pts / prev.line.gp : 0;
+    if (L.yr === 1 && ppg >= 10) aw.push("Rookie of the Year");
+    if (ppg >= 22 && wp >= 0.6) aw.push("MVP");
+    else if (ppg >= 18) aw.push("All-NBA");
+    if (L.line.blk / L.line.gp >= 1.5) aw.push("Defensive Player of the Year");
+    if (prev && ppg - pp >= 5) aw.push("Most Improved Player");
+  }
+  for (const a of aw) if (/MVP|Rookie|Champions|Defensive|Improved/.test(a)) L.story.push("award:" + a);
   if (g != null && g >= 3.2 && L.line.gp && L.line.pts / L.line.gp >= 10 && L.stage === "college") aw.push("Academic All-American");
   L.hist.push({ stage: L.stage, yr: L.yr, team: L.team.name, line: { ...L.line }, gpa: g, rec: L.team.w + "-" + L.team.l, aw });
   L.courses = [];
@@ -856,14 +989,15 @@ export function endYear(L: Life) {
   else if (L.stage === "nba") {
     L.yr++;
     L.y0 = dayOf(L.t) + 1;
+    L.flags.treq = 0;
     if (L.contract) {
       L.contract.yrs--;
       if (L.contract.yrs <= 0) {
-        L.contract = { sal: Math.round(L.contract.sal * (1.2 + ovrOf(L.p) / 200)), yrs: 3, team: L.team.tm };
-        msg(L, "agent", `New deal done: 3 years, $${L.contract.sal.toLocaleString()} a season. 🖊️`);
+        L.pend = "fa"; // free agency: offers + negotiation (the season starts after signing)
+        msg(L, "agent", "Your contract is up. Free agency opens now - let's see who wants you. 📞");
       }
     }
-    beginYear(L);
+    if (!L.pend) beginYear(L);
   }
   logE(L, "year", "season over" + (aw.length ? ": " + aw.join(", ") : ""));
 }
@@ -916,7 +1050,7 @@ export function draftStock(L: Life): number {
   const pg = (k: number) => (all.gp ? k / all.gp : 0);
   const g = gpa(L);
   const gb = g == null ? 0 : g >= 3.5 ? 4 : g >= 3 ? 2 : g < 2 ? -6 : 0;
-  const s = (ovrOf(L.p) - 55) * 1.6 + pg(all.pts) * 1.5 + pg(all.reb) * 0.6 + pg(all.ast) * 0.8 + (all.gp ? (all.w / all.gp) * 8 : 0) + gb + Math.log10(1 + L.followers) * 2;
+  const s = (L.flags.combo || 0) + (ovrOf(L.p) - 55) * 1.6 + pg(all.pts) * 1.5 + pg(all.reb) * 0.6 + pg(all.ast) * 0.8 + (all.gp ? (all.w / all.gp) * 8 : 0) + gb + Math.log10(1 + L.followers) * 2;
   return clamp(Math.round(s), 0, 100);
 }
 export const projPick = (stock: number) => clamp(Math.round(61 - stock * 0.62), 1, 61); // 61 = undrafted
@@ -936,7 +1070,17 @@ export function runDraft(L: Life, r: Rng = mkRng(hashStr("draft" + L.seed + L.yr
     const tm = order[(pk - 1) % 14];
     board.push(pk === mine ? { pk, tm, n: L.p.n, me: 1 } : { pk, tm, n: pick(r, FN) + " " + pick(r, LN) });
   }
-  const team = mine <= 30 ? board[mine - 1].tm : order[rint(r, 0, 13)];
+  // a team that loved the interview trades into your range (within 5 picks) to take you
+  if (L.fav >= 0 && mine <= 30) {
+    const k = board.findIndex((b) => b.tm === L.fav && Math.abs(b.pk - mine) <= 5 && !b.me);
+    if (k >= 0) {
+      const me = board[mine - 1];
+      const tm = board[k].tm;
+      board[k].tm = me.tm;
+      me.tm = tm;
+    }
+  }
+  const team = mine <= 30 ? board[mine - 1].tm : L.fav >= 0 ? L.fav : order[rint(r, 0, 13)];
   return { pick: mine, team, board };
 }
 /** Rookie scale: salary by pick (fictional numbers in the real ballpark). */
@@ -954,12 +1098,142 @@ export function joinNBA(L: Life, pick: number, team: number) {
   co.n = "Coach Bellamy";
   co.role = "Head Coach · " + L.team.name;
   co.aff = 50;
-  if (!L.contacts.some((c) => c.id === "agent")) L.contacts.push({ id: "agent", n: "Dana Cole", role: "Agent", aff: 60, c: "#2c3e50" });
+  if (!L.agent) L.agent = "Dana Cole";
+  if (!L.contacts.some((c) => c.id === "agent")) L.contacts.push({ id: "agent", n: L.agent, role: "Agent", aff: 60, c: AGENTS[L.agent].c });
+  L.story.push("rookie");
   money(L, Math.round(L.contract.sal * 0.1), "Signing bonus · " + L.team.name);
   beginYear(L);
   logE(L, "draft", `drafted #${pick} by the ${L.team.name}`);
   msg(L, "agent", `Congrats, rookie. ${L.contract.yrs}-year deal, $${L.contract.sal.toLocaleString()} a year. Paychecks every Friday.`);
 }
+// ---------------------------------------------------------------- pre-draft: combine, interviews, agent
+export interface Combine {
+  ht: number; // height in shoes (ft)
+  wing: number; // wingspan (ft)
+  vert: number; // max vertical (in)
+  lane: number; // lane agility (s)
+  sprint: number; // 3/4-court sprint (s)
+  bench: number; // 185 lb reps
+  d: number; // draft stock change
+}
+/** Draft combine: measurements and athletic tests from the ratings (+ a little noise); good numbers move the stock. */
+export function combine(L: Life, r: Rng = mkRng(hashStr("combine" + L.seed + L.yr))): Combine {
+  const p = L.p,
+    n = () => (r() - 0.5) * 2;
+  const c: Combine = {
+    ht: +(p.ht + 0.08).toFixed(2),
+    wing: +(p.ht * 1.05 + n() * 0.15).toFixed(2),
+    vert: Math.round(26 + (p.j - 40) * 0.28 + n() * 2),
+    lane: +(12.4 - (p.s - 40) * 0.032 + n() * 0.15).toFixed(2),
+    sprint: +(3.6 - (p.s - 40) * 0.0085 + n() * 0.04).toFixed(2),
+    bench: Math.max(0, Math.round((p.bk - 0.9) * 40 + n() * 3)),
+    d: 0,
+  };
+  c.d = Math.round(clamp((c.vert - 32) * 0.4 + (11 - c.lane) * 2 + (c.wing - c.ht) * 6 + (c.bench - 8) * 0.15, -6, 8));
+  L.flags.combo = c.d;
+  logE(L, "combine", `combine: ${c.vert}" vertical, ${c.lane}s lane agility`);
+  return c;
+}
+/** Pre-draft interview with a team: score 0..1 from the answers; a great one makes it your favourite suitor. */
+export function interview(L: Life, team: number, score: number) {
+  L.flags["iv" + team] = Math.round(score * 100);
+  if (score >= 0.66 && (L.fav < 0 || (L.flags["iv" + L.fav] || 0) <= score * 100)) L.fav = team;
+}
+export function chooseAgent(L: Life, n: string) {
+  if (!AGENTS[n]) return false;
+  L.agent = n;
+  const c = L.contacts.find((x) => x.id === "agent");
+  if (c) (c.n = n), (c.c = AGENTS[n].c);
+  else L.contacts.push({ id: "agent", n, role: "Agent", aff: 60, c: AGENTS[n].c });
+  L.rep = clamp(L.rep + AGENTS[n].rep, 0, 100);
+  return true;
+}
+// ---------------------------------------------------------------- NBA: free agency, negotiation, trades, legacy
+export interface Offer {
+  tm: number;
+  sal: number;
+  yrs: number;
+}
+/** Market value per year from ratings, production and fame (fictional scale, max ~$55M). */
+export function marketValue(L: Life): number {
+  const ppg = L.line.gp ? L.line.pts / L.line.gp : L.career.gp ? L.career.pts / L.career.gp : 0;
+  return Math.round(clamp(2_000_000 + (ovrOf(L.p) - 60) * 900_000 + ppg * 1_100_000 + Math.log10(1 + L.followers) * 400_000, 1_100_000, 55_000_000) / 10000) * 10000;
+}
+export function faOffers(L: Life, r: Rng = mkRng(hashStr("fa" + L.seed + L.yr))): Offer[] {
+  const mv = marketValue(L) * (AGENTS[L.agent] || { con: 1 }).con,
+    out: Offer[] = [{ tm: L.team.tm, sal: Math.round((mv * (1 + r() * 0.08)) / 1e4) * 1e4, yrs: 3 + Math.floor(r() * 2) }];
+  const used = new Set([L.team.tm]);
+  while (out.length < 4) {
+    const tm = rint(r, 0, 13);
+    if (used.has(tm)) continue;
+    used.add(tm);
+    out.push({ tm, sal: Math.round((mv * (0.85 + r() * 0.3)) / 1e4) * 1e4, yrs: 2 + Math.floor(r() * 3) });
+  }
+  return out;
+}
+/** Chance a team accepts an ask: 100% at or below the offer, falling to 0 at +40%. */
+export const acceptChance = (o: Offer, ask: number) => clamp(1 - (ask / o.sal - 1) * 2.5, 0, 1);
+/** Counter-offer: one roll; accepted = new contract at the ask, refused = the team holds at its offer (once). */
+export function negotiate(L: Life, o: Offer, ask: number, r: Rng = Math.random): boolean {
+  const ok = r() < acceptChance(o, ask);
+  if (ok) o.sal = Math.round(ask / 1e4) * 1e4;
+  return ok;
+}
+export function signFA(L: Life, o: Offer) {
+  const moved = o.tm !== L.team.tm;
+  L.contract = { sal: o.sal, yrs: o.yrs, team: o.tm };
+  if (moved) setTeam(L, o.tm);
+  L.pend = "";
+  money(L, Math.round(o.sal * 0.05), "Signing bonus · " + NBA_NAMES[o.tm]);
+  logE(L, "fa", `signed ${o.yrs} years / $${(o.sal / 1e6).toFixed(1)}M with the ${NBA_NAMES[o.tm]}`);
+  if (L.contract.sal >= 45_000_000) note(L, "MAX CONTRACT 💰", "💰");
+  beginYear(L);
+}
+function setTeam(L: Life, tm: number) {
+  L.team = { ...L.team, name: NBA_NAMES[tm], short: NBA_NAMES[tm].slice(0, 3).toUpperCase(), tm };
+  const co = L.contacts.find((x) => x.id === "coach");
+  if (co) (co.role = "Head Coach · " + L.team.name), (co.aff = 50);
+  if (L.contract) L.contract.team = tm;
+}
+/** Mid-season trade: new team, the rest of the schedule keeps its dates (games vs your new team become vs your old one). */
+export function tradeTo(L: Life, tm: number) {
+  const old = L.team.tm;
+  setTeam(L, tm);
+  for (const e of L.cal) if (e.k === "game" && e.s === 0 && e.opp === tm) e.opp = old;
+  const me = L.league.findIndex((c) => c.name === NBA_NAMES[tm]);
+  if (me > 0) {
+    const [c] = L.league.splice(me, 1);
+    L.league.unshift(c);
+  }
+  L.flags.treq = 0;
+  L.story.push("trade");
+  logE(L, "trade", `traded to the ${L.team.name}`);
+  msg(L, "agent", `It's done: you've been traded to the ${L.team.name}. New city, fresh start. ✈️`);
+}
+export function requestTrade(L: Life) {
+  if (L.stage !== "nba") return false;
+  L.flags.treq = 1;
+  L.rep = clamp(L.rep - 3, 0, 100);
+  const co = L.contacts.find((x) => x.id === "coach");
+  if (co) co.aff = clamp(co.aff - 10, 0, 100);
+  logE(L, "treq", "requested a trade");
+  return true;
+}
+/** Road games: after an away game the team flies home overnight (hotel, morning flight). */
+export function roadReturn(L: Life) {
+  const d = dayOf(L.t) + 1,
+    to = d * DAY + 9 * 60;
+  if (L.t < to) advance(L, to - L.t, "sleep");
+  L.energy = clamp(L.energy + 25, 0, 100);
+  note(L, "Hotel night, morning flight home ✈️", "🏨");
+}
+/** Legacy score toward the Hall of Fame (shown in Stats): points, awards, titles, seasons. */
+export function legacy(L: Life): number {
+  const aw = L.hist.flatMap((h) => h.aw);
+  const w = (re: RegExp, k: number) => aw.filter((a) => re.test(a)).length * k;
+  return Math.round(L.career.pts / 8 + w(/NBA Champions/, 120) + w(/MVP/, 150) + w(/All-NBA/, 40) + w(/Defensive/, 60) + w(/Rookie/, 30) + w(/Improved/, 20) + w(/National Champions/, 40) + L.hist.filter((h) => h.stage === "nba").length * 10);
+}
+export const HOF = 1000;
 export function declare(L: Life) {
   L.pend = "draft";
   logE(L, "declare", "declared for the NBA Draft");

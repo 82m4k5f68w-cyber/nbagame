@@ -2,17 +2,18 @@
 // jumbotron, glass backboards with shot clocks, tube nets driven by the net sim, skinned player rigs, cameras,
 // post-processing, and an adaptive quality ladder that sheds effects before it ever lowers resolution.
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
-import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike, stepLen, RR as SRR, chainNet } from "../core/sim";
+import { P, B, T, pos, PC, sc, clock, shot, cl, q as qtrN, RPL, RPK, HXs, HY, W3, hoop, NETS, S as GS, ROST, TS, cfg as SCFG, gameLike, stepLen, RR as SRR, chainNet, QTRLEN } from "../core/sim";
 import { gar, CP } from "./canvas";
-import { V, fmt, HSRS, targetMs, hsrMode } from "./view";
+import { V, fmt, HSRS, targetMs, hsrMode, aoLevel, GRADES, QLN } from "./view";
 import { makeDynRes } from "./hsr";
-import { makeRig, applyPose, footIK, clothStep } from "./rig3d";
-import { makeFx, type Fx } from "./fx3d";
+import { makeRig, applyPose, footIK, clothStep, RIM } from "./rig3d";
+import { makeFx, mipBias, type Fx } from "./fx3d";
+import { arenaEnv, skyEnv, SKY, bowl, scorerTable, photographers, makePyro, drawFanCam, detail, makePrecip, puddleMaps, autoWx, ROWS, rowY, rowOff, inAisle, type Wx } from "./gfx3d";
+import { gfxTex } from "./gfxtex";
 
-const DPR = [1, 1.5, 2]; // device pixel ratio cap per quality level
-const MAXR = [1.4, 2.2, 4]; // max drawing-buffer scale over 960x540 per quality level (1344 / 2112 / 3840 px wide)
+const DPR = [1, 1.5, 2, 2]; // device pixel ratio cap per quality level (Low / Medium / High / Ultra)
+const MAXR = [1.4, 2.2, 4, 4]; // max drawing-buffer scale over 960x540 per quality level (1344 / 2112 / 3840 px wide)
 
 /** Start the 3D view. WebGL by default; the WebGPU renderer (Display -> Renderer, or ?webgpu) drives the same scene
  *  and falls back to its WebGL2 backend where the browser has no WebGPU. If WebGPU fails to load, WebGL is used. */
@@ -77,17 +78,31 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     R.shadowMap.type = THREE.PCFShadowMap; // r18x: PCF with a radius replaces PCFSoft
     R.outputColorSpace = THREE.SRGBColorSpace;
     R.toneMapping = THREE.ACESFilmicToneMapping;
-    R.toneMappingExposure = 0.85;
+    R.toneMappingExposure = 0.9;
     const S = new THREE.Scene();
     /** Indoor-arena dressing (stands, crowd, signs, boards, jumbotron, ceiling): hidden for street games. */
     const ARENA: THREE.Object3D[] = [];
     S.background = new THREE.Color(0x06070d);
     S.fog = new THREE.Fog(0x06070d, 110, 230);
-    // Image-based lighting: soft studio reflections on the floor, ball, glass and skin.
+    // Image-based lighting (graphics v6): a procedural HDR arena (catwalk light grid, dark bowl, LED fascia in the home
+    // colour, warm court bounce) prefiltered by PMREM = the "baked" ambient + reflections on floor, glass, ball, skin.
+    // Street courts get a sky per weather (skyEnv). Regenerated only when the home colour / weather changes.
+    let PMG: any = null,
+      envK = "",
+      envT: THREE.Texture | null = null;
+    const envSet = (k: string, scene: () => THREE.Scene) => {
+      if (k === envK || !PMG) return;
+      envK = k;
+      const old = envT,
+        sc = scene();
+      envT = PMG.fromScene(sc, 0.03).texture;
+      S.environment = envT;
+      sc.traverse((o: any) => (o.geometry && o.geometry.dispose(), o.material && o.material.dispose()));
+      if (old) old.dispose();
+    };
     const envInit = () => {
-      const pm = GPU ? new GPU.PMREMGenerator(R) : new THREE.PMREMGenerator(R);
-      S.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-      pm.dispose();
+      PMG = GPU ? new GPU.PMREMGenerator(R) : new THREE.PMREMGenerator(R);
+      envSet("arena:" + (PC[0] || ""), () => arenaEnv(PC[0] || "#7b3fb5"));
     };
     if (GPU)
       R.init()
@@ -104,7 +119,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const cam = new THREE.PerspectiveCamera(38, 960 / 540, 0.5, 420);
     // three r155+ physical light units: legacy intensities x PI keep the same exposure
     const PI = Math.PI;
-    S.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a1d10, 0.3 * PI));
+    // house lights down: the bowl is dim, the court is lit (the env map carries most of the ambient now)
+    const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x2a1d10, 0.16 * PI);
+    S.add(hemi);
     // Broadcast arena lighting: an almost-overhead key (crisp contact shadows under the players, like the real
     // catwalk rig), warm spotlights pooling on the floor, a cool rim, light shafts in the haze, then a color grade.
     const sun = new THREE.DirectionalLight(0xfff3e2, 1.05 * PI);
@@ -115,7 +132,14 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     sun.shadow.bias = -0.0003;
     sun.shadow.normalBias = 0.025;
     sun.shadow.radius = 2.5; // soft edges
-    S.add(sun);
+    S.add(sun, sun.target);
+    // Broadcast back light (behind the far sideline, low and cool: rims every player's head and shoulders for the
+    // main camera) + a soft warm fill from the camera side. No shadows (cheap on every tier).
+    const back = new THREE.DirectionalLight(0xcfe0ff, 0.75 * PI);
+    back.position.set(6, 22, -60);
+    const fill = new THREE.DirectionalLight(0xffe6cc, 0.18 * PI);
+    fill.position.set(-10, 14, 60);
+    S.add(back, fill);
     // Catwalk spotlights (no shadows: cheap): warm pools over each half court + cool rims from the corners.
     const SPOTS: [number, number, number, number, number, number][] = [
       [-30, -16, -22, 0, 0xfff0d8, 1.1],
@@ -202,7 +226,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       TH = TW / 2;
     const [ct, c2] = cv(TW, TH),
       tex = TX2(ct);
-    let pcK = "";
+    let pcK = "",
+      woodOn = false; // the ambientCG maple set is on the floor: the canvas holds a flat varnish base + paint + lines
+    const DECAL = "HOOPS"; // fictional centre-court logo wordmark
     function court() {
       const c = c2,
         sx = TW / 940,
@@ -212,12 +238,21 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       let seed = 7;
       const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
       const bh = Math.max(4, Math.round(1.9 * sy));
+      if (woodOn) {
+        // flat varnish tone; the wood texture (multiplied in by detail()) brings the planks, grain and colour variation
+        const vg = c.createLinearGradient(0, 0, TW, 0);
+        vg.addColorStop(0, "#c8955f");
+        vg.addColorStop(0.5, "#d3a26c");
+        vg.addColorStop(1, "#c8955f");
+        c.fillStyle = vg;
+        c.fillRect(0, 0, TW, TH);
+      } else
       for (let y = 0; y < TH; y += bh) {
         let x = -rnd() * 300;
         while (x < TW) {
           const L = 260 + rnd() * 520,
             t = rnd();
-          c.fillStyle = `hsl(${28 + t * 7},${58 + t * 12}%,${50 + t * 9}%)`;
+          c.fillStyle = `hsl(${28 + t * 7},${56 + t * 12}%,${44 + t * 8}%)`;
           c.fillRect(x, y, L, bh);
           c.fillStyle = "rgba(90,52,18,.18)";
           c.fillRect(x, y, 1.5, bh); // butt joint
@@ -320,10 +355,53 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         st(gar(hx, 250, 40, b ? 1.57 : -1.57, b ? 4.71 : 1.57)); // restricted area
         for (const yy of [170, 330]) for (const dx of [70, 80, 110, 140]) st([[e + sg * dx, yy], [e + sg * dx, yy + (yy < 250 ? -6 : 6)]]); // lane hash marks
       }
-      c.font = "italic 900 58px system-ui";
+      // centre-court crest (fictional): a stylised ball in a ring with the league wordmark, projected like a decal
+      {
+        c.save();
+        c.translate(470, 250);
+        c.globalAlpha = 0.92;
+        c.fillStyle = "rgba(10,12,22,.55)";
+        c.beginPath();
+        c.arc(0, 0, 40, 0, 6.3);
+        c.fill();
+        c.strokeStyle = "#ffd23f";
+        c.lineWidth = 2.4;
+        c.beginPath();
+        c.arc(0, 0, 40, 0, 6.3);
+        c.stroke();
+        const bg = c.createRadialGradient(-8, -8, 2, 0, 0, 26);
+        bg.addColorStop(0, "#f39a4a");
+        bg.addColorStop(1, "#b9541a");
+        c.fillStyle = bg;
+        c.beginPath();
+        c.arc(0, -3, 24, 0, 6.3);
+        c.fill();
+        c.strokeStyle = "#2a1206";
+        c.lineWidth = 1.6;
+        c.beginPath();
+        c.moveTo(-24, -3);
+        c.lineTo(24, -3);
+        c.moveTo(0, -27);
+        c.lineTo(0, 21);
+        c.moveTo(-15, -22);
+        c.quadraticCurveTo(-4, -3, -15, 16);
+        c.moveTo(15, -22);
+        c.quadraticCurveTo(4, -3, 15, 16);
+        c.stroke();
+        c.font = "italic 900 17px system-ui";
+        c.textAlign = "center";
+        c.lineWidth = 3;
+        c.strokeStyle = "rgba(10,12,22,.9)";
+        c.strokeText(DECAL + " 2K27", 0, 33);
+        c.fillStyle = "#fff";
+        c.fillText(DECAL + " 2K27", 0, 33);
+        c.restore();
+      }
+      // wordmark decals in front of each bench area (along the near sideline)
+      c.font = "italic 900 16px system-ui";
       c.textAlign = "center";
-      c.fillStyle = "rgba(255,255,255,.9)";
-      c.fillText("2K27", 470, 270);
+      c.fillStyle = "rgba(255,255,255,.16)";
+      for (const x of [300, 640]) c.fillText("2K27", x, 488);
       c.font = "900 30px system-ui";
       c.fillStyle = "rgba(255,255,255,.22)";
       c.save();
@@ -379,11 +457,58 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       clearcoatRoughness: 0.22,
       envMapIntensity: 0.35,
     });
+    mipBias(floorMat);
     const fl = ad(new THREE.PlaneGeometry(94, 50), floorMat, 0, 0, 0);
     fl.rotation.x = -Math.PI / 2;
     fl.castShadow = false;
+    // CC0 ambientCG maple (KTX2, gfxtex.ts) on Medium+: real plank grain + normal + roughness. WebGL multiplies the
+    // wood colour under the painted court (detail(); the canvas then drops its own boards); WebGPU keeps the canvas
+    // boards and takes the normal / roughness maps only.
+    let texReq = false;
+    const texLoad = () => {
+      if (texReq || V.QL < 1) return;
+      texReq = true;
+      const own = (t: THREE.Texture, rx: number, ry: number) => {
+        const c = t.clone();
+        c.repeat.set(rx, ry);
+        c.anisotropy = maxAniso();
+        c.needsUpdate = true;
+        return c;
+      };
+      gfxTex(R, "wood").then((w) => {
+        if (!w) return;
+        const rx = 15,
+          ry = 8;
+        floorMat.normalMap = own(w.normalMap, rx, ry);
+        floorMat.normalScale.set(0.45, 0.45);
+        floorMat.roughnessMap = own(w.roughnessMap, rx, ry);
+        floorMat.roughness = 0.7;
+        floorMat.bumpMap = null;
+        if (!GPU) {
+          detail(floorMat, w.map, [rx, ry], 0.9);
+          woodOn = true;
+          pcK = ""; // redraw the court canvas without its own boards
+        }
+        floorMat.needsUpdate = true;
+      });
+      gfxTex(R, "asphalt").then((a) => {
+        if (!a) return;
+        stM.normalMap = own(a.normalMap, 10, 5.5);
+        stM.normalScale.set(0.8, 0.8);
+        dryRough = own(a.roughnessMap, 10, 5.5);
+        if (!GPU) detail(stM, a.map, [10, 5.5], 0.75);
+        wxK = ""; // re-apply the weather (roughness map: dry asphalt vs puddles)
+        stM.needsUpdate = true;
+      });
+    };
     // ---- street court (Street 21 / King of the Court): asphalt, painted lines, a chain-link fence, streetlights ----
     const STREET: THREE.Object3D[] = [];
+    const stM = new THREE.MeshStandardMaterial({ roughness: 0.96, metalness: 0 }),
+      apM = new THREE.MeshStandardMaterial({ color: 0x2b2c30, roughness: 1 }),
+      lampM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd9a0).multiplyScalar(4) }),
+      lampL: THREE.SpotLight[] = [];
+    let dryRough: THREE.Texture | null = null,
+      wxK = "";
     {
       const c = document.createElement("canvas");
       c.width = 2048;
@@ -435,14 +560,16 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         x.ellipse(...P2(hx, 0), 23.75 * sx, 23.75 * sy, 0, s < 0 ? -1.19 : Math.PI - 1.19, s < 0 ? 1.19 : Math.PI + 1.19);
         x.stroke();
       }
-      const st = new THREE.Mesh(new THREE.PlaneGeometry(94, 50), new THREE.MeshStandardMaterial({ map: TX2(c), roughness: 0.96, metalness: 0 }));
+      const st = new THREE.Mesh(new THREE.PlaneGeometry(94, 50), stM);
+      stM.map = TX2(c);
+      mipBias(stM);
       st.rotation.x = -Math.PI / 2;
       st.position.y = 0.012;
       st.receiveShadow = true;
       S.add(st);
       STREET.push(st);
       // apron beyond the lines
-      const ap = new THREE.Mesh(new THREE.PlaneGeometry(130, 80), new THREE.MeshStandardMaterial({ color: 0x2b2c30, roughness: 1 }));
+      const ap = new THREE.Mesh(new THREE.PlaneGeometry(130, 80), apM);
       ap.rotation.x = -Math.PI / 2;
       ap.position.y = 0.006;
       ap.receiveShadow = true;
@@ -487,23 +614,135 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       ]) {
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 26, 10), new THREE.MeshStandardMaterial({ color: 0x3a3d44, metalness: 0.7, roughness: 0.5 }));
         pole.position.set(px, 13, pz);
-        const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 1.2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd9a0).multiplyScalar(4) }));
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 1.2), lampM);
         lamp.position.set(px, 26, pz * 0.92);
-        S.add(pole, lamp);
-        STREET.push(pole, lamp);
+        // the lamp's light (night / rain / dusk only: visibility follows the weather)
+        const sl = new THREE.SpotLight(0xffd9a0, 0, 0, 0.75, 0.6, 1);
+        sl.position.set(px, 25.6, pz * 0.92);
+        sl.target.position.set(px * 0.4, 0, pz * 0.3);
+        lampL.push(sl);
+        S.add(pole, lamp, sl, sl.target);
+        STREET.push(pole, lamp, sl);
       }
       for (const o of STREET) o.visible = false;
     }
-    let streetOn = false;
+    let streetOn = false,
+      wxNow: Wx = "day";
+    // ---- street weather / time of day (graphics v6): sky dome + stars, sun / moon, lamps, rain + snow, wet asphalt
+    const domeG = new THREE.SphereGeometry(320, 32, 16),
+      dome = new THREE.Mesh(domeG, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    domeG.setAttribute("color", new THREE.BufferAttribute(new Float32Array(domeG.attributes.position.count * 3), 3));
+    dome.renderOrder = -1;
+    S.add(dome);
+    STREET.push(dome);
+    const starG = new THREE.BufferGeometry(),
+      sp0: number[] = [];
+    for (let i = 0; i < 500; i++) {
+      const a = Math.random() * 6.283,
+        e = 0.12 + Math.pow(Math.random(), 0.7) * 1.4;
+      sp0.push(Math.cos(e) * Math.cos(a) * 300, Math.sin(e) * 300, Math.cos(e) * Math.sin(a) * 300);
+    }
+    starG.setAttribute("position", new THREE.Float32BufferAttribute(sp0, 3));
+    const stars = new THREE.Points(starG, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85 }));
+    S.add(stars);
+    const precip = makePrecip(S),
+      pud = puddleMaps();
+    let snowAmt = 0;
+    function applyWx(w: Wx) {
+      const k = SKY[w],
+        zc = new THREE.Color(k.z),
+        hc = new THREE.Color(k.h),
+        gc = new THREE.Color(k.g),
+        pa = domeG.attributes.position,
+        ca = domeG.attributes.color as THREE.BufferAttribute,
+        t = new THREE.Color();
+      for (let i = 0; i < pa.count; i++) {
+        const y = pa.getY(i) / 320;
+        if (y >= 0) t.copy(hc).lerp(zc, Math.pow(y, 0.55));
+        else t.copy(hc).lerp(gc, Math.min(1, -y * 6));
+        if (w === "sunset") {
+          // the glow around the setting sun
+          const ang = Math.atan2(pa.getZ(i), pa.getX(i)) - k.az,
+            g = Math.max(0, Math.cos(ang)) * Math.max(0, 1 - Math.abs(y) * 2.5);
+          t.lerp(new THREE.Color(0xffb070), g * 0.6);
+        }
+        ca.setXYZ(i, t.r, t.g, t.b);
+      }
+      ca.needsUpdate = true;
+      stars.visible = w === "night";
+      (S.background as THREE.Color).set(k.h);
+      const f = S.fog as THREE.Fog;
+      f.color.set(k.h);
+      f.near = k.fog * 0.3;
+      f.far = k.fog;
+      sun.color.set(k.sun);
+      sun.intensity = k.si * PI;
+      sun.position.set(Math.cos(k.el) * Math.cos(k.az) * 80, Math.max(12, Math.sin(k.el) * 80), Math.cos(k.el) * Math.sin(k.az) * 80);
+      Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 5, far: 220 });
+      sun.shadow.camera.updateProjectionMatrix();
+      hemi.color.copy(zc).lerp(new THREE.Color(1, 1, 1), 0.45);
+      hemi.groundColor.set(k.g);
+      hemi.intensity = k.hi * PI;
+      back.intensity = 0.25 * k.si * PI;
+      fill.intensity = 0.1 * k.si * PI;
+      R.toneMappingExposure = k.ex;
+      RIM.value.setRGB(...((w === "sunset" ? [1, 0.6, 0.36] : w === "night" ? [0.22, 0.27, 0.4] : [0.48, 0.52, 0.58]) as [number, number, number]));
+      for (const l of lampL) (l.intensity = k.lamps * 34 * PI), (l.visible = k.lamps > 0.05);
+      lampM.color.set(0xffd9a0).multiplyScalar(0.5 + 5 * k.lamps);
+      envSet("sky:" + w, () => skyEnv(w));
+      // surface: wet (rain: dark, glossy, puddles that mirror where the Reflector is on), snow cover, dry
+      const wet = w === "rain";
+      snowAmt = w === "snow" ? 1 : 0;
+      stM.roughnessMap = wet ? pud.rough : dryRough;
+      stM.roughness = wet ? 1 : dryRough ? 1 : 0.96;
+      stM.color.set(wet ? 0x8c8c90 : w === "snow" ? 0xe4e8ee : 0xffffff);
+      stM.envMapIntensity = wet ? 1.4 : 1;
+      apM.color.set(w === "snow" ? 0xd4d9e0 : wet ? 0x1d1e21 : 0x2b2c30);
+      apM.roughness = wet ? 0.35 : w === "snow" ? 0.85 : 1;
+      stM.needsUpdate = apM.needsUpdate = true;
+    }
+    /** puddles show the planar reflection (High+ in the rain): the asphalt goes see-through where the mask is dark */
+    const puddleMirror = (on: boolean) => {
+      const want = on ? pud.alpha : null;
+      if (stM.alphaMap === want) return;
+      stM.alphaMap = want;
+      stM.transparent = on;
+      stM.needsUpdate = true;
+    };
+    const arenaLights = () => {
+      (S.background as THREE.Color).set(0x06070d);
+      const f = S.fog as THREE.Fog;
+      f.color.set(0x06070d);
+      f.near = 110;
+      f.far = 230;
+      sun.color.set(0xfff3e2);
+      sun.intensity = 0.95 * PI;
+      sun.position.set(4, 80, 7);
+      Object.assign(sun.shadow.camera, { left: -54, right: 54, top: 32, bottom: -32, near: 5, far: 150 });
+      sun.shadow.camera.updateProjectionMatrix();
+      hemi.color.set(0xdfe8ff);
+      hemi.groundColor.set(0x2a1d10);
+      hemi.intensity = 0.16 * PI;
+      back.intensity = 0.75 * PI;
+      fill.intensity = 0.18 * PI;
+      R.toneMappingExposure = 0.9;
+      RIM.value.setRGB(0.55, 0.62, 0.75);
+      envSet("arena:" + (PC[0] || ""), () => arenaEnv(PC[0] || "#7b3fb5"));
+      stars.visible = false;
+    };
+    let wxAuto: Wx = "day";
     function setStreet(on: boolean) {
       streetOn = on;
+      if (on) wxAuto = autoWx();
       for (const o of STREET) o.visible = on;
       for (const o of ARENA) o.visible = !on;
       fl.visible = !on;
-      (S.background as THREE.Color).set(on ? 0x6f8fb8 : 0x06070d);
-      (S.fog as THREE.Fog).color.set(on ? 0x8aa3c4 : 0x06070d);
       for (const b of bench) b.gl.G.visible = !on;
+      if (mirror) mirror.position.y = on ? 0.009 : -0.02; // street: between the apron and the asphalt (puddles)
+      wxK = "";
+      if (!on) arenaLights();
     }
+    arenaLights();
     // planar reflection (WebGL renderer only; on WebGPU the glossy floor keeps its environment reflections)
     const mirror: any = GPU ? null : new Reflector(new THREE.PlaneGeometry(94, 50), { textureWidth: mob ? 1024 : 2048, textureHeight: mob ? 576 : 1152, color: 0x777777, clipBias: 0.003 });
     if (mirror) {
@@ -558,10 +797,12 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const tierM = M(0x161a2e, { roughness: 0.85 }),
       tierG = new THREE.BoxGeometry(1, 1, 1);
     const tiers: [number, number, number, number, number][] = []; // x, y, z, w, d per step box
-    for (let r = 0; r < 12; r++) {
-      const y = 0.6 + r * 1.15,
-        off = 3.2 + r * 1.6;
-      tiers.push([0, y, -(25 + off), 120 + r * 3.2, 1.6], [0, y, 25 + off, 120 + r * 3.2, 1.6], [-(47 + off), y, 0, 1.6, 50 + r * 3.2 * 2], [47 + off, y, 0, 1.6, 50 + r * 3.2 * 2]);
+    // graphics v6: lower bowl (rows 0-11) + upper deck (12-19) above an LED fascia, aisles with stairs (gfx3d bowl())
+    for (let r = 0; r < ROWS; r++) {
+      const y = rowY(r),
+        off = rowOff(r),
+        d = (r >= 12 ? rowOff(r) - rowOff(r - 1) : 1.6) + 0.02;
+      tiers.push([0, y, -(25 + off), 100 + off * 2, d], [0, y, 25 + off, 100 + off * 2, d], [-(47 + off), y, 0, d, 50 + off * 2], [47 + off, y, 0, d, 50 + off * 2]);
     }
     const tierI = new THREE.InstancedMesh(tierG, tierM, tiers.length),
       dm = new THREE.Object3D();
@@ -574,7 +815,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     });
     tierI.receiveShadow = true;
     S.add(tierI); ARENA.push(tierI);
-    const CN = 2600,
+    const CN = 3600,
       cpos: number[][] = [],
       cc = new THREE.Color(),
       bodyI = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.3, 0.55, 3, 8), M(0xffffff, { roughness: 0.85 }), CN),
@@ -582,27 +823,30 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     const SKN = ["#f1c27d", "#c68642", "#8d5524", "#e0ac69", "#6b4226", "#ffdbac"];
     for (let i = 0; i < CN; i++) {
       const sd = i % 4,
-        r = Math.floor(i / 4) % 12,
-        y = 0.6 + r * 1.15 + 0.55,
-        off = 3.2 + r * 1.6;
-      let x, z, ry;
+        r = Math.floor(i / 4) % ROWS,
+        y = rowY(r) + 0.55,
+        off = rowOff(r);
+      let x = 0,
+        z = 0,
+        ry;
       if (sd < 2) {
-        x = (Math.random() - 0.5) * (116 + r * 3);
+        for (let k = 0; k < 6 && (k === 0 || inAisle(sd, x)); k++) x = (Math.random() - 0.5) * (94 + off * 2 + 4);
         z = (sd ? 1 : -1) * (25 + off);
         ry = sd ? Math.PI : 0;
       } else {
-        z = (Math.random() - 0.5) * (46 + r * 6);
+        for (let k = 0; k < 6 && (k === 0 || inAisle(sd, z)); k++) z = (Math.random() - 0.5) * (50 + off * 2 - 4);
         x = (sd === 2 ? -1 : 1) * (47 + off);
         ry = sd === 2 ? Math.PI / 2 : -Math.PI / 2;
       }
-      cpos.push([x, y, z, ry, Math.random() * 6.28, Math.random(), r, Math.atan2(z, x)]); // .., seed, row, arena angle
+      // .., seed, row, arena angle, body size, house-light dimming (the upper deck sits in the dark)
+      cpos.push([x, y, z, ry, Math.random() * 6.28, Math.random(), r, Math.atan2(z, x), 0.86 + Math.random() * 0.3, r >= 12 ? 0.42 : 0.72 - r * 0.012]);
       // fans wear their team's color more often than not
       const team = Math.random();
       if (team < 0.32) cc.set(PC[0] || "#7b3fb5");
       else if (team < 0.6) cc.set(PC[1] || "#1d428a");
       else cc.setHSL(Math.random(), 0.35, 0.25 + Math.random() * 0.4);
-      bodyI.setColorAt(i, cc);
-      headI.setColorAt(i, cc.set(SKN[i % SKN.length]));
+      bodyI.setColorAt(i, cc.multiplyScalar(cpos[i][9]));
+      headI.setColorAt(i, cc.set(SKN[i % SKN.length]).multiplyScalar(cpos[i][9]));
     }
     for (const m of [bodyI, headI]) {
       m.instanceColor!.needsUpdate = true;
@@ -660,7 +904,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           st2 = Math.max(exc > 0.45 + seed * 0.5 ? 1 : 0, wv),
           hop = Math.max(0, Math.sin(T * (3 + exc * 5) + c[4])) * 0.3 * exc * st2;
         dm.rotation.set(0, c[3], 0);
-        dm.scale.set(1, 0.72 + 0.28 * st2, 1);
+        dm.scale.set(c[8], (0.72 + 0.28 * st2) * c[8], c[8]);
         dm.position.set(c[0], c[1] - 0.28 * (1 - st2) + hop, c[2]);
         dm.updateMatrix();
         bodyI.setMatrixAt(i, dm.matrix);
@@ -822,7 +1066,34 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
 
     // ---------------- LED ribbons (courtside + upper ring), emissive so bloom catches them ----------------
     const [lc, l] = cv(2048, 64);
+    /** LED takeover after a bucket (graphics v6): the scoring team's colour strobes behind the call ("3 POINTS!",
+     *  "SLAM!", "AND ONE!"), chevrons race around the bowl; redrawn ~15x/s while it runs (ledFx). */
+    const ledFx = { t: 0, txt: "", col: "#ffd23f" };
     function ledDraw() {
+      if (ledFx.t > 0) {
+        const ph = Math.floor(ledFx.t * 8) % 2;
+        l.fillStyle = ph ? ledFx.col : "#06070d";
+        l.fillRect(0, 0, 2048, 64);
+        l.font = "italic 900 44px system-ui";
+        for (let i = 0; i < 4; i++) {
+          const x0 = i * 512;
+          l.fillStyle = ph ? "#ffffff" : ledFx.col;
+          l.fillText(ledFx.txt, x0 + 30, 48);
+          l.fillStyle = ph ? "#06070d" : "#ffd23f";
+          for (let k = 0; k < 3; k++) {
+            const cx = x0 + 400 + k * 26 + ((ledFx.t * 120) % 26);
+            l.beginPath();
+            l.moveTo(cx, 12);
+            l.lineTo(cx + 14, 32);
+            l.lineTo(cx, 52);
+            l.lineTo(cx + 8, 52);
+            l.lineTo(cx + 22, 32);
+            l.lineTo(cx + 8, 12);
+            l.fill();
+          }
+        }
+        return;
+      }
       l.fillStyle = "#04050b";
       l.fillRect(0, 0, 2048, 64);
       l.font = "italic 900 40px system-ui";
@@ -846,11 +1117,11 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       brd.rotation.y = ry;
       S.add(brd); ARENA.push(brd);
     }
-    const ring = new THREE.Mesh(new THREE.CylinderGeometry(80, 80, 2.2, 64, 1, true), ledM);
-    ring.position.y = 16.5;
-    ring.scale.set(1, 1, 0.62);
-    (ring.material as any).side = THREE.DoubleSide;
-    S.add(ring); ARENA.push(ring);
+    // the bowl (upper deck fascia LED band, stairs, rails, shell, suites, tunnels, roof trusses), scorer's table,
+    // baseline photographers (gfx3d.ts)
+    bowl(S, ARENA, ledM, PC[0] || "#7b3fb5");
+    scorerTable(S, ARENA, ledM);
+    photographers(S, ARENA);
 
     // ---------------- hoops: padded stanchion, arm, glass, shot clock, rim, tube net ----------------
     const shotClocks: { ctx: CanvasRenderingContext2D; tex: THREE.Texture; k: string }[] = [];
@@ -1022,6 +1293,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       // confetti
       if (GS === "over" && !cfOn) {
         cfOn = 1;
+        if (!streetOn) pyro.fire(2.2);
         const w = sc[0] >= sc[1] ? 0 : 1,
           cols = [PC[w] || "#ffd23f", "#ffd23f", "#ffffff", PC[w] || "#7b3fb5"];
         cfs.length = 0;
@@ -1187,7 +1459,57 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       jum = new THREE.Mesh(new THREE.BoxGeometry(15, 7.5, 15), [js2, js2, darkM, darkM, js2, js2]);
     jum.position.set(0, 27, 0);
     S.add(jum); ARENA.push(jum);
-    let jk = "";
+    let jk = "",
+      jumboN = 0,
+      liveOn = false;
+    // Ultra: a live camera feed on the jumbotron (tight sideline shot of the ball, rendered every 2nd frame at 512x288
+    // into the top of each face; the score bar stays below it)
+    const liveRT = GPU ? null : new THREE.WebGLRenderTarget(512, 288, { samples: 0, type: THREE.HalfFloatType }), // linear HDR, tone-mapped with the frame
+      liveCam = new THREE.PerspectiveCamera(24, 512 / 288, 0.5, 300),
+      liveScr: THREE.Mesh[] = [];
+    if (liveRT) {
+      const lm = new THREE.MeshBasicMaterial({ map: liveRT.texture, toneMapped: false });
+      for (const [x, z, ry] of [
+        [0, 7.52, 0],
+        [0, -7.52, Math.PI],
+        [7.52, 0, Math.PI / 2],
+        [-7.52, 0, -Math.PI / 2],
+      ] as const) {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(13.4, 4.6), lm);
+        m.position.set(x, 28.3, z);
+        m.rotation.y = ry;
+        m.visible = false;
+        S.add(m);
+        ARENA.push(m);
+        liveScr.push(m);
+      }
+    }
+    const LT = new THREE.Vector3();
+    function liveFeed(on: boolean) {
+      if (liveOn !== on) {
+        liveOn = on;
+        jk = "";
+        for (const m of liveScr) m.visible = on;
+      }
+      if (!on || !liveRT || jumboN & 1) return;
+      // the feed: low sideline camera leading the ball
+      const bw = W3(B.x, B.y, Math.max(30, B.z));
+      LT.set(bw[0], bw[1] * 0.6 + 1.5, bw[2]);
+      liveCam.position.lerp(TV.set(bw[0] * 0.85, 5.5, 34), 0.2);
+      liveCam.lookAt(LT);
+      const au = R.shadowMap.autoUpdate,
+        mv = mirror ? mirror.visible : false,
+        rt0 = R.getRenderTarget();
+      R.shadowMap.autoUpdate = false; // reuse this frame's shadow maps
+      if (mirror) mirror.visible = false;
+      for (const m of liveScr) m.visible = false;
+      R.setRenderTarget(liveRT);
+      R.render(S, liveCam);
+      R.setRenderTarget(rt0);
+      for (const m of liveScr) m.visible = true;
+      if (mirror) mirror.visible = mv;
+      R.shadowMap.autoUpdate = au;
+    }
     /** Live team stats that rotate on the jumbotron's lower panel (every ~6 s). */
     function jStat(): [string, string, string] {
       const R2 = (t: number) => (ROST[t] && ROST[t].length ? ROST[t] : P.filter((p: any) => p.tm === t)),
@@ -1217,11 +1539,50 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       }
     }
     function jumbo() {
+      jumboN++;
+      // timeouts: KISS CAM / DANCE CAM (fictional cartoon fans, procedural), ~20 fps
+      const fan = (TS.hud || 0) > 0 && !SCFG.HALF ? ((TS.to[0] + TS.to[1]) % 2 ? "kiss" : "dance") : "";
+      if (fan) {
+        if ((jumboN & 3) === 0) {
+          drawFanCam(j2, fan, T, PC[0] || "#7b3fb5");
+          jt.needsUpdate = true;
+          jk = "";
+        }
+        return;
+      }
       const st = jStat(),
-        k = sc[0] + "-" + sc[1] + "-" + fmt(clock) + "-" + Math.ceil(shot) + "-" + qtrN + PC.join() + st.join();
+        k = sc[0] + "-" + sc[1] + "-" + fmt(clock) + "-" + Math.ceil(shot) + "-" + qtrN + PC.join() + st.join() + liveOn;
       if (k === jk) return;
       jk = k;
       const c = j2;
+      if (liveOn) {
+        // live feed on top (its own plane): a compact score bar underneath
+        c.fillStyle = "#03050c";
+        c.fillRect(0, 0, 1024, 512);
+        c.fillStyle = "#e0262e";
+        c.fillRect(24, 22, 92, 30);
+        c.fillStyle = "#fff";
+        c.font = "800 22px system-ui";
+        c.textAlign = "center";
+        c.fillText("LIVE", 70, 45);
+        for (const b of [0, 1]) {
+          c.fillStyle = PC[b] || "#333";
+          c.fillRect(b ? 560 : 24, 352, 440, 96);
+          c.fillStyle = "#fff";
+          c.font = "800 34px system-ui";
+          c.textAlign = "left";
+          c.fillText(((cl && cl[b]) || "").toUpperCase().slice(0, 10), (b ? 560 : 24) + 22, 412);
+          c.font = "900 64px system-ui";
+          c.textAlign = "right";
+          c.fillText(String(sc[b]), (b ? 560 : 24) + 420, 424);
+        }
+        c.fillStyle = "#ffd23f";
+        c.font = "800 40px ui-monospace,monospace";
+        c.textAlign = "center";
+        c.fillText((qtrN > 4 ? "OT" : "Q" + qtrN) + "  " + fmt(clock) + "   " + Math.ceil(shot), 512, 492);
+        jt.needsUpdate = true;
+        return;
+      }
       c.fillStyle = "#03050c";
       c.fillRect(0, 0, 1024, 512);
       for (const b of [0, 1]) {
@@ -1295,14 +1656,29 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       const hs = hm ? Math.max(0.25, (V.HSR === 1 ? dres.scale : HSRS[V.HSR]) * lk) : 1;
       hsrK = hm + ":" + V.HSR;
       fx.setHSR(hm, hs);
-      fx.setLevel(on && lvl >= 4 ? ql : on ? 0 : 0, on && lvl >= 4, 960, 540, on && lvl >= 6 && ql >= 2);
-      setMirror(on && ql >= 2 && lvl >= 5);
+      // AO (N8AO): Balanced = half res on Medium, High/Ultra full res; the ladder's top rung only
+      fx.setLevel(on && lvl >= 4 ? ql : on ? 0 : 0, on && lvl >= 4, 960, 540, on && lvl >= 6 ? aoLevel() : 0);
+      const gl = GRADES[V.GRADE] || GRADES[0];
+      fx.setLook(gl[1], gl[2], gl[3], gl[4], V.GRAIN ? (ql >= 2 ? 0.014 : 0.01) : 0);
+      // planar reflection: the arena floor (High+), or the street's puddles in the rain
+      setMirror(on && ql >= 2 && lvl >= 5 && (!streetOn || wxNow === "rain"));
+      puddleMirror(!!mirror && mirror.visible && streetOn);
+      if (mirror && !GPU) {
+        // the reflection renders at (a fraction of) the INTERNAL resolution: no 2K mirror under a 50% HSR frame
+        const k = ql >= 3 ? 1 : 0.75,
+          rw = Math.max(256, Math.min(2560, Math.floor((fx.hsr.w || 1280) * k))),
+          rh = Math.max(144, Math.min(1440, Math.floor((fx.hsr.h || 720) * k))),
+          mrt = mirror.getRenderTarget();
+        if (mrt.width !== rw || mrt.height !== rh) mrt.setSize(rw, rh);
+      }
+      sun.shadow.radius = ql >= 3 ? 5 : ql >= 2 ? 3.5 : 2.5;
+      (sun.shadow as any).blurSamples = ql >= 3 ? 16 : 8;
       const wantShadow = ql > 0 && lvl >= 3;
       if (R.shadowMap.enabled !== wantShadow) {
         R.shadowMap.enabled = wantShadow;
         S.traverse((o: any) => o.material && [].concat(o.material).forEach((mm: any) => (mm.needsUpdate = true)));
       }
-      sun.shadow.mapSize.setScalar(ql > 1 && !mob ? 4096 : ql > 0 ? 2048 : 1024);
+      sun.shadow.mapSize.setScalar(ql >= 3 || (ql > 1 && !mob) ? 4096 : ql > 0 ? 2048 : 1024);
       for (const m of shafts) m.visible = ql >= 1 && lvl >= 3;
       fx.setGrade(on && ql >= 1 && lvl >= 4);
       if (sun.shadow.map) {
@@ -1489,7 +1865,12 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       });
     }
     let rpA = 0,
-      rpT = 0;
+      rpT = 0,
+      lastSc = [0, 0],
+      introA = -1;
+    /** 0 at the tip .. 1 at the final buzzer (sweat builds over the game) */
+    const gameDepth = () => (gameLike() ? Math.min(1, ((qtrN - 1) + (1 - clock / Math.max(1, QTRLEN))) / 4) : 0);
+    const pyro = makePyro(S);
     let pset: any = null,
       pslot: any[] | null = null,
       lastR = 0,
@@ -1540,14 +1921,25 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           fxLevel(); // HSR mode / upscaler changed in the settings
           settle = now + 500;
         }
+        texLoad();
         const tot = sc[0] + sc[1];
         if (tot !== lastTot) {
+          // LED takeover in the scoring team's colour
+          const tm = sc[0] !== lastSc[0] ? 0 : 1,
+            pts = sc[tm] - lastSc[tm];
+          if (pts > 0 && pts <= 4 && lastTot >= 0 && !streetOn) Object.assign(ledFx, { t: 2.4, col: PC[tm] || "#ffd23f", txt: pts >= 3 ? "3 POINTS!" : B.dk ? "SLAM!" : B.fl ? "AND ONE!" : pts === 1 ? "FREE THROW" : "BUCKET!" });
+          lastSc[0] = sc[0];
+          lastSc[1] = sc[1];
           lastTot = tot;
           exc = 1;
           if (Math.random() < 0.3 && waveT <= 0) (waveT = 6), (waveA = Math.random() * 6.283); // the wave
         }
         exc = Math.max(0.3, exc - 0.004);
-        const crowdN = QL === 0 ? 0 : QL === 1 || lvl < 3 ? 1300 : CN;
+        const crowdN = QL === 0 ? 0 : QL === 1 || lvl < 3 ? 1300 : QL === 2 ? 2600 : CN;
+        if (ledFx.t > 0) {
+          ledFx.t -= fdt;
+          if ((nf & 3) === 0 || ledFx.t <= 0) ledDraw(), (led.needsUpdate = true);
+        }
         if ((nf & 1) === 0 || bodyI.count !== crowdN) crowdUpd(crowdN);
         jumbo();
         shotClockDraw();
@@ -1571,7 +1963,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               else if (QL > 0 && ++bad >= 2) {
                 bad = 0;
                 V.QL = QL - 1;
-                V.QAUTO = "Graphics lowered to " + ["Low", "Medium"][V.QL] + " for a smoother game";
+                V.QAUTO = "Graphics lowered to " + QLN[V.QL] + " for a smoother game";
               }
             } else if (ema < 13 && lvl < 6 && ++good >= 4) (good = 0), lvl++;
             if (lvl !== old) (fxLevel(), (settle = now + 350), (settleN = 2));
@@ -1590,12 +1982,13 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           court();
           ledDraw();
           led.needsUpdate = true;
+          if (!streetOn) envSet("arena:" + (PC[0] || ""), () => arenaEnv(PC[0] || "#7b3fb5"));
           for (let i = 0; i < CN; i++) {
             const t = Math.random();
             if (t < 0.32) cc.set(PC[0]);
             else if (t < 0.6) cc.set(PC[1]);
             else cc.setHSL(Math.random(), 0.35, 0.25 + Math.random() * 0.4);
-            bodyI.setColorAt(i, cc);
+            bodyI.setColorAt(i, cc.multiplyScalar(cpos[i][9]));
           }
           bodyI.instanceColor!.needsUpdate = true;
         }
@@ -1637,6 +2030,18 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
             }
         if (bench.length && QL > 0) benchUpd(fdt);
         if (!!SCFG.HALF !== streetOn) setStreet(!!SCFG.HALF);
+        if (streetOn) {
+          const w = (V.WX === "auto" || !(V.WX in SKY) ? wxAuto : V.WX) as Wx,
+            k = w + ":" + QL;
+          if (k !== wxK) {
+            wxK = k;
+            wxNow = w;
+            applyWx(w);
+            fxLevel();
+            settle = now + 500;
+          }
+          precip.update(fdt, wxNow, QL === 0 ? 300 : QL === 1 ? 900 : 1600);
+        } else if (precip.rain.visible || precip.snow.visible) precip.update(0, "", 0);
         if (QL > 0 && !streetOn) courtside(fdt, exc);
         if (P.length) {
           for (const p of P)
@@ -1644,6 +2049,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
               p.gl.G.visible = !p.off; // parked by a game mode
               if (p.off) continue;
               applyPose(p.gl, p);
+              // sweat: fatigue now + how deep into the game we are (skin sheen, damp jersey)
+              p.gl.mesh.userData.sweat = Math.min(1, Math.max(0, (1 - (p.en ?? 1)) * 1.6) * 0.6 + gameDepth() * 0.55);
               footIK(p.gl, p, fdt, QL > 0 && !RPL);
               clothStep(p.gl, p, fdt);
             }
@@ -1759,6 +2166,23 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           tl = [pw[0], ah + (fz ? 0 : up), pw[2]];
         }
         let lerpK = SO || NCM ? 1 : RPL && RPK ? 0.35 : 0.1;
+        // Pregame flyover (S "intro"): a slow crane move around the bowl, down toward the broadcast angle, with pyro
+        // bursts from the baseline cannons and a cutscene depth of field; one more burst at the tip.
+        if (GS === "intro" && !SO && !NCM && !streetOn) {
+          if (introA < 0) (introA = 0), pyro.fire(1.8), cam.position.set(-70, 40, 50);
+          const a0 = introA;
+          introA += fdt;
+          if (Math.floor(introA / 3.5) !== Math.floor(a0 / 3.5)) pyro.fire(1.1);
+          const a = 2.4 + introA * 0.14,
+            rr = Math.max(40, 74 - introA * 2.2);
+          tp = [Math.cos(a) * rr, Math.max(13, 36 - introA * 1.6), Math.sin(a) * rr * 0.7];
+          tl = [0, 3.5, 0];
+          lerpK = 0.06;
+          fx.setDof(V.FX && QL >= 2 ? Math.hypot(cam.position.x, cam.position.y - 3.5, cam.position.z) : 0);
+        } else if (introA >= 0 && GS !== "intro") {
+          introA = -1;
+          if (GS === "play" && !streetOn) pyro.fire(1.2);
+        }
         if (!SO && !RPL && GS === "over" && sc[0] !== sc[1]) {
           // final buzzer: the camera drifts in to the winners' top scorer (face close-up: the grin, the roar)
           const wt = sc[0] > sc[1] ? 0 : 1;
@@ -1791,6 +2215,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         // Motion blur only for the big moments (dunks, dribble moves of the followed player), never on camera pans.
         const fast = p0 && ((p0.mvT > 0 && p0 === B.owner) || (B.dk && B.age < 0.4)) ? 1 : 0;
         fx.setMotion(fast && p0 ? Math.cos(Math.PI / 2 - p0.f) * 0.006 : 0, 0, fast && V.FX && QL >= 2 && lvl >= 5 ? 1 : 0);
+        if (pyro.active) pyro.update(fdt, cam);
+        if (liveRT) liveFeed(QL >= 3 && !streetOn && !RPL && !SO && !NCM && GS === "play" && lvl >= 5);
         fx.render(fdt);
       },
     };

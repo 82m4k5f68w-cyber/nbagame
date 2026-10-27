@@ -98,7 +98,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - 3D rendering: `render3d.ts glInit` (court texture, crowd InstancedMesh, jumbotron, hoops, net, rig; shared material cache); `V.GL.render` (cameras `V.CAMM` 0-3, quality `V.QL`, auto-downgrade). Canvas fallback (`canvas.ts scene3c/segs3c`) if WebGL fails.
 - HUD: 2D canvas `#h` over the WebGL canvas `#c` (must stay transparent!). `view.ts pr(x,y,z)` projects with the active camera/renderer.
 - Replays: allocation-free `REC` ring buffer in the core, `startReplay/rplStep/skipReplay`. Input (`input.ts`): keyboard, touch buttons `#tc`, gamepad `gpPoll` (wrapped: blocked in iframes by permissions policy).
-- Menus (`game.ts`): matchup screen `menu()` (your team vs chosen/random opponent `OPP`, lineups with drawn `avatar()` portraits, team ratings, difficulty `cfg.DIFF` applied via `cpuK()` to CPU-only teams, quarter length `QLEN`, settings drawer `#sd`), final screen (record `rec` in localStorage `h2k_rec`, player of the game, stat bars, rematch), hub Quick Play (`h2k_lastplay`).
+- Menus (`game.ts`, styled by UI v6 below): matchup screen `menu()` (your team vs chosen/random opponent `OPP`, lineups with drawn `avatar()` portraits, tale of the tape, difficulty `cfg.DIFF` applied via `cpuK()` to CPU-only teams, quarter length `ST.QLEN`, settings drawer `#sd` = ui/settings.ts), final screen (record `rec` in localStorage `h2k_rec`, player of the game, stat bars, rematch), hub Quick Play (`h2k_lastplay`).
 - Debug handle in the browser: `window.H2K = { G (sim module), V, NET, startLocal, menu }`.
 
 ## Online multiplayer (src/net, src/client/net, server/)
@@ -530,6 +530,13 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   Menus.cs); My Player career (`client/career.ts`: XP per game, levels raise the builder cap +3, badge requirements);
   Season v2 (modesui.ts: PF/PA, streaks, league leaders from real + generated box scores, best-of-3 playoffs, awards).
 - tests/teamplay.ts. Parity: trace.ts vs Trace.cs identical for the whole 46000-tick game (normal) and 3000 (hum).
+- Balance pass (A/B: `cfg.TP` 0/1, stats.ts env `TP=` / `DIFF=`; STAT `j3n/j3mk`, `j2n/j2mk` = CPU jumpers launched /
+  meant to go in): the 3P% / ORtg drop was NOT the sets (TP 0 vs 1 equal within noise once the horns lift went to the
+  elbow for c < 76 and the stagger wing came in to 26 ft) but (1) CPU drivers ploughing into set defenders - 9.6 charges
+  a game (pp2Charge odds x.2 for a CPU driver; humans keep the full read) - and (2) the iron/blocks taking ~4 points off
+  what launch intends (CPU jumper base re-based: three .392 + .17(r-60)/40, two .31). stats.ts QL 180: 3P% 27.4 -> 35.5,
+  FG% 43.3 -> 46.5, ORtg 98 -> 109 (NBA 114.5), TOV/48 24 -> 4. Per-48 volumes are ~2x the NBA because of the arcade pace
+  (~193 vs 98.5): compare rates (3PA/FGA 24% vs NBA 42%), not per-48 counts.
 
 ## H2K Super Resolution (HSR, v5.5: `client/hsr.ts`, fx3d.ts, fxgpu.ts)
 - Renders the effect chain at an internal resolution and rebuilds the full-res image. `V.HSR` 0 Off, 1 Auto (dynamic
@@ -640,9 +647,56 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   moderation, AI screening); tests/browser_life.mjs (title -> create -> walk -> door -> offline class -> phone ->
   Hoopr post + replies -> sleep -> arena game in the engine -> back in LIFE -> save). SwiftShader ~1 fps: drive via
   `window.H2K_LIFE` (goto, setTime, enter, interact, L, W) and presence waits with `polling: 100`.
+- Stage 2 (school depth): tournaments = last games of a season tagged `big` "state" (2 rounds) / "mm" (3: Elite Eight,
+  Final Four, National Title) with `rd`; `bracket()` (end of `recordGame`) removes later rounds on a loss, the last
+  round sets `flags.champ` -> State / National Champions award at `endYear`; `dailyTick` drops the tournament for a
+  losing record. College = 6 games. Signing Day: Official visit cards + Commit, then `pickMajor` (`MAJORS`: Business
+  deals +10%, Kinesiology workouts +10%, Communications followers +10%, Education quiz +3%, CS homework +5).
+  `groupStudy` (library, Dre/Kofi), film sessions at practice (`BANK.film` basketball-IQ quiz -> coach trust + D),
+  `role(L)` from coach trust (Starter / Sixth man / Bench: shown pregame, scales simulated lines), `standings` +
+  phone League app (NBA table built in `beginYear`, `oppClub`).
 - Roadmap + ticks: docs/LIFE_FEATURES.md (status/next item at the top). Known gaps: one shared town for every stage
   (hometowns differ by name only), the player's hair override (`hs`) isn't used by the engine's game rig (formOf),
   no interiors in 3D (place screens), NPCs don't path around buildings (sidewalk graph only).
+
+## UI v6 (design system; `src/client/ui/`)
+- Tokens: `ui/tokens.css` (colour / type / spacing / radii / shadows / motion as CSS vars: `--ink-0..3`, `--glass`,
+  `--line`, `--tx/-2/-3`, `--acc`/`--acc-2`/`--acc-grad`, `--ff-display` (Oswald variable, OFL, inlined 28 KB in
+  `ui/fonts/`), `--fs-*` in rem, `--sp-*`, `--r-*`, `--sh-*`, `--dur-*`) + root switches `html[data-theme=dark|light|auto]`,
+  `[data-text=1|2]`, `[data-motion=reduce]`, `[data-contrast=high]`. `ui/kit.css` = shared components (`.btn .pri .lg
+  .ghost .icon`, `.seg` (segmented options, `button.on`), `.panel`, `.chip`, `.tabs`, `#sd` settings drawer, `.cmp` stat
+  bars, `.bx` tables, `.eyebrow`, `.disp`). Both imported by main.ts (always on); LIFE and any new screen must reuse
+  these vars/classes, not redefine colours. index.html `#hcss` = hub layout, `#gcss` = game screens (matchup `.mu/.vs/
+  .side/.mid/.strip/.modes`, pause `.pzw/.mlist/.board`, final/halftime `.fin/.fhead/.fgrid/.pog/.charts`, legacy lobby
+  classes `.opts/.big/.ghost/.logo`). `#h` stays transparent.
+- `ui/settings.ts`: owns h2k_set (`loadSet/saveSet`; `ST` = MYM / QLEN / QPICK / HPICK, moved out of game.ts) and the
+  tabbed drawer `openSettings(tab, ctx "hub"|"menu"|"pause", onClose)`: Gameplay / Controls (key remap) / Display (camera,
+  graphics, effects, renderer, HSR, upscaler, target FPS, FPS counter, HUD full/minimal, menu theme) / Audio (commentary,
+  announcer voice, music, crowd volume, chants) / Accessibility (text size, meter palette, meter size, high contrast,
+  reduce motion, sprint hold/toggle, auto-release). Every panel is in the DOM (inactive ones `hidden`), options are
+  `[data-<key>="<v>"]`. New settings: add one row to the `I` table + a `V` field (view.ts) + KEYS in settings.ts.
+  View fields: `V.THEME/TXT/RM/HC/MINHUD/SPT`, `V.CB` 0..3 = `PAL` (view.ts: standard, red-green safe, blue-yellow safe,
+  monochrome; green stays at the top). RM also skips camera shake; SPT toggle lives in input.ts (`spOn`).
+- `ui/nav.ts`: menu navigation for keyboard + gamepad: arrows / d-pad move focus spatially in the top layer (`trapNav`
+  dialogs, else `setNavBase` root: hub or `#ov`), Enter / Space / A activate, Esc / B back, shoulder buttons -> shell
+  (`menuPad`: LB RB your team, LT RT opponent, Start tip off / resume, Select settings). Matchup keys: Q E / Z C cycle
+  teams, S settings (arrows no longer cycle teams). Inactive while playing; `NAV.hold` while remapping a key.
+  input.ts never eats Enter / Space on a focused control; `clearEdges()` at every start drops menu key presses.
+- `ui/art.ts`: procedural mode art (`modeArt(kind, c1, c2)` canvas -> cached webp data URL), `teamMark(name, col)`
+  generic SVG shield + monogram (no real logos), `brandMark`, colour helpers `shade/lum/light`.
+- HUD (hud.ts): `scoreBug(me)` top-centre broadcast bug (replaces broadcast.ts `drawBug`, which is no longer called):
+  team blocks, scores, period + clock, shot clock, timeout pips, fouls / BONUS, possession dot, momentum line, "THEY'RE
+  RUNNING"; `hud2` = player card bottom-right + shooting chip; `nameTags`; fonts `FD()` (display face); text scale `tk()`
+  = V.TXT x 1.5 when the canvas is < 620 px wide (phones). V.MINHUD hides card / calls / markers.
+- Hub (main.ts): featured mode + Quick Play / career / record tiles + mode cards with art + news (LOG[0..2]); the
+  literals `MODES` / `LOG` / `K1..K5` stay parseable for scripts/unity/gen-page.ts. Hub Esc = back to Play.
+- Unity page mirrors it: gen-page copies tokens.css / kit.css / fonts into TemplateData; ui.js has the same hub
+  layout (CSS art), team marks, tape, 5 settings tabs (page-level a11y via the same data attributes; `cb` 0..3 /
+  `mh` / `spt` / `ts` / `hc` / `rm` / `th` are sent as settings - PageBridge ignores the new keys and treats cb != 0 as
+  colour-blind: Unity HUD palettes are a known gap). Tests: tests/browser_ui.mjs (keyboard-only every screen, gamepad,
+  persistence, a11y, phone no horizontal scroll), tests/unity_page.mjs.
+- Lessons: `backdrop-filter` / `transform` (incl. a running entry animation) on an ancestor make `position:fixed`
+  children relative to it (the phone's sticky TIP OFF); headless rAF is slow, hold stubbed pad buttons >= 200 ms.
 
 ## Known gaps / ideas
 replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,

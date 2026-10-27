@@ -23,6 +23,7 @@ export type SEv =
   | { k: "injury"; what: string }
   | { k: "news"; text: string }
   | { k: "rumor" }
+  | { k: "mock"; pick: number }
   | { k: "rank" };
 
 interface Acct {
@@ -109,6 +110,7 @@ const T: Record<string, string[]> = {
   draft: ["With the #{x} pick, the {s} select... {n}! 🧢", "{n} goes #{x} to the {s}. Dream come true."],
   injury: ["Injury update: {n} ({x}) is day-to-day.", "Prayers up for {n} 🙏 {x}"],
   rumor: ["Sources: multiple teams have scouts at {t} games to watch {n}.", "Rumor: {n} is on a lot of draft boards. Stock watch 📈", "Hearing {n} has been working on his jumper every morning at 6 AM."],
+  mock: ["MOCK DRAFT 3.0: {n} goes #{x}. Upside is real.", "Big board update: {n} at #{x}. Combine numbers turned heads.", "Hearing {n} could go as high as #{x}. Workouts went well 👀", "My mock has {n} at #{x}. Don't sleep on the motor."],
   rank: ["Power rankings this week: {t} at #{x}. {n} the reason why.", "Hoopr Top 25 prospects: {n} checks in at #{x}."],
 };
 /** Recent big performance flags from a stat line. */
@@ -205,6 +207,9 @@ export function postsFor(L: Life, ev: SEv, seed = L.t + L.seed): Post[] {
       break;
     case "rumor":
       add("analyst", "rumor");
+      break;
+    case "mock":
+      add("analyst", "mock", { x: ev.pick > 60 ? 45 : ev.pick }, 1.5), add("reporter", "mock", { x: Math.max(1, ev.pick - 2) });
       break;
     case "rank":
       add("analyst", "rank", { x: clamp(26 - Math.round(L.rep / 4), 1, 25) });

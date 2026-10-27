@@ -5,8 +5,7 @@ likenesses); PG-13; works offline (AI via the artifact `sample` capability is op
 single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick items off here as they ship.
 
 > **Status / next item** (LIFE stage 1 shipped: `src/life/`, tests/life.ts + tests/browser_life.mjs).
-> `[x]` = shipped, `[~]` = partly (see CLAUDE.md LIFE section). **Next:** Tier 2 #28 campus visits, #42 group study,
-> #44 major, #49 coach trust -> minutes, #50 film sessions, #51-53 rankings / bracket / Final Four; then Tier 3 #56+.
+> `[x]` = shipped, `[~]` = partly (see CLAUDE.md LIFE section). **Next:** Tier 3 #56 draft combine, #57 team workouts, #58 mock drafts, #61-62 rookie events / camp, #65-69 road trips, coach role meeting, All-Star; then #70+ (trades, free agency, contract UI, agents, awards, playoffs).
 
 ## Tier 1 - core loop (must ship first)
 1. [x] Character creation from My Player (face, hair, height, build, position, archetype)
@@ -38,7 +37,7 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 ## Tier 2 - college & school
 26. [x] High school senior year (5 games + state playoffs)
 27. [x] Recruiting: offer letters from fictional colleges
-28. Official campus visits (tour, meet coach, see dorm)
+28. [x] Official campus visits (tour, meet coach, see dorm)
 29. [x] Signing Day ceremony with hat pick
 30. [x] Class schedule per semester (3-4 classes)
 31. [x] Walk to the right classroom on time; late penalty
@@ -52,18 +51,18 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 39. [x] Academic probation below 2.0 (can't play)
 40. [x] Tutors you can book (costs money/time)
 41. [x] Study at the library (raises next quiz odds)
-42. Group study with friends (relationship + grade)
+42. [x] Group study with friends (relationship + grade)
 43. [x] Professor relationships (office hours)
-44. Major choice affecting post-career options
+44. [x] Major choice affecting post-career options
 45. [x] Dean's list award
 46. [x] Academic All-American award
 47. [x] Skipping class consequences (coach finds out)
 48. [x] College team practices with drills
-49. Coach trust meter controls minutes
-50. Film sessions teaching plays (quiz on the play)
-51. [~] Conference games, rankings, AP poll
-52. [~] March Madness bracket with your team
-53. Final Four and title game cutscenes
+49. [~] Coach trust meter controls minutes
+50. [x] Film sessions teaching plays (quiz on the play)
+51. [x] Conference games, rankings, AP poll
+52. [x] March Madness bracket with your team
+53. [x] Final Four and title game cutscenes
 54. [x] Declare for the draft vs stay in school decision
 55. [x] Graduation ceremony if you finish 4 years
 

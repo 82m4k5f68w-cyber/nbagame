@@ -3,7 +3,7 @@
 // (before any game boots), the matchup screen and the pause menu. Every tab panel is in the DOM (inactive ones
 // hidden), so `[data-<key>]` selectors always resolve. Options are segmented buttons `data-<key>="<value>"`.
 import { cfg } from "../../core/sim";
-import { V, CAMN, MN, HSRN, PAL } from "../view";
+import { V, CAMN, MN, HSRN, PAL, QLN, PRESETS, applyPreset, GRADES, WXN } from "../view";
 import { IN, ACTS, KMAP, saveKeys } from "../input";
 import { crowd } from "../crowd";
 import { comment, rumble } from "../broadcast";
@@ -16,7 +16,7 @@ export const ST = {
   MYM: 0, // My Player mode
   QLEN: 60, // quarter length (s)
 };
-const KEYS = ["COMM", "VOICE", "ANNV", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO", "THEME", "TXT", "RM", "HC", "MINHUD", "SPT"];
+const KEYS = ["PRE", "AO", "GRADE", "GRAIN", "WX", "COMM", "VOICE", "ANNV", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO", "THEME", "TXT", "RM", "HC", "MINHUD", "SPT"];
 export function loadSet() {
   try {
     const o = JSON.parse(localStorage.getItem("h2k_set") || "{}");
@@ -120,10 +120,15 @@ const I: Record<string, It> = {
   pi: { k: "pi", l: "Player intros", o: onoff, g: () => V.INTRO, s: (v) => (V.INTRO = v), h: "Starting-lineup cards before the tip." },
   ru: { k: "ru", l: "Gamepad rumble", o: onoff, g: () => V.RUMBLE, s: (v) => ((V.RUMBLE = v), rumble(0.6, 200)) },
   cm: { k: "cm", l: "Camera", o: CAMN.map((n, i) => [i, n] as O), g: () => V.CAMM, s: (v) => (V.CAMM = v), on: r3d, h: "K in game cycles the camera." },
-  q: { k: "q", l: "Graphics", o: [[0, "Low"], [1, "Medium"], [2, "High"]], g: () => V.QL, s: (v) => ((V.QL = v), (ST.QPICK = 1), (V.QAUTO = "")), on: r3d, h: () => (ST.QPICK ? "Saved." : "Picked for your GPU until you choose.") },
-  fx: { k: "fx", l: "Effects", o: onoff, g: () => (V.FX ? 1 : 0), s: (v) => (V.FX = !!v), on: r3d, h: "Bloom, ambient occlusion, motion blur, colour grade." },
+  pre: { k: "pre", l: "Graphics preset", o: [...PRESETS.map((p, i) => [i, p[0]] as O), [-1, "Custom"]], g: () => V.PRE, s: (v) => (v >= 0 ? (applyPreset(v), (ST.QPICK = 1), (ST.HPICK = 1)) : (V.PRE = -1)), on: r3d, h: () => (V.PRE >= 0 ? PRESETS[V.PRE][4] : "Your own mix of the options below.") , hid: "prehint" },
+  q: { k: "q", l: "Graphics", o: QLN.map((n, i) => [i, n] as O), g: () => V.QL, s: (v) => ((V.QL = v), (ST.QPICK = 1), (V.QAUTO = ""), (V.PRE = -1)), on: r3d, h: () => (ST.QPICK ? "Saved. Ultra = everything max (4K soft shadows, live jumbotron cam, full crowd)." : "Picked for your GPU until you choose.") },
+  fx: { k: "fx", l: "Effects", o: onoff, g: () => (V.FX ? 1 : 0), s: (v) => ((V.FX = !!v), (V.PRE = -1)), on: r3d, h: "Bloom, ambient occlusion, motion blur, colour grade." },
+  ao: { k: "ao", l: "Ambient occlusion", o: [[-1, "Auto"], [0, "Off"], [1, "Half res"], [2, "Full res"]], g: () => V.AO, s: (v) => ((V.AO = v), (V.PRE = -1)), on: r3d, h: "Soft contact shadows in corners, under players and in the stands (N8AO). Auto = full res on High / Ultra." },
+  gr: { k: "gr", l: "Colour look", o: GRADES.map((g, i) => [i, g[0]] as O), g: () => V.GRADE, s: (v) => (V.GRADE = v), on: r3d },
+  fg: { k: "fg", l: "Film grain & vignette", o: onoff, g: () => V.GRAIN, s: (v) => (V.GRAIN = v), on: r3d },
+  wx: { k: "wx", l: "Street weather", o: WXN.map((n, i) => [i, n[0].toUpperCase() + n.slice(1)] as O), g: () => Math.max(0, WXN.indexOf(V.WX)), s: (v) => (V.WX = WXN[v] || "auto"), on: r3d, h: "Street courts: Auto follows your local time of day (and a rainy or snowy day now and then)." },
   gp: { k: "gp", l: "Renderer", o: [[0, "WebGL"], [1, "WebGPU (beta)"]], g: () => V.GPU, s: (v) => ((V.GPU = v), saveSet(), setTimeout(() => location.reload(), 150)), on: r3d, h: () => (V.backend ? "Now: " + V.backend + ((V.backend === "WebGL") !== !V.GPU ? " · restart to switch" : "") + ". " : "") + "Switching reloads the page." },
-  hsr: { k: "hsr", l: "Super resolution (HSR)", o: HSRN.map((n, i) => [i, n] as O), g: () => V.HSR, s: (v) => ((V.HSR = v), (ST.HPICK = 1)), on: r3d, h: "Draws fewer pixels and rebuilds a sharp full-size image from several frames (temporal upscaling, like DLSS / FSR 2, no AI). Quality 67% · Balanced 58% · Performance 50% · Ultra 33%; Auto holds your target." },
+  hsr: { k: "hsr", l: "Super resolution (HSR)", o: HSRN.map((n, i) => [i, n] as O), g: () => V.HSR, s: (v) => ((V.HSR = v), (ST.HPICK = 1), (V.PRE = -1)), on: r3d, h: "Draws fewer pixels and rebuilds a sharp full-size image from several frames (temporal upscaling, like DLSS / FSR 2, no AI). Quality 67% · Balanced 58% · Performance 50% · Ultra 33%; Auto holds your target." },
   hsrm: { k: "hsrm", l: "Upscaler", o: [[0, "Auto"], [1, "Temporal"], [2, "Spatial"]], g: () => V.HSRM, s: (v) => (V.HSRM = v), on: r3d, h: "Spatial (FSR 1 style) is lighter for very old GPUs; Auto uses it on Low graphics." },
   tfps: { k: "tfps", l: "Target FPS", o: [60, 90, 120, 144, 240, 0].map((f) => [f, f ? String(f) : "Max"] as O), g: () => V.TFPS, s: (v) => (V.TFPS = v), on: r3d, h: hzLine, hid: "hzline" },
   fpsc: { k: "fpsc", l: "FPS counter", o: onoff, g: () => V.FPSC, s: (v) => (V.FPSC = v) },
@@ -171,7 +176,7 @@ function panels(c: Ctx) {
     grp(c, "Gamepad", ["ru"], `<div class="kref">${PADK.map(([a, b]) => `<span>${a}</span><kbd>${b}</kbd>`).join("")}</div>`) +
     `<section class="sgrp"><h3>Menus</h3><div class="kref">${NAVK.map(([a, b]) => `<span>${a}</span><kbd>${b}</kbd>`).join("")}</div></section>` +
     `<section class="sgrp"><h3>Touch</h3><p class="hint">Thumb on the left half of the court = analog stick (push to the edge to sprint); hold the right half to shoot or jump. The buttons under the court do the rest.</p></section>`;
-  const display = grp(c, "Camera & quality", ["cm", "q", "fx", "gp"]) + grp(c, "Performance", ["hsr", "hsrm", "tfps", "fpsc"]) + grp(c, "Interface", ["mh", "th"]);
+  const display = grp(c, "Camera & quality", ["cm", "pre", "q", "fx", "ao", "gp"]) + grp(c, "Look", ["gr", "fg", "wx"]) + grp(c, "Performance", ["hsr", "hsrm", "tfps", "fpsc"]) + grp(c, "Interface", ["mh", "th"]);
   const audio = grp(c, "Broadcast", ["cmt", "anv"]) + grp(c, "Arena", ["mu", "vc", "ch"]);
   const access = grp(c, "Vision", ["ts", "cb", "bm", "hc"]) + grp(c, "Motion", ["rm"]) + grp(c, "Input", ["spt", "au"]);
   return { gameplay, controls, display, audio, access } as Record<string, string>;
@@ -267,10 +272,13 @@ function bind(s: HTMLElement) {
         (b.onclick = () => {
           it.s(+b.dataset[k]!);
           saveSet();
-          s.querySelectorAll<HTMLElement>(`[data-${k}]`).forEach((c) => {
-            c.classList.toggle("on", c === b);
-            c.setAttribute("aria-pressed", String(c === b));
-          });
+          // every option row follows the state (a preset changes several at once)
+          for (const k2 in I)
+            s.querySelectorAll<HTMLElement>(`[data-${k2}]`).forEach((c) => {
+              const on = +c.dataset[k2]! === I[k2].g();
+              c.classList.toggle("on", on);
+              c.setAttribute("aria-pressed", String(on));
+            });
           if (it.hid) {
             const h = s.querySelector("#" + it.hid);
             if (h && typeof it.h === "function") h.textContent = it.h();

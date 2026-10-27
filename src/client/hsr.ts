@@ -476,14 +476,16 @@ export function makeDynRes() {
     update(ema: number, target: number, lo: number, hi: number, now: number) {
       if (s > hi) s = hi;
       if (s < lo) s = lo;
-      if (++n < 12) return false;
+      // badly late (> 2x the target: a crawling GPU) -> judge every 4 frames and step harder; else every 12
+      const crawl = ema > target * 2;
+      if (++n < (crawl ? 4 : 12)) return false;
       n = 0;
       const old = s;
       if (ema > target * 1.12) {
         good = 0;
         ceil = s;
         ceilT = now + 8000;
-        s = Math.max(lo, s * Math.max(0.8, Math.min(0.95, Math.sqrt(target / ema))));
+        s = Math.max(lo, s * Math.max(crawl ? 0.7 : 0.8, Math.min(0.95, Math.sqrt(target / ema))));
       } else if (ema < target * 1.04) {
         if (++good >= 8 && s < hi) {
           good = 0;

@@ -12,7 +12,7 @@ import { askJSON, aiReady, AI } from "./ai";
 import { kfmt, fameTier } from "./social";
 import { roster, COLLEGES, HS_TEAMS } from "./teams";
 import { mkRng, hashStr, clamp, pick } from "./rng";
-import { TM } from "../core/data";
+import { TM, ov2 } from "../core/data";
 import { V } from "../client/view";
 import { STK_R } from "../client/input";
 import { gameXP } from "../client/career";
@@ -279,7 +279,7 @@ function begin(l: S.Life, fresh = false) {
   buildShell();
   applySettings();
   try {
-    W = createWorld(canvas, { ql: V.QL, npc: /[?&]lifetest\b/.test(location.search) ? 0 : undefined });
+    W = createWorld(canvas, { ql: Math.min(2, V.QL), npc: /[?&]lifetest\b/.test(location.search) ? 0 : undefined });
   } catch (e) {
     root.innerHTML = `<div class="scr"><div class="card"><h2>3D unavailable</h2><p class="note">LIFE needs WebGL. ${esc(String(e))}</p><button class="gh" onclick="location.reload()">Back</button></div></div>`;
     return;
@@ -345,6 +345,7 @@ function loop(now: number) {
     sense();
     notes();
     tut();
+    story();
   }
   drawMini();
 }
@@ -517,6 +518,21 @@ function place(p: Place) {
   if (ev && (ev.k === "class" || ev.k === "exam")) return classFlow(p, ev);
   if (ev && ev.k === "game") return pregame(p, ev);
   if (ev && ev.k === "practice") return practice(p, ev);
+  if (ev && ev.k === "allstar") {
+    scr(`${head(p, "⭐ ALL-STAR GAME · " + S.hhmm(ev.st))}<p class="note">The league's ten best, split into Team Gold and Team Ice. You start for Team Gold. Fouls off, lobs on.</p><div class="grid">${opt("play", "⭐ Play the All-Star Game", "Engine game · huge follower boost")}${opt("skip", "🛋️ Skip it (rest)", "+energy, fans grumble")}</div>${exitRow(p)}`);
+    on(".scr [data-o]", (b) => {
+      if (b.dataset.o === "__x") return fade(() => leave(p), 200);
+      if (b.dataset.o === "skip") {
+        ev.s = 1;
+        L.energy = clamp(L.energy + 20, 0, 100);
+        L.rep = clamp(L.rep - 2, 0, 100);
+        toast("You skipped the All-Star game. Hoopr has opinions.", "🛋️");
+        return fade(() => leave(p), 200);
+      }
+      playGame(p, ev);
+    });
+    return;
+  }
   const k = p.k,
     m = S.minOf(L.t);
   let body = "";
@@ -583,6 +599,18 @@ function place(p: Place) {
     body = L.courses.length
       ? L.courses.map((c, i) => opt("st" + i, "📚 Study " + esc(c.n), "90 min · boosts your next quiz" + (c.study ? " · studied" : ""))).join("") + L.courses.map((c, i) => opt("tu" + i, "🧑‍🏫 Tutor: " + esc(c.n), "60 min · bigger boost", "$25", L.money < 25)).join("") + L.courses.map((c, i) => (c.hw >= 0 ? opt("hw" + i, "📝 Homework: " + esc(c.n), "3 questions") : "")).join("")
       : `<p class="note">Quiet in here. (No classes right now.)</p>`;
+    if (L.courses.length) {
+      body += ["dre", "tm1"].map((f) => {
+        const c = L.contacts.find((x) => x.id === f);
+        return c ? opt("gs" + f, "👥 Group study with " + esc(c.n.split(" ")[0]), "90 min · every class +, friendship +") : "";
+      }).join("");
+      for (const f of ["dre", "tm1"])
+        A("gs" + f, () => {
+          const e = S.groupStudy(L, f);
+          toast(e || "Group study done - everybody's a little smarter", e ? "⚠️" : "👥");
+          place(p);
+        });
+    }
     L.courses.forEach((c, i) => {
       A("st" + i, () => (S.study(L, i), toast("Studied " + c.n, "📚"), place(p)));
       A("tu" + i, () => {
@@ -814,7 +842,7 @@ function homework(p: Place, ci: number) {
 // ---------------------------------------------------------------- practice, games (engine bridge)
 function practice(p: Place, ev: S.Ev) {
   const lt = S.lateness(ev, L.t);
-  scr(`${head(p, "Team practice · " + S.hhmm(ev.st) + (lt.min > 5 ? ` · <span class="tag r">LATE ${lt.min} MIN</span>` : ""))}<div class="grid">${opt("drill", "🎯 Shooting drill (play it)", "Engine 3-point drill · coach watches")}${opt("sim", "📋 Run practice", "90 min · ⚡ -20 · small ratings gain + coach trust")}</div>${exitRow(p)}`);
+  scr(`${head(p, "Team practice · " + S.hhmm(ev.st) + (lt.min > 5 ? ` · <span class="tag r">LATE ${lt.min} MIN</span>` : ""))}<div class="grid">${opt("drill", "🎯 Shooting drill (play it)", "Engine 3-point drill · coach watches")}${opt("sim", "📋 Run practice", "90 min · ⚡ -20 · small ratings gain + coach trust")}${opt("film", "🎬 Film session", "Coach quizzes you on the playbook · trust +")}</div>${exitRow(p)}`);
   const done = (k: number) => {
     ev.s = 1;
     ev.arr = L.t;
@@ -832,6 +860,17 @@ function practice(p: Place, ev: S.Ev) {
       toast("Practice done. Coach liked your effort.", "💪");
       return fade(() => leave(p), 200);
     }
+    if (b.dataset.o === "film") {
+      const qs = quiz("film", S.level(L), 4, hashStr(ev.id + "film" + L.seed));
+      return runQuiz(p, qs, "Film session", (f) => {
+        S.advance(L, 75);
+        L.energy = clamp(L.energy - 6, 0, 100);
+        done(Math.round(f * 4) - 1);
+        L.p.d = Math.min(99, +(L.p.d + S.gainOf(L.p.d, 0.3 * f)).toFixed(2));
+        toast(`Film: ${Math.round(f * 4)}/4 right · coach ${f >= 0.75 ? "impressed" : f >= 0.5 ? "nods" : "frowns"}`, "🎬");
+        fade(() => leave(p), 200);
+      });
+    }
     engineMode("3pt", p, () => done(1));
   });
 }
@@ -839,9 +878,11 @@ function pregame(p: Place, ev: S.Ev) {
   const why = S.canPlay(L),
     opp = S.oppName(L, ev),
     lt = S.lateness(ev, L.t);
-  scr(`${head(p, (ev.big === "state" ? "🏆 STATE FINAL · " : ev.big === "mm" ? "🔥 MARCH MADNESS · " : "") + "Tip-off " + S.hhmm(ev.st))}
+  scr(`${head(p, (ev.rd ? (ev.big === "mm" ? "🔥 MARCH MADNESS · " : "🏆 STATE PLAYOFFS · ") + ev.title + " · " : "") + "Tip-off " + S.hhmm(ev.st))}
    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;text-align:center;margin:10px 0">
     <div><div style="font:900 20px system-ui">${esc(L.team.name)}</div><div class="note">${L.team.w}-${L.team.l}</div></div><div style="font:italic 900 34px system-ui;color:#ffd23f">VS</div><div><div style="font:900 20px system-ui">${esc(opp)}</div><div class="note">${ev.home ? "visitors" : "home"}</div></div></div>
+   <p><span class="tag ${S.role(L).k >= 1 ? "g" : S.role(L).k >= 0.8 ? "y" : "r"}">ROLE: ${S.role(L).n.toUpperCase()}</span> <span class="note">Coach trust ${Math.round((L.contacts.find((c) => c.id === "coach") || { aff: 50 }).aff)} - practices, film and being on time earn minutes.</span></p>
+   ${L.stage === "nba" && !ev.home ? `<p class="note">✈️ Road game in ${esc(opp)}: team flight from here, hotel tonight, flight home in the morning.</p>` : ""}
    ${why ? `<p><span class="tag r">INELIGIBLE</span> ${esc(why)}</p>` : `<p class="note">Energy ${Math.round(L.energy)} · Hunger ${Math.round(L.hunger)}${L.energy < 35 ? " · <b style='color:#ff5a4f'>you're tired: your legs will feel it</b>" : ""}${lt.min > 0 ? ` · arrived ${lt.min} min late: off the bench` : ""}</p>`}
    <div class="grid">${why ? opt("watch", "👀 Watch from the bench", "Simulate the game") : opt("play", "🏀 Play the game", `${L.set.ql < 60 ? L.set.ql + " s" : L.set.ql / 60 + " min"} quarters · difficulty ${["Rookie", "Pro", "All-Star", "Hall of Fame"][diff()]}`) + opt("sim", "⏩ Sim the game", "Quick result (you play, simulated line)")}</div>${exitRow(p)}`);
   on(".scr [data-o]", (b) => {
@@ -855,11 +896,12 @@ function pregame(p: Place, ev: S.Ev) {
     if (k === "sim") {
       const r = mkRng(hashStr(ev.id + "sim"));
       const ov = S.ovrOf(L.p),
-        pts = Math.max(0, Math.round((ov - 50) / 3 + r() * 8 - 2)),
+        pts = Math.max(0, Math.round(((ov - 50) / 3 + r() * 8 - 2) * S.role(L).k)),
         fga = Math.max(pts / 2 + 1, 3) | 0,
         line = { pts, reb: Math.round(r() * 6), ast: Math.round(r() * 4), blk: r() < 0.3 ? 1 : 0, fga, fgm: Math.min(fga, Math.round(pts / 2.2)), tpa: 2, tpm: r() < 0.4 ? 1 : 0, hl: [] as string[], played: true };
       const res = S.simTeamGame(L, ev, line);
       S.advance(L, 120);
+      if (L.stage === "nba" && !ev.home) S.roadReturn(L);
       PH.event({ k: "game", res, opp, big: ev.big });
       return postgame(p, ev, res, gameXP({ ...line, chg: 0, dv: 0, sa: 0 }, res.won, 0, L.set.ql) >> 1);
     }
@@ -914,7 +956,18 @@ async function playGame(p: Place, ev: S.Ev) {
   await ensureGame();
   setMyPlayer();
   let sel: number, opp: number;
-  if (L.stage === "nba") {
+  const asg = ev.k === "allstar";
+  if (asg) {
+    // All-Star game: the league's best split into two teams; you join Team Gold (replacing its lowest-rated star)
+    const all = TM.slice(0, 14)
+      .flatMap((t) => t[2])
+      .sort((a, b) => ov2(b) - ov2(a))
+      .slice(0, 10);
+    TM[14] = ["Team Gold", "#e0a526", all.filter((_, k) => k % 2 === 0)] as any;
+    TM[15] = ["Team Ice", "#4fb3ff", all.filter((_, k) => k % 2 === 1)] as any;
+    sel = 14;
+    opp = 15;
+  } else if (L.stage === "nba") {
     sel = L.team.tm;
     opp = ev.opp ?? (sel + 1) % 14;
   } else {
@@ -932,13 +985,21 @@ async function playGame(p: Place, ev: S.Ev) {
     const st = SIM.ROST[0].find((x: any) => x.my) || SIM.P.find((x: any) => x.my),
       s = st ? st.stt : { pts: 0, reb: 0, ast: 0, blk: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0 };
     let res: S.GameRes;
-    if (forfeit) res = S.simTeamGame(L, ev, null);
+    if (asg) {
+      res = { us: SIM.sc[0], them: SIM.sc[1], won, pts: s.pts, reb: s.reb, ast: s.ast, blk: s.blk, fgm: s.fgm, fga: s.fga, tpm: s.tpm, tpa: s.tpa, hl: Array.from(new Set(HL)), played: !forfeit };
+      ev.res = res;
+      ev.s = 1;
+      L.followers += Math.round(5000 + L.followers * 0.05 + s.pts * 400);
+      L.rep = clamp(L.rep + 3, 0, 100);
+      S.logE(L, "allstar", `All-Star game: ${s.pts} pts${won ? " (win)" : ""}`);
+    } else if (forfeit) res = S.simTeamGame(L, ev, null);
     else {
       res = { us: SIM.sc[0], them: SIM.sc[1], won, pts: s.pts, reb: s.reb, ast: s.ast, blk: s.blk, fgm: s.fgm, fga: s.fga, tpm: s.tpm, tpa: s.tpa, hl: Array.from(new Set(HL)), played: true };
       if (st && st.fo) res.hl.push("foulout");
       S.recordGame(L, ev, res);
     }
     S.advance(L, Math.max(0, S.evStart(ev) + 120 - L.t), "game");
+    if (L.stage === "nba" && !ev.home && !asg) S.roadReturn(L);
     const xp = forfeit ? 0 : gameXP(s, won, st ? st.pf || 0 : 0, L.set.ql);
     backToLife();
     if (!forfeit) PH.event({ k: "game", res, opp: S.oppName(L, ev), big: ev.big });
@@ -1023,7 +1084,9 @@ function postgame(p: Place, ev: S.Ev, r: S.GameRes, xp: number) {
   const f0 = L.followers;
   const lv = xp ? S.addXP(L, xp) : 0;
   save();
-  const big = ev.big === "state" && r.won ? "STATE CHAMPIONS" : ev.big === "mm" && r.won ? "TOURNAMENT WIN" : "";
+  const last = ev.rd && ev.big ? S.ROUNDS[ev.big].length : 0,
+    champ = r.won && ev.rd === last && last > 0,
+    big = champ ? (ev.big === "state" ? "STATE CHAMPIONS" : "NATIONAL CHAMPIONS") : ev.rd ? (r.won ? "ADVANCES · " + S.ROUNDS[ev.big!][ev.rd] : "ELIMINATED") : "";
   scr(`${head(p, r.played ? "Final" : "Final (did not play)")}
    <h2 style="font-size:44px;margin:4px 0;color:${r.won ? "#ffd23f" : "#ff8a6b"}">${r.won ? "WIN" : "LOSS"} ${r.us}-${r.them}</h2>${big ? `<p><span class="tag y">🏆 ${big}</span></p>` : ""}
    ${r.played ? `<p style="font:800 18px system-ui">${r.pts} PTS · ${r.reb} REB · ${r.ast} AST${r.blk ? " · " + r.blk + " BLK" : ""} · ${r.fgm}-${r.fga} FG · ${r.tpm}-${r.tpa} 3P</p><p>Game grade <b style="color:#ffd23f;font-size:22px">${r.grade || "C"}</b>${r.hl.length ? " · " + r.hl.map((h) => ({ dunk: "💥 dunk", gamewinner: "🧊 game-winner", airball: "😬 airball", block: "🛑 block", three: "🎯 three", tech: "🟥 tech", foulout: "🚫 fouled out" } as any)[h] || h).join(" · ") : ""}</p>` : ""}
@@ -1032,7 +1095,8 @@ function postgame(p: Place, ev: S.Ev, r: S.GameRes, xp: number) {
   void f0;
   on(".scr [data-o]", () => fade(() => leave(p), 200));
   (root.querySelector("#pgh") as HTMLElement).onclick = () => (fade(() => leave(p), 200), setTimeout(() => PH.open("hoopr"), 650));
-  if (big) setTimeout(() => cut(ev.big === "state" ? "HIGH SCHOOL" : "MARCH MADNESS", big, ev.big === "state" ? `${esc(L.team.name)} are state champions. The whole town is outside the arena.` : `${esc(L.team.name)} survive and advance. Your bracket just got busted - in a good way.`), 400);
+  if (champ) setTimeout(() => cut(ev.big === "state" ? "HIGH SCHOOL" : "MARCH MADNESS", big, ev.big === "state" ? `${esc(L.team.name)} are state champions. The whole town is outside the arena and your name is on every sign.` : `${esc(L.team.name)} cut down the nets. Confetti, a ladder, a piece of the net in your hand: national champions.`, "🏆 Celebrate ▶"), 400);
+  else if (ev.rd && r.won) setTimeout(() => toast(`${esc(L.team.name)} advance to the ${S.ROUNDS[ev.big!][ev.rd!]}!`, "🔥"), 400);
 }
 // ---------------------------------------------------------------- story decisions (Signing Day, declare, Draft Night)
 let deciding = false;
@@ -1044,6 +1108,7 @@ async function decide() {
     if (L.pend === "signing") await signingDay();
     else if (L.pend === "declare") await declareDay();
     else if (L.pend === "draft") await draftNight();
+    else if (L.pend === "fa") await freeAgency();
   } finally {
     deciding = false;
     closeScr();
@@ -1061,15 +1126,45 @@ function signingDay(): Promise<void> {
     scr(`<small class="tag y">SIGNING DAY</small><h2>Choose your college</h2><div class="sub">Senior year: ${h ? h.rec + " · " + (h.line.gp ? (h.line.pts / h.line.gp).toFixed(1) : "0") + " PPG · GPA " + (h.gpa == null ? "—" : h.gpa.toFixed(2)) : ""}. Three programs offered you a scholarship.</div><div class="grid">${L.offers
       .map((n) => {
         const c = COLLEGES.find((c) => c[0] === n)!;
-        return `<button class="opt" data-col="${esc(n)}" style="border-left:6px solid ${c[2]}"><b>${esc(n)}</b><small>Program prestige ${c[3]} · ${c[3] >= 84 ? "national contender, you'll fight for minutes" : c[3] >= 76 ? "tournament team, starting role likely" : "rebuilding: you're the man from day one"}</small></button>`;
+        return `<div class="opt" style="border-left:6px solid ${c[2]}"><b>${esc(n)}</b><small>Program prestige ${c[3]} · ${c[3] >= 84 ? "national contender, you'll fight for minutes" : c[3] >= 76 ? "tournament team, starting role likely" : "rebuilding: you're the man from day one"}</small><div class="row" style="margin-top:6px"><button class="gh" data-vis="${esc(n)}">🏫 Official visit</button><button class="go" data-col="${esc(n)}">✍️ Commit</button></div></div>`;
       })
       .join("")}</div>`);
+    on(".scr [data-vis]", (b) => visit(b.dataset.vis!).then(() => signingDay().then(res)));
     on(".scr [data-col]", async (b) => {
       const n = b.dataset.col!;
       S.sign(L, n);
       PH.event({ k: "signing", school: n });
       closeScr();
       await cut("SIGNING DAY", n.split(" ").slice(-1)[0].toUpperCase(), `${esc(L.p.n)} reaches under the table... and pulls out the <b>${esc(n)}</b> hat. The gym goes wild. Freshman year starts tomorrow - your dorm is on campus (Founders Dorm).`);
+      await pickMajor();
+      res();
+    });
+  });
+}
+/** Official visit: what the program offers (role, academics, NIL market, facilities, dorm) - pure presentation. */
+function visit(n: string): Promise<void> {
+  return new Promise((res) => {
+    const c = COLLEGES.find((x) => x[0] === n)!,
+      r = mkRng(hashStr("visit" + n)),
+      ovr = S.ovrOf(L.p),
+      role = c[3] >= 84 ? (ovr >= 68 ? "Starter from day one" : "Sixth man, fighting for minutes") : c[3] >= 76 ? "Starting role" : "Featured scorer: the offense runs through you",
+      acad = pick(r, ["Top-20 business school", "Renowned kinesiology lab", "Small classes, great tutors", "Strong communications program", "New computer science building"]),
+      nil = c[3] >= 84 ? "Huge (national TV every week)" : c[3] >= 76 ? "Strong regional market" : "Small, but you'd be the face of it",
+      coach = pick(r, ["\"We win with defense and we win with character.\"", "\"You'll have the ball in your hands late in games.\"", "\"We develop pros. Look at our draft record.\"", "\"Family first. Then basketball. Then everything else.\""]);
+    scr(`<small class="tag y">OFFICIAL VISIT</small><h2>${esc(n)}</h2><div class="sub" style="border-left:6px solid ${c[2]};padding-left:10px">Prestige ${c[3]} · Head coach: ${coach}</div>
+     <table><tr><td>🏀 Projected role</td><td><b>${role}</b></td></tr><tr><td>🎓 Academics</td><td>${acad}</td></tr><tr><td>💰 NIL market</td><td>${nil}</td></tr><tr><td>🏟️ Facilities</td><td>${c[3] >= 80 ? "Practice palace + 18,000-seat arena" : "Renovated gym, loud student section"}</td></tr><tr><td>🛏️ Dorm</td><td>${pick(r, ["Corner suite, view of the quad", "Shared double, two minutes from the gym", "New athlete housing with a players' lounge"])}</td></tr></table>
+     <div class="row"><button class="go" id="vb">Back to offers ▶</button></div>`);
+    (root.querySelector("#vb") as HTMLElement).onclick = () => res();
+  });
+}
+function pickMajor(): Promise<void> {
+  return new Promise((res) => {
+    scr(`<small class="tag y">FRESHMAN ORIENTATION</small><h2>Choose your major</h2><div class="sub">Each one helps in its own way (and matters after basketball).</div><div class="grid">${Object.entries(S.MAJORS)
+      .map(([m, d]) => `<button class="opt" data-mj="${esc(m)}"><b>${esc(m)}</b><small>${esc(d)}</small></button>`)
+      .join("")}</div>`);
+    on(".scr [data-mj]", (b) => {
+      S.chooseMajor(L, b.dataset.mj!);
+      toast("Major: " + b.dataset.mj, "🎓");
       res();
     });
   });
@@ -1096,9 +1191,171 @@ function declareDay(): Promise<void> {
     });
   });
 }
+function combineScreen(): Promise<void> {
+  return new Promise((res) => {
+    const st0 = S.draftStock(L),
+      c = S.combine(L),
+      st1 = S.draftStock(L);
+    const ft = (h: number) => Math.floor(h) + "' " + Math.round((h % 1) * 12) + '"';
+    scr(`<small class="tag y">NBA DRAFT COMBINE</small><h2>Measurements & testing</h2><div class="sub">Scouts with stopwatches everywhere.</div>
+     <table><tr><td>Height in shoes</td><td><b>${ft(c.ht)}</b></td></tr><tr><td>Wingspan</td><td><b>${ft(c.wing)}</b>${c.wing - c.ht > 0.25 ? ' <span class="tag g">LONG</span>' : ""}</td></tr><tr><td>Max vertical</td><td><b>${c.vert}"</b></td></tr><tr><td>Lane agility</td><td><b>${c.lane.toFixed(2)} s</b></td></tr><tr><td>3/4-court sprint</td><td><b>${c.sprint.toFixed(2)} s</b></td></tr><tr><td>Bench press (185 lb)</td><td><b>${c.bench} reps</b></td></tr></table>
+     <p>Draft stock <b>${st0}</b> → <b style="color:${c.d >= 0 ? "#3ddc84" : "#ff5a4f"}">${st1}</b> (${c.d >= 0 ? "+" : ""}${c.d}) · projected ${S.projPick(st1) > 60 ? "undrafted" : "#" + S.projPick(st1)}</p>
+     <div class="row"><button class="go" id="cbk">Team interviews ▶</button></div>`);
+    (root.querySelector("#cbk") as HTMLElement).onclick = () => res();
+  });
+}
+const IVQ: [string, [string, number][]][] = [
+  ["\"Tell us about a time you failed.\"", [["Owned it: talked about a bad game and what I changed", 1], ["Said I never really fail", 0], ["Blamed my old coach", 0]]],
+  ["\"Where do you see yourself in three years?\"", [["Starting, and making the guys around me better", 1], ["On a max contract somewhere bigger", 0], ["Honestly? Not sure", 0.5]]],
+  ["\"How do you handle criticism?\"", [["Ask for film and fix it", 1], ["Block it out on Hoopr", 0.5], ["Clap back at the haters", 0]]],
+  ["\"What do you bring off the court?\"", [["Early to the gym, last to leave", 1], ["Followers - big brand", 0.5], ["I'm here to hoop, that's it", 0.3]]],
+];
+function interviews(): Promise<void> {
+  return new Promise((res) => {
+    const r = mkRng(hashStr("iv" + L.seed)),
+      teams: number[] = [];
+    while (teams.length < 3) {
+      const t = Math.floor(r() * 14);
+      if (!teams.includes(t)) teams.push(t);
+    }
+    let ti = 0,
+      qi = 0,
+      sc = 0;
+    const show = () => {
+      const t = teams[ti],
+        q = IVQ[(ti * 2 + qi) % IVQ.length];
+      scr(`<small class="tag y">PRE-DRAFT INTERVIEW · ${ti + 1}/3</small><h2>${esc(S.NBA_NAMES[t])}</h2><div class="sub">Front office, head coach and a psychologist across the table.</div><div class="q">${esc(q[0])}</div><div class="ans">${q[1].map((a, k) => `<button data-iv="${k}"><kbd>${k + 1}</kbd>${esc(a[0])}</button>`).join("")}</div>`);
+      on(".scr [data-iv]", (b) => {
+        sc += q[1][+b.dataset.iv!][1];
+        if (++qi < 2) return show();
+        S.interview(L, t, sc / 2);
+        toast(`${S.NBA_NAMES[t]}: ${sc / 2 >= 0.66 ? "they loved you" : sc / 2 >= 0.4 ? "solid meeting" : "that got awkward"}`, "🤝");
+        qi = 0;
+        sc = 0;
+        if (++ti < 3) show();
+        else res();
+      });
+    };
+    show();
+  });
+}
+function agentPick(): Promise<void> {
+  return new Promise((res) => {
+    scr(`<small class="tag y">REPRESENTATION</small><h2>Pick an agent</h2><div class="sub">They negotiate your contracts and endorsements (and take a cut).</div><div class="grid">${Object.entries(S.AGENTS)
+      .map(([n, a]) => `<button class="opt" data-ag="${esc(n)}" style="border-left:6px solid ${a.c}"><b>${esc(n)}</b><small>${esc(a.style)} · fee ${Math.round(a.fee * 100)}%</small></button>`)
+      .join("")}</div>`);
+    on(".scr [data-ag]", (b) => {
+      S.chooseAgent(L, b.dataset.ag!);
+      S.msg(L, "agent", "Glad to be on board. Let's get you drafted - and paid. 🤝");
+      res();
+    });
+  });
+}
+/** Free agency: offers from your team + three others; counter-offer with a slider (one try per team). */
+function freeAgency(): Promise<void> {
+  return new Promise((res) => {
+    const offs = S.faOffers(L),
+      tried = new Set<number>();
+    const draw = () => {
+      scr(`<small class="tag y">FREE AGENCY</small><h2>Your next contract</h2><div class="sub">Market value ~$${(S.marketValue(L) / 1e6).toFixed(1)}M a year · agent ${esc(L.agent || "none")}. Counter once per team: ask for more, risk the offer staying put.</div><div class="grid">${offs
+        .map(
+          (o, i) => `<div class="opt"><b>${esc(S.NBA_NAMES[o.tm])}${o.tm === L.team.tm ? " (your team)" : ""}</b><small>${o.yrs} years · $${(o.sal / 1e6).toFixed(2)}M / year</small>
+          ${tried.has(i) ? "" : `<label class="f" style="margin-top:6px">ASK <b id="ak${i}">$${(o.sal / 1e6).toFixed(2)}M</b><input type="range" min="${o.sal}" max="${Math.round(o.sal * 1.4)}" step="10000" value="${o.sal}" data-ask="${i}"></label><small id="ac${i}">Accept chance 100%</small>`}
+          <div class="row" style="margin-top:6px">${tried.has(i) ? "" : `<button class="gh" data-cnt="${i}">Counter</button>`}<button class="go" data-sgn="${i}">Sign ✍️</button></div></div>`,
+        )
+        .join("")}</div>`);
+      root.querySelectorAll<HTMLInputElement>(".scr [data-ask]").forEach(
+        (inp) =>
+          (inp.oninput = () => {
+            const i = +inp.dataset.ask!;
+            (root.querySelector("#ak" + i) as HTMLElement).textContent = "$" + (+inp.value / 1e6).toFixed(2) + "M";
+            (root.querySelector("#ac" + i) as HTMLElement).textContent = "Accept chance " + Math.round(S.acceptChance(offs[i], +inp.value) * 100) + "%";
+          }),
+      );
+      on(".scr [data-cnt]", (b) => {
+        const i = +b.dataset.cnt!,
+          ask = +(root.querySelector(`[data-ask="${i}"]`) as HTMLInputElement).value;
+        tried.add(i);
+        const okk = S.negotiate(L, offs[i], ask);
+        toast(okk ? `${S.NBA_NAMES[offs[i].tm]} agreed: $${(ask / 1e6).toFixed(2)}M` : `${S.NBA_NAMES[offs[i].tm]} won't move.`, okk ? "✅" : "🚫");
+        draw();
+      });
+      on(".scr [data-sgn]", async (b) => {
+        const o = offs[+b.dataset.sgn!],
+          moved = o.tm !== L.team.tm;
+        S.signFA(L, o);
+        closeScr();
+        await cut("FREE AGENCY", moved ? S.NBA_NAMES[o.tm].toUpperCase() : "RUN IT BACK", `${o.yrs} years, $${(o.sal / 1e6).toFixed(1)} million a year${o.sal >= 45e6 ? " - a MAX deal" : ""}. ${moved ? "New city, new jersey, same goal." : "Loyalty pays."}`);
+        res();
+      });
+    };
+    draw();
+  });
+}
+/** Story cards queued by the state (role meeting, rookie hazing, All-Star, trade, awards with an MVP speech). */
+let storyBusy = false;
+async function story() {
+  if (storyBusy || mode !== "world" || !L.story.length || PH.isOpen()) return;
+  storyBusy = true;
+  mode = "screen";
+  const s0 = L.story.shift()!;
+  try {
+    if (s0 === "role") {
+      const r = S.role(L);
+      await cut("COACH'S OFFICE", r.n.toUpperCase(), `${esc((L.contacts.find((c) => c.id === "coach") || { n: "Coach" }).n)}: "${r.k >= 1 ? "You're starting. Earn it every night." : r.k >= 0.8 ? "You're our sixth man. Bring energy off the bench - show me in practice and that changes." : "Right now you're behind guys who've been here. Practice, film, be on time. Minutes are earned."}"`);
+    } else if (s0 === "rookie") {
+      await choice("ROOKIE DUTY", "Welcome to the league", "The vets hand you a pile of bags at the airport and a karaoke mic for the team bus.", [
+        ["Carry the bags, sing the song 🎤", () => ((L.mood = clamp(L.mood - 4, 0, 100)), aff("tm1", 6), (L.rep = clamp(L.rep + 2, 0, 100)), "The vets love it. Hoopr loves it more.")],
+        ["Politely pass", () => (aff("tm1", -6), "Awkward silence. The vets will remember."),],
+      ]);
+    } else if (s0 === "allstar") await cut("NBA", "ALL-STAR", `${esc(L.p.n)} is an All-Star. The game is tonight at Summit Arena - check your calendar.`);
+    else if (s0 === "trade") await cut("BREAKING", "TRADED", `${esc(L.p.n)} is headed to the ${esc(L.team.name)}. New locker, new teammates, same town on the map.`);
+    else if (s0.startsWith("award:")) {
+      const a = s0.slice(6);
+      await choice("NBA AWARDS", a.toUpperCase(), `${esc(L.p.n)} wins ${esc(a)}. The podium, the trophy, the microphone. What do you say?`, [
+        ["Thank teammates, coaches and Mom", () => ((L.rep = clamp(L.rep + 4, 0, 100)), aff("mom", 5), "A classy speech. Reputation up.")],
+        ["\"I told y'all.\"", () => ((L.followers += Math.round(L.followers * 0.04)), (L.rep = clamp(L.rep - 3, 0, 100)), "It went viral. Not everybody loved it.")],
+      ]);
+    }
+  } finally {
+    storyBusy = false;
+    closeScr();
+    mode = "world";
+    save();
+  }
+}
+function aff(id: string, d: number) {
+  const c = L.contacts.find((x) => x.id === id);
+  if (c) c.aff = clamp(c.aff + d, 0, 100);
+}
+function choice(kick: string, h: string, p: string, opts: [string, () => string][]): Promise<void> {
+  return new Promise((res) => {
+    const d = document.createElement("div");
+    d.className = "cut";
+    d.innerHTML = `<div class="cc"><small>${esc(kick)}</small><h1>${esc(h)}</h1><p>${p}</p><div class="row" style="justify-content:center">${opts.map((o, i) => `<button class="${i ? "gh" : "go"}" data-ch="${i}">${esc(o[0])}</button>`).join("")}</div></div>`;
+    root.appendChild(d);
+    d.querySelectorAll<HTMLElement>("[data-ch]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const t = opts[+b.dataset.ch!][1]();
+          d.remove();
+          toast(t, "💬");
+          res();
+        }),
+    );
+  });
+}
 async function draftNight(): Promise<void> {
   const grad = L.stage === "college" && L.yr >= 4;
   if (grad && (S.gpa(L) || 0) >= 2) await cut("COMMENCEMENT", "Graduate", `${esc(L.p.n)} walks across the stage with a degree from ${esc(L.school)}. Mom is the loudest person in the building.`);
+  if (!L.flags.predraft) {
+    L.flags.predraft = 1;
+    await combineScreen();
+    await interviews();
+    await agentPick();
+    PH.event({ k: "mock", pick: S.projPick(S.draftStock(L)) });
+    save();
+  }
   const d = S.runDraft(L);
   if (!L.inv.outfits.includes("suit")) L.inv.outfits.push("suit");
   S.wear(L, "suit");
