@@ -86,9 +86,9 @@ const S = (pg) => pg.evaluate(() => window.H2K && window.H2K.G.S);
   // gamepad on the hub: d-pad moves focus, A activates
   const tap = async (k) => {
     await pg.evaluate((k) => (window.__pad.buttons[k].pressed = true), k);
-    await pg.waitForTimeout(90);
+    await pg.waitForTimeout(250);
     await pg.evaluate((k) => (window.__pad.buttons[k].pressed = false), k);
-    await pg.waitForTimeout(90);
+    await pg.waitForTimeout(250);
   };
   await tap(13);
   const g0 = await act(pg);

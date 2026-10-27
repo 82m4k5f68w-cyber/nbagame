@@ -1,11 +1,11 @@
 // WebGPU post-processing (three r186 RenderPipeline + TSL nodes): scene pass (MSAA) -> bloom -> color grade ->
-// replay depth of field -> ACES + sRGB -> FXAA. Same Fx interface as the WebGL chain in fx3d.ts.
+// replay depth of field -> ACES + sRGB -> FXAA. No AO / grain on WebGPU (setLevel's ao is ignored). Same Fx interface as the WebGL chain in fx3d.ts.
 // HSR (H2K Super Resolution) on WebGPU: temporal = a low-res scene pass with MRT velocity -> three's TAAU node
 // (jittered Halton samples, velocity reprojection, variance clipping) -> bloom/grade at output res -> RCAS sharpen;
 // spatial = the whole chain at low res in an RTT -> FSR1 (EASU + RCAS).
 import * as THREE from "three";
 import { RenderPipeline, HalfFloatType } from "three/webgpu";
-import { pass, uniform, vec3, vec4, float, uv, dot, mix, pow, max, luminance, renderOutput, mrt, output, velocity, rtt } from "three/tsl";
+import { pass, uniform, vec3, vec4, float, uv, dot, mix, pow, max, luminance, renderOutput, mrt, output, velocity, rtt, smoothstep } from "three/tsl";
 import { taau } from "three/examples/jsm/tsl/display/TAAUNode.js";
 import { fsr1 } from "three/examples/jsm/tsl/display/FSR1Node.js";
 import { sharpen } from "three/examples/jsm/tsl/display/SharpenNode.js";
@@ -26,6 +26,7 @@ export function makeFxGPU(R: any, S: THREE.Scene, cam: THREE.PerspectiveCamera):
     vig = uniform(0.22),
     tint = uniform(new THREE.Color(1, 1, 1)),
     gradeOn = uniform(1),
+    warm = uniform(0.15),
     focus = uniform(15);
   const bl: any = bloom(col, 0.2, 0.35, 3.2);
   bl.strength = bStr;
@@ -33,7 +34,10 @@ export function makeFxGPU(R: any, S: THREE.Scene, cam: THREE.PerspectiveCamera):
     const x = c.rgb,
       l = luminance(x),
       s1 = mix(vec3(l), x, sat),
-      c1 = pow(max(s1, vec3(1e-4)).div(0.18), vec3(con)).mul(0.18),
+      c0 = pow(max(s1, vec3(1e-4)).div(0.18), vec3(con)).mul(0.18),
+      h = smoothstep(0.05, 1.2, l),
+      // split toning like fx3d's GradeShader: warm highlights, cool shadows
+      c1 = c0.mul(mix(vec3(float(1).sub(warm.mul(0.03)), 1, float(1).add(warm.mul(0.05))), vec3(float(1).add(warm.mul(0.05)), float(1).add(warm.mul(0.01)), float(1).sub(warm.mul(0.06))), h)),
       d = uv().sub(0.5),
       g = c1.mul(tint).mul(float(1).sub(vig.mul(dot(d, d)).mul(2.2)));
     return vec4(mix(x, g, gradeOn), c.a);
@@ -111,6 +115,12 @@ export function makeFxGPU(R: any, S: THREE.Scene, cam: THREE.PerspectiveCamera):
     },
     setMotion() {
       // camera motion blur is WebGL-only (kept off on WebGPU)
+    },
+    setLook(s0, c0, v0, w0) {
+      sat.value = s0;
+      con.value = c0;
+      vig.value = v0;
+      warm.value = w0;
     },
     setGrade(onG, t) {
       gradeOn.value = onG ? 1 : 0;

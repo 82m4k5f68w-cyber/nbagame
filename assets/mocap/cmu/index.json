@@ -1,0 +1,162 @@
+{
+ "06_01": {
+  "file": "assets/mocap/cmu/06_01.json",
+  "seconds": 4.1,
+  "fps": 30,
+  "speedFtS": 3.8,
+  "hipLiftFt": 0.1,
+  "kind": "walk/drive"
+ },
+ "06_03": {
+  "file": "assets/mocap/cmu/06_03.json",
+  "seconds": 4.4,
+  "fps": 30,
+  "speedFtS": 3.5,
+  "hipLiftFt": 0.11,
+  "kind": "walk/drive"
+ },
+ "06_04": {
+  "file": "assets/mocap/cmu/06_04.json",
+  "seconds": 3.3,
+  "fps": 30,
+  "speedFtS": 4.9,
+  "hipLiftFt": 0.09,
+  "kind": "walk/drive"
+ },
+ "06_05": {
+  "file": "assets/mocap/cmu/06_05.json",
+  "seconds": 3.2,
+  "fps": 30,
+  "speedFtS": 4.4,
+  "hipLiftFt": 0.08,
+  "kind": "walk/drive"
+ },
+ "06_07": {
+  "file": "assets/mocap/cmu/06_07.json",
+  "seconds": 4.8,
+  "fps": 30,
+  "speedFtS": 3.5,
+  "hipLiftFt": 0.14,
+  "kind": "walk/drive"
+ },
+ "06_09": {
+  "file": "assets/mocap/cmu/06_09.json",
+  "seconds": 2.5,
+  "fps": 30,
+  "speedFtS": 5.1,
+  "hipLiftFt": 0.24,
+  "kind": "walk/drive"
+ },
+ "06_10": {
+  "file": "assets/mocap/cmu/06_10.json",
+  "seconds": 9.3,
+  "fps": 30,
+  "speedFtS": 1.7,
+  "hipLiftFt": 0.06,
+  "kind": "in place"
+ },
+ "06_11": {
+  "file": "assets/mocap/cmu/06_11.json",
+  "seconds": 9.6,
+  "fps": 30,
+  "speedFtS": 1.9,
+  "hipLiftFt": 0.06,
+  "kind": "in place"
+ },
+ "06_12": {
+  "file": "assets/mocap/cmu/06_12.json",
+  "seconds": 10.2,
+  "fps": 30,
+  "speedFtS": 1.8,
+  "hipLiftFt": 0.08,
+  "kind": "in place"
+ },
+ "06_14": {
+  "file": "assets/mocap/cmu/06_14.json",
+  "seconds": 4,
+  "fps": 30,
+  "speedFtS": 1.4,
+  "hipLiftFt": 0.32,
+  "kind": "in place"
+ },
+ "16_01": {
+  "file": "assets/mocap/cmu/16_01.json",
+  "seconds": 2.7,
+  "fps": 30,
+  "speedFtS": 0.4,
+  "hipLiftFt": 1,
+  "kind": "jump"
+ },
+ "16_08": {
+  "file": "assets/mocap/cmu/16_08.json",
+  "seconds": 2,
+  "fps": 30,
+  "speedFtS": 5.9,
+  "hipLiftFt": 0.12,
+  "kind": "walk/drive"
+ },
+ "16_11": {
+  "file": "assets/mocap/cmu/16_11.json",
+  "seconds": 4.5,
+  "fps": 30,
+  "speedFtS": 3.6,
+  "hipLiftFt": 0.07,
+  "kind": "walk/drive"
+ },
+ "16_35": {
+  "file": "assets/mocap/cmu/16_35.json",
+  "seconds": 1.4,
+  "fps": 30,
+  "speedFtS": 10.3,
+  "hipLiftFt": 0.22,
+  "kind": "run"
+ },
+ "16_45": {
+  "file": "assets/mocap/cmu/16_45.json",
+  "seconds": 1.1,
+  "fps": 30,
+  "speedFtS": 14.7,
+  "hipLiftFt": 0.13,
+  "kind": "run"
+ },
+ "13_11": {
+  "file": "assets/mocap/cmu/13_11.json",
+  "seconds": 3.5,
+  "fps": 30,
+  "speedFtS": 1.5,
+  "hipLiftFt": 0.95,
+  "kind": "jump"
+ },
+ "13_13": {
+  "file": "assets/mocap/cmu/13_13.json",
+  "seconds": 3.7,
+  "fps": 30,
+  "speedFtS": 1.5,
+  "hipLiftFt": 1.6,
+  "kind": "jump"
+ },
+ "13_17": {
+  "file": "assets/mocap/cmu/13_17.json",
+  "seconds": 40.3,
+  "fps": 30,
+  "speedFtS": 1.4,
+  "hipLiftFt": 0.34,
+  "kind": "in place"
+ },
+ "02_04": {
+  "file": "assets/mocap/cmu/02_04.json",
+  "seconds": 4,
+  "fps": 30,
+  "speedFtS": 0.7,
+  "hipLiftFt": 1.76,
+  "kind": "jump"
+ },
+ "02_05": {
+  "file": "assets/mocap/cmu/02_05.json",
+  "seconds": 15.5,
+  "fps": 30,
+  "speedFtS": 0.4,
+  "hipLiftFt": 0.12,
+  "kind": "in place"
+ }
+}

@@ -237,7 +237,7 @@ def main():
         if not KIDS[j]:
             e = END.get(j)
             eo = OFF[e] * S if e else np.array([0, 0, 0.04 * S])
-            lines += [f"{ind}  End Site", f"{ind}  {{", f"{ind}    OFFSET {eo[0]:.4f} {eo[1]:.4f} {eo[2]:.4f}", f"{ind}  }}"]
+            lines.extend([f"{ind}  End Site", f"{ind}  {{", f"{ind}    OFFSET {eo[0]:.4f} {eo[1]:.4f} {eo[2]:.4f}", f"{ind}  }}"])
         lines.append(ind + "}")
 
     emit("Hips", 0)

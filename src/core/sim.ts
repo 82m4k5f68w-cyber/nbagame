@@ -1387,7 +1387,8 @@ export function launch(p: Player) {
     // CPU jumpers, calibrated to NBA shooting splits: an open three goes in ~30% (poor shooter) .. ~46% (elite),
     // mid-range ~36-50%, and a full contest takes about a third off (league: open 38% vs tight 33% from three)
     // (re-based for v5.0's spacing / kick-outs: open looks come more often, so each one is a touch harder)
-    const base = three ? 0.362 + (0.16 * (rat - 60)) / 40 : 0.29 + (0.14 * (rat - 60)) / 40,
+    // (v5.4 re-base: the iron / blocks / tips take ~4 points off what launch intends - intended 37% came out 33%)
+    const base = three ? 0.392 + (0.17 * (rat - 60)) / 40 : 0.31 + (0.14 * (rat - 60)) / 40,
       pm = clamp(base * (1 - 0.25 * cx) * (p.sbw > 0 ? 0.95 : 1) * cpuK(p, [0.85, 0.94, 1, 1.06]) * Math.sqrt(wm0), 0.04, 0.6);
     gr = Math.random() < pm / (0.98 - cx * 0.25); // (the make roll below keeps its contest factor)
   }
@@ -2339,6 +2340,9 @@ function pp2Charge(o: Player, h: Player, ra: boolean) {
   // (a defender who stepped into him - last tick's velocity toward the driver - is blocking, never a charge)
   if (fr > 0.55 && ((o.pvx || 0) * -dx + (o.pvy || 0) * -dy) / dl < 60) pc = st > 0.3 ? 0.72 : st > 0.12 ? 0.45 : 0.15;
   if (pc > 0 && o.helpT > 0) pc += 0.08;
+  // (CPU drivers plough into set men far more often than real ones - they don't read the help: 9.6 charges a game at
+  // full odds vs ~2 in the NBA; a human driving into a set man still gets the full read)
+  if (pc > 0 && !isH(h)) pc *= 0.2;
   if (pc > 0) ppc("chargeRead");
   return pc > 0 && Math.random() < pc;
 }
@@ -3798,7 +3802,7 @@ export const AIR_KD = 7.2e-4, // quadratic drag per px: a = KD |v| v (~19% of g 
   AIR_WD = 0.12; // spin decay in the air (1/s)
 /** By surface (0 hardwood, 1 street asphalt): [bounce e, grip mu, rolling resistance px/s^2, rim e x, rim soak x, glass e]. */
 export const SURF = [
-  [0.8, 0.55, 42, 1, 1, 0.6],
+  [0.8, 0.6, 42, 1, 1, 0.6],
   [0.76, 0.85, 80, 1.12, 0.45, 0.5],
 ];
 export const surf = () => (cfg.PH3 && cfg.HALF ? 1 : 0);
@@ -3998,11 +4002,11 @@ function ph3Hit(A: Player, C: Player, j: number, mA: number, mC: number) {
   for (let w = 0; w < 2; w++) {
     const q = w === 0 ? A : C,
       dv = j / (w === 0 ? mA : mC);
-    if (dv > 110) {
+    if (dv > 130) {
       q.slow = Math.max(q.slow, 0.22);
       ph3c("stumble");
     }
-    if (dv > 200 && q.z <= 0 && q !== B.owner && q.mode === "i" && !(q.actT > 0) && !PREDICT && rs <= 0 && !ftq && inb <= 0 && gameLike() && Math.random() < Math.min(0.6, (dv - 200) / 300)) {
+    if (dv > 240 && q.z <= 0 && q !== B.owner && q.mode === "i" && !(q.actT > 0) && !PREDICT && rs <= 0 && !ftq && inb <= 0 && gameLike() && Math.random() < Math.min(0.35, (dv - 240) / 400)) {
       q.act = 3; // on the floor; gets up (a teammate helps him up at a dead ball)
       q.actT = 1.15;
       ph3c("down");
@@ -4037,7 +4041,7 @@ function ph3Screen(sc0: Player, df: Player) {
   }
 }
 // ---- ball handling ----
-/** A hard pass (relative speed 520+ px/s), a fancy one (no-look / behind the back / wraparound) or one from behind can
+/** A hard pass (relative speed 560+ px/s), a fancy one (no-look / behind the back / wraparound) or one from behind can
  *  be bobbled: it pops up off his hands - no steal, he or a teammate usually gets it back. */
 function ph3Bobble(p: Player) {
   const rx = B.vx - p.vx,
@@ -4045,10 +4049,10 @@ function ph3Bobble(p: Player) {
     rz = B.vz - p.vz,
     rel = Math.sqrt(rx * rx + ry * ry + rz * rz),
     pp = B.pp ? B.pp.p : null,
-    pk = pp && pp.pk ? (pp.pk === 1 ? 0.04 : 0.08) : 0,
+    pk = pp && pp.pk ? (pp.pk === 1 ? 0.02 : 0.04) : 0,
     f = Math.cos(p.f) * rx + Math.sin(p.f) * ry,
-    back = f > 0.3 * rel ? 0.06 : 0,
-    c = (clamp((rel - 520) / 500, 0, 1) * 0.3 + pk + back) * (1.25 - p.s / 140);
+    back = f > 0.3 * rel ? 0.03 : 0,
+    c = (clamp((rel - 560) / 500, 0, 1) * 0.25 + pk + back) * (1.25 - p.s / 140);
   if (c <= 0 || Math.random() >= c) return false;
   const a = Math.random() * 6.283,
     W = B.wv || (B.wv = [0, 0, 0]);
@@ -4072,13 +4076,13 @@ function ph3Bobble(p: Player) {
 /** A low pass / loose ball skidding into somebody's feet kicks off them (he touched it last: out of bounds is on him). */
 function ph3Legs() {
   const sp = Math.sqrt(B.vx * B.vx + B.vy * B.vy);
-  if (sp < 150) return;
+  if (sp < 190) return;
   for (const q of P) {
     if (q.off || q === B.to || q === B.last || q.z > 4) continue;
     const dx = B.x - q.x,
       dy = B.y - q.y,
       d = Math.sqrt(dx * dx + dy * dy);
-    if (d > 6.5 || d < 1e-6) continue;
+    if (d > 5 || d < 1e-6) continue;
     const nx = dx / d,
       ny = dy / d,
       vn = B.vx * nx + B.vy * ny;
@@ -4188,7 +4192,9 @@ function ph3Slip(p: Player) {
 }
 /** Shoe squeak on a hard plant (FX for audio.ts). */
 function ph3Squeak(p: Player, v: number) {
-  if (cfg.PH3 && !PREDICT) fx({ k: "squeak", x: p.x, y: p.y, v: Math.min(1, v / 320) });
+  if (!cfg.PH3 || PREDICT || v < 200 || T - (p.sqkT ?? -9) < 0.9) return; // (one per player per .9 s: hard plants only)
+  p.sqkT = T;
+  fx({ k: "squeak", x: p.x, y: p.y, v: Math.min(1, v / 320) });
 }
 /** Green guide: a green release that was meant to go in (B.gd: not blocked, launch's make) is re-aimed at the middle
  *  of the rim on its way down, every half step, from .9 s out - the ballistic time to rim height, so drag, Magnus drift,
@@ -4599,7 +4605,7 @@ export function bstep(dt: number) {
     return;
   }
   // (Physics v3: a low pass / loose ball skidding into somebody's feet kicks off them)
-  if (cfg.PH3 && !PREDICT && !ftq && inb <= 0 && B.z < 14 && B.age > 0.12 && (B.mode === "pass" || (B.mode === "air" && !B.sh))) ph3Legs();
+  if (cfg.PH3 && !PREDICT && !ftq && inb <= 0 && B.z < 9 && B.age > 0.12 && (B.mode === "pass" || (B.mode === "air" && !B.sh))) ph3Legs();
   // Contest for the loose ball: jumpers and defenders first, with some randomness.
   SORTP.length = 0;
   for (const p of P) {

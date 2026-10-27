@@ -60,7 +60,10 @@ export interface Rig {
 // ---------------------------------------------------------------- material classes + the shared data texture
 /** Material classes: 0 cloth, 1 jersey knit (tiled), 2 skin, 3 hair, 4 leather (shoes), 5 gloss (eyes, teeth), 6 rubber,
  *  7 lips (skin and hair are neighbours: a per-vertex skin/hair blend only crosses those two swatches) */
-const ROUGH = "0.82 0.8 0.52 0.86 0.4 0.16 0.9 0.4";
+const ROUGH = "0.82 0.8 0.5 0.62 0.4 0.16 0.9 0.4"; // (hair .86 -> .62: a soft sheen)
+/** B channel = material class mask for the graphics-v6 shader patch: skin 1, lips .8, knit/cloth (sweat darkens
+ *  them) .45 / .4, hair .25, else 0. The tiled knit area (outside the swatch rows) is jersey (.45). */
+const BCLS = [0.4, 0.45, 1, 0.25, 0, 0, 0, 0.8];
 const TXN = 128;
 /** R = bump (knit holes, flat elsewhere), G = roughness. Knit holes repeat every 32 px; rows 1..8 hold no holes, so
  *  the per-class swatches live there (16 px wide each) and a constant-UV part samples one flat swatch texel. */
@@ -88,7 +91,7 @@ function dataTex() {
         sw = j >= 1 && j <= 8 ? Math.min(7, i >> 4) : -1;
       d[k] = sw >= 0 ? 255 : Math.round(hv * 255);
       d[k + 1] = Math.round((sw >= 0 ? rg[sw] : 0.78 + (1 - hv) * 0.15) * 255);
-      d[k + 2] = 0;
+      d[k + 2] = Math.round((sw >= 0 ? BCLS[sw] : 0.45) * 255);
       d[k + 3] = 255;
     }
   x.putImageData(im, 0, 0);
@@ -104,10 +107,62 @@ function bodyMat() {
   if (!m) {
     const t = dataTex();
     m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, roughnessMap: t, bumpMap: t, bumpScale: t ? 0.55 : 0, envMapIntensity: 0.85 });
+    if (t) skinPatch(m);
     MAT.set("body", m);
   }
   return m;
 }
+/** Graphics v6 body shading (WebGL; WebGPU keeps the plain standard material): skin gets wrap lighting with a warm
+ *  scatter tint (light bleeding past the terminator, like subsurface scattering), every player a view-space fresnel
+ *  rim (the broadcast back-light look: players pop off the floor), and per-player sweat (mesh.userData.sweat 0..1,
+ *  set each frame by render3d from fatigue + game time): wetter, shinier skin and a darker, damp jersey. */
+export const RIM = { value: new THREE.Color(0.55, 0.62, 0.75) };
+function skinPatch(m: THREE.MeshStandardMaterial) {
+  const sweat = { value: 0 };
+  m.onBeforeCompile = (sh: any) => {
+    sh.uniforms.h2kSweat = sweat;
+    sh.uniforms.h2kRim = RIM;
+    sh.fragmentShader =
+      "uniform float h2kSweat; uniform vec3 h2kRim; float h2kSkin = 0.0;\n" +
+      sh.fragmentShader
+        .replace(
+          "#include <lights_physical_pars_fragment>",
+          THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+            "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );",
+            "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );\n" +
+              "  reflectedLight.directDiffuse += h2kSkin * max( saturate( ( dot( geometryNormal, directLight.direction ) + 0.5 ) / 1.5 ) - dotNL, 0.0 ) * directLight.color * BRDF_Lambert( material.diffuseContribution ) * vec3( 0.95, 0.42, 0.3 );"
+          )
+        )
+        .replace(
+          "#include <roughnessmap_fragment>",
+          "#include <roughnessmap_fragment>\n#ifdef USE_ROUGHNESSMAP\n float h2kC = texelRoughness.b;\n h2kSkin = smoothstep( 0.7, 0.95, h2kC );\n float h2kCloth = smoothstep( 0.3, 0.38, h2kC ) * ( 1.0 - smoothstep( 0.5, 0.6, h2kC ) );\n roughnessFactor *= 1.0 - 0.45 * h2kSweat * h2kSkin;\n diffuseColor.rgb *= 1.0 - 0.2 * h2kSweat * h2kCloth;\n#endif"
+        )
+        .replace(
+          "#include <opaque_fragment>",
+          "{ float fr = pow( 1.0 - saturate( dot( normal, normalize( vViewPosition ) ) ), 3.0 );\n  outgoingLight += h2kRim * fr * ( 0.55 + 0.45 * normal.y ) * ( 0.35 + 0.65 * h2kSkin * ( 0.6 + 0.6 * h2kSweat ) ); }\n#include <opaque_fragment>"
+        );
+  };
+  m.customProgramCacheKey = () => "h2k-body-v6";
+  (m as any).userData.sweat = sweat;
+}
+/** Per-player body material: a clone of the shared one (same GL program; three uploads a material's uniforms when
+ *  the material changes between draws, so each player's sweat reaches his draw). mesh.userData.sweat -> uniform. */
+function playerMat(extra: THREE.Material[]) {
+  const b = bodyMat();
+  if (!(b as any).userData.sweat) return b;
+  const m = b.clone();
+  skinPatch(m);
+  extra.push(m);
+  return m;
+}
+export function sweatHook(mesh: THREE.Mesh) {
+  const u = (mesh.material as any).userData?.sweat;
+  if (!u) return;
+  mesh.onBeforeRender = () => {
+    u.value = mesh.userData.sweat || 0;
+  };
+}
+
 const swU = (m: number) => (m * 16 + 8) / TXN,
   swV = 1 - 5 / TXN;
 
@@ -887,15 +942,16 @@ export function makeRig(p: any, tex: (c: HTMLCanvasElement) => THREE.Texture, lo
     return geo;
   };
   const geo = build(parts, false);
-  const mesh = new THREE.SkinnedMesh(geo, bodyMat());
+  const extra: THREE.Material[] = [];
+  const mesh = new THREE.SkinnedMesh(geo, typeof document === "undefined" ? bodyMat() : playerMat(extra));
   mesh.castShadow = true;
+  sweatHook(mesh);
   mesh.frustumCulled = false;
   mesh.add(hips);
   const skel = new THREE.Skeleton(bones);
   mesh.bind(skel);
   const G = new THREE.Group();
   G.add(mesh);
-  const extra: THREE.Material[] = [];
   G.scale.setScalar(p.ht / 6.4);
   const pl = () => ({ on: false, x: 0, y: 0, z: 0, w: 0 });
   const cs = () => ({ x: 0, vx: 0, z: 0, vz: 0 });

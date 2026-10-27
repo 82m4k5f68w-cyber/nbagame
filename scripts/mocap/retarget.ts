@@ -170,6 +170,7 @@ function retarget(P: Record<string, THREE.Vector3>, heading: THREE.Vector3, rest
 }
 
 function load(id: string) {
+  if (id.endsWith(".bvh")) return parse(fs.readFileSync(id, "utf8")); // local file (scripts/assets/video2bvh.py output)
   const f = path.join(CACHE, id + ".bvh");
   if (!fs.existsSync(f)) {
     fs.mkdirSync(CACHE, { recursive: true });
@@ -181,6 +182,9 @@ function load(id: string) {
 function analyse(id: string, mirror = false) {
   const b = load(id);
   const F = b.frames.map((fr) => fk(b.root, fr));
+  // Z-up files (Blender's BVH exporter, scripts/assets/blender/fbx_bvh.py): rotate to Y-up (x, y, z) -> (x, z, -y)
+  const up0 = F[0].Spine1.clone().sub(F[0].Hips);
+  if (Math.abs(up0.z) > Math.abs(up0.y)) for (const P of F) for (const v of Object.values(P)) v.set(v.x, v.z, -v.y);
   const r0 = F[0]; // frame 1 = T pose
   const side = (s: string) => (mirror ? (s === "L" ? "Right" : "Left") : s === "L" ? "Right" : "Left"); // our L side
   void side;
@@ -289,6 +293,38 @@ function addCycle(name: string, id: string, axis: "z" | "x", f0: number, f1: num
   }
   out[name] = { speedPx: +c.speedPx.toFixed(1), stridePx: +c.strideHalfPx.toFixed(1), cycles: c.cycles, frames: rot, dir: Math.abs(dx) > Math.abs(dz) ? Math.sign(dx) * 2 : Math.sign(dz) };
   console.log(name, id, "cycles", c.cycles, "speed px/s", c.speedPx.toFixed(0), "half-stride px", c.strideHalfPx.toFixed(1));
+}
+// ---- staging mode: one local BVH -> joint curves JSON (src/core/mocap.ts untouched) ----
+//   npx tsx scripts/mocap/retarget.ts --bvh assets/mocap/move.bvh --out assets/mocap/move.curves.json [--kind cycle|shot|jump|raw] [--axis z|x]
+// cycle = averaged looping gait cycle (needs 2+ steps), shot / jump = keyframed clip, raw = every frame's pose channels.
+{
+  const ai = process.argv.indexOf("--bvh");
+  if (ai > 0) {
+    const file = process.argv[ai + 1],
+      arg = (k: string, d: string) => (process.argv.includes(k) ? process.argv[process.argv.indexOf(k) + 1] : d),
+      kind = arg("--kind", "cycle"),
+      dst = arg("--out", file.replace(/\.bvh$/, ".curves.json"));
+    let res: any;
+    if (kind === "shot") res = { shot: shot(file) };
+    else if (kind === "jump") res = { jump: jump(file) };
+    else {
+      const a = analyse(file);
+      if (kind === "raw") {
+        const ev = +arg("--every", "1"),
+          fr = a.poses.slice(1).filter((_, i) => i % ev === 0),
+          hip = a.F.slice(1).filter((_, i) => i % ev === 0).map((P) => [+(P.Hips.x * (3.18 / a.legLen)).toFixed(3), +(P.Hips.y * (3.18 / a.legLen)).toFixed(3), +(P.Hips.z * (3.18 / a.legLen)).toFixed(3)]);
+        res = { dt: a.dt * ev, ch: CH, frames: fr.map((p) => CH.map((k) => +p[k].toFixed(3))), hipFt: hip };
+      }
+      else {
+        addCycle("clip", file, arg("--axis", "z") as "z" | "x", 0.02, 0.98);
+        const c = out.clip;
+        res = { ch: CH, speed: c.speedPx, stride: c.stridePx, cycles: c.cycles, dir: c.dir, frames: c.frames.map((p: any) => CH.map((k) => +p[k].toFixed(3))) };
+      }
+    }
+    fs.writeFileSync(dst, JSON.stringify(res));
+    console.log("staged", kind, "->", dst);
+    process.exit(0);
+  }
 }
 addCycle("walk", "07_01", "z", 0.15, 0.85);
 addCycle("run", "09_01", "z", 0.05, 0.98);

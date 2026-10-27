@@ -427,7 +427,8 @@ static class PhysStats
             Console.WriteLine($"  UP=0 reference: front iron {f0:F3}, 900 px/s hit {h0:F3}");
             Check(fr[0] < fr[1] && fr[1] < fr[2], "arcade iron is softer, sim iron livelier");
             Check(Math.Abs(fr[1] - f0) < 0.02, "the middle of the slider keeps the PH iron at normal speeds");
-            Check(hard[1] < fr[1] - 0.08 && Math.Abs(h0 - f0) < 0.02, "a hard hit loses more bounce to the flex (UP=1 only)");
+            // (physics v3 shares the flex soak with the browser: UP=0 soaks hard hits too; PH3 = 0 is the old UP-only rule)
+            Check(hard[1] < fr[1] - 0.08 && (cfg.PH3 != 0 ? h0 < f0 - 0.08 : Math.Abs(h0 - f0) < 0.02), cfg.PH3 != 0 ? "a hard hit loses more bounce to the flex (UP 0 and 1: physics v3)" : "a hard hit loses more bounce to the flex (UP=1 only)");
             Check(bp[0] > bp[1] && bp[1] > bp[2], "spin bites harder toward sim");
             Check(kick[0] < kick[1] && kick[1] < kick[2], "body contacts are stronger toward sim");
         }
@@ -508,6 +509,8 @@ static class PhysStats
             foreach (var cs in new[] { ("UP=0", 0, 1.0, 6.7, 1.0, 6.7), ("UP=1 equal", 1, 1.0, 6.7, 1.0, 6.7), ("UP=1 big boxer", 1, 1.25, 7.0, 0.9, 6.4), ("UP=1 small boxer", 1, 0.9, 6.3, 1.25, 7.0) })
             {
                 cfg.UP = cs.Item2; Sim.PH2 = true; cfg.PRO = 1;
+                int ph3 = cfg.PH3;
+                if (cs.Item1 == "UP=0") cfg.PH3 = 0; // (the no-box-out reference: physics v3 boxes out with UP 0 too)
                 start(0);
                 foreach (var q in P) { q.off = 1; }
                 var X = P[cfg.NP]; var O = P[0]; // defender (team 1), his man (team 0, attacks the right hoop)
@@ -523,6 +526,7 @@ static class PhysStats
                     collide();
                 }
                 Console.WriteLine($"  {cs.Item1,-16}: the man gained {O.x - x0:F1} px toward the rim, the boxer gave up {X.x - xd0:F1} px ({phBoxN - n0} box-out ticks)");
+                cfg.PH3 = ph3;
                 if (cs.Item1 == "UP=0") { BX0 = O.x - x0; BXD0 = X.x - xd0; }
                 else if (cs.Item1 == "UP=1 equal") { Check(X.x - xd0 < BXD0 * 0.5 && O.x - x0 < BX0 - 3, "a box-out holds position and keeps the man off the rim"); BX1 = X.x - xd0; }
                 else if (cs.Item1 == "UP=1 big boxer") BXB = X.x - xd0;

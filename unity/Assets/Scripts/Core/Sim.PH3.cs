@@ -16,6 +16,11 @@ using static Hoops.Core.Pose;
 
 namespace Hoops.Core
 {
+    public partial class Player
+    {
+        public double sqkT = -9; // physics v3: last shoe squeak (T)
+    }
+
     public static partial class Sim
     {
         public const double AIR_KD = 7.2e-4, // quadratic drag per px: a = KD |v| v
@@ -24,7 +29,7 @@ namespace Hoops.Core
         /// <summary>By surface (0 hardwood, 1 street asphalt): bounce e, grip mu, rolling resistance, rim e x, rim soak x, glass e.</summary>
         public static readonly double[][] SURF =
         {
-            new[] { 0.8, 0.55, 42, 1, 1, 0.6 },
+            new[] { 0.8, 0.6, 42, 1, 1, 0.6 },
             new[] { 0.76, 0.85, 80, 1.12, 0.45, 0.5 },
         };
         public static int surf() => cfg.PH3 != 0 && cfg.HALF != 0 ? 1 : 0;
@@ -199,6 +204,8 @@ namespace Hoops.Core
                 O.vy += uy * vin * 0.5;
             }
             ph3c("box");
+            phBoxN++; // (the PH2 test counters too)
+            if (sh > 0) phBoxPx += sh;
         }
         static void ph3Hit(Player A, Player C, double j, double mA, double mC)
         {
@@ -206,12 +213,12 @@ namespace Hoops.Core
             {
                 var q2 = w == 0 ? A : C;
                 double dv = j / (w == 0 ? mA : mC);
-                if (dv > 110)
+                if (dv > 130)
                 {
                     q2.slow = Math.Max(q2.slow, 0.22);
                     ph3c("stumble");
                 }
-                if (dv > 200 && q2.z <= 0 && q2 != B.owner && q2.mode == "i" && !(q2.actT > 0) && !Util.T(PREDICT) && rs <= 0 && ftq == null && inb <= 0 && gameLike() && Rng.R() < Math.Min(0.6, (dv - 200) / 300))
+                if (dv > 240 && q2.z <= 0 && q2 != B.owner && q2.mode == "i" && !(q2.actT > 0) && !Util.T(PREDICT) && rs <= 0 && ftq == null && inb <= 0 && gameLike() && Rng.R() < Math.Min(0.35, (dv - 240) / 400))
                 {
                     q2.act = 3;
                     q2.actT = 1.15;
@@ -250,10 +257,10 @@ namespace Hoops.Core
         {
             double rx = B.vx - p.vx, ry = B.vy - p.vy, rz = B.vz - p.vz, rel = Math.Sqrt(rx * rx + ry * ry + rz * rz);
             var pp = B.pp != null ? B.pp.p : null;
-            double pk = pp != null && Util.T(pp.pk) ? (pp.pk == 1 ? 0.04 : 0.08) : 0,
+            double pk = pp != null && Util.T(pp.pk) ? (pp.pk == 1 ? 0.02 : 0.04) : 0,
                 f = JsMath.Cos(p.f) * rx + JsMath.Sin(p.f) * ry,
-                back = f > 0.3 * rel ? 0.06 : 0,
-                c = (clamp((rel - 520) / 500, 0, 1) * 0.3 + pk + back) * (1.25 - p.s / 140);
+                back = f > 0.3 * rel ? 0.03 : 0,
+                c = (clamp((rel - 560) / 500, 0, 1) * 0.25 + pk + back) * (1.25 - p.s / 140);
             if (c <= 0 || Rng.R() >= c) return false;
             double a = Rng.R() * 6.283;
             var W = B.wv ?? (B.wv = new double[3]);
@@ -277,12 +284,12 @@ namespace Hoops.Core
         static void ph3Legs()
         {
             double sp = Math.Sqrt(B.vx * B.vx + B.vy * B.vy);
-            if (sp < 150) return;
+            if (sp < 190) return;
             foreach (var q2 in P)
             {
                 if (Util.T(q2.off) || q2 == B.to || q2 == B.last || q2.z > 4) continue;
                 double dx = B.x - q2.x, dy = B.y - q2.y, d = Math.Sqrt(dx * dx + dy * dy);
-                if (d > 6.5 || d < 1e-6) continue;
+                if (d > 5 || d < 1e-6) continue;
                 double nx = dx / d, ny = dy / d, vn = B.vx * nx + B.vy * ny;
                 if (vn >= 0) continue;
                 var W = B.wv ?? (B.wv = new double[3]);
@@ -385,7 +392,9 @@ namespace Hoops.Core
         }
         static void ph3Squeak(Player p, double v)
         {
-            if (cfg.PH3 != 0 && !Util.T(PREDICT)) fx(new Fx { k = "squeak", x = p.x, y = p.y, v = Math.Min(1, v / 320) });
+            if (cfg.PH3 == 0 || Util.T(PREDICT) || v < 200 || T - p.sqkT < 0.9) return; // (one per player per .9 s: hard plants only)
+            p.sqkT = T;
+            fx(new Fx { k = "squeak", x = p.x, y = p.y, v = Math.Min(1, v / 320) });
         }
     }
 }

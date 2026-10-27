@@ -499,7 +499,7 @@ namespace Hoops.Core
                 return;
             }
             // (Physics v3: a low pass / loose ball skidding into somebody's feet kicks off them)
-            if (cfg.PH3 != 0 && !Util.T(PREDICT) && ftq == null && inb <= 0 && B.z < 14 && B.age > 0.12 && (B.mode == "pass" || (B.mode == "air" && !Util.T(B.sh)))) ph3Legs();
+            if (cfg.PH3 != 0 && !Util.T(PREDICT) && ftq == null && inb <= 0 && B.z < 9 && B.age > 0.12 && (B.mode == "pass" || (B.mode == "air" && !Util.T(B.sh)))) ph3Legs();
             // Contest for the loose ball: jumpers and defenders first, with some randomness.
             SORTP.Clear();
             foreach (var p in P)

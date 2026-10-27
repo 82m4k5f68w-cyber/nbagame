@@ -45,7 +45,7 @@ export function saveSet() {
   try {
     const o: any = {
       m: V.METER, s: IN.TEMPO, p: cfg.PRO, cm: V.CAMM, q2: ST.QPICK ? V.QL : undefined, fx: V.FX ? 1 : 0, gp: V.GPU, hs: ST.HPICK ? V.HSR : undefined, hm: V.HSRM, tf: V.TFPS, fc: V.FPSC, my: ST.MYM, df: cfg.DIFF, ql: ST.QLEN,
-      ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES },
+      ru: { FOULS: cfg.FOULS, SCLK: cfg.SCLK, VIOL: cfg.VIOL, SUBS: cfg.SUBS, BADGES: cfg.BADGES, SHATTER: cfg.SHATTER },
       CROWD: crowd.vol, CHANTS: crowd.on,
     };
     for (const k of KEYS) o[k] = (V as any)[k];
@@ -116,6 +116,7 @@ const I: Record<string, It> = {
   rv: { k: "rv", l: "Violations", o: onoff, g: () => cfg.VIOL, s: (v) => (cfg.VIOL = v), h: "3 seconds · 8 seconds · goaltending · out of bounds" },
   rs: { k: "rs", l: "Fatigue & subs", o: onoff, g: () => cfg.SUBS, s: (v) => (cfg.SUBS = v), h: "5v5: reserves check in, 6 fouls = out" },
   rb: { k: "rb", l: "Badges & hot zones", o: onoff, g: () => cfg.BADGES, s: (v) => (cfg.BADGES = v) },
+  rg: { k: "rg", l: "Glass-breaking dunks", o: onoff, g: () => cfg.SHATTER, s: (v) => (cfg.SHATTER = v), h: "Very rare: a monster dunk shatters the backboard (a stoppage while it is replaced)." },
   pi: { k: "pi", l: "Player intros", o: onoff, g: () => V.INTRO, s: (v) => (V.INTRO = v), h: "Starting-lineup cards before the tip." },
   ru: { k: "ru", l: "Gamepad rumble", o: onoff, g: () => V.RUMBLE, s: (v) => ((V.RUMBLE = v), rumble(0.6, 200)) },
   cm: { k: "cm", l: "Camera", o: CAMN.map((n, i) => [i, n] as O), g: () => V.CAMM, s: (v) => (V.CAMM = v), on: r3d, h: "K in game cycles the camera." },
@@ -163,7 +164,7 @@ function panels(c: Ctx) {
       : "") +
     grp(c, "Difficulty", ["df", "p"]) +
     grp(c, "Shooting", ["s", "m"]) +
-    grp(c, "Rules", ["rf", "rc", "rv", "rs", "rb"]) +
+    grp(c, "Rules", ["rf", "rc", "rv", "rs", "rb", "rg"]) +
     grp(c, "Presentation", ["pi"]);
   const controls =
     `<section class="sgrp"><h3>Keyboard</h3><p class="hint">Select an action, then press its new key (Esc cancels). Movement stays on WASD / arrows.</p><div class="keys2">${ACTS.map(([id, l]) => `<button type="button" data-key="${id}" aria-label="${esc(l)}: ${esc(keyName(KMAP[id]))}"><span>${esc(l)}</span><kbd>${esc(keyName(KMAP[id]))}</kbd></button>`).join("")}</div><div class="sbtns"><button type="button" id="krs" class="btn sm ghost">Reset keys</button></div></section>` +

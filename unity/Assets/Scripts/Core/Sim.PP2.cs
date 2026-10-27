@@ -289,6 +289,7 @@ namespace Hoops.Core
             // (a defender who stepped into him - last tick's velocity toward the driver - is blocking, never a charge)
             if (fr > 0.55 && (o.pvx * -dx + o.pvy * -dy) / dl < 60) pc = st > 0.3 ? 0.72 : st > 0.12 ? 0.45 : 0.15;
             if (pc > 0 && o.helpT > 0) pc += 0.08;
+            if (pc > 0 && !isH(h)) pc *= 0.2; // (CPU drivers plough into set men far more than real ones: ~2 charges a game, not 10)
             if (pc > 0) upc("chargeRead");
             return pc > 0 && Rng.R() < pc;
         }

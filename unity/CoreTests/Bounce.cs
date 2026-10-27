@@ -29,7 +29,7 @@ static class Bounce
         // 1. drop test: apex ratio per bounce ~ e^2 (e = Average(.72 ball, .8 floor) = .76); speed ratio ~ e
         {
             var b = Ball(470, 250, 100, 0, 0, 0);
-            double e = (0.72 + 0.8) / 2, prevVz = 0, apex = b.z, lastApex = -1;
+            double e = Sim.cfg.PH3 != 0 ? Sim.SURF[0][0] : (0.72 + 0.8) / 2, prevVz = 0, apex = b.z, lastApex = -1; // (physics v3: the hardwood's own e)
             var apexes = new System.Collections.Generic.List<double> { b.z - BR };
             var ratios = new System.Collections.Generic.List<double>();
             bool rising = false;
@@ -45,7 +45,8 @@ static class Bounce
             Console.WriteLine("drop from 100 px: apex heights " + string.Join(" ", apexes.ConvertAll(v => v.ToString("F1"))));
             Console.WriteLine("  speed ratios " + string.Join(" ", ratios.ConvertAll(v => v.ToString("F3"))) + $"  (e = {e:F3})");
             for (int k = 0; k < Math.Min(3, ratios.Count); k++) Check(Math.Abs(ratios[k] - e) < 0.02, $"bounce {k + 1}: speed ratio {ratios[k]:F3} ~ e {e:F3}");
-            for (int k = 1; k < Math.Min(4, apexes.Count); k++) Check(Math.Abs(apexes[k] / apexes[k - 1] - e * e) < 0.06, $"bounce {k}: apex ratio {apexes[k] / apexes[k - 1]:F3} ~ e^2 {e * e:F3}");
+            // (physics v3: real quadratic air drag takes up to ~10% off a rebound's height on top of e^2)
+            for (int k = 1; k < Math.Min(4, apexes.Count); k++) Check(Math.Abs(apexes[k] / apexes[k - 1] - e * e) < (Sim.cfg.PH3 != 0 ? 0.1 : 0.06), $"bounce {k}: apex ratio {apexes[k] / apexes[k - 1]:F3} ~ e^2 {e * e:F3}");
             Check(b.z < BR + 0.5 && Math.Abs(b.vz) < 5, $"settled on the floor after 8 s (z {b.z:F2}, vz {b.vz:F2})");
         }
 
@@ -83,14 +84,16 @@ static class Bounce
         //    without slipping; angular momentum about the contact point is conserved)
         {
             var b = Ball(300, 250, 20, 0, 0, 0, 0, 60, 0);
-            double vRoll = double.NaN, wHit = 0, slip = 0;
+            double vRoll = double.NaN, wHit = 0, slip = 0, vIn = 0;
             for (int i = 0; i < 240; i++)
             {
-                double vzIn = b.vz, wIn = b.wv[1];
+                double vzIn = b.vz, wIn = b.wv[1], vxIn = b.vx;
                 sim.Step(H, b);
-                if (vzIn < 0 && b.vz > 0) { vRoll = b.vx; wHit = wIn; slip = b.vx - b.wv[1] * BR; break; }
+                if (vzIn < 0 && b.vz > 0) { vRoll = b.vx; wHit = wIn; vIn = vxIn; slip = b.vx - b.wv[1] * BR; break; }
             }
-            double expect = 2.0 / 7 * BR * wHit;
+            // (angular momentum about the contact point: v' = (5 v + 2 R w) / 7; v is 0 unless Magnus (physics v3)
+            // pushed the falling, spinning ball sideways first)
+            double expect = (5 * vIn + 2 * BR * wHit) / 7;
             Console.WriteLine($"spinning drop: leaves the floor at {vRoll:F1} px/s (2/7 R w = {expect:F1}), slip after {slip:F2} px/s");
             Check(Math.Abs(vRoll - expect) < expect * 0.03, "spin turns into rolling speed 2/7 R w");
             Check(Math.Abs(slip) < 1, "rolling without slipping after the bounce");
@@ -135,7 +138,7 @@ static class Bounce
             }
             Console.WriteLine($"fast balls at the iron: {n} shots 600..4000 px/s, {bounced} hit it, tunnelled {through}, min clearance after a step {minClear:F3} px");
             Check(through == 0, "no ball passes through the iron");
-            Check(minClear > -0.05, "never ends a step inside the iron");
+            Check(minClear > -0.065, "never ends a step inside the iron"); // (vs the true torus: the 24 capsule chords sit up to RR (1 - cos(pi/24)) = .064 px inside it)
             int glassThrough = 0;
             for (int s = 0; s < 400; s++)
             {
@@ -187,7 +190,7 @@ static class Bounce
                 }
                 if (s.RimHits > c0) hit++;
             }
-            Check(through == 0 && minClear > -0.05, $"UP=1 PHYS {k}: {n} fast balls at the iron ({hit} hit it), tunnelled {through}, min clearance {minClear:F3}");
+            Check(through == 0 && minClear > -0.065, $"UP=1 PHYS {k}: {n} fast balls at the iron ({hit} hit it), tunnelled {through}, min clearance {minClear:F3}");
             // moving bones
             int inside = 0, contacts = 0, shots = 0;
             double worst = 0;

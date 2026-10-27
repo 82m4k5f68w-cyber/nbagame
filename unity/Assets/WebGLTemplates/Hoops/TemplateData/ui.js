@@ -45,15 +45,25 @@
   })();
 
   // ---------------- settings (browser h2k_set shape) ----------------
-  var SET = Object.assign({ m: 0, s: 0, p: 1, cm: 0, fx: 1, df: 1, ql: 60, COMM: 1, VOICE: 1, MUSIC: 1, CHANTS: 1, INTRO: 1, RUMBLE: 1, CB: 0, BIGM: 0 }, lsGet("h2k_set", {}));
+  var SET = Object.assign({ m: 0, s: 0, p: 1, cm: 0, fx: 1, df: 1, ql: 60, COMM: 1, VOICE: 1, MUSIC: 1, CHANTS: 1, INTRO: 1, RUMBLE: 1, CB: 0, BIGM: 0, THEME: 0, TXT: 0, RM: 0, HC: 0, MINHUD: 0, SPT: 0 }, lsGet("h2k_set", {}));
   SET.ru = Object.assign({ FOULS: 1, SCLK: 1, VIOL: 1, SUBS: 1, BADGES: 1 }, SET.ru || {});
   SET.vol = Object.assign({ vm: 100, vu: 100, vc: 100, vv: 100 }, SET.vol || {});
   var saveSet = function () { lsPut("h2k_set", SET); };
+  var PALN = ["Standard", "Red-green safe", "Blue-yellow safe", "Monochrome"];
+  /** UI v6 root switches (tokens.css): theme, text size, reduced motion, high contrast. */
+  function applyA11y() {
+    var d = document.documentElement;
+    d.dataset.theme = ["dark", "light", "auto"][SET.THEME | 0] || "dark";
+    d.dataset.text = String(SET.TXT | 0);
+    if (SET.RM) d.dataset.motion = "reduce"; else delete d.dataset.motion;
+    if (SET.HC) d.dataset.contrast = "high"; else delete d.dataset.contrast;
+  }
+  applyA11y();
   /** Flat settings for Unity (same keys as the menus' data- attributes / PageBridge.Apply). */
   function flat() {
     var o = { m: SET.m, s: SET.s, p: SET.p, cm: SET.cm, fx: SET.fx ? 1 : 0, df: SET.df, rf: SET.ru.FOULS, rc: SET.ru.SCLK, rv: SET.ru.VIOL, rs: SET.ru.SUBS, rb: SET.ru.BADGES,
       cmt: SET.COMM ? (SET.VOICE ? 2 : 1) : 0, pi: SET.INTRO, mu: SET.MUSIC, ch: SET.CHANTS, ru: SET.RUMBLE, cb: SET.CB, bm: SET.BIGM,
-      vm: SET.vol.vm, vu: SET.vol.vu, vc: SET.vol.vc, vv: SET.vol.vv };
+      vm: SET.vol.vm, vu: SET.vol.vu, vc: SET.vol.vc, vv: SET.vol.vv, mh: SET.MINHUD | 0, spt: SET.SPT | 0, ts: SET.TXT | 0, hc: SET.HC | 0, rm: SET.RM | 0, th: SET.THEME | 0 };
     if (SET.q2 != null) o.q = SET.q2; // graphics only when picked (else Unity's GPU-tier default)
     if (SET.hs != null) o.hsr = SET.hs; // H2K Super Resolution, same rule
     o.hsrm = SET.hm || 0;
@@ -90,6 +100,12 @@
       case "ru": SET.RUMBLE = v; break;
       case "cb": SET.CB = v; break;
       case "bm": SET.BIGM = v; break;
+      case "mh": SET.MINHUD = v; break;
+      case "spt": SET.SPT = v; break;
+      case "ts": SET.TXT = v; applyA11y(); break;
+      case "hc": SET.HC = v; applyA11y(); break;
+      case "rm": SET.RM = v; applyA11y(); break;
+      case "th": SET.THEME = v; applyA11y(); break;
       case "vm": case "vu": case "vc": case "vv": SET.vol[k] = v; break;
       case "ql": SET.ql = v; saveSet(); return; // sent with "start"
     }
@@ -143,6 +159,20 @@
   var avg = function (a, k) { return Math.round(a.reduce(function (s, p) { return s + p[k]; }, 0) / a.length); };
   var teamOvr = function (pl) { return Math.round(pl.reduce(function (a, p) { return a + ov2(p); }, 0) / pl.length); };
   var abbr = function (n) { return n.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase(); };
+  var hexRgb = function (h) { var m = /^#?([0-9a-f]{6})$/i.exec(h || ""), n = m ? parseInt(m[1], 16) : 0x2a2f6a; return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  var shade = function (h, k) { var c = hexRgb(h), f = function (v) { return Math.round(k <= 1 ? v * k : v + (255 - v) * (k - 1)); }; return "rgb(" + f(c[0]) + "," + f(c[1]) + "," + f(c[2]) + ")"; };
+  var lum = function (h) { var c = hexRgb(h); return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255; };
+  /** Team mark (browser ui/art.ts teamMark): shield in the team colour, sash, ball seams, monogram. Generic, no real logos. */
+  function teamMark(name, col, size, cls) {
+    var id = "g" + abbr(name) + hexRgb(col).join(""), lo = shade(col, 0.45), ink = lum(col) > 0.62 ? "#10142a" : "#fff";
+    return '<svg class="' + (cls || "tmk") + '" width="' + size + '" height="' + size + '" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + shade(col, 1.35) + '"/><stop offset="1" stop-color="' + lo + '"/></linearGradient></defs>' +
+      '<path d="M32 2 58 11v20c0 15-11 25-26 31C17 56 6 46 6 31V11z" fill="url(#' + id + ')" stroke="rgba(255,255,255,.55)" stroke-width="2"/><path d="M6 40 58 18v9L8 49z" fill="rgba(255,255,255,.16)"/>' +
+      '<g fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.6"><circle cx="32" cy="31" r="19"/><path d="M13 31h38M32 12v38M19 17c7 8 7 20 0 28M45 17c-7 8-7 20 0 28"/></g>' +
+      '<text x="32" y="38" text-anchor="middle" font-family="H2K Display,Impact,sans-serif" font-weight="700" font-size="19" fill="' + ink + '">' + abbr(name) + "</text></svg>";
+  }
+  var brandMark = function (s) {
+    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="bm" cx=".35" cy=".3"><stop offset="0" stop-color="#ffb070"/><stop offset=".6" stop-color="#ff6a1f"/><stop offset="1" stop-color="#8a3108"/></radialGradient></defs><circle cx="20" cy="20" r="17" fill="url(#bm)"/><g fill="none" stroke="#2a0e00" stroke-width="1.6" opacity=".8"><path d="M3 20h34M20 3v34"/><path d="M8 8c6 6 6 18 0 24M32 8c-6 6-6 18 0 24"/></g></svg>';
+  };
   var ftin = function (h) { var i = Math.round(h * 12); return Math.floor(i / 12) + "'" + (i % 12) + '"'; };
   var rec = {
     get: function () { return Object.assign({ w: 0, l: 0, st: 0, best: 0 }, lsGet("h2k_rec", {})); },
@@ -213,35 +243,40 @@
 
   // ---------------- hub (main.ts hubInit) ----------------
   var HMODES = [
-    { t: "5v5 NBA GAME", ic: "🏆", c: "#1d428a", big: 1, tags: ["FULL COURT", "4 QUARTERS", "FOULS · FTs", "REPLAYS", "BOX SCORE"], hot: "UNITY",
+    { t: "5v5 NBA GAME", k: "arena", ic: "🏆", c: "#1d428a", big: 1, tags: ["FULL COURT", "4 QUARTERS", "FOULS · FTs", "REPLAYS", "BOX SCORE"], hot: "UNITY",
       d: "The full game: " + D.TM.length + " teams, motion offense, screens, rebounds, free throws, Pro Play animation, instant replays and a box score — rendered by the Unity engine.", b: [["▶ PLAY 5v5", "5"], ["3v3 / 2v2", "3", 1]] },
-    { t: "1V1 SHOWDOWN", ic: "⚡", c: "#7b3fb5", tags: ["PICK ANY STAR", "FULL COURT"], d: "Pick any of " + ALL.length + " players and duel the CPU with the same physics, fouls and tempo shooting.", b: [["▶ PLAY 1v1", "1"]] },
-    { t: "GAME MODES", ic: "🎮", c: "#e8541e", tags: ["CLUTCH", "STREET", "CONTESTS", "PRACTICE"], d: "Clutch challenges, street ball, King of the Court, the All-Star game, the daily challenge, 3-point and dunk contests, HORSE, practice and a tutorial — on the matchup screen.", b: [["▶ PICK A MODE", "5"]] },
-    { t: "PLAY ONLINE", ic: "🌐", c: "#0b7a8a", tags: ["ROOM CODES", "ANTI-LAG"], hot: "NEW", d: "Host a game and send your friend the 4-letter code, or type a friend's code in the lobby.", b: [["▶ ONLINE LOBBY", "online"]] },
+    { t: "1V1 SHOWDOWN", k: "duel", ic: "⚡", c: "#7b3fb5", tags: ["PICK ANY STAR", "FULL COURT"], d: "Pick any of " + ALL.length + " players and duel the CPU with the same physics, fouls and tempo shooting.", b: [["▶ PLAY 1v1", "1"]] },
+    { t: "GAME MODES", k: "modes", ic: "🎮", c: "#e8541e", tags: ["CLUTCH", "STREET", "CONTESTS", "PRACTICE"], d: "Clutch challenges, street ball, King of the Court, the All-Star game, the daily challenge, 3-point and dunk contests, HORSE, practice and a tutorial — on the matchup screen.", b: [["▶ PICK A MODE", "5"]] },
+    { t: "PLAY ONLINE", k: "online", ic: "🌐", c: "#0b7a8a", tags: ["ROOM CODES", "ANTI-LAG"], hot: "NEW", d: "Host a game and send your friend the 4-letter code, or type a friend's code in the lobby.", b: [["▶ ONLINE LOBBY", "online"]] },
   ];
   var hubRaf = 0;
+  var hbtn = function (b, i) { return '<button type="button" class="btn' + (b[2] ? " ghost" : i === 0 ? " pri" : "") + '" data-g="' + b[1] + '">' + b[0] + "</button>"; };
   function hubInit() {
-    var LP = lsGet("h2k_lastplay", null), RC = rec.get();
+    var LP = lsGet("h2k_lastplay", null), RC = rec.get(), MY = lsGet("h2k_myp", null);
     var lpNp = LP ? LP.np || (/^1v1/.test(LP.mode || "") ? 1 : 5) : 5;
-    $("#hst").innerHTML = "<span><b>" + D.TM.length + "</b> teams</span><span><b>" + ALL.length + "</b> players</span><span><b>" + (D.MODES.length + 2) + "</b> modes</span><span><b>Unity</b> WebGPU / WebGL2</span><span><b>Online</b> rooms</span>";
-    var qp = document.createElement("div");
-    qp.className = "qp";
-    qp.innerHTML = '<button id="qpb" class="qpb">▶ QUICK PLAY <small>' + (LP ? (lpNp > 1 ? lpNp + "v" + lpNp : "1v1") + " · your last matchup" : "5v5 · jump straight in") + "</small></button>" +
-      '<div class="qrec"><b>' + RC.w + "</b>W <b>" + RC.l + "</b>L" + (RC.st > 1 ? " · 🔥 <b>" + RC.st + "</b> straight" : "") + "</div>" +
-      '<div class="ldw"><div class="ldb" id="ldbar"><i></i></div></div>';
-    $("#play .hero").appendChild(qp);
+    $("#brand").innerHTML = brandMark(34) + '<span class="disp">HOOPS <b>2K27</b></span>';
+    $("#prof").innerHTML = '<span class="chip"><b>' + RC.w + "</b>W <b>" + RC.l + "</b>L</span>" + (MY && MY.lv ? '<span class="chip">LV <b>' + MY.lv + "</b></span>" : "");
+    var F = HMODES[0];
+    $("#feat").style.setProperty("--c", F.c);
+    $("#feat").innerHTML = '<div class="art art-' + F.k + '"></div><div class="fb"><span class="eyebrow">Featured · ' + F.hot + '</span><h1 class="disp">' + F.t + "</h1><p>" + esc(F.d) + '</p><div class="tags">' +
+      F.tags.map(function (t) { return '<span class="chip">' + t + "</span>"; }).join("") + '</div><div class="acts">' + F.b.map(hbtn).join("") + "</div></div>";
+    var games = RC.w + RC.l, pct = games ? Math.round((100 * RC.w) / games) : 0;
+    $("#side").innerHTML = '<article class="tile qp"><span class="eyebrow">Quick play</span><button type="button" id="qpb" class="btn pri lg qpb">▶ Quick play <small>' + (LP ? (lpNp > 1 ? lpNp + "v" + lpNp : "1v1") + " · your last matchup" : "5v5 · jump straight in") + "</small></button>" +
+      '<div class="ldw"><div class="ldb" id="ldbar"><i></i></div></div></article>' +
+      '<article class="tile pro"><span class="eyebrow">Your record vs the CPU</span><div class="pr"><div class="ring" style="--p:' + pct + '"><b class="disp">' + pct + '%</b><small>WINS</small></div><dl><div><dt>Record</dt><dd class="disp">' + RC.w + "-" + RC.l +
+      '</dd></div><div><dt>Streak</dt><dd class="disp">' + (RC.st > 1 ? "🔥 " + RC.st : RC.st || 0) + '</dd></div><div><dt>Best</dt><dd class="disp">' + (RC.best || 0) + "</dd></div></dl></div></article>" +
+      '<article class="tile"><span class="eyebrow">The league</span><div class="stats" id="hst"><span class="chip"><b>' + D.TM.length + '</b> teams</span><span class="chip"><b>' + ALL.length + '</b> players</span><span class="chip"><b>' + (D.MODES.length + 2) + '</b> modes</span><span class="chip"><b>Unity</b> WebGPU / WebGL2</span><span class="chip"><b>Online</b> rooms</span></div></article>';
     $("#qpb").onclick = function () {
       enterGame(LP ? LP.np0 || (lpNp > 1 ? 5 : 1) : 5, lpNp);
       SEL = LP ? Math.min(LP.sel | 0, nChoices() - 1) : 0;
       OPP = LP && LP.opp >= 0 && LP.opp < nChoices() ? LP.opp : -1;
       start("game");
     };
-    $("#grid").innerHTML = HMODES.map(function (m, i) {
-      return '<div class="m' + (m.big ? " big" : "") + '" style="--c:' + m.c + ";--i:" + i + '"><div class="ic">' + m.ic + "</div><h2>" + m.t + '</h2><div class="tags">' + (m.hot ? '<i class="hot">' + m.hot + "</i>" : "") +
-        m.tags.map(function (t) { return "<i>" + t + "</i>"; }).join("") + "</div><p>" + esc(m.d) + "</p>" +
-        m.b.map(function (b) { return '<button class="' + (b[2] ? "b2" : "") + '" data-g="' + b[1] + '">' + b[0] + "</button>"; }).join("") + "</div>";
+    $("#grid").innerHTML = HMODES.slice(1).map(function (m, i) {
+      return '<article class="m" style="--c:' + m.c + ";--i:" + i + '"><div class="art art-' + m.k + '"><span class="ic" aria-hidden="true">' + m.ic + "</span>" + (m.hot ? '<span class="chip hot">' + m.hot + "</span>" : "") + '</div><div class="mb"><h2 class="disp">' + m.t + '</h2><div class="tags">' +
+        m.tags.map(function (t) { return '<span class="chip">' + t + "</span>"; }).join("") + "</div><p>" + esc(m.d) + '</p><div class="acts">' + m.b.map(hbtn).join("") + "</div></div></article>";
     }).join("");
-    $$("[data-g]").forEach(function (b) {
+    $$("#hub [data-g]").forEach(function (b) {
       b.onclick = function () {
         var g = b.dataset.g;
         if (g === "online") return online();
@@ -249,59 +284,56 @@
         menu();
       };
     });
-    $$(".m").forEach(function (c) {
-      c.onmousemove = function (e) {
-        var r = c.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-        c.style.setProperty("--ry", (x - 0.5) * 8 + "deg");
-        c.style.setProperty("--rx", (0.5 - y) * 6 + "deg");
-        c.style.setProperty("--mx", x * 100 + "%");
-        c.style.setProperty("--my", y * 100 + "%");
-      };
-      c.onmouseleave = function () { c.style.setProperty("--rx", "0deg"); c.style.setProperty("--ry", "0deg"); };
-    });
+    $("#news").innerHTML = HB.LOG.slice(0, 3).map(function (r, i) {
+      return '<article class="nw"><div class="nh"><span class="chip' + (i ? "" : " hot") + '">v' + r.v + '</span><span class="muted">' + r.d + '</span></div><h3 class="disp">' + r.n + "</h3><p>" + r.l[0] + "</p></article>";
+    }).join("") + '<button type="button" class="btn ghost nwall" data-goto="log">All updates ▶</button>';
+    $$("#hub [data-goto]").forEach(function (b) { b.onclick = function () { hubTab(b.dataset.goto); }; });
     $("#logp").innerHTML = HB.LOG.map(function (r, i) {
-      return '<div class="rel" style="animation-delay:' + i * 60 + 'ms"><h3>v' + r.v + " <span>" + r.n + "</span>" + (r.n2 ? "<em>LATEST</em>" : "") + "<s>" + r.d + "</s></h3><ul>" +
-        r.l.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul></div>";
+      return '<article class="rel" style="animation-delay:' + Math.min(i, 8) * 50 + 'ms"><h3><span class="chip' + (r.n2 ? " hot" : "") + '">v' + r.v + '</span> <span class="disp">' + r.n + "</span>" + (r.n2 ? '<em class="chip">LATEST</em>' : "") + "<s>" + r.d + "</s></h3><ul>" +
+        r.l.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul></article>";
     }).join("");
     var kh = function (id, a) { $(id).innerHTML = a.map(function (x) { return "<div><span>" + x[0] + "</span><kbd>" + x[1] + "</kbd></div>"; }).join(""); };
     kh("#k1", HB.K1); kh("#k2", HB.K2); kh("#k3", HB.K3); kh("#k5", HB.K5);
     var latest = HB.LOG.length ? HB.LOG[0].v : "";
-    if (lsGet("h2k_seen", "") === latest) $("#nw").style.display = "none";
-    $$("nav button").forEach(function (b) {
+    if (lsGet("h2k_seen", "") === latest) $("#nw").hidden = true;
+    $$("#hub nav button").forEach(function (b) {
       b.onclick = function () { hubTab(b.dataset.t); };
     });
+    $("#hset").onclick = function () { openSettings("gameplay"); };
     hubTab.latest = latest;
     var cv = $("#bg"), c = cv.getContext && cv.getContext("2d"), W = 0, H = 0, pts = [];
     if (!c) return;
     var rs = function () {
       W = cv.width = innerWidth;
       H = cv.height = innerHeight;
-      pts = Array.from({ length: 42 }, function () { return { x: Math.random() * W, y: Math.random() * H, r: 1 + Math.random() * 3, v: 0.15 + Math.random() * 0.5 }; });
+      pts = Array.from({ length: 36 }, function () { return { x: Math.random() * W, y: Math.random() * H, r: 1 + Math.random() * 2.5, v: 0.12 + Math.random() * 0.4 }; });
     };
     rs();
     addEventListener("resize", rs);
     var fr = function (t) {
-      if (scr !== "hub" || document.hidden) { hubRaf = requestAnimationFrame(fr); return; }
+      hubRaf = requestAnimationFrame(fr);
+      var still = SET.RM || matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (scr !== "hub" || document.hidden || (still && fr.done)) return;
+      fr.done = 1;
+      var light = getComputedStyle(document.documentElement).colorScheme === "light", L = light ? "255,120,40" : "255,170,80";
       c.clearRect(0, 0, W, H);
-      var g = c.createRadialGradient(W * 0.5, H * 0.1, 0, W * 0.5, H * 0.1, Math.max(W, H) * 0.9);
-      g.addColorStop(0, "#1c2257"); g.addColorStop(0.5, "#0a0c1c"); g.addColorStop(1, "#05060d");
+      var g = c.createRadialGradient(W * 0.5, H * 0.05, 0, W * 0.5, H * 0.1, Math.max(W, H) * 0.9);
+      g.addColorStop(0, light ? "#ffffff" : "#1a2160"); g.addColorStop(0.5, light ? "#eef0f6" : "#0a0c1c"); g.addColorStop(1, light ? "#e3e6f0" : "#05060d");
       c.fillStyle = g;
       c.fillRect(0, 0, W, H);
-      c.strokeStyle = "rgba(255,170,80,.10)";
+      c.strokeStyle = "rgba(" + L + ",.09)";
       c.lineWidth = 1;
-      var hz = H * 0.62, off = (t * 0.02) % 80;
+      var hz = H * 0.62, off = still ? 0 : (t * 0.02) % 80;
       for (var i = -12; i <= 12; i++) { c.beginPath(); c.moveTo(W / 2 + i * 40, hz); c.lineTo(W / 2 + i * 260, H); c.stroke(); }
       for (var k = 0; k < 12; k++) { var y = hz + Math.pow((k * 80 + off) / 960, 2) * (H - hz) * 2.2; if (y > hz && y < H) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); } }
-      c.beginPath(); c.arc(W / 2, hz + 8, Math.min(W, H) * 0.2, Math.PI, 0); c.strokeStyle = "rgba(255,210,63,.12)"; c.lineWidth = 2; c.stroke();
-      for (var j = 0; j < pts.length; j++) { var p = pts[j]; p.y -= p.v; if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; } c.fillStyle = "rgba(255,140,50,.35)"; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 6.3); c.fill(); }
-      hubRaf = requestAnimationFrame(fr);
+      for (var j = 0; j < pts.length; j++) { var p = pts[j]; if (!still) { p.y -= p.v; if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; } } c.fillStyle = "rgba(" + L + ",.3)"; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 6.3); c.fill(); }
     };
     hubRaf = requestAnimationFrame(fr);
   }
   function hubTab(t) {
-    $$("nav button").forEach(function (x) { x.classList.toggle("on", x.dataset.t === t); });
+    $$("#hub nav button").forEach(function (x) { x.classList.toggle("on", x.dataset.t === t); x.setAttribute("aria-current", x.dataset.t === t ? "page" : "false"); });
     ["play", "log", "how"].forEach(function (k) { $("#" + k).hidden = k !== t; });
-    if (t === "log") { $("#nw").style.display = "none"; lsPut("h2k_seen", hubTab.latest); }
+    if (t === "log") { $("#nw").hidden = true; lsPut("h2k_seen", hubTab.latest); }
     window.scrollTo(0, 0);
   }
   /** Hub -> game view: swap the stylesheets like main.ts go() (hub CSS off, game CSS on). */
@@ -381,39 +413,37 @@
   // ---------------- matchup screen (game.ts menu) + team carousel ----------------
   var opt = function (k, v, cur, l) { return '<button data-' + k + '="' + v + '" class="' + (cur === v ? "on" : "") + '">' + l + "</button>"; };
   var modeStrip = function () {
-    return '<div class="modes" role="group" aria-label="Game modes">' + D.MODES.map(function (m) { return '<button data-mode="' + m[0] + '"><span>' + m[1] + "</span>" + m[2] + "</button>"; }).join("") + "</div>";
+    return '<div class="modes" role="group" aria-label="Game modes">' + D.MODES.map(function (m) { return '<button type="button" class="mode" data-mode="' + m[0] + '" style="--c:' + (m[4] || "#2a2f6a") + '"><span class="mic" aria-hidden="true">' + m[1] + "</span><b>" + m[2] + "</b><small>" + (m[3] || "") + "</small></button>"; }).join("") + "</div>";
   };
   function loading() {
     return ready ? "" : '<div class="ldm">' + (failed ? esc(failed) : "LOADING THE ARENA… " + Math.round(prog * 100) + "%") + '</div><div class="ldb"><i style="--w:' + Math.round(prog * 100) + '%"></i></div>';
   }
   function side(i, you) {
-    var r = RO(i), pl = r[1], name = r[2], sub = NP > 1 ? "" : D.TM[ALL[i].t][0],
-      bars = [["3PT", avg(pl, 1)], ["INSIDE", avg(pl, 2)], ["SPEED", avg(pl, 3)], ["DEFENSE", avg(pl, 4)]];
+    var r = RO(i), pl = r[1], name = r[2], sub = NP > 1 ? "" : D.TM[ALL[i].t][0], cy = you ? "y" : "o";
     return '<section class="side' + (you ? " you" : "") + '" style="--c:' + r[0] + '">' +
-      '<div class="sh"><button class="arw" data-cy="' + (you ? "y" : "o") + '" data-d="-1" aria-label="Previous">◀</button>' +
-      '<div class="badge">' + esc(abbr(name)) + "</div>" +
-      '<div class="tn"><small>' + (you ? "YOU" : "OPPONENT") + (sub ? " · " + esc(sub) : "") + "</small><b>" + esc(name) + "</b></div>" +
-      '<div class="ovr"><small>OVR</small>' + teamOvr(pl) + "</div>" +
-      '<button class="arw" data-cy="' + (you ? "y" : "o") + '" data-d="1" aria-label="Next">▶</button></div>' +
-      '<div class="rt">' + bars.map(function (b) { return "<div><span>" + b[0] + '</span><i style="--w:' + b[1] + '%"></i><em>' + b[1] + "</em></div>"; }).join("") + "</div>" +
+      '<div class="sh"><button type="button" class="arw btn icon" data-cy="' + cy + '" data-d="-1" aria-label="Previous">◀</button>' +
+      (NP > 1 ? teamMark(name, r[0], 54) : '<img class="hs" alt="" src="' + avatar(pl[0], r[0]) + '">') +
+      '<div class="tn"><span class="eyebrow">' + (you ? "You" : "Opponent") + (sub ? " · " + esc(sub) : "") + '</span><b class="disp">' + esc(name) + "</b></div>" +
+      '<div class="ovr"><small>OVR</small><b class="disp">' + teamOvr(pl) + "</b></div>" +
+      '<button type="button" class="arw btn icon" data-cy="' + cy + '" data-d="1" aria-label="Next">▶</button></div>' +
       '<ol class="lu">' + pl.map(function (p, k) {
-        return '<li tabindex="0" data-pn="' + esc(p[0]) + '" data-col="' + r[0] + '" style="--d:' + k * 60 + 'ms"><img alt="" src="' + avatar(p, r[0]) + '"><span class="pn">' + (NP >= 5 ? POS[k] : "#" + p[12]) + "</span><b>" + esc(p[0]) +
-          ((p[14] || []).length ? ' <small class="bd">★' + p[14].length + "</small>" : "") + '</b><span class="po">' + ov2(p) + "</span></li>";
+        return '<li tabindex="0" data-pn="' + esc(p[0]) + '" data-col="' + r[0] + '" style="--d:' + k * 50 + 'ms"><img alt="" src="' + avatar(p, r[0]) + '"><span class="pn">' + (NP >= 5 ? POS[k] : "#" + p[12]) + "</span><b>" + esc(p[0]) +
+          ((p[14] || []).length ? ' <small class="bd">★' + p[14].length + "</small>" : "") + '</b><span class="po">' + ov2(p) + '</span><i class="pb" style="--w:' + Math.max(0, (ov2(p) - 55) * 2.3) + '%"></i></li>';
       }).join("") + "</ol></section>";
   }
   function carousel() {
     var N = nChoices(), h = "";
     for (var i = 0; i < N; i++) {
       var r = RO(i), sel = i === SEL, op = i === OPP;
-      h += '<button class="card' + (sel ? " sel" : "") + (op ? " opp" : "") + '" role="option" aria-selected="' + sel + '" data-i="' + i + '" style="--i:' + (i % 12) + ";--c:" + r[0] + '" title="' + esc(r[2]) + '">' +
+      h += '<button type="button" class="card' + (sel ? " sel" : "") + (op ? " opp" : "") + '" role="option" aria-selected="' + sel + '" data-i="' + i + '" style="--i:' + (i % 12) + ";--c:" + r[0] + '" title="' + esc(r[2]) + '">' +
         (NP > 1
-          ? '<span class="cb">' + esc(abbr(r[2])) + '</span><span class="cn">' + esc(r[2]) + '</span><span class="co">' + teamOvr(r[1]) + '</span><span class="c5">' +
+          ? teamMark(r[2], r[0], 34, "cb") + '<span class="cn">' + esc(r[2]) + '</span><span class="co">' + teamOvr(r[1]) + '</span><span class="c5">' +
             r[1].map(function (p) { return '<img alt="" src="' + avatar(p, r[0]) + '">'; }).join("") + "</span>"
           : '<img alt="" src="' + avatar(r[1][0], r[0]) + '"><span class="cn">' + esc(r[2].split(" ").pop()) + '</span><span class="co">' + ov2(r[1][0]) + "</span>") +
         (sel ? '<em class="tg">YOU</em>' : op ? '<em class="tg o">OPP</em>' : "") + "</button>";
     }
-    return '<div class="car"><button class="carb" data-car="-1" aria-label="Previous team">◀</button><div id="g" class="strip" role="listbox" aria-label="Choose your ' + (NP > 1 ? "team" : "star") + '">' + h +
-      '</div><button class="carb" data-car="1" aria-label="Next team">▶</button></div>';
+    return '<section class="pick"><h2 class="eyebrow">Choose your ' + (NP > 1 ? "team" : "star") + '</h2><div class="car"><button type="button" class="carb btn" data-car="-1" aria-label="Previous team">◀</button><div id="g" class="strip" role="listbox" aria-label="Choose your ' + (NP > 1 ? "team" : "star") + '">' + h +
+      '</div><button type="button" class="carb btn" data-car="1" aria-label="Next team">▶</button></div></section>';
   }
   function cyc(who, d) {
     var N = nChoices();
@@ -438,21 +468,28 @@
     if (SEL >= N) SEL = 0;
     if (OPP >= N || OPP === SEL) OPP = -1;
     var R = rec.get();
-    var rnd = '<section class="side rnd"><div class="sh"><button class="arw" data-cy="o" data-d="-1" aria-label="Previous">◀</button><div class="badge">?</div><div class="tn"><small>OPPONENT</small><b>Random</b></div><button class="arw" data-cy="o" data-d="1" aria-label="Next">▶</button></div>' +
-      '<p class="hint" style="margin:10px 0">A surprise ' + (NP > 1 ? "team" : "star") + ' every game. Use ▶ to pick one.</p><ol class="lu q">' +
-      (NP > 1 ? POS.slice(0, NP) : ["?"]).map(function (ps, k) { return '<li style="--d:' + k * 60 + 'ms"><span class="qa">?</span><span class="pn">' + (NP > 1 ? ps : "") + "</span><b>Mystery " + (NP > 1 ? "starter" : "star") + '</b><span class="po">??</span></li>'; }).join("") + "</ol></section>";
+    var rnd = '<section class="side rnd"><div class="sh"><button type="button" class="arw btn icon" data-cy="o" data-d="-1" aria-label="Previous">◀</button><div class="qmark disp" aria-hidden="true">?</div><div class="tn"><span class="eyebrow">Opponent</span><b class="disp">Random</b></div><button type="button" class="arw btn icon" data-cy="o" data-d="1" aria-label="Next">▶</button></div>' +
+      '<ol class="lu q">' +
+      (NP > 1 ? POS.slice(0, NP) : ["?"]).map(function (ps, k) { return '<li style="--d:' + k * 50 + 'ms"><span class="qa">?</span><span class="pn">' + (NP > 1 ? ps : "") + "</span><b>Mystery " + (NP > 1 ? "starter" : "star") + '</b><span class="po">??</span></li>'; }).join("") + "</ol></section>";
+    var rat = function (pl) { return [avg(pl, 1), avg(pl, 2), avg(pl, 3), avg(pl, 4), teamOvr(pl)]; },
+      A = rat(RO(SEL)[1]), Bv = OPP >= 0 ? rat(RO(OPP)[1]) : null,
+      tape = Bv ? '<div class="cmp tape" style="--c0:' + RO(SEL)[0] + ";--c1:" + RO(OPP)[0] + '">' + ["3PT", "INSIDE", "SPEED", "DEFENSE", "OVERALL"].map(function (k, j) {
+        var t = A[j] + Bv[j] || 1;
+        return '<div><em class="' + (A[j] > Bv[j] ? "w" : "") + '">' + A[j] + '</em><span><i style="--w:' + (100 * A[j]) / t + '%;background:var(--c0)"></i><i style="--w:' + (100 * Bv[j]) / t + '%;background:var(--c1)"></i></span><em class="' + (Bv[j] > A[j] ? "w" : "") + '">' + Bv[j] + "</em><small>" + k + "</small></div>";
+      }).join("") + "</div>" : '<p class="hint tape0">Random opponent: a surprise ' + (NP > 1 ? "team" : "star") + " every game.</p>",
+      segf = function (k, l, o, cur) { return '<div class="fr"><span class="sl">' + l + '</span><div class="seg">' + o.map(function (x) { return '<button type="button" data-' + k + '="' + x[0] + '" class="' + (cur === x[0] ? "on" : "") + '">' + x[1] + "</button>"; }).join("") + "</div></div>"; };
     var o = screen('<div class="mu">' +
-      '<header class="mu-top"><div class="logo">HOOPS<span>2K27</span></div><div class="mu-sub">' + (NP > 1 ? NP + "V" + NP : "1V1 SHOWDOWN") + " · UNITY ARENA</div>" +
-      '<div class="rec" title="Your record vs the CPU">' + R.w + "W · " + R.l + "L" + (R.st > 1 ? " · 🔥 " + R.st + " straight" : "") + '</div><button id="set" class="gear">⚙ Settings</button></header>' +
-      carousel() +
+      '<header class="mu-top"><div class="mu-title"><span class="eyebrow">' + (NP > 1 ? NP + "v" + NP : "1v1 Showdown") + ' · Unity arena</span><h1 class="disp">Matchup</h1></div>' +
+      '<div class="mu-tools"><span class="chip rec" title="Your record vs the CPU"><b>' + R.w + "</b>W <b>" + R.l + "</b>L" + (R.st > 1 ? " · 🔥 <b>" + R.st + "</b>" : "") + '</span><button type="button" id="set" class="btn gear">⚙ Settings</button></div></header>' +
       '<div class="vs">' + side(SEL, true) +
-      '<div class="mid"><div class="vsb">VS</div>' +
-      '<div class="chips"><b>DIFFICULTY</b>' + DIFFN.map(function (n, i) { return opt("df", i, SET.df, n); }).join("") + "</div>" +
-      (NP0 > 1 ? '<div class="chips"><b>TEAM SIZE</b>' + [5, 3, 2].map(function (n) { return '<button data-tsz="' + n + '" class="' + (NP === n ? "on" : "") + '">' + n + "v" + n + "</button>"; }).join("") + "</div>" : "") +
-      '<div class="chips"><b>QUARTERS</b>' + [30, 60, 120, 180].map(function (q) { return '<button data-ql="' + q + '" class="' + (SET.ql === q ? "on" : "") + '">' + (q < 60 ? q + "s" : q / 60 + " min") + "</button>"; }).join("") + "</div>" +
-      '<button class="big" id="tip">TIP OFF ▶</button>' + loading() +
-      '<p class="hint">Arrows / d-pad move · Enter / A select · Q E your ' + (NP > 1 ? "team" : "star") + " · Z C opponent · Esc / B back</p>" + modeStrip() + "</div>" +
-      (OPP < 0 ? rnd : side(OPP, false)) + "</div></div>", again ? "re" : "", true);
+      '<div class="mid"><div class="vsb disp" aria-hidden="true">VS</div>' + tape + '<div class="frm">' +
+      segf("df", "Difficulty", DIFFN.map(function (n, i) { return [i, n]; }), SET.df) +
+      (NP0 > 1 ? segf("tsz", "Team size", [[5, "5v5"], [3, "3v3"], [2, "2v2"]], NP) : "") +
+      segf("ql", "Quarter length", [[30, "30 s"], [60, "1 min"], [120, "2 min"], [180, "3 min"]], SET.ql) + "</div>" +
+      '<button type="button" class="btn pri lg big" id="tip">Tip off ▶</button>' + loading() +
+      '<p class="hint keys">Arrows / d-pad move · Enter / A select · Q E your ' + (NP > 1 ? "team" : "star") + " · Z C opponent · Esc / B back</p></div>" +
+      (OPP < 0 ? rnd : side(OPP, false)) + "</div>" + carousel() + '<section class="mstrip"><h2 class="eyebrow">More ways to play</h2>' + modeStrip() + "</section></div>", again ? "re" : "", true);
+    o.style.setProperty("--tc", RO(SEL)[0]);
     $$(".arw", o).forEach(function (b) { b.onclick = function () { cyc(b.dataset.cy, +b.dataset.d); }; });
     $$(".carb", o).forEach(function (b) { b.onclick = function () { cyc("y", +b.dataset.car); }; });
     $$(".strip .card", o).forEach(function (b) {
@@ -484,9 +521,9 @@
   function clutchScreen() {
     scr = "clutch";
     var st = lsGet("h2k_cc", {});
-    var o = screen('<div class="fin"><div class="logo" style="font-size:36px;animation:none">CLUTCH CHALLENGES</div><p class="hint">Your team vs your chosen opponent (or a random one). Beat the scenario.</p>' +
-      '<div class="cc">' + D.CLUTCH.map(function (c, i) { return '<button data-cc="' + i + '"><b>' + (st[i] ? "★" : "☆") + " " + esc(c.n) + "</b><small>" + esc(c.d) + "</small></button>"; }).join("") + "</div>" +
-      '<div class="row"><button class="ghost" id="mme">◀ Back</button></div></div>', "clutch");
+    var o = screen('<div class="fin"><header class="fhead"><span class="eyebrow">Game modes</span><div class="logo disp">Clutch challenges</div><p class="hint">Your team vs your chosen opponent (or a random one). Beat the scenario.</p></header>' +
+      '<div class="cc">' + D.CLUTCH.map(function (c, i) { return '<button type="button" data-cc="' + i + '" class="' + (st[i] ? "done" : "") + '"><span class="ccs">' + (st[i] ? "★" : "☆") + "</span><b>" + esc(c.n) + "</b><small>" + esc(c.d) + "</small></button>"; }).join("") + "</div>" +
+      '<div class="row actions"><button type="button" class="btn" id="mme">◀ Back</button></div></div>', "clutch");
     $$("[data-cc]", o).forEach(function (b) { b.onclick = function () { start("clutch", +b.dataset.cc); }; });
     $("#mme").onclick = function () { menu(); };
     focusFirst("[data-cc]");
@@ -535,67 +572,87 @@
     if (c && c.focus) c.focus();
   }
 
-  // ---------------- settings screen: tabs Gameplay / Controls / Graphics / Audio ----------------
-  var TABS = [["gameplay", "🏀 Gameplay"], ["controls", "🎮 Controls"], ["graphics", "✨ Graphics"], ["audio", "🔊 Audio"]];
+  // ---------------- settings: tabs Gameplay / Controls / Display / Audio / Accessibility (browser ui/settings.ts) ----------------
+  var TABS = [["gameplay", "Gameplay", "🏀"], ["controls", "Controls", "🎮"], ["display", "Display", "🖥"], ["audio", "Audio", "🔊"], ["access", "Accessibility", "♿"]];
   var setTab = "gameplay";
   function sdEl() {
     var s = $("#sd");
     if (!s) {
+      var m = document.createElement("div");
+      m.id = "sdm";
+      m.hidden = true;
+      m.onclick = function () { closeSettings(); };
       s = document.createElement("aside");
       s.id = "sd";
       s.hidden = true;
+      s.setAttribute("role", "dialog");
+      s.setAttribute("aria-modal", "true");
       s.setAttribute("aria-label", "Settings");
-      $("#game").appendChild(s);
+      document.body.appendChild(m);
+      document.body.appendChild(s);
     }
     return s;
   }
-  function onoff(k) { var c = getK(k) ? 1 : 0; return opt(k, 1, c, "On") + opt(k, 0, c, "Off"); }
+  var segRow = function (k, l, o, cur, hint) {
+    return '<div class="srow"><span class="sl">' + l + '</span><div class="seg" role="group" aria-label="' + l + '">' + o.map(function (x) {
+      return '<button type="button" data-' + k + '="' + x[0] + '" class="' + (cur === x[0] ? "on" : "") + '" aria-pressed="' + (cur === x[0]) + '">' + x[1] + "</button>";
+    }).join("") + "</div>" + (hint ? '<p class="hint">' + hint + "</p>" : "") + "</div>";
+  };
+  var OO = [[1, "On"], [0, "Off"]];
+  function onoff(k, l, hint) { return segRow(k, l, OO, getK(k) ? 1 : 0, hint); }
+  var grpS = function (h, body) { return '<section class="sgrp"><h3>' + h + "</h3>" + body + "</section>"; };
   function slider(k, l) {
-    return '<label class="sl"><span>' + l + '</span><input type="range" min="0" max="100" step="5" data-v="' + k + '" value="' + SET.vol[k] + '" aria-label="' + l + '"><em id="sv-' + k + '">' + SET.vol[k] + "</em></label>";
+    return '<label class="vol"><span>' + l + '</span><input type="range" min="0" max="100" step="5" data-v="' + k + '" value="' + SET.vol[k] + '" aria-label="' + l + '"><em id="sv-' + k + '">' + SET.vol[k] + "</em></label>";
   }
   function tabBody(t) {
     if (t === "gameplay")
-      return '<div class="opts"><h3>MATCH</h3><b>DIFFICULTY</b>' + DIFFN.map(function (n, i) { return opt("df", i, SET.df, n); }).join("") + "<b>PRO PLAY ENGINE</b>" + onoff("p") + "</div>" +
-        '<div class="opts"><h3>SHOOTING</h3><b>STYLE</b>' + opt("s", 0, SET.s, "Hold &amp; release") + opt("s", 1, SET.s, "Tempo") + "<b>SHOT METER</b>" + MN.map(function (n, i) { return opt("m", i, SET.m, n); }).join("") +
-        "<b>METER COLORS</b>" + opt("cb", 0, SET.CB, "Standard") + opt("cb", 1, SET.CB, "Colorblind-safe") + "<b>METER SIZE</b>" + opt("bm", 0, SET.BIGM, "Normal") + opt("bm", 1, SET.BIGM, "Large") + "</div>" +
-        '<div class="opts"><h3>RULES</h3><b>FOULS</b>' + onoff("rf") + "<b>SHOT CLOCK</b>" + onoff("rc") + "<b>VIOLATIONS</b>" + onoff("rv") + '<i class="sm">3 seconds · 8 seconds · goaltending</i>' +
-        "<b>FATIGUE &amp; SUBS</b>" + onoff("rs") + '<i class="sm">5v5: reserves check in, 6 fouls = out</i><b>BADGES &amp; HOT ZONES</b>' + onoff("rb") + "</div>" +
-        '<div class="opts"><h3>PRESENTATION</h3><b>PLAYER INTROS</b>' + onoff("pi") + "<b>GAMEPAD RUMBLE</b>" + onoff("ru") + "</div>";
+      return grpS("Match", segRow("df", "Difficulty", DIFFN.map(function (n, i) { return [i, n]; }), SET.df) + onoff("p", "Pro Play engine")) +
+        grpS("Shooting", segRow("s", "Shooting style", [[0, "Hold &amp; release"], [1, "Tempo"]], SET.s) + segRow("m", "Shot meter", MN.map(function (n, i) { return [i, n]; }), SET.m, "Green is always at the top.")) +
+        grpS("Rules", onoff("rf", "Fouls") + onoff("rc", "Shot clock") + onoff("rv", "Violations", "3 seconds · 8 seconds · goaltending") + onoff("rs", "Fatigue &amp; subs", "5v5: reserves check in, 6 fouls = out") + onoff("rb", "Badges &amp; hot zones")) +
+        grpS("Presentation", onoff("pi", "Player intros"));
     if (t === "controls") {
-      var tb = function (h, a) { return '<div class="opts keys"><h3>' + h + "</h3>" + a.map(function (x) { return '<div class="kb"><span>' + esc(x[0]) + "</span><kbd>" + esc(x[1]) + "</kbd></div>"; }).join("") + "</div>"; };
-      return tb("KEYBOARD · MOVE &amp; SHOOT", HB.K1) + tb("KEYBOARD · DRIBBLE &amp; POST", HB.K2) + tb("KEYBOARD · GAME", HB.K3.filter(function (k) { return !/Remap|online/i.test(k[0]); })) + tb("GAMEPAD", HB.K5) +
+      var tb = function (h, a) { return '<section class="sgrp"><h3>' + h + '</h3><div class="kref">' + a.map(function (x) { return "<span>" + esc(x[0]) + "</span><kbd>" + esc(x[1]) + "</kbd>"; }).join("") + "</div></section>"; };
+      return tb("KEYBOARD · MOVE &amp; SHOOT", HB.K1) + tb("KEYBOARD · DRIBBLE &amp; POST", HB.K2) + tb("KEYBOARD · GAME", HB.K3.filter(function (k) { return !/Remap|online/i.test(k[0]); })) +
+        grpS("GAMEPAD", onoff("ru", "Gamepad rumble") + '<div class="kref">' + HB.K5.map(function (x) { return "<span>" + esc(x[0]) + "</span><kbd>" + esc(x[1]) + "</kbd>"; }).join("") + "</div>") +
         tb("MENUS", [["Move between buttons", "arrows / d-pad / stick"], ["Select", "Enter / A"], ["Back · close", "Esc / B"], ["Your team · opponent", "Q E · Z C (LB RB · LT RT)"], ["Pause / resume", "Esc / P / Start"]]) +
         '<p class="hint">The Unity build uses these fixed bindings for now (no remapping yet).</p>';
     }
-    if (t === "graphics")
-      return '<div class="opts"><h3>QUALITY</h3><b>GRAPHICS</b>' + QN.map(function (n, i) { return opt("q", i, getK("q"), n); }).join("") +
-        '<i class="sm">' + (SET.q2 == null ? "Auto: picked for your GPU until you choose" : "Saved") + "</i><b>EFFECTS</b>" + onoff("fx") + '<i class="sm">bloom · color grade · depth of field in replays</i>' +
-        "<b>SUPER RESOLUTION (HSR)</b>" + HSRN.map(function (n, i) { return opt("hsr", i, getK("hsr"), n); }).join("") +
-        '<i class="sm">' + (SET.hs == null ? "Auto-picked for your GPU. " : "") + "Draws fewer pixels and upscales (STP temporal where supported, else FSR 1). Quality 67% · Balanced 58% · Performance 50% · Ultra 33%; Auto holds your target.</i>" +
-        "<b>UPSCALER</b>" + opt("hsrm", 0, SET.hm || 0, "Auto") + opt("hsrm", 1, SET.hm || 0, "Temporal") + opt("hsrm", 2, SET.hm || 0, "Spatial") +
-        "<b>TARGET FPS</b>" + [60, 90, 120, 144, 240, 0].map(function (f) { return opt("tfps", f, SET.tf == null ? 60 : SET.tf, f ? String(f) : "Max"); }).join("") +
-        '<i class="sm">' + (HZ ? "Your screen: " + HZ + " Hz. " : "") + "Browsers draw at most once per screen refresh, so higher targets act as Max.</i></div>" +
-        '<div class="opts"><h3>CAMERA</h3><b>VIEW (K in game)</b>' + CAMN.map(function (n, i) { return opt("cm", i, SET.cm, n); }).join("") + "</div>";
+    if (t === "display")
+      return grpS("Camera &amp; quality", segRow("cm", "Camera", CAMN.map(function (n, i) { return [i, n]; }), SET.cm, "K in game cycles the camera.") + segRow("q", "Graphics", QN.map(function (n, i) { return [i, n]; }), getK("q"), SET.q2 == null ? "Auto: picked for your GPU until you choose." : "Saved.") +
+        onoff("fx", "Effects", "Bloom · colour grade · depth of field in replays")) +
+        grpS("Performance", segRow("hsr", "Super resolution (HSR)", HSRN.map(function (n, i) { return [i, n]; }), getK("hsr"), (SET.hs == null ? "Auto-picked for your GPU. " : "") + "Draws fewer pixels and upscales (STP temporal where supported, else FSR 1). Quality 67% · Balanced 58% · Performance 50% · Ultra 33%; Auto holds your target.") +
+          segRow("hsrm", "Upscaler", [[0, "Auto"], [1, "Temporal"], [2, "Spatial"]], SET.hm || 0) +
+          segRow("tfps", "Target FPS", [60, 90, 120, 144, 240, 0].map(function (f) { return [f, f ? String(f) : "Max"]; }), SET.tf == null ? 60 : SET.tf, (HZ ? "Your screen: " + HZ + " Hz. " : "") + "Browsers draw at most once per screen refresh, so higher targets act as Max.")) +
+        grpS("Interface", segRow("mh", "HUD", [[0, "Full"], [1, "Minimal"]], SET.MINHUD | 0) + segRow("th", "Menu theme", [[0, "Dark"], [1, "Light"], [2, "System"]], SET.THEME | 0));
+    if (t === "access")
+      return grpS("Vision", segRow("ts", "Text size", [[0, "Normal"], [1, "Large"], [2, "Extra large"]], SET.TXT | 0, "Menus (the Unity HUD keeps its size).") +
+          segRow("cb", "Meter colours", PALN.map(function (n, i) { return [i, n]; }), SET.CB | 0, "Red-green safe for protanopia / deuteranopia, blue-yellow safe for tritanopia.") +
+          segRow("bm", "Meter size", [[0, "Normal"], [1, "Large"]], SET.BIGM | 0) + onoff("hc", "High contrast", "Stronger lines and text in the menus.")) +
+        grpS("Motion", onoff("rm", "Reduce motion", "No menu animations.")) +
+        grpS("Input", segRow("spt", "Sprint", [[0, "Hold"], [1, "Toggle"]], SET.SPT | 0));
     var cmt = SET.COMM ? (SET.VOICE ? 2 : 1) : 0;
-    return '<div class="opts"><h3>VOLUME</h3>' + slider("vm", "Master") + slider("vu", "Music") + slider("vc", "Crowd") + slider("vv", "Commentary") + "</div>" +
-      '<div class="opts"><h3>SOUND</h3><b>MUSIC</b>' + onoff("mu") + "<b>CROWD CHANTS</b>" + onoff("ch") + "<b>COMMENTARY</b>" + opt("cmt", 0, cmt, "Off") + opt("cmt", 1, cmt, "Captions") + opt("cmt", 2, cmt, "Captions + voice") + "</div>";
+    return grpS("VOLUME", slider("vm", "Master") + slider("vu", "Music") + slider("vc", "Crowd") + slider("vv", "Commentary")) +
+      grpS("SOUND", onoff("mu", "Arena music") + onoff("ch", "Crowd chants", "DE-FENSE · LET'S GO · M-V-P · AIR BALL · boos and roars") + segRow("cmt", "Commentary", [[0, "Off"], [1, "Captions"], [2, "Captions + voice"]], cmt));
   }
-  var setBack = null;
+  var setBack = null, setOpener = null;
   function openSettings(tab, back) {
     closeCard();
+    var fresh = !settingsOn();
+    if (fresh) setOpener = document.activeElement;
     setTab = tab || setTab;
-    setBack = back || null;
+    if (back !== undefined) setBack = back || null;
     var s = sdEl();
-    s.innerHTML = '<div class="sdh"><b>SETTINGS</b><button id="sdx" aria-label="Close settings">✕</button></div>' +
-      '<div class="tabs" role="tablist">' + TABS.map(function (t) { return '<button role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === setTab) + '" class="' + (t[0] === setTab ? "on" : "") + '">' + t[1] + "</button>"; }).join("") + "</div>" +
-      '<div class="tbody" role="tabpanel" data-t="' + setTab + '">' + tabBody(setTab) + "</div>";
+    s.innerHTML = '<div class="sdh"><h2 class="disp">Settings</h2><button type="button" class="btn icon ghost" id="sdx" aria-label="Close settings">✕</button></div>' +
+      '<div class="tabs" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === setTab) + '" class="' + (t[0] === setTab ? "on" : "") + '"><span aria-hidden="true">' + t[2] + "</span> " + t[1] + "</button>"; }).join("") + "</div>" +
+      '<div class="sdb"><div class="tbody sdp" role="tabpanel" data-t="' + setTab + '">' + tabBody(setTab) + "</div></div>";
     s.hidden = false;
-    $$("[data-tab]", s).forEach(function (b) { b.onclick = function () { openSettings(b.dataset.tab, setBack); focusFirst('#sd [data-tab="' + b.dataset.tab + '"]'); }; });
-    ["df", "p", "s", "m", "cb", "bm", "rf", "rc", "rv", "rs", "rb", "pi", "ru", "q", "fx", "hsr", "hsrm", "tfps", "cm", "mu", "ch", "cmt"].forEach(function (k) {
+    $("#sdm").hidden = false;
+    $$("[data-tab]", s).forEach(function (b) { b.onclick = function () { openSettings(b.dataset.tab); focusFirst('#sd [data-tab="' + b.dataset.tab + '"]'); }; });
+    ["df", "p", "s", "m", "cb", "bm", "rf", "rc", "rv", "rs", "rb", "pi", "ru", "q", "fx", "hsr", "hsrm", "tfps", "cm", "mu", "ch", "cmt", "mh", "th", "ts", "hc", "rm", "spt"].forEach(function (k) {
       $$("[data-" + k + "]", s).forEach(function (b) {
         b.onclick = function () {
           setK(k, +b.dataset[k]);
-          $$("[data-" + k + "]", s).forEach(function (c) { c.classList.toggle("on", c === b); });
+          $$("[data-" + k + "]", s).forEach(function (c) { c.classList.toggle("on", c === b); c.setAttribute("aria-pressed", String(c === b)); });
           if (k === "df" && scr === "menu") $$('#ov [data-df]').forEach(function (c) { c.classList.toggle("on", +c.dataset.df === SET.df); });
         };
       });
@@ -604,21 +661,25 @@
       r.oninput = function () { $("#sv-" + r.dataset.v).textContent = r.value; };
       r.onchange = function () { setK(r.dataset.v, +r.value); };
     });
-    $("#sdx").onclick = closeSettings;
+    $("#sdx").onclick = function () { closeSettings(); };
     navScope = s;
     if (!s.contains(document.activeElement)) focusFirst('#sd [data-tab="' + setTab + '"]');
   }
+  function settingsOn() { var s = $("#sd"); return !!s && !s.hidden; }
   function closeSettings() {
     var s = $("#sd");
     if (!s || s.hidden) return;
     s.hidden = true;
+    $("#sdm").hidden = true;
     navScope = null;
-    var b = setBack;
+    var b = setBack, o = setOpener;
     setBack = null;
+    setOpener = null;
     if (b) b();
     else if (scr === "menu") focusFirst("#set");
+    else if (scr === "hub") focusFirst("#hset");
+    else if (o && o.isConnected && o.focus) o.focus();
   }
-
   // ---------------- pause (game.ts pause) + live box score ----------------
   var PZ = null;
   function boxTable(F, t, live) {
@@ -631,6 +692,11 @@
           (live ? "" : "<td>" + p.tpm + "-" + p.tpa + "</td><td>" + p.blk + "</td><td>" + (p.orb || 0) + "</td><td>" + (p.pf || 0) + (p.fo ? " (out)" : "") + "</td><td>" + (p.hus || 0) + "</td>") + "</tr>";
       }).join("") + "</table>";
   }
+  /** Broadcast scoreboard row (browser game.ts board). */
+  function board(sc, cl, pc, sub) {
+    var t = function (i) { return '<div class="bt' + (i ? " r" : "") + '" style="--c:' + pc[i] + '">' + teamMark(cl[i], pc[i], 44) + '<b class="disp">' + esc(cl[i]) + '</b><em class="disp num">' + sc[i] + "</em></div>"; };
+    return '<div class="board">' + t(0) + '<span class="bmid">' + (sub || "") + "</span>" + t(1) + "</div>";
+  }
   function pause(j, focusSel) {
     PZ = j || PZ || {};
     if (PZ.cm != null && j) SET.cm = PZ.cm; // K / M in game change these on the Unity side
@@ -639,12 +705,12 @@
     playing(false);
     var sc = PZ.sc || [0, 0], cl = PZ.cl || ["", ""], pc = PZ.pc || ["#7b3fb5", "#1d428a"];
     var bx = boxTable(PZ, 0, 1) + boxTable(PZ, 1, 1);
-    var o = screen('<div class="pzw"><div class="pzl"><div class="logo" style="font-size:38px">PAUSED</div>' +
-      '<div class="psc"><span style="--c:' + pc[0] + '">' + esc(cl[0]) + "</span><b>" + sc[0] + "</b><i>—</i><b>" + sc[1] + '</b><span style="--c:' + pc[1] + '">' + esc(cl[1]) + "</span><small>Q" + (PZ.q || 1) + "</small></div>" +
-      '<div id="pz"><button id="pr">▶ Resume</button><button id="prp">⏪ Instant replay</button><button id="pse">⚙ Settings</button>' +
-      '<button id="pc">🎥 Camera: ' + CAMN[SET.cm | 0] + '</button><button id="pm">🎯 Meter: ' + MN[SET.m | 0] + '</button><button id="pt">⏱ Shooting: ' + (SET.s ? "Tempo" : "Hold &amp; release") + "</button>" +
-      '<button id="prs">↻ Restart game</button><button id="pq">✕ Quit to menu</button></div><p class="hint">Esc / P / Start to resume</p></div>' +
-      (bx ? '<div class="pzr"><h3>BOX SCORE</h3>' + bx + "</div>" : "") + "</div>", "pause");
+    var mi = function (id, ic, l, v) { return '<button type="button" id="' + id + '" class="mi"><span class="mic" aria-hidden="true">' + ic + "</span><span>" + l + "</span>" + (v ? "<em>" + v + "</em>" : "") + "</button>"; };
+    var o = screen('<div class="pzw"><section class="pzl panel"><span class="eyebrow">Game paused</span><div class="logo disp">Paused</div>' + board(sc, cl, pc, "Q" + (PZ.q || 1)) +
+      '<div id="pz" class="mlist">' + mi("pr", "▶", "Resume") + mi("prp", "⏪", "Instant replay") + mi("pse", "⚙", "Settings") +
+      mi("pc", "🎥", "Camera", CAMN[SET.cm | 0]) + mi("pm", "🎯", "Meter", MN[SET.m | 0]) + mi("pt", "⏱", "Shooting", SET.s ? "Tempo" : "Hold &amp; release") +
+      mi("prs", "↻", "Restart game") + mi("pq", "✕", "Quit to menu") + '</div><p class="hint">Esc / P / Start to resume</p></section>' +
+      (bx ? '<section class="pzr panel"><h2 class="eyebrow">Box score</h2>' + bx + "</section>" : "") + "</div>", "pause");
     void o;
     $("#pr").onclick = resume;
     $("#pse").onclick = function () { openSettings("gameplay", function () { pause(null, "#pse"); }); };
@@ -750,23 +816,21 @@
     var pogCard = "";
     if (pog) {
       var pt = BYNAME[pog.n], bd = pt ? pt[14] || [] : [], fg = pog.fga ? Math.round((100 * pog.fgm) / pog.fga) + "% FG" : "";
-      pogCard = '<div class="pog" tabindex="0"' + (pt ? ' data-pn="' + esc(pog.n) + '" data-col="' + pc[wt] + '"' : "") + ' style="--c:' + pc[wt] + '"><img alt="" src="' + avatar([pog.n, 0, 0, 0, 0, 0, 0, pog.sk, pog.hr, pog.bd, 0, 0, pog.no], pog.col || pc[wt]) + '"><div><small>PLAYER OF THE GAME' + (pogTag ? " · " + pogTag : "") + "</small><b>" + esc(pog.n) + "</b>" +
+      pogCard = '<section class="pog panel" tabindex="0"' + (pt ? ' data-pn="' + esc(pog.n) + '" data-col="' + pc[wt] + '"' : "") + ' style="--c:' + pc[wt] + '"><img alt="" src="' + avatar([pog.n, 0, 0, 0, 0, 0, 0, pog.sk, pog.hr, pog.bd, 0, 0, pog.no], pog.col || pc[wt]) + '"><div class="pgb"><small class="eyebrow">PLAYER OF THE GAME' + (pogTag ? " · " + pogTag : "") + '</small><b class="disp">' + esc(pog.n) + "</b>" +
         '<div class="pgs"><span><b>' + pog.pts + "</b>PTS</span><span><b>" + pog.reb + "</b>REB</span><span><b>" + pog.ast + "</b>AST</span>" + (pog.blk ? "<span><b>" + pog.blk + "</b>BLK</span>" : "") + "</div>" +
-        '<small class="pgl">' + pog.fgm + "-" + pog.fga + (fg ? " · " + fg : "") + " · " + pog.tpm + "-" + pog.tpa + " 3P" + (bd.length ? " · " + bd.map(function (b) { return D.BADGE[b] || b; }).join(" · ") : "") + "</small></div></div>";
+        '<small class="pgl">' + pog.fgm + "-" + pog.fga + (fg ? " · " + fg : "") + " · " + pog.tpm + "-" + pog.tpa + " 3P" + (bd.length ? " · " + bd.map(function (b) { return D.BADGE[b] || b; }).join(" · ") : "") + "</small></div></section>";
     }
-    var o = screen('<div class="fin" style="--c0:' + pc[0] + ";--c1:" + pc[1] + '">' +
-      '<div class="logo" style="font-size:44px;animation:none;color:' + (!game ? "#fff" : w ? "#ffd23f" : "#ff8a6b") + '">' + title + "</div>" +
-      '<div class="sc"><span style="--c:' + pc[0] + '">' + esc(cl[0]) + "</span><b>" + sc[0] + "</b><i>—</i><b>" + sc[1] + '</b><span style="--c:' + pc[1] + '">' + esc(cl[1]) + "</span></div>" +
-      qtrTable(F) +
-      (game ? '<p class="hint">Record ' + r.w + "W · " + r.l + "L" + (r.st > 1 ? " · 🔥 " + r.st + " straight" : "") + (r.best > 1 ? " · best streak " + r.best : "") + "</p>" : "") +
-      pogCard +
-      '<div class="cmp">' + rows.map(function (x) {
+    var o = screen('<div class="fin' + (!game ? "" : w ? " won" : " lost") + '" style="--c0:' + pc[0] + ";--c1:" + pc[1] + '">' +
+      '<header class="fhead"><span class="eyebrow">Final' + (game ? " · record " + r.w + "-" + r.l + (r.st > 1 ? " · 🔥 " + r.st + " straight" : "") + (r.best > 1 ? " · best streak " + r.best : "") : "") + "</span>" +
+      '<div class="logo disp">' + title + "</div>" + board(sc, cl, pc, "FINAL") + qtrTable(F) + "</header>" +
+      '<div class="fgrid"><div class="fcol">' + pogCard +
+      '<section class="panel"><h2 class="eyebrow">Team stats</h2><div class="cmp">' + rows.map(function (x) {
         var t = x[1] + x[2] || 1;
-        return "<div><em>" + x[1] + '</em><span><i style="--w:' + (100 * x[1]) / t + '%;background:var(--c0)"></i><i style="--w:' + (100 * x[2]) / t + '%;background:var(--c1)"></i></span><em>' + x[2] + "</em><small>" + x[0] + "</small></div>";
-      }).join("") + "</div>" +
-      (charts ? '<div class="charts">' + charts + "</div>" : "") +
-      '<div class="bxw"><h3>BOX SCORE</h3>' + boxTable(F, 0) + boxTable(F, 1) + "</div>" +
-      '<div class="row"><button class="big" id="rm">↻ REMATCH</button><button id="pa" class="ghost">Change teams</button><button id="ph" class="ghost">Main menu</button></div></div>', "final");
+        return '<div><em class="' + (x[1] > x[2] ? "w" : "") + '">' + x[1] + '</em><span><i style="--w:' + (100 * x[1]) / t + '%;background:var(--c0)"></i><i style="--w:' + (100 * x[2]) / t + '%;background:var(--c1)"></i></span><em class="' + (x[2] > x[1] ? "w" : "") + '">' + x[2] + "</em><small>" + x[0] + "</small></div>";
+      }).join("") + "</div></section></div><div class=\"fcol\">" +
+      (charts ? '<section class="panel"><h2 class="eyebrow">Shot charts</h2><div class="charts">' + charts + "</div></section>" : "") +
+      '<section class="bxw panel"><h3 class="eyebrow">Box score</h3>' + boxTable(F, 0) + boxTable(F, 1) + "</section></div></div>" +
+      '<div class="row actions"><button type="button" class="btn pri lg" id="rm">↻ Rematch</button><button type="button" id="pa" class="btn">Change teams</button><button type="button" id="ph" class="btn ghost">Main menu</button></div></div>', "final");
     $("#rm").onclick = function () { send({ cmd: "rematch" }); play(); };
     $("#pa").onclick = function () { send({ cmd: "quit" }); menu(); };
     $("#ph").onclick = function () { send({ cmd: "quit" }); scr = "menu"; toHub(); };

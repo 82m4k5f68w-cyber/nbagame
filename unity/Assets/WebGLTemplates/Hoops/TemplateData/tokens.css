@@ -1,0 +1,186 @@
+/* Hoops 2K27 design tokens (UI v6). The single source for colour, type, spacing, radii, shadows and motion used by the
+   hub (main.ts), the game menus (game.ts / modesui.ts), the settings drawer (ui/settings.ts), the Unity page
+   (TemplateData/tokens.css, copied by scripts/unity/gen-page.ts) and LIFE (src/life: reuse these vars, don't redefine).
+   Root switches (set by ui/settings.ts applyA11y):
+     html[data-theme="light"|"dark"]   menu theme (default dark; "auto" follows the system)
+     html[data-text="1"|"2"]           text size: large / extra large (every size below is in rem)
+     html[data-motion="reduce"]        reduce motion (also honours prefers-reduced-motion)
+     html[data-contrast="high"]        high contrast (stronger lines and text, no glass) */
+@font-face {
+  font-family: "H2K Display";
+  src: url("./fonts/oswald-latin-wght.woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+:root {
+  /* surfaces (deep navy ink, glass panels over the arena) */
+  --ink-0: #05060c;
+  --ink-1: #0a0d1a;
+  --ink-2: #111528;
+  --ink-3: #1a1f3a;
+  --glass: rgba(16, 20, 40, 0.72);
+  --glass-2: rgba(255, 255, 255, 0.05);
+  --glass-3: rgba(255, 255, 255, 0.09);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.2);
+  --scrim: rgba(4, 6, 14, 0.78);
+  /* text */
+  --tx: #f3f5ff;
+  --tx-2: #b8bfdc;
+  --tx-3: #7d86a8;
+  --tx-on-acc: #14100a;
+  /* brand + semantic */
+  --acc: #ff6a1f; /* hardwood orange */
+  --acc-2: #ffc83d; /* gold */
+  --acc-grad: linear-gradient(100deg, #ff5a1f 0%, #ff8a1f 45%, #ffc83d 100%);
+  --hot: #ff3b5c;
+  --ok: #2ee07a;
+  --warn: #ffb347;
+  --bad: #ff5d5d;
+  --info: #4fd1ff;
+  --focus: #4fd1ff;
+  /* team defaults (screens set --c / --c0 / --c1 per team) */
+  --c: #2a2f6a;
+  /* type */
+  --ff-display: "H2K Display", "Bahnschrift", "Oswald", "Roboto Condensed", "Arial Narrow", "Avenir Next Condensed", Impact, system-ui, sans-serif;
+  --ff-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ff-mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --fs-2xs: 0.625rem;
+  --fs-xs: 0.6875rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.75rem;
+  --fs-3xl: 2.25rem;
+  --fs-4xl: 3rem;
+  --fs-5xl: clamp(2.75rem, 7vw, 5.5rem);
+  --ls-caps: 0.14em;
+  /* spacing (4 px grid) */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.25rem;
+  --sp-6: 1.5rem;
+  --sp-8: 2rem;
+  --sp-10: 2.5rem;
+  --gutter: clamp(12px, 3vw, 28px);
+  /* radii */
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+  /* elevation */
+  --sh-1: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --sh-2: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --sh-3: 0 24px 70px rgba(0, 0, 0, 0.6);
+  --glow-acc: 0 8px 32px rgba(255, 106, 31, 0.35);
+  --blur: blur(14px) saturate(1.3);
+  /* motion */
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 420ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-spring: cubic-bezier(0.2, 1.4, 0.4, 1);
+  /* hit targets */
+  --hit: 40px;
+  color-scheme: dark;
+}
+/* light menus (hub + menu panels; the arena and HUD stay broadcast-dark) */
+:root[data-theme="light"] {
+  --ink-0: #eef0f6;
+  --ink-1: #f7f8fc;
+  --ink-2: #ffffff;
+  --ink-3: #e3e6f0;
+  --glass: rgba(255, 255, 255, 0.82);
+  --glass-2: rgba(10, 14, 40, 0.04);
+  --glass-3: rgba(10, 14, 40, 0.08);
+  --line: rgba(10, 14, 40, 0.12);
+  --line-2: rgba(10, 14, 40, 0.24);
+  --scrim: rgba(230, 233, 243, 0.86);
+  --tx: #10142a;
+  --tx-2: #444b6b;
+  --tx-3: #6a7192;
+  --acc-2: #d98a00;
+  --focus: #0a6cff;
+  --sh-1: 0 2px 8px rgba(20, 30, 70, 0.12);
+  --sh-2: 0 10px 30px rgba(20, 30, 70, 0.16);
+  --sh-3: 0 24px 70px rgba(20, 30, 70, 0.22);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+    --ink-0: #eef0f6;
+    --ink-1: #f7f8fc;
+    --ink-2: #ffffff;
+    --ink-3: #e3e6f0;
+    --glass: rgba(255, 255, 255, 0.82);
+    --glass-2: rgba(10, 14, 40, 0.04);
+    --glass-3: rgba(10, 14, 40, 0.08);
+    --line: rgba(10, 14, 40, 0.12);
+    --line-2: rgba(10, 14, 40, 0.24);
+    --scrim: rgba(230, 233, 243, 0.86);
+    --tx: #10142a;
+    --tx-2: #444b6b;
+    --tx-3: #6a7192;
+    --acc-2: #d98a00;
+    --focus: #0a6cff;
+    color-scheme: light;
+  }
+}
+:root[data-text="1"] {
+  font-size: 112.5%;
+}
+:root[data-text="2"] {
+  font-size: 128%;
+}
+:root[data-contrast="high"] {
+  --line: rgba(255, 255, 255, 0.45);
+  --line-2: rgba(255, 255, 255, 0.75);
+  --tx-2: #e6e9ff;
+  --tx-3: #c4c9e6;
+  --glass: rgba(4, 6, 14, 0.96);
+  --glass-2: rgba(255, 255, 255, 0.1);
+  --focus: #ffe600;
+  --blur: none;
+}
+:root[data-contrast="high"][data-theme="light"] {
+  --line: rgba(0, 0, 0, 0.5);
+  --line-2: rgba(0, 0, 0, 0.8);
+  --tx-2: #15192f;
+  --tx-3: #2b3150;
+  --glass: #ffffff;
+  --focus: #0040ff;
+}
+:root[data-motion="reduce"] {
+  --dur-1: 0ms;
+  --dur-2: 0ms;
+  --dur-3: 0ms;
+}
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+  }
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}

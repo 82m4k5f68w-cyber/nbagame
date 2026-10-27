@@ -174,6 +174,7 @@ namespace Hoops.Core
                     double touch = B.three != 0 ? L.c : (L.c + L.i) / 2; // shooter's touch
                     give = Math.Max(0, Math.Min(1, (touch - 60) / 35)) * 0.3;
                 }
+                else if (Sim.cfg.PH3 != 0 && B.sh != 0) give = B.tch; // (physics v3: launch's shooter's touch)
             }
             lastAge = B.age;
             lastSh = B.sh;
@@ -188,9 +189,21 @@ namespace Hoops.Core
             var W = B.wv;
             if (W == null) W = B.wv = new double[3];
             // (the same expressions, in the same order, as launch's pre-simulation)
-            B.vx *= 1 - 0.1 * dt;
-            B.vy *= 1 - 0.1 * dt;
-            B.vz += K_MAG * (W[0] * B.vy - W[1] * B.vx) * dt - Sim.g * dt;
+            if (Sim.airV3())
+            {
+                // physics v3: quadratic drag + Magnus k (w x v), then gravity (Sim.airAcc = bstep / rapStep / launch)
+                Sim.AV[0] = B.vx; Sim.AV[1] = B.vy; Sim.AV[2] = B.vz; Sim.AV[3] = W[0]; Sim.AV[4] = W[1]; Sim.AV[5] = W[2];
+                Sim.airAcc(dt);
+                B.vx = Sim.AV[0];
+                B.vy = Sim.AV[1];
+                B.vz = Sim.AV[2] - Sim.g * dt;
+            }
+            else
+            {
+                B.vx *= 1 - 0.1 * dt;
+                B.vy *= 1 - 0.1 * dt;
+                B.vz += K_MAG * (W[0] * B.vy - W[1] * B.vx) * dt - Sim.g * dt;
+            }
             double sx = B.vx * dt, sy = B.vy * dt, sz = B.vz * dt;
             Gather(B.x, B.y, B.z, sx, sy, sz);
             bool floor = false;
@@ -213,7 +226,7 @@ namespace Hoops.Core
             if (Extras && B.dk != 0 && !dunkKick && B.z < 106)
                 for (int h = 0; h < 2; h++)
                     if (Util.Hypot(B.x - Sim.HXs[h], B.y - Sim.HY) < 10) { RimFlexV[h] += 75; dunkKick = true; }
-            double wd = 1 / (1 + dt * ANG_DAMP);
+            double wd = 1 / (1 + dt * (Sim.cfg.PH3 != 0 ? Sim.AIR_WD : ANG_DAMP));
             W[0] *= wd;
             W[1] *= wd;
             W[2] *= wd;
@@ -379,6 +392,15 @@ namespace Hoops.Core
             if (vn >= 0) return false;
             double es = s.e, ms = s.mu;
             if (Extras) Material(ref s, B, ref es, ref ms);
+            if (Sim.cfg.PH3 != 0)
+            {
+                // physics v3 surfaces (hardwood / street asphalt), like physics.ts rapMat: floor bounce + grip through the
+                // Average combine, stiffer street iron, a deader street board
+                var su = Sim.SURF[Sim.surf()];
+                if (s.flag == F_FLOOR) { es = 2 * su[0] - BALL_E; ms = 2 * su[1] - BALL_MU; }
+                else if (s.flag == F_RIM) es = Math.Min(0.9, es * su[3]);
+                else if (s.flag == F_GLASS) es -= 2 * (0.6 - su[5]);
+            }
             double e = (BALL_E + es) * 0.5, mu = (BALL_MU + ms) * 0.5; // Rapier's Average combine rule
             if ((s.flag & F_RIM) != 0 && B.sh != 0) e *= 1 - give;
             if (up)
@@ -392,6 +414,7 @@ namespace Hoops.Core
                 else if ((s.flag & (F_BODY | F_ARM | F_LIMB | F_LEG)) != 0) e = Math.Min(0.6, e * kC);
                 mu = Math.Min(1, mu * kMu);
             }
+            else if (Sim.cfg.PH3 != 0 && (s.flag & (F_RIM | F_BRACKET)) != 0) e *= 1 - 0.3 * Sim.SURF[Sim.surf()][4] * Clamp01((-vn - 250) / 700); // (v3: the flex soaks hard hits)
             if (-vn < REST_THR) e = 0;
             double jn = -(1 + e) * vn;
             B.vx += jn * nx;
@@ -427,6 +450,7 @@ namespace Hoops.Core
             if (s.hoop >= 0)
             {
                 HoopTouched = true;
+                if (Sim.cfg.PH3 != 0 && s.flag == F_RIM) Sim.ph3RimHit(); // (make captions: rattles / rolls)
                 if ((s.flag & (F_RIM | F_BRACKET)) != 0)
                     RimFlexV[s.hoop] += FLEX_K * jn * (nz + 0.25) * (1 + 2 * give); // a ball on top bends it down
             }
@@ -458,7 +482,7 @@ namespace Hoops.Core
             double vh = Math.Sqrt(B.vx * B.vx + B.vy * B.vy);
             if (vh > 1e-9)
             {
-                double k = Math.Max(0, vh - CRR * dt) / vh;
+                double k = Math.Max(0, vh - (Sim.cfg.PH3 != 0 ? Sim.SURF[Sim.surf()][2] : CRR) * dt) / vh;
                 B.vx *= k; B.vy *= k; W[0] *= k; W[1] *= k;
                 vh *= k;
             }

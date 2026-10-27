@@ -31,9 +31,14 @@ arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
 if arm is None:
     sys.exit("no armature in " + src)
 sc = bpy.context.scene
-if arm.animation_data and arm.animation_data.action:
-    a, b = arm.animation_data.action.frame_range
-    sc.frame_start, sc.frame_end = int(a), int(b)
+act = (arm.animation_data and arm.animation_data.action) or (bpy.data.actions[0] if bpy.data.actions else None)
+if act:
+    if arm.animation_data is None:
+        arm.animation_data_create()
+    if arm.animation_data.action is None:
+        arm.animation_data.action = act
+    a, b = act.frame_range  # FBX imports keep the clip's keyed range; never fall back to the 1..250 default
+    sc.frame_start, sc.frame_end = int(round(a)), int(round(b))
 if "fps" in opt:
     sc.render.fps = int(float(opt["fps"]))
 bpy.ops.object.select_all(action="DESELECT")
@@ -43,7 +48,7 @@ bpy.context.view_layer.objects.active = arm
 if ext_out == "bvh":
     bpy.ops.export_anim.bvh(filepath=dst, frame_start=sc.frame_start, frame_end=sc.frame_end, global_scale=1 / scale if scale else 1, rotate_mode="NATIVE", root_transform_only=False)
 elif ext_out == "fbx":
-    bpy.ops.export_scene.fbx(filepath=dst, use_selection=True, object_types={"ARMATURE", "MESH"}, add_leaf_bones=False, bake_anim=True, bake_anim_use_all_actions=False)
+    bpy.ops.export_scene.fbx(filepath=dst, object_types={"ARMATURE", "MESH"}, add_leaf_bones=False, bake_anim=True)  # (use_selection + single-action bake exported no animation in 4.5)
 elif ext_out in ("glb", "gltf"):
     bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB" if ext_out == "glb" else "GLTF_SEPARATE", export_animations=True, use_selection=True)
 else:

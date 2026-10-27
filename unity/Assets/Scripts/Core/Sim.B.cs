@@ -351,7 +351,7 @@ namespace Hoops.Core
                 // CPU jumpers, calibrated to NBA shooting splits: an open three goes in ~30% (poor shooter) .. ~46% (elite),
                 // mid-range ~36-50%, and a full contest takes about a third off (league: open 38% vs tight 33% from three)
                 // (re-based for v5.0's spacing / kick-outs: open looks come more often, so each one is a touch harder)
-                double bse = three ? 0.362 + (0.16 * (rat - 60)) / 40 : 0.29 + (0.14 * (rat - 60)) / 40,
+                double bse = three ? 0.392 + (0.17 * (rat - 60)) / 40 : 0.31 + (0.14 * (rat - 60)) / 40, // (v5.4 re-base: the iron takes ~4 points off)
                     pm = Clamp(bse * (1 - 0.25 * cx) * (p.sbw > 0 ? 0.95 : 1) * cpuK(p, CPUK_JMP) * Math.Sqrt(wm0), 0.04, 0.6);
                 gr = Rng.R() < pm / (0.98 - cx * 0.25); // (the make roll below keeps its contest factor)
             }

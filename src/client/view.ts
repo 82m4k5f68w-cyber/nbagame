@@ -64,8 +64,45 @@ export const V = {
   HC: 0,
   MINHUD: 0,
   SPT: 0,
+  // Graphics v6 (render3d / fx3d): preset (PRESETS below; -1 = custom), ambient occlusion -1 auto (QL >= 2 full res) /
+  // 0 off / 1 half res / 2 full (N8AO), colour grade look (GRADES), street weather (WXN; "auto" = by the date + court)
+  PRE: TIER >= 2 ? 2 : TIER === 1 ? 0 : -1,
+  AO: -1,
+  GRADE: 0,
+  GRAIN: 1, // subtle film grain + vignette in the grade
+  WX: "auto" as string,
   focusP: () => P[(CT[V.focus] || CT[0] || { idx: 0 }).idx],
 };
+/** Graphics levels (V.QL): Low / Medium / High / Ultra ("everything max": 4K soft shadows, full-res AO, live jumbotron). */
+export const QLN = ["Low", "Medium", "High", "Ultra"];
+/** One-click presets: [name, QL, HSR, AO, hint]. Chromebook = the old Medium (must never get slower). */
+export const PRESETS: [string, number, number, number, string][] = [
+  ["Chromebook", 1, 1, 0, "Medium graphics, auto resolution, no AO: smooth on integrated GPUs."],
+  ["Balanced", 1, 1, 1, "Medium + half-res ambient occlusion."],
+  ["High", 2, 0, 2, "Native resolution, full AO, floor mirror, 4K shadows."],
+  ["Ultra", 3, 0, 2, "Everything max: softer 4K shadows, live jumbotron cam, more crowd, extra lights."],
+];
+export function applyPreset(i: number) {
+  const p = PRESETS[i];
+  if (!p) return;
+  V.PRE = i;
+  V.QL = p[1];
+  V.HSR = p[2];
+  V.AO = p[3];
+  V.FX = true;
+  V.QAUTO = "";
+}
+/** AO level in use: 0 off, 1 half res, 2 full res. */
+export const aoLevel = () => (!V.FX || V.QL === 0 ? 0 : V.AO >= 0 ? V.AO : V.QL >= 2 ? 2 : 0);
+/** Colour grade looks (fx3d GradeShader / fxgpu): name, saturation, contrast, vignette, warmth (-1 cool .. 1 warm). */
+export const GRADES: [string, number, number, number, number][] = [
+  ["Broadcast", 1.1, 1.07, 0.2, 0.15],
+  ["Vivid", 1.24, 1.12, 0.22, 0.25],
+  ["Film", 0.94, 1.1, 0.3, 0.35],
+  ["Neutral", 1.0, 1.0, 0.1, 0],
+];
+/** Street weather / time of day (cfg.HALF courts). */
+export const WXN = ["auto", "day", "sunset", "night", "rain", "snow"];
 /** HSR mode names and fixed internal scales (index = V.HSR). */
 export const HSRN = ["Off", "Auto", "Quality", "Balanced", "Performance", "Ultra Perf."];
 export const HSRS = [1, 1, 0.67, 0.58, 0.5, 0.33];

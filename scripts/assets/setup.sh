@@ -2,6 +2,7 @@
 # Hoops 2K27 asset toolchain: idempotent (re)install. The container is ephemeral - run this first in a new session.
 #   bash scripts/assets/setup.sh            # everything
 #   bash scripts/assets/setup.sh blender    # one part: node | python | voices | blender | ktx | models
+#   parts: node | python | ml | voices | blender | ktx
 # Tools land in $H2K_TOOLS (default /home/user/tools), never inside the repo.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,6 +37,14 @@ if want python; then
   mkdir -p "$T/models"
   fetch "$POSE_MODEL" "$T/models/pose_landmarker_heavy.task"
   ln -sf "$T/venv/bin/python" "$T/bin/h2kpy"
+fi
+
+if want ml; then
+  # offline ML: PyTorch CPU (training, e.g. motion matching), Whisper (voice-command evaluation), PyMeshLab (cleanup / decimation)
+  echo "== ml (torch cpu, openai-whisper, pymeshlab)"
+  [ -x "$T/venv/bin/python" ] || python3 -m venv "$T/venv"
+  "$T/venv/bin/python" -c "import torch" 2>/dev/null || "$T/venv/bin/pip" install -q "torch==${TORCH_VER:-2.14.1}" --index-url https://download.pytorch.org/whl/cpu
+  "$T/venv/bin/pip" install -q openai-whisper pymeshlab
 fi
 
 if want voices; then
