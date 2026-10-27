@@ -122,8 +122,8 @@ void main(){
   bool disocc = prevOk > .5 && ez - pz > .04 * ez + .25 && fd - cd < .02 * cd; // was hidden behind something nearer
   bool zchg = prevOk > .5 && abs(ez - pz) > .04 * ez + .25;
   vec3 mean = m1 / 9.;
-  float mot = clamp(length(pr.xy * outSize) / 32., 0., 1.);
-  vec3 sig = sqrt(max(m2 / 9. - mean * mean, 0.)) * mix(1.25, .75, mot);
+  float mot = clamp(length(pr.xy * outSize) / 16., 0., 1.); // (was /32: softness + ghosting on orbits)
+  vec3 sig = sqrt(max(m2 / 9. - mean * mean, 0.)) * mix(1.25, .55, mot);
   vec3 bmin = max(mn, mean - sig), bmax = min(mxc, mean + sig);
   vec3 hist = toY(histCR(huv));
   vec4 aux = texture(tAux, huv);
@@ -136,7 +136,7 @@ void main(){
   float lock = valid && !zchg ? max(thin, aux.r * .82) : 0.;
   lock *= 1. - mot;
   hist = mix(clipped, hist, lock * .85);
-  float hw = valid && !disocc ? min(aux.g, maxW / (1. + length(pr.xy * outSize) * .12)) : 0.;
+  float hw = valid && !disocc ? min(aux.g, maxW / (1. + length(pr.xy * outSize) * .3)) : 0.;
   float cw = max(conf, hw > 0. ? 0. : 1.);
   // flicker reduction: weigh by inverse luma (bright speculars don't pump)
   float wc = cw / (1. + cur.x), wh = hw / (1. + hist.x);

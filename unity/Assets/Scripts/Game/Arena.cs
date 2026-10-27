@@ -140,6 +140,18 @@ namespace Hoops.Game
                 l.intensity = 0.42f * SPOTS[i, 5] * (to - from).sqrMagnitude; // inverse-square: ~.45 lux-ish pools on the floor
                 l.shadows = LightShadows.None;
             }
+            // graphics v6 broadcast back light (render3d `back`): low and cool from behind the far sideline, rims every
+            // player for the main camera; no shadows
+            {
+                var bl = new GameObject("BackLight").AddComponent<Light>();
+                bl.transform.SetParent(root, false);
+                bl.type = LightType.Directional;
+                bl.color = new Color(0.81f, 0.88f, 1f);
+                bl.intensity = 0.75f;
+                bl.transform.rotation = Quaternion.LookRotation(Vector3.zero - Gfx.V3(6, 22, -60));
+                bl.shadows = LightShadows.None;
+                arenaObjs.Add(bl.gameObject);
+            }
             // light shafts: faint additive cones from the catwalks, fading out before the floor
             var g = new Gfx.Paint(4, 128, false);
             for (int y = 0; y < 128; y++)

@@ -19,6 +19,8 @@ namespace Hoops.Game
         Bloom bloom;
         ColorAdjustments col;
         Vignette vig;
+        SplitToning split;
+        FilmGrain grain;
         DepthOfField dof;
         MotionBlur mb;
         int ql = 2;
@@ -52,6 +54,15 @@ namespace Hoops.Game
             col.contrast.Override(8f);
             col.saturation.Override(8f);
             col.colorFilter.Override(Color.white);
+            // graphics v6 (fx3d GradeShader "Broadcast" look): warm highlights / cool shadows + a whisper of film grain
+            split = prof.Add<SplitToning>(true);
+            split.shadows.Override(new Color(0.47f, 0.5f, 0.56f));
+            split.highlights.Override(new Color(0.56f, 0.52f, 0.46f));
+            split.balance.Override(10f);
+            grain = prof.Add<FilmGrain>(true);
+            grain.type.Override(FilmGrainLookup.Thin1);
+            grain.intensity.Override(0.12f);
+            grain.response.Override(0.85f);
             vig = prof.Add<Vignette>(true);
             vig.intensity.Override(0.24f);
             vig.smoothness.Override(0.45f);
@@ -73,6 +84,8 @@ namespace Hoops.Game
             bloom.intensity.Override(ql >= 2 ? 0.6f : 0.45f);
             col.active = grade;
             vig.active = grade;
+            split.active = grade;
+            grain.active = grade && ql >= 2;
             cd.renderShadows = ql > 0 && lvl >= 3;
             var a = Asset;
             float lk = lvl >= 2 ? 1 : lvl == 1 ? 0.9f : 0.85f;

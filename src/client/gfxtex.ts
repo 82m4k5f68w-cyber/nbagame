@@ -1,13 +1,12 @@
 // Renderer textures (graphics v6): the CC0 ambientCG sets the arena + street actually draw, imported one by one
-// (NOT through tex/manifest.gen.ts, which would inline all nine sets, ~2.5 MB). KTX2 (Basis) via three's inlined
-// transcoder; when KTX2 can't be transcoded, nothing is applied and the procedural canvas maps stay (no WebP needed).
+// (NOT through tex/manifest.gen.ts, which would inline all nine sets, ~2.5 MB). KTX2 (Basis): three r186's KTX2Loader
+// references its transcoder with new URL(..., import.meta.url), which Vite already inlines - so it is used as is
+// (an extra ?inline copy cost 0.8 MB). When KTX2 can't be transcoded, the procedural canvas maps stay.
 //   woodMaple: arena floor detail (colour multiplied into the painted court + normal + roughness)
 //   asphalt:   street court surface (colour + normal + roughness)
 // Loaded lazily on Medium+ (Low never pays the transcode). WebGPU: same textures (KTX2Loader.detectSupport(renderer)).
 import * as THREE from "three";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
-import transcoderJs from "three/examples/jsm/libs/basis/basis_transcoder.js?raw";
-import transcoderWasm from "three/examples/jsm/libs/basis/basis_transcoder.wasm?inline";
 import woodC from "../../assets/textures/woodMaple_c.ktx2?inline";
 import woodN from "../../assets/textures/woodMaple_n.ktx2?inline";
 import woodR from "../../assets/textures/woodMaple_r.ktx2?inline";
@@ -23,10 +22,7 @@ let ktx: Promise<KTX2Loader | null> | null = null;
 function loader(renderer: any) {
   return (ktx ||= (async () => {
     try {
-      const jsUrl = URL.createObjectURL(new Blob([transcoderJs], { type: "text/javascript" }));
-      const mgr = new THREE.LoadingManager();
-      mgr.setURLModifier((u) => (/basis_transcoder\.js$/.test(u) ? jsUrl : /basis_transcoder\.wasm$/.test(u) ? transcoderWasm : u));
-      const k = new KTX2Loader(mgr).setTranscoderPath("inline/").setWorkerLimit(1);
+      const k = new KTX2Loader().setWorkerLimit(1);
       if (renderer?.isWebGPURenderer && renderer.init) await renderer.init();
       k.detectSupport(renderer);
       return k;
