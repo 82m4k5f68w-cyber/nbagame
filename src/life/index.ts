@@ -660,7 +660,8 @@ function place(p: Place) {
     });
   } else if (k === "arena") {
     const nx = L.cal.find((e) => e.place === "arena" && e.s === 0 && S.evWin(e)[1] > L.t);
-    body = `<p class="note">${nx ? `Next: <b>${esc(nx.k === "game" ? "Game " + (nx.home ? "vs " : "@ ") + S.oppName(L, nx) : nx.title)}</b> · ${S.WD[S.wdOf(nx.day)]} ${S.hhmm(nx.st)}. Doors open ${nx.k === "game" ? "2 hours" : "30 minutes"} before.` : "Nothing scheduled."}</p>${opt("shoot", "🎯 Shootaround (3-point contest)", "Engine drill · +3PT practice")}`;
+    body = `<p class="note">${nx ? `Next: <b>${esc(nx.k === "game" ? "Game " + (nx.home ? "vs " : "@ ") + S.oppName(L, nx) : nx.title)}</b> · ${S.WD[S.wdOf(nx.day)]} ${S.hhmm(nx.st)}. Doors open ${nx.k === "game" ? "2 hours" : "30 minutes"} before.` : "Nothing scheduled."}</p>${opt("gym", "🏀 Open gym (play it)", "Move, dribble, shoot freely · Esc → Quit when you're done")}${opt("shoot", "🎯 Shootaround (3-point contest)", "Shoot from the racks (you stay in place) · +3PT practice")}`;
+    A("gym", () => engineMode("practice", p, null));
     A("shoot", () => engineMode("3pt", p, null));
   } else if (k === "court") {
     body = opt("p3", "🏀 Pickup 3-on-3 to 21", "Real game on the street court · +rep, +followers") + opt("p1", "⚡ 1-on-1 to 21 vs a local", "Street rules: 1s and 2s") + opt("sa", "🎯 Shoot around (sim)", "30 min · small 3PT gain");
@@ -869,7 +870,7 @@ function homework(p: Place, ci: number) {
 // ---------------------------------------------------------------- practice, games (engine bridge)
 function practice(p: Place, ev: S.Ev) {
   const lt = S.lateness(ev, L.t);
-  scr(`${head(p, "Team practice · " + S.hhmm(ev.st) + (lt.min > 5 ? ` · <span class="tag r">LATE ${lt.min} MIN</span>` : ""))}<div class="grid">${opt("drill", "🎯 Shooting drill (play it)", "Engine 3-point drill · coach watches")}${opt("sim", "📋 Run practice", "90 min · ⚡ -20 · small ratings gain + coach trust")}${opt("film", "🎬 Film session", "Coach quizzes you on the playbook · trust +")}</div>${exitRow(p)}`);
+  scr(`${head(p, "Team practice · " + S.hhmm(ev.st) + (lt.min > 5 ? ` · <span class="tag r">LATE ${lt.min} MIN</span>` : ""))}<div class="grid">${opt("open", "🏀 Team practice (play it)", "Move, dribble, shoot with your team · no defense · Esc → Quit when you're done")}${opt("drill", "🎯 3-point drill (play it)", "Shoot from the racks: you stay in place, time your release")}${opt("sim", "📋 Run practice", "90 min · ⚡ -20 · small ratings gain + coach trust")}${opt("film", "🎬 Film session", "Coach quizzes you on the playbook · trust +")}</div>${exitRow(p)}`);
   const done = (k: number) => {
     ev.s = 1;
     ev.arr = L.t;
@@ -898,7 +899,8 @@ function practice(p: Place, ev: S.Ev) {
         fade(() => leave(p), 200);
       });
     }
-    engineMode("3pt", p, () => done(1));
+    // "open" = the engine's free practice (you move); "drill" = the 3-point contest (stationary at the racks)
+    engineMode(b.dataset.o === "open" ? "practice" : "3pt", p, () => done(1));
   });
 }
 function pregame(p: Place, ev: S.Ev) {
@@ -1052,17 +1054,27 @@ async function engineMode(kind: string, p: Place, after: (() => void) | null) {
   await ensureGame();
   setMyPlayer();
   const r = mkRng(L.t);
-  const mine = teamSlot(14, kind === "3pt" ? L.team.name : "Pickup Crew", kind === "3pt" ? L.team.col : "#3a4a5a", kind === "3pt" ? 60 : 52 + Math.round(S.ovrOf(L.p) / 10)),
+  const own = kind === "3pt" || kind === "practice"; // drills run with your own team's colours
+  const MD = kind === "practice" ? await import("../core/modes") : null;
+  const mine = teamSlot(14, own ? L.team.name : "Pickup Crew", own ? L.team.col : "#3a4a5a", own ? 60 : 52 + Math.round(S.ovrOf(L.p) / 10)),
     opp = teamSlot(15, pick(r, ["Cage Regulars", "Downtown Runners", "Old Heads", "Night Shift"]), pick(r, ["#7d3c98", "#c0392b", "#16a085", "#2c3e50"]), 50 + Math.round(S.ovrOf(L.p) / 9));
   const GS = G.GS;
   HL = [];
   GS.onFx = onFx;
   const fin = (res: any) => {
+    // free practice never ends by itself (Esc -> Quit): read the shot log before the engine is left
+    const ps = MD && MD.M.kind === "practice" && MD.M.st ? { ...MD.M.st } : null;
     GS.onMode = GS.onQuit = GS.onFx = null;
     backToLife();
     S.advance(L, kind === "3pt" ? 40 : 60, "game");
-    L.energy = clamp(L.energy - (kind === "3pt" ? 8 : 18), 0, 100);
-    if (kind === "3pt") {
+    L.energy = clamp(L.energy - (kind === "3pt" ? 8 : kind === "practice" ? 12 : 18), 0, 100);
+    if (kind === "practice") {
+      const att = ps ? ps.att : 0,
+        pct = att ? ps!.made / att : 0;
+      L.p.c = Math.min(99, +(L.p.c + S.gainOf(L.p.c, 0.15 + Math.min(att, 40) / 100 + pct * 0.2)).toFixed(2));
+      L.p.i = Math.min(99, +(L.p.i + S.gainOf(L.p.i, 0.12)).toFixed(2));
+      toast(att ? `Practice: ${ps!.made}/${att} (${Math.round(pct * 100)}%) · ${ps!.gr} greens` : "Practice done", "🏀");
+    } else if (kind === "3pt") {
       const pts = res ? res.pts || 0 : 0;
       L.p.c = Math.min(99, +(L.p.c + S.gainOf(L.p.c, 0.4 + pts / 40)).toFixed(2));
       toast(`Shooting drill: ${pts} points · 3PT up`, "🎯");
