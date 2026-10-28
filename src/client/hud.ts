@@ -601,8 +601,9 @@ export function scoreBug(me: number) {
       if (age > 1.6) BUG.add[tm] = 0;
       continue;
     }
-    const sx = x0 + tm * TW + TW - SW / 2,
-      y = -2 - age * 10;
+    // pops in at the score panel's top corner and rises a little (stays inside the screen at the top edge)
+    const sx = x0 + tm * TW + TW - (tm ? SW - 12 : 12),
+      y = 12 - Math.min(age, 0.4) * 8;
     X.globalAlpha = Math.max(0, 1 - age / 1.6);
     X.font = FD(700, 13);
     X.textAlign = "center";

@@ -77,7 +77,7 @@ export type Wx = "day" | "sunset" | "night" | "rain" | "snow";
 export const SKY: Record<Wx, { z: number; h: number; g: number; sun: number; el: number; az: number; si: number; hi: number; ex: number; fog: number; lamps: number }> = {
   day: { z: 0x3f78c8, h: 0xb9d4ee, g: 0x4a4a46, sun: 0xfff1dc, el: 0.95, az: 0.6, si: 1.3, hi: 0.55, ex: 0.85, fog: 260, lamps: 0 },
   sunset: { z: 0x2b2f6e, h: 0xff9a5c, g: 0x3a2a26, sun: 0xffa45e, el: 0.2, az: -0.4, si: 1.05, hi: 0.3, ex: 0.95, fog: 230, lamps: 0.35 },
-  night: { z: 0x03050d, h: 0x1a2236, g: 0x0b0b0d, sun: 0x9fb4ff, el: 0.9, az: 1.2, si: 0.07, hi: 0.07, ex: 1.15, fog: 170, lamps: 1 },
+  night: { z: 0x03050d, h: 0x141b2c, g: 0x0b0b0d, sun: 0x9fb4ff, el: 0.9, az: 1.2, si: 0.06, hi: 0.05, ex: 0.92, fog: 170, lamps: 0.75 },
   rain: { z: 0x4a525e, h: 0x8b939d, g: 0x2a2c30, sun: 0xd6dde6, el: 1.1, az: 0.3, si: 0.35, hi: 0.42, ex: 0.95, fog: 120, lamps: 0.6 },
   snow: { z: 0x8c97a6, h: 0xd5dbe2, g: 0x9aa0a8, sun: 0xf0f4ff, el: 0.8, az: 0.2, si: 0.55, hi: 0.6, ex: 0.85, fog: 110, lamps: 0.3 },
 };
