@@ -71,7 +71,8 @@ const S = (pg) => pg.evaluate(() => window.H2K && window.H2K.G.S);
     ok(await tabTo(pg, `#sd [data-${k}="${v}"]`, 60), `settings: reach ${k}=${v}`);
     await pg.keyboard.press("Enter");
   }
-  ok(await pg.evaluate(() => document.documentElement.dataset.theme === "light" && getComputedStyle(document.body).backgroundColor !== "rgb(5, 6, 12)"), "light theme applies");
+  // (the page background eases over even with reduce motion: poll instead of reading the very next frame)
+  ok(await pg.waitForFunction(() => document.documentElement.dataset.theme === "light" && getComputedStyle(document.body).backgroundColor !== "rgb(5, 6, 12)", null, { timeout: 2000 }).then(() => true, () => false), "light theme applies");
   await pg.keyboard.press("Escape");
   ok(await pg.evaluate(() => document.getElementById("sd").hidden && document.activeElement.id === "hset"), "Esc closes settings, focus returns to the gear");
   // persisted across a reload

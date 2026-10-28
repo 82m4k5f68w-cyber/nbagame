@@ -695,6 +695,8 @@ export function nameTags(list: (Player | null | undefined)[]) {
       const [sx, sy] = pr(p.x, p.y, p.z + 78),
         s = p.n.toUpperCase() + "  " + ovr(p),
         w = X.measureText(s).width + 12;
+      // never over the score bug (far-court players project up into it)
+      if (gameLike() && Math.abs(sx - 480) < 300 * tk() + w / 2 && sy < 8 + 60 * tk()) continue;
       rr(sx - w / 2, sy - 11 * tk(), w, 15 * tk(), 7);
       X.fillStyle = V.HC ? "#000" : "rgba(8,10,22,.55)";
       X.fill();
