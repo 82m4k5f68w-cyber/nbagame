@@ -33,7 +33,8 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
   draw calls, SSIM vs native, ghosting on an orbiting camera and net-cord flicker (history vs none); Auto lowers the
   scale on SwiftShader. Screenshots in docs/hsr/. Slow (~15 min on SwiftShader).
 - browser_gfx.mjs — graphics v6: every preset (Chromebook / Balanced / High / Ultra) renders without black / NaN
-  frames with #h transparent (draw calls + internal/output size per preset), kiss cam / LED takeover frames, and every
+  frames with #h transparent (draw calls + internal/output size per preset), kiss cam / LED takeover frames, the score
+  bug + ticker after a three (desktop and a 390 px phone: docs/gfx/scorebug*.png), and every
   street weather (day / sunset / night / rain / snow) renders with night darker than day. Screenshots in docs/gfx/
   (`H2K_HTML=` / `GFX_OUT=` override the build / output dir).
 - browser_link.mjs — a highlight becomes a #reel= share link; opening it plays the clip in the same mode.

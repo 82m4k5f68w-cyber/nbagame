@@ -102,6 +102,28 @@ const ev = await pg.evaluate(() => {
   return { a: a.mean, c: c.mean };
 });
 if (!(ev.a > 10 && ev.c > 10)) fail("kiss cam / LED takeover frames " + JSON.stringify(ev));
+// broadcast score bug + ticker (hud.ts scoreBug): a three by team 0 on a run -> +3 tag, ticker story; desktop + phone
+const bug = async (name) => {
+  const r = await pg.evaluate(async () => {
+    const { G, V } = window.H2K;
+    const p = G.P.find((x) => x.tm === 0);
+    G.B.last = p;
+    G.sc[0] += 3;
+    G.TS.run[0] = 0;
+    G.TS.run[1] = 9;
+    V.bugOn = 0;
+    await new Promise((res) => setTimeout(res, 900));
+    const o = window.T.frames(1, true);
+    return { on: V.bugOn, mean: o.mean, img: o.img };
+  });
+  save(name, r);
+  if (!r.on) fail(name + ": the score bug did not draw");
+};
+await bug("scorebug");
+await pg.setViewportSize({ width: 390, height: 844 });
+await pg.waitForTimeout(400);
+await bug("scorebug-phone");
+await pg.setViewportSize({ width: 960, height: 640 });
 // street weather
 await pg.evaluate(() => window.H2K.openMode("street3"));
 await pg.waitForTimeout(400);

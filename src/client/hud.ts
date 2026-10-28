@@ -4,6 +4,7 @@
 // Accessibility: V.TXT scales the text, V.HC = solid outlined panels, V.MINHUD = score bug + meter only.
 import { P, B, sc, q, clock, shot, ftq, tf, inb, cl, PC, cfg, RPL, OFFS, HY, hoop, contestOf, pick, ovr, shotRat, winMul, shotContest, greenWin, cwin, RSPD, gameLike, guardOf, TS, PLAY, DSN, PCN, T, pos, CT, type Player } from "../core/sim";
 import { V, pr, fmt, MN, PAL } from "./view";
+import { teamMark, abbr, shade } from "./ui/art";
 import { isLaySv } from "../core/data";
 import { K, tempoOf, TX, STK_R, KMAP } from "./input";
 let X: CanvasRenderingContext2D = null as any;
@@ -341,130 +342,327 @@ export function hud() {
 }
 /** The broadcast score bug, top centre: [team | score] [team | score] [period clock] [shot clock] with timeout pips,
  *  fouls / BONUS, possession and a momentum line; then the other side's set ("THEY'RE RUNNING") and your calls. */
+// ---------------- score bug (broadcast bar) + ticker ----------------
+// Reads sim state only (works for online guests: sc / q / clock / shot / TS / tf / pos / B.last come from snapshots).
+/** Team marks (ui/art.ts SVG shield) rasterised once per team + colour. */
+const MARKS = new Map<string, HTMLImageElement>();
+function markImg(name: string, col: string) {
+  const k = name + col;
+  let m = MARKS.get(k);
+  if (!m && typeof Image !== "undefined") {
+    m = new Image();
+    m.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(teamMark(name, col, 64).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '));
+    MARKS.set(k, m);
+  }
+  return m && m.complete && m.naturalWidth ? m : null;
+}
+/** Bug animation state (client clock: keeps animating while the sim is paused for a dead ball). */
+const BUG = {
+  sc: [-1, -1], // last seen scores
+  shown: [0, 0], // displayed (counting up)
+  hit: [-9, -9], // time of the last basket per team
+  add: [0, 0], // +N tag
+  q: 0,
+  tick: [] as { t: string; c: string; sub?: string; d: number }[], // ticker queue
+  cur: null as null | { t: string; c: string; sub?: string; d: number; t0: number },
+  streak: { p: null as any, n: 0, tm: -1 },
+  runSaid: 0,
+};
+const now = () => (typeof performance !== "undefined" ? performance.now() / 1000 : 0);
+const tickPush = (t: string, c: string, sub?: string, d = 4.5) => {
+  if (BUG.tick.length > 3) BUG.tick.shift();
+  BUG.tick.push({ t, c, sub, d });
+};
+const AB = (t: number) => abbr(String(cl[t] || "TM" + t));
+const lastN = (p: any) => String(p.n || "").split(" ").pop()!.toUpperCase();
+const ORD = ["1ST", "2ND", "3RD", "4TH"];
+/** Watch the state for ticker stories: stat lines after a basket, runs, "N straight points", quarter-by-quarter. */
+function bugEvents(full: boolean) {
+  const t = now();
+  if (BUG.sc[0] < 0 || sc[0] < BUG.sc[0] || sc[1] < BUG.sc[1]) {
+    // new game / rematch: no animation for the first look
+    BUG.sc = [sc[0], sc[1]];
+    BUG.shown = [sc[0], sc[1]];
+    BUG.q = q;
+    BUG.tick.length = 0;
+    BUG.cur = null;
+    BUG.streak = { p: null, n: 0, tm: -1 };
+    return;
+  }
+  for (let tm = 0; tm < 2; tm++) {
+    const d = sc[tm] - BUG.sc[tm];
+    if (d <= 0) continue;
+    BUG.hit[tm] = t;
+    BUG.add[tm] = d;
+    BUG.sc[tm] = sc[tm];
+    const p: any = B.last && B.last.tm === tm ? B.last : null;
+    if (p) {
+      // the scorer's line (a big play gets a sub-line); "N STRAIGHT POINTS" for a one-man run
+      const S = BUG.streak;
+      if (S.p === p) S.n += d;
+      else (S.p = p), (S.n = d);
+      S.tm = tm;
+      const st = p.stt || {},
+        line = `${st.pts || 0} PTS · ${st.reb || 0} REB · ${st.ast || 0} AST` + (st.tpa ? ` · ${st.tpm}/${st.tpa} 3PT` : "");
+      if (S.n >= 6 && S.n - d < 6 + 4 * Math.floor((S.n - 6) / 4)) tickPush(`${lastN(p)}: ${S.n} STRAIGHT POINTS`, PC[tm], line, 5);
+      else if (d >= 3 || B.dk || B.fl) tickPush(lastN(p) + (d >= 3 ? " FROM DOWNTOWN" : B.dk ? " WITH AUTHORITY" : " AND ONE"), PC[tm], line);
+      else if ((st.pts || 0) >= 10 && (st.pts || 0) % 5 < d) tickPush(lastN(p) + " HEATING UP", PC[tm], line);
+    } else BUG.streak = { p: null, n: 0, tm: -1 };
+    if (BUG.streak.tm !== tm) BUG.streak = { p: null, n: 0, tm };
+    // team runs (TS.run = [team, unanswered points])
+    const run = TS.run && TS.run[0] === tm ? TS.run[1] : 0;
+    if (full && run >= 7 && run - d < BUG.runSaid + 4) {
+      BUG.runSaid = run;
+      tickPush(`${String(cl[tm] || "").toUpperCase()} ON A ${run}-0 RUN`, PC[tm], `${AB(0)} ${sc[0]} · ${AB(1)} ${sc[1]}`, 5);
+    }
+    if (run < 7) BUG.runSaid = 0;
+  }
+  // end of a quarter: quarter-by-quarter line
+  if (q !== BUG.q) {
+    const ended = BUG.q;
+    BUG.q = q;
+    const qs = TS.qs || [];
+    if (full && ended >= 1 && qs.length) {
+      const per = qs.map((s2: number[], i: number) => {
+        const a2 = s2[0] - (i ? qs[i - 1][0] : 0),
+          b2 = s2[1] - (i ? qs[i - 1][1] : 0);
+        return `${i < 4 ? "Q" + (i + 1) : "OT"} ${a2}-${b2}`;
+      });
+      tickPush(`END OF ${ORD[ended - 1] || "OT"} · ${AB(0)} ${sc[0]} - ${sc[1]} ${AB(1)}`, "#ffc83d", per.join("   "), 7);
+    }
+  }
+}
 export function scoreBug(me: number) {
   if (!gameLike() || !P.length) return;
   const k = tk(),
-    full = !cfg.HALF;
+    full = !cfg.HALF,
+    rm = !!V.RM,
+    t = now();
+  bugEvents(full);
   X.save();
   X.translate(480, 8);
   X.scale(k, k);
-  const TW = 150,
-    SW = 46,
-    CW = 92,
-    SCW = cfg.SCLK ? 38 : 0,
-    H = 36,
-    W = TW * 2 + CW + SCW + 6,
+  const MK = 34, // team mark
+    TW = 158, // team block (mark + abbr + score)
+    SW = 54, // score panel
+    CW = 88, // period + clock
+    SCW = cfg.SCLK ? 40 : 0,
+    H = 44,
+    W = TW * 2 + CW + SCW,
     x0 = -W / 2;
-  // shadow plate
-  X.shadowColor = "rgba(0,0,0,.45)";
-  X.shadowBlur = 12;
-  plate(x0, 0, W, H, 7, 0.9);
-  X.shadowBlur = 0;
-  for (let t = 0; t < 2; t++) {
-    const tx = x0 + t * (TW + 2),
-      col = PC[t] || "#2a2f6a";
-    // team colour block
-    X.save();
-    rr(tx, 0, TW, H, t ? 0 : [7, 0, 0, 7] as any);
-    X.clip();
-    const g = X.createLinearGradient(tx, 0, tx + TW, 0);
-    g.addColorStop(0, col);
-    g.addColorStop(1, "rgba(8,10,22,.2)");
+  // ---- base plate: dark glass, top sheen, drop shadow
+  X.shadowColor = "rgba(0,0,0,.5)";
+  X.shadowBlur = 16;
+  X.shadowOffsetY = 3;
+  rr(x0, 0, W, H, 9);
+  if (V.HC) X.fillStyle = "#000";
+  else {
+    const g = X.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#1a1f36");
+    g.addColorStop(1, "#070912");
     X.fillStyle = g;
+  }
+  X.fill();
+  X.shadowBlur = 0;
+  X.shadowOffsetY = 0;
+  X.save();
+  rr(x0, 0, W, H, 9);
+  X.clip();
+  for (let tm = 0; tm < 2; tm++) {
+    const tx = x0 + tm * TW,
+      col = PC[tm] || "#2a2f6a",
+      sx = tx + TW - SW;
+    // team colour block with a diagonal sheen
+    const g = X.createLinearGradient(tx, 0, tx + TW - SW, H);
+    g.addColorStop(0, shade(col, 1.25));
+    g.addColorStop(1, shade(col, 0.55));
+    X.fillStyle = V.HC ? "#111" : g;
     X.fillRect(tx, 0, TW - SW, H);
-    X.fillStyle = V.HC ? "#000" : "rgba(0,0,0,.35)";
-    X.fillRect(tx + TW - SW, 0, SW, H);
-    X.restore();
-    // name
+    if (!V.HC) {
+      X.fillStyle = "rgba(255,255,255,.08)";
+      X.beginPath();
+      X.moveTo(tx + 44, 0);
+      X.lineTo(tx + 70, 0);
+      X.lineTo(tx + 50, H);
+      X.lineTo(tx + 24, H);
+      X.fill();
+    }
+    // mark + abbreviation
+    const im = markImg(String(cl[tm] || ""), col);
+    if (im) X.drawImage(im, tx + 5, (H - MK) / 2 - 1, MK, MK);
     X.textAlign = "left";
     X.fillStyle = "#fff";
-    X.font = FD(700, 15);
-    txt(String(cl[t] || "").toUpperCase().slice(0, 11), tx + 10, 19);
-    // you / possession markers
-    X.font = FU(800, 8);
-    X.fillStyle = "#ffc83d";
-    let mx = tx + 10;
-    if (me === t) {
-      X.fillText("YOU", mx, 31);
-      mx += 22;
-    }
-    if (pos === t && !ftq) {
-      X.fillStyle = "#ff8a3a";
-      X.beginPath();
-      X.arc(mx + 3, 28, 3, 0, 7);
-      X.fill();
-      mx += 12;
-    }
-    // timeouts + fouls / bonus (full court games)
+    X.font = FD(700, 21);
+    txt(AB(tm), tx + MK + 10, 22);
+    // timeouts (pips), fouls / BONUS, YOU
+    let mx = tx + MK + 10;
     if (full) {
       for (let i = 0; i < 4; i++) {
-        X.fillStyle = i < (TS.to[t] || 0) ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.18)";
-        X.fillRect(mx + i * 9, 27, 6, 3);
+        X.fillStyle = i < (TS.to[tm] || 0) ? "#fff" : "rgba(255,255,255,.22)";
+        rr(mx + i * 8, 29, 6, 4, 1);
+        X.fill();
       }
-      mx += 40;
+      mx += 36;
       X.font = FU(800, 8);
-      if (TS.bon && TS.bon[1 - t]) {
-        rr(mx, 23, 32, 10, 3);
+      if (TS.bon && TS.bon[1 - tm]) {
+        rr(mx, 26, 30, 10, 3);
         X.fillStyle = "#ffc83d";
         X.fill();
         X.fillStyle = "#14100a";
-        X.fillText("BONUS", mx + 3, 31);
+        X.fillText("BONUS", mx + 2.5, 34);
       } else if (cfg.FOULS) {
-        X.fillStyle = "rgba(255,255,255,.6)";
-        X.fillText("F " + (tf[t] || 0), mx, 31);
+        X.fillStyle = "rgba(255,255,255,.75)";
+        X.fillText("F" + (tf[tm] || 0), mx, 34);
       }
     }
-    // score
+    if (me === tm) {
+      X.font = FU(900, 7);
+      X.fillStyle = "#ffc83d";
+      X.textAlign = "right";
+      X.fillText("YOU", sx - 5, 10);
+    }
+    // score panel: counts up and flashes on a basket, "+N" tag
+    const age = t - BUG.hit[tm],
+      fl = rm ? 0 : Math.max(0, 1 - age / 0.9);
+    if (BUG.shown[tm] !== sc[tm]) {
+      if (rm || BUG.shown[tm] > sc[tm]) BUG.shown[tm] = sc[tm];
+      else if (age > 0.12) BUG.shown[tm] = Math.min(sc[tm], BUG.shown[tm] + 1), (BUG.hit[tm] = t - 0.02);
+    }
+    X.fillStyle = V.HC ? "#000" : "rgba(0,0,0,.42)";
+    X.fillRect(sx, 0, SW, H);
+    if (fl > 0) {
+      X.fillStyle = col;
+      X.globalAlpha = 0.85 * fl;
+      X.fillRect(sx, 0, SW, H);
+      X.globalAlpha = 1;
+    }
     X.textAlign = "center";
     X.fillStyle = "#fff";
-    X.font = FD(700, 25);
-    txt(String(sc[t]), tx + TW - SW / 2, 27);
+    X.font = FD(700, 32);
+    if (!V.HC) (X.shadowColor = "rgba(0,0,0,.6)"), (X.shadowBlur = 4);
+    txt(String(BUG.shown[tm]), sx + SW / 2, 33);
+    X.shadowBlur = 0;
+    // possession arrow (pointing at the team with the ball)
+    if (pos === tm && !ftq) {
+      const ax = tm ? tx + TW - 1 : tx + 1;
+      X.fillStyle = "#ff9f2e";
+      X.beginPath();
+      if (tm) X.moveTo(ax, H / 2 - 7), X.lineTo(ax - 7, H / 2), X.lineTo(ax, H / 2 + 7);
+      else X.moveTo(ax, H / 2 - 7), X.lineTo(ax + 7, H / 2), X.lineTo(ax, H / 2 + 7);
+      X.fill();
+    }
   }
-  // period + clock
-  const cx = x0 + TW * 2 + 4;
+  // ---- period + clock
+  const cx = x0 + TW * 2;
+  X.fillStyle = V.HC ? "#000" : "rgba(255,255,255,.04)";
+  X.fillRect(cx, 0, CW, H);
+  X.fillStyle = "rgba(255,255,255,.12)";
+  X.fillRect(cx, 6, 1, H - 12);
   X.textAlign = "center";
-  X.fillStyle = "#ffc83d";
   if (cfg.TO) {
-    X.font = FD(700, 10);
-    X.fillText("FIRST TO", cx + CW / 2, 15);
-    X.font = FD(700, 16);
-    X.fillText(String(cfg.TO), cx + CW / 2, 31);
-  } else {
-    X.font = FD(600, 11);
-    X.fillText(q > 4 ? (q > 5 ? q - 4 + "OT" : "OT") : ["1ST", "2ND", "3RD", "4TH"][q - 1] || "Q" + q, cx + CW / 2, 13);
+    X.fillStyle = "#ffc83d";
+    X.font = FD(600, 10);
+    X.fillText("FIRST TO", cx + CW / 2, 16);
     X.fillStyle = "#fff";
-    X.font = FD(700, 19);
-    txt(fmt(clock), cx + CW / 2, 31);
+    X.font = FD(700, 20);
+    X.fillText(String(cfg.TO), cx + CW / 2, 36);
+  } else {
+    X.fillStyle = "#ffc83d";
+    X.font = FD(600, 11);
+    X.fillText(q > 4 ? (q > 5 ? q - 4 + "OT" : "OT") : ORD[q - 1] || "Q" + q, cx + CW / 2, 15);
+    X.fillStyle = "#fff";
+    X.font = FD(700, 23);
+    txt(fmt(clock), cx + CW / 2, 37);
   }
-  // shot clock
+  // ---- shot clock (red under 5 s; pulses unless reduce motion)
   if (SCW) {
     const sx = cx + CW,
-      s = Math.ceil(Math.max(0, shot)),
+      sv = Math.ceil(Math.max(0, shot)),
       low = shot < 5;
-    rr(sx, 4, SCW - 4, H - 8, 5);
-    X.fillStyle = low ? "#d81e3a" : V.HC ? "#222" : "rgba(255,255,255,.08)";
-    X.fill();
+    X.fillStyle = low ? (rm ? "#d81e3a" : `rgba(216,30,58,${0.75 + 0.25 * Math.sin(t * 9)})`) : V.HC ? "#111" : "rgba(0,0,0,.35)";
+    X.fillRect(sx, 0, SCW, H);
     X.fillStyle = low ? "#fff" : "#ffc83d";
-    X.font = FD(700, 17);
-    X.fillText(String(s), sx + (SCW - 4) / 2, 25);
+    X.font = FD(700, 22);
+    X.fillText(String(sv), sx + SCW / 2, 31);
+    X.font = FU(800, 6);
+    X.fillStyle = low ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.45)";
+    X.fillText("SHOT", sx + SCW / 2, 40);
+  }
+  X.restore(); // clip
+  // edge + team-colour underline
+  rr(x0 + 0.5, 0.5, W - 1, H - 1, 9);
+  X.strokeStyle = V.HC ? "#fff" : "rgba(255,255,255,.14)";
+  X.lineWidth = V.HC ? 1.5 : 1;
+  X.stroke();
+  // "+N" tags rising over the score
+  for (let tm = 0; tm < 2; tm++) {
+    const age = t - BUG.hit[tm];
+    if (rm || age > 1.6 || BUG.add[tm] <= 0 || BUG.shown[tm] !== sc[tm]) {
+      if (age > 1.6) BUG.add[tm] = 0;
+      continue;
+    }
+    const sx = x0 + tm * TW + TW - SW / 2,
+      y = -2 - age * 10;
+    X.globalAlpha = Math.max(0, 1 - age / 1.6);
+    X.font = FD(700, 13);
+    X.textAlign = "center";
+    rr(sx - 13, y - 11, 26, 14, 7);
+    X.fillStyle = "#ffc83d";
+    X.fill();
+    X.fillStyle = "#14100a";
+    X.fillText("+" + BUG.add[tm], sx, y);
+    X.globalAlpha = 1;
   }
   // momentum line under the bug
   if (full && !V.MINHUD) {
     const m = Math.max(-1, Math.min(1, TS.mom || 0)),
-      mw = W - 14;
+      mw = W - 18;
     X.fillStyle = "rgba(0,0,0,.5)";
-    X.fillRect(x0 + 7, H + 3, mw, 3);
+    X.fillRect(-mw / 2, H + 3, mw, 3);
     X.fillStyle = m >= 0 ? PC[0] : PC[1];
     X.fillRect(m >= 0 ? 0 : (m * mw) / 2, H + 3, (Math.abs(m) * mw) / 2, 3);
     X.fillStyle = "#fff";
     X.fillRect(-1, H + 1, 2, 7);
-    if (Math.abs(m) > 0.5) {
-      X.font = FU(800, 8);
-      X.fillStyle = "#ffb347";
-      txt("MOMENTUM · " + String(m > 0 ? cl[0] : cl[1]).toUpperCase(), 0, H + 17);
+  }
+  // ---- ticker: slides out under the bar (runs, stat lines, N straight points, quarter by quarter)
+  if (!V.MINHUD) {
+    if (!BUG.cur && BUG.tick.length) BUG.cur = { ...BUG.tick.shift()!, t0: t };
+    const c = BUG.cur;
+    if (c) {
+      const age = t - c.t0,
+        ein = rm ? 1 : Math.min(1, age / 0.28),
+        eout = rm ? 1 : Math.min(1, (c.d - age) / 0.28),
+        e = Math.max(0, Math.min(ein, eout)),
+        ez = 1 - Math.pow(1 - e, 3),
+        th = c.sub ? 34 : 20,
+        tw = Math.min(W + 40, 560),
+        ty = H + 10 - (1 - ez) * (th + 10);
+      if (age > c.d) BUG.cur = null;
+      else if (e > 0) {
+        X.save();
+        X.beginPath();
+        X.rect(-tw / 2 - 2, H + 8, tw + 4, th + 6);
+        X.clip();
+        rr(-tw / 2, ty, tw, th, 6);
+        X.fillStyle = V.HC ? "#000" : "rgba(9,11,24,.92)";
+        X.fill();
+        X.fillStyle = c.c || "#ffc83d";
+        X.fillRect(-tw / 2, ty, 5, th);
+        X.textAlign = "center";
+        X.fillStyle = "#fff";
+        X.font = FD(700, 14);
+        txt(c.t, 0, ty + 15);
+        if (c.sub) {
+          X.font = FU(700, 10);
+          X.fillStyle = "rgba(255,255,255,.75)";
+          X.fillText(c.sub, 0, ty + 29);
+        }
+        X.restore();
+      }
     }
   }
   X.restore();
+  (V as any).bugOn = T; // tests: the bug drew this frame
   if (V.MINHUD || me < 0 || !CT.length || cfg.NP < 2 || !full) return;
   // the other side's set, as the defense would call it out ("HORNS!") - for a few seconds after it starts
   const op = PLAY[1 - me];
@@ -473,9 +671,9 @@ export function scoreBug(me: number) {
     X.font = FD(700, 13 * k);
     X.textAlign = "center";
     const w = X.measureText(s).width + 24;
-    plate(480 - w / 2, 8 + 62 * k, w, 22 * k, 11 * k);
+    plate(480 - w / 2, 8 + 96 * k, w, 22 * k, 11 * k);
     X.fillStyle = "#9fe7ff";
-    X.fillText(s, 480, 8 + 62 * k + 15.5 * k);
+    X.fillText(s, 480, 8 + 96 * k + 15.5 * k);
   }
   // your calls (above the player card)
   const s = `DEF ${DSN[TS.ds[me]]} · PLAY ${PCN[TS.pc[me]]} [${kn("ds")}]   TIMEOUT [${kn("to")}] · CHALLENGE [${kn("ch")}]${TS.call && TS.call.t === me && TS.chal[me] > 0 ? " ← AVAILABLE!" : ""}`;

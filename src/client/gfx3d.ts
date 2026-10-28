@@ -10,6 +10,21 @@
 //    asphalt with puddles (mirror reflections where the Reflector is on), snow cover
 //  - detail(): multiply a tiled detail texture into a material's map (wood grain under the court paint)
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
+/** Bake placed copies of geometries into ONE geometry (one draw call per material: Medium must not pay for dressing). */
+const bake = (parts: [THREE.BufferGeometry, number, number, number, number][]) => {
+  const o = new THREE.Object3D();
+  const gs = parts.map(([g, x, y, z, ry]) => {
+    o.position.set(x, y, z);
+    o.rotation.set(0, ry, 0);
+    o.updateMatrix();
+    return g.applyMatrix4(o.matrix);
+  });
+  const m = mergeGeometries(gs)!;
+  gs.forEach((g) => g.dispose());
+  return m;
+};
 
 export const PI = Math.PI;
 const vtxGrad = (g: THREE.BufferGeometry, f: (y: number, x: number, z: number) => THREE.Color) => {
@@ -145,23 +160,21 @@ export function bowl(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.Materia
   // on the front face of the first upper-deck step (its box starts half a step in front of the row line)
   const fy = rowY(12) - 1.6,
     fo = rowOff(12) - (rowOff(12) - rowOff(11) + 0.02) / 2 - 0.08;
-  const fas: THREE.Mesh[] = [];
-  for (const [x, z, ry, w] of [
-    [0, -(25 + fo), 0, 94 + 2 * fo],
-    [0, 25 + fo, PI, 94 + 2 * fo],
-    [-(47 + fo), 0, PI / 2, 50 + 2 * fo],
-    [47 + fo, 0, -PI / 2, 50 + 2 * fo],
-  ] as const) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.5), led);
-    m.position.set(x, fy, z);
-    m.rotation.y = ry;
-    add(m);
-    fas.push(m);
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(w, 3.4), new THREE.MeshStandardMaterial({ color: 0x0b0d16, roughness: 0.6 }));
-    back.position.set(x - Math.sin(ry) * 0.05, fy - 0.2, z - Math.cos(ry) * 0.05);
-    back.rotation.y = ry;
-    add(back);
+  const SIDES = (o: number) =>
+    [
+      [0, -(25 + o), 0, 94 + 2 * o],
+      [0, 25 + o, PI, 94 + 2 * o],
+      [-(47 + o), 0, PI / 2, 50 + 2 * o],
+      [47 + o, 0, -PI / 2, 50 + 2 * o],
+    ] as const;
+  const fasP: [THREE.BufferGeometry, number, number, number, number][] = [],
+    backP: typeof fasP = [];
+  for (const [x, z, ry, w] of SIDES(fo)) {
+    fasP.push([new THREE.PlaneGeometry(w, 1.5), x, fy, z, ry]);
+    backP.push([new THREE.PlaneGeometry(w, 3.4), x - Math.sin(ry) * 0.05, fy - 0.2, z - Math.cos(ry) * 0.05, ry]);
   }
+  const fas = [add(new THREE.Mesh(bake(fasP), led)) as THREE.Mesh];
+  add(new THREE.Mesh(bake(backP), new THREE.MeshStandardMaterial({ color: 0x0b0d16, roughness: 0.6 })));
   // arena shell: dark walls + roof (vertex gradient), so there is no black void above the crowd
   const shell = new THREE.Mesh(
     vtxGrad(new THREE.BoxGeometry(200, 64, 150, 1, 4, 1), (y) => new THREE.Color(0x1c2234).lerp(new THREE.Color(0x07080f), Math.min(1, Math.max(0, (y + 10) / 40)))),
@@ -188,30 +201,20 @@ export function bowl(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.Materia
     const sm = new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(0.9, 0.85, 0.8) });
     const sy = rowY(ROWS - 1) + 3.5,
       so = rowOff(ROWS - 1) + 3;
-    for (const [x2, z, ry, w] of [
-      [0, -(25 + so), 0, 94 + 2 * so],
-      [0, 25 + so, PI, 94 + 2 * so],
-      [-(47 + so), 0, PI / 2, 50 + 2 * so],
-      [47 + so, 0, -PI / 2, 50 + 2 * so],
-    ] as const) {
-      const tt = t.clone();
-      tt.repeat.set(w / 40, 1);
-      tt.needsUpdate = true;
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 2.2), new THREE.MeshBasicMaterial({ map: tt, color: sm.color }));
-      m.position.set(x2, sy, z);
-      m.rotation.y = ry;
-      add(m);
+    const sp: [THREE.BufferGeometry, number, number, number, number][] = [];
+    for (const [x2, z, ry, w] of SIDES(so)) {
+      const g = new THREE.PlaneGeometry(w, 2.2),
+        uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * (w / 40)); // the window strip repeats per 40 ft
+      sp.push([g, x2, sy, z, ry]);
     }
+    add(new THREE.Mesh(bake(sp), sm));
   }
   // tunnel portals in the four corners (lit tunnel glow)
   const pM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x2a2418).multiplyScalar(1.4) });
-  for (const sx of [-1, 1])
-    for (const sz of [-1, 1]) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(7, 4.4), pM);
-      m.position.set(sx * 52, 2.2, sz * 30.2);
-      m.rotation.y = Math.atan2(-sx, -sz);
-      add(m);
-    }
+  const pp: [THREE.BufferGeometry, number, number, number, number][] = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) pp.push([new THREE.PlaneGeometry(7, 4.4), sx * 52, 2.2, sz * 30.2, Math.atan2(-sx, -sz)]);
+  add(new THREE.Mesh(bake(pp), pM));
   // roof trusses + catwalk (instanced beams)
   const beams: number[][] = [];
   for (let i = -5; i <= 5; i++) beams.push([i * 14, 46, 0, 0.6, 1.4, 130]);
@@ -234,22 +237,18 @@ export function scorerTable(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(11, 2.4, 2), new THREE.MeshStandardMaterial({ color: 0x14161f, roughness: 0.4, metalness: 0.2 }));
   body.position.y = 1.2;
-  body.castShadow = body.receiveShadow = true;
+  body.receiveShadow = true;
   const top = new THREE.Mesh(new THREE.BoxGeometry(11.4, 0.12, 2.4), new THREE.MeshStandardMaterial({ color: 0x2b2f3a, roughness: 0.25, metalness: 0.4 }));
   top.position.y = 2.46;
   const face = new THREE.Mesh(new THREE.PlaneGeometry(10.6, 1.5), led);
   face.position.set(0, 1.25, 1.01);
   g.add(body, top, face);
   // three officials behind it
-  const sk = [0x8d5524, 0xe0ac69, 0xc68642];
-  for (let k = 0; k < 3; k++) {
-    const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.6, 3, 8), new THREE.MeshStandardMaterial({ color: k === 1 ? 0x1b2340 : 0x22252e, roughness: 0.8 }));
-    b.position.set(-3 + k * 3, 2.75, -0.95);
-    const h = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 8), new THREE.MeshStandardMaterial({ color: sk[k], roughness: 0.6 }));
-    h.position.set(-3 + k * 3, 3.55, -0.95);
-    b.castShadow = true;
-    g.add(b, h);
-  }
+  const ob: [THREE.BufferGeometry, number, number, number, number][] = [],
+    oh: typeof ob = [];
+  for (let k = 0; k < 3; k++) ob.push([new THREE.CapsuleGeometry(0.32, 0.6, 3, 8), -3 + k * 3, 2.75, -0.95, 0]), oh.push([new THREE.SphereGeometry(0.24, 12, 8), -3 + k * 3, 3.55, -0.95, 0]);
+  const b = new THREE.Mesh(bake(ob), new THREE.MeshStandardMaterial({ color: 0x1f2230, roughness: 0.8 }));
+  g.add(b, new THREE.Mesh(bake(oh), new THREE.MeshStandardMaterial({ color: 0xb98458, roughness: 0.6 })));
   g.position.set(0, 0, -26.2);
   S.add(g);
   ARENA.push(g);
@@ -291,6 +290,7 @@ export function photographers(S: THREE.Scene, ARENA: THREE.Object3D[]) {
     S.add(m);
     ARENA.push(m);
   }
+  return [body, head, cam, lens];
 }
 
 // ---------------------------------------------------------------- pyro + smoke

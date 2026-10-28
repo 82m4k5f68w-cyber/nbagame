@@ -739,6 +739,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       if (on) wxAuto = autoWx();
       for (const o of STREET) o.visible = on;
       for (const o of ARENA) o.visible = !on;
+      for (const o of hiOnly) o.visible = !on && V.QL >= 2;
       fl.visible = !on;
       for (const b of bench) b.gl.G.visible = !on;
       if (mirror) mirror.position.y = on ? 0.009 : -0.02; // street: between the apron and the asphalt (puddles)
@@ -1124,7 +1125,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     // baseline photographers (gfx3d.ts)
     bowl(S, ARENA, ledM, PC[0] || "#7b3fb5");
     scorerTable(S, ARENA, ledM);
-    photographers(S, ARENA);
+    // High+ only (Medium / Chromebook must not pay draw calls for the photographers)
+    const hiOnly: THREE.Object3D[] = photographers(S, ARENA);
 
     // ---------------- hoops: padded stanchion, arm, glass, shot clock, rim, tube net ----------------
     const shotClocks: { ctx: CanvasRenderingContext2D; tex: THREE.Texture; k: string }[] = [];
@@ -1674,6 +1676,8 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
           mrt = mirror.getRenderTarget();
         if (mrt.width !== rw || mrt.height !== rh) mrt.setSize(rw, rh);
       }
+      fill.visible = ql >= 2; // (one directional light fewer per fragment on Medium / Chromebook)
+      for (const o of hiOnly) o.visible = ql >= 2 && !streetOn;
       sun.shadow.radius = ql >= 3 ? 5 : ql >= 2 ? 3.5 : 2.5;
       (sun.shadow as any).blurSamples = ql >= 3 ? 16 : 8;
       const wantShadow = ql > 0 && lvl >= 3;

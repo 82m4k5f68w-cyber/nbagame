@@ -749,7 +749,16 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - HSR fixes: dynamic res judges every 4 frames and steps x.7 when frames are > 2x the target (Auto now drops on a
   crawling GPU); temporal resolve: motion /16 px, tighter clip (.55) and faster history falloff under motion.
 - Unity (cheap mirrors): Arena BackLight, PostFx SplitToning + FilmGrain.
-- tests/browser_gfx.mjs (presets, kiss cam / LED, weather), scratchpad shots via readPixels (pg.screenshot waits for
+- Score bug v2 (hud.ts `scoreBug`, state-only so online guests get it too): dark glass bar, per team a colour block
+  with the `teamMark` shield (SVG rasterised once, `MARKS`) + `abbr`, timeout pips, F n / BONUS, YOU tag, possession
+  arrow on the outer edge, score panel that counts up + flashes in the team colour with a rising "+N" tag; centre
+  period + clock (FIRST TO in street), shot clock box (red + pulsing under 5 s), momentum line. Ticker (`BUG`,
+  `bugEvents`): slides out under the bar for stat lines after threes / dunks / and-ones / every 5 pts past 10, "N
+  STRAIGHT POINTS" (one-man streak >= 6), team runs (TS.run >= 7) and END OF Qn with quarter-by-quarter (TS.qs).
+  Client clock (performance.now), so it animates through dead balls; V.RM = no count-up / pulse / slide, V.MINHUD hides
+  ticker + momentum, V.HC solid plates, tk() scaling for phones. `V.bugOn` = drew this frame (tests). The set call-out
+  moved to y 8 + 96k (under the ticker).
+- tests/browser_gfx.mjs (presets, kiss cam / LED, score bug + ticker desktop / phone, weather), scratchpad shots via readPixels (pg.screenshot waits for
   compositor frames = more full renders on SwiftShader).
 
 ## Known gaps / ideas
