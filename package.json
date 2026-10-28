@@ -14,7 +14,10 @@
     "server": "tsx server/relay.ts",
     "host:dedicated": "tsx server/headless-host.ts",
     "test:net": "tsx tests/net.ts",
-    "test:online": "node tests/browser_online.mjs"
+    "test:online": "node tests/browser_online.mjs",
+    "assets:setup": "bash scripts/assets/setup.sh",
+    "test:assets": "tsx tests/assets.ts && tsx tests/voicecmd.ts",
+    "test:labs": "node tests/browser_assets.mjs && node tests/browser_tools.mjs && node tests/browser_motion.mjs && node tests/browser_pwa.mjs"
   },
   "devDependencies": {
     "@gltf-transform/cli": "^4.5.1",
@@ -47,7 +50,8 @@
     "workbox-build": "^7.4.1",
     "workbox-window": "^7.4.1",
     "xatlas-three": "^0.2.1",
-    "xatlas-web": "^0.1.0"
+    "xatlas-web": "^0.1.0",
+    "xatlasjs": "^0.2.0"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.12.0",

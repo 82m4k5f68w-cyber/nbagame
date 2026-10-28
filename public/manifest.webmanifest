@@ -1,0 +1,29 @@
+{
+ "name": "Hoops 2K27",
+ "short_name": "Hoops 2K27",
+ "description": "Browser basketball: 5v5, 1v1, street, LIFE. Plays offline once installed.",
+ "start_url": "./hoops2k27-hub.html",
+ "scope": "./",
+ "display": "fullscreen",
+ "orientation": "landscape",
+ "background_color": "#06070e",
+ "theme_color": "#12142a",
+ "icons": [
+  {
+   "src": "icons/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icons/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "icons/maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}

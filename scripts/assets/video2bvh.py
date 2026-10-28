@@ -3,7 +3,7 @@
 The BVH uses the joint names scripts/mocap/retarget.ts reads (Hips, Spine1, Neck, Left/RightUpLeg, Leg, Foot,
 ToeBase, Arm, ForeArm, Hand), Y up, facing +Z, frame 0 = T-pose rest (retarget.ts measures the rest legs there).
 
-  h2kpy scripts/assets/video2bvh.py move.mp4 out.bvh [--fps 30] [--smooth 2.0] [--model pose_landmarker_heavy.task]
+  h2kpy scripts/assets/video2bvh.py move.mp4|move.json out.bvh [--fps 30] [--smooth 2.0] [--model pose_landmarker_heavy.task]
                                                     [--json out.json]  (raw smoothed joint positions too)
 Tips: one person, full body in frame (feet included), side or 3/4 view, steady camera, 2-10 s, good light.
 Root motion: MediaPipe world landmarks are hip-centred, so the root path is rebuilt from the 2D hip track scaled by
@@ -159,7 +159,12 @@ def main():
     ap.add_argument("--scale", type=float, default=100.0, help="BVH units per metre (default cm)")
     a = ap.parse_args()
 
-    W, I, ok, fps = detect(a.video, a.model)
+    if a.video.lower().endswith(".json"):  # Motion Studio export (src/client/labs/motion): landmarks already solved
+        J = json.load(open(a.video))
+        W, I, fps = np.array(J["world"], float), np.array(J["image"], float), float(J.get("fps", 30))
+        ok = np.ones(len(W), bool)
+    else:
+        W, I, ok, fps = detect(a.video, a.model)
     n = len(W)
     if ok.sum() < max(5, n * 0.5):
         sys.exit(f"pose found in only {ok.sum()}/{n} frames: keep the whole body in frame")

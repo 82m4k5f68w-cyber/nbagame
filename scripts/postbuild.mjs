@@ -17,5 +17,6 @@ console.log("hub", (hub.length / 1e6).toFixed(2), "MB; modes written");
   a = a.replace(/<head>/i, "").replace(/<\/head>/i, "").replace(/<body>/i, "").replace(/<\/body>/i, "");
   a = a.replace(/<meta charset="utf-8">/i, "").replace(/<meta name="viewport"[^>]*>/i, "");
   a = a.replace(":root{--bg:#06070e;", ":root{color-scheme:dark;--bg:#06070e;");
+  a = a.replace("</title>", "</title><script>window.__H2K_ARTIFACT=1</script>"); // pwa.ts: never a service worker here
   fs.writeFileSync(`${D}/artifact.html`, a.trimStart());
 }

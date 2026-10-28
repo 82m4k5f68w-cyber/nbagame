@@ -28,14 +28,15 @@ fi
 if want python; then
   echo "== python venv $T/venv"
   # MediaPipe Tasks needs EGL/GLES even on CPU (Debian/Ubuntu); harmless when present or apt is unavailable
-  if command -v apt-get >/dev/null && ! ldconfig -p | grep -q libEGL.so.1; then
-    apt-get install -y -qq libegl1 libgles2 libgl1 >/dev/null 2>&1 || (apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq libegl1 libgles2 libgl1 >/dev/null 2>&1) || true
+  if command -v apt-get >/dev/null && ! (ldconfig -p | grep -q libEGL.so.1 && ldconfig -p | grep -q libOpenGL.so.0); then
+    apt-get install -y -qq libegl1 libgles2 libgl1 libopengl0 >/dev/null 2>&1 || (apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq libegl1 libgles2 libgl1 libopengl0 >/dev/null 2>&1) || true
   fi
   [ -x "$T/venv/bin/python" ] || python3 -m venv "$T/venv"
   "$T/venv/bin/pip" install -q --upgrade pip
   "$T/venv/bin/pip" install -q $PY_PKGS
   mkdir -p "$T/models"
   fetch "$POSE_MODEL" "$T/models/pose_landmarker_heavy.task"
+  fetch "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task" "$T/models/pose_landmarker_lite.task"  # inlined by the Motion Studio lab
   ln -sf "$T/venv/bin/python" "$T/bin/h2kpy"
 fi
 
@@ -44,7 +45,12 @@ if want ml; then
   echo "== ml (torch cpu, openai-whisper, pymeshlab)"
   [ -x "$T/venv/bin/python" ] || python3 -m venv "$T/venv"
   "$T/venv/bin/python" -c "import torch" 2>/dev/null || "$T/venv/bin/pip" install -q "torch==${TORCH_VER:-2.14.1}" --index-url https://download.pytorch.org/whl/cpu
-  "$T/venv/bin/pip" install -q openai-whisper pymeshlab
+  "$T/venv/bin/pip" install -q openai-whisper pymeshlab onnx
+  # Whisper tiny.en ONNX (the files the browser downloads for voice commands) for tests/voicecmd.ts
+  HFD="$REPO/scripts/assets/.cache/hf/Xenova/whisper-tiny.en"; mkdir -p "$HFD/onnx"
+  for f in config.json generation_config.json preprocessor_config.json tokenizer.json tokenizer_config.json onnx/encoder_model_quantized.onnx onnx/decoder_model_merged_quantized.onnx; do
+    fetch "https://huggingface.co/Xenova/whisper-tiny.en/resolve/main/$f" "$HFD/$f"
+  done
 fi
 
 if want voices; then
@@ -92,6 +98,6 @@ fi
 echo "== versions"
 [ -x "$T/bin/blender" ] && "$T/bin/blender" --version 2>/dev/null | head -1 || true
 [ -x "$T/bin/toktx" ] && "$T/bin/toktx" --version 2>&1 | head -1 || true
-[ -x "$T/venv/bin/python" ] && "$T/venv/bin/pip" list 2>/dev/null | grep -i -E '^(mediapipe|piper-tts|onnxruntime|numpy|opencv)' || true
+[ -x "$T/venv/bin/python" ] && "$T/venv/bin/pip" list 2>/dev/null | grep -i -E '^(mediapipe|piper-tts|onnxruntime|numpy|opencv|torch|openai-whisper|pymeshlab|onnx) ' || true
 command -v ffmpeg >/dev/null && ffmpeg -version | head -1 || echo "WARNING: ffmpeg missing (apt-get install ffmpeg)"
 echo "Add to PATH: export PATH=$T/bin:\$PATH"

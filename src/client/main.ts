@@ -103,6 +103,10 @@ const K5=[['Move','left stick'],['Shoot','A (hold and release)'],['Pass / lob','
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 loadSet(); // theme / text size / motion / contrast before the first paint; the hub's settings drawer edits the same h2k_set
+// device probe (perfprobe.ts): 200 ms of sim + bundled detect-gpu tables -> default preset if none was picked
+if (!/[?&]noprobe\b/.test(location.search)) setTimeout(() => import("./perfprobe").then((m) => m.probeDevice()).catch(() => {}), 400);
+import("./pwa").then((m) => m.initPwa(document.getElementById("hinst"))).catch(() => {}); // installable + offline on http(s) only
+if (import.meta.env.DEV && /[?&]dev\b/.test(location.search)) import("./devtools").then((m) => m.initDevtools()); // stats-gl / lil-gui / spectorjs (dev server only)
 let LP:any=null,RC:any={w:0,l:0,st:0,best:0},MY:any=null;try{LP=JSON.parse(localStorage.getItem('h2k_lastplay')||'null');RC={...RC,...JSON.parse(localStorage.getItem('h2k_rec')||'{}')};MY=JSON.parse(localStorage.getItem('h2k_myp')||'null')}catch(e){}
 const MODE_N:any={'5v5-3d':'5v5 3D','5v5-2d':'5v5 2D','1v1-3d':'1v1 3D','1v1-2d':'1v1 2D'};
 const LAST=LOG[0].v;

@@ -42,6 +42,7 @@ export const V = {
   introDone: 0, // the intro sequence ran for this game (skip the small lineup card)
   VOICE: 1, // speak the commentary (browser text-to-speech)
   ANNV: 2, // announcer voice: 2 AI (Piper voice bank, client/voice.ts; falls back to browser), 1 browser speech, 0 off
+  VCMD: 0, // voice commands (beta, client/voicecmd.ts): session only, never saved (needs a click for the mic)
   MUSIC: 1, // dynamic arena music
   RUMBLE: 1, // gamepad rumble
   CB: 0, // meter palette (see THEME below)

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hoops 2K27 Tools Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#06070e;--fg:#e9eefc;--mut:#8f9bbf;--acc:#ffd23f}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;padding:0 16px}
+h1{font-size:18px;color:var(--acc)}
+canvas{width:100%;max-width:640px;aspect-ratio:16/9;display:block;background:#000;border-radius:8px}
+pre{color:var(--mut);white-space:pre-wrap;font:12px ui-monospace,monospace}
+</style>
+</head>
+<body>
+<h1>Tools Lab</h1>
+<p>ONNX Runtime Web (inlined wasm) · Tone.js offline render · three-gpu-pathtracer photo mode</p>
+<canvas id="c" width="640" height="360"></canvas>
+<pre id="out">running…</pre>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

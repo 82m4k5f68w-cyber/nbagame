@@ -87,5 +87,66 @@ for (const k of Object.keys(rep)) ok(ml.includes(`assets/models/${k}.glb?inline`
 ok(mb <= 2 * 1024 * 1024, `models ${mb} B base64 > 2 MB`);
 console.log(`models: ${Object.keys(rep).length} kits, ${Object.values<any>(rep).reduce((a, r) => a + r.models.length, 0)} models, ${(mb / 1048576).toFixed(2)} MB base64`);
 
+// ---------- procedural props (Blender -> xatlas lightmap UVs -> meshopt) ----------
+for (const f of fs.existsSync("assets/models/props") ? fs.readdirSync("assets/models/props") : []) {
+  const d = await io.read("assets/models/props/" + f);
+  const ps = d.getRoot().listMeshes().flatMap((m) => m.listPrimitives());
+  ok(ps.length > 0 && ps.every((p) => p.getAttribute("TEXCOORD_1")), `props/${f}: missing lightmap UVs (TEXCOORD_1)`);
+}
+
+// ---------- device probe -> preset ----------
+const { pickPreset } = await import("../src/client/probepick");
+ok(pickPreset(0.6, 3, false) === 3 && pickPreset(1.0, 3, false) === 2 && pickPreset(0.6, 2, false) === 2, "pickPreset fast desktop");
+ok(pickPreset(1.8, 3, false) === 1 && pickPreset(3, 3, false) === 0 && pickPreset(0.6, 3, true) === 1, "pickPreset slow cpu / mobile caps");
+ok(pickPreset(0.5, 0, false) === -1 && pickPreset(0.5, 1, false) === 0, "pickPreset unknown gpu keeps the default, tier 1 = Chromebook");
+
+// ---------- three-mesh-bvh: accelerated raycasts on a dense mesh ----------
+{
+  const THREE = await import("three");
+  const { computeBoundsTree, acceleratedRaycast } = await import("three-mesh-bvh");
+  (THREE.BufferGeometry.prototype as any).computeBoundsTree = computeBoundsTree;
+  const g = new THREE.TorusKnotGeometry(1, 0.3, 400, 64),
+    mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial()),
+    rc = new THREE.Raycaster(),
+    rays = 300;
+  const cast = () => {
+    let hits = 0;
+    const t0 = performance.now();
+    for (let i = 0; i < rays; i++) {
+      rc.set(new THREE.Vector3(Math.sin(i) * 4, Math.cos(i * 1.3) * 4, 4), new THREE.Vector3(-Math.sin(i) * 0.9, -Math.cos(i * 1.3) * 0.9, -1).normalize());
+      hits += rc.intersectObject(mesh).length ? 1 : 0;
+    }
+    return [performance.now() - t0, hits];
+  };
+  const [slow, h0] = cast();
+  (g as any).computeBoundsTree();
+  mesh.raycast = acceleratedRaycast as any;
+  const [fast, h1] = cast();
+  ok(h0 === h1 && h1 > 0, `bvh hits differ ${h0} vs ${h1}`);
+  ok(fast * 5 < slow, `bvh not faster: ${fast.toFixed(1)} vs ${slow.toFixed(1)} ms`);
+  console.log(`three-mesh-bvh: ${g.index!.count / 3} tris, ${rays} rays ${slow.toFixed(0)} -> ${fast.toFixed(1)} ms`);
+}
+
+// ---------- recast-navigation: LIFE town navmesh, paths stay off buildings ----------
+{
+  const { buildTownNav } = await import("../src/client/nav");
+  const { PLACES, WORLD, blocked } = await import("../src/life/places");
+  const N = await buildTownNav(PLACES as any, WORLD);
+  let paths = 0,
+    inside = 0;
+  const ids = PLACES.filter((p) => p.k !== "court").slice(0, 8);
+  for (let i = 0; i + 1 < ids.length; i++) {
+    const a: any = ids[i], b: any = ids[i + 1];
+    const s = N.snap({ x: a.x, z: a.z + a.d / 2 + 4 }), e = N.snap({ x: b.x, z: b.z + b.d / 2 + 4 });
+    if (!s || !e) continue;
+    const P = N.path(s, e);
+    if (P.length >= 2) paths++;
+    for (let k = 1; k < P.length; k++) for (let j = 0; j <= 16; j++) if (blocked(P[k - 1].x + ((P[k].x - P[k - 1].x) * j) / 16, P[k - 1].z + ((P[k].z - P[k - 1].z) * j) / 16, 0.2)) inside++;
+  }
+  ok(paths >= 5, `navmesh paths found: ${paths}`);
+  ok(inside === 0, `navmesh path samples inside buildings: ${inside}`);
+  console.log(`recast-navigation: ${paths} door-to-door paths, ${inside} samples inside buildings`);
+}
+
 console.log(bad ? `assets: ${bad} FAILED` : "assets OK");
 process.exit(bad ? 1 : 0);

@@ -3,3 +3,5 @@ node_modules/
 !docs/*.png
 scripts/mocap/.cache/
 scripts/assets/.cache/
+dist/labs/
+dist/workbox-*.js

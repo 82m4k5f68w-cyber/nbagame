@@ -136,6 +136,7 @@ const I: Record<string, It> = {
   th: { k: "th", l: "Menu theme", o: [[0, "Dark"], [1, "Light"], [2, "System"]], g: () => V.THEME, s: (v) => ((V.THEME = v), applyA11y()) },
   cmt: { k: "cmt", l: "Commentary", o: [[0, "Off"], [1, "Captions"], [2, "Captions + voice"]], g: cmtV, s: (v) => ((V.COMM = v ? 1 : 0), (V.VOICE = v === 2 ? 1 : 0), v === 2 && comment("clutch")) },
   anv: { k: "anv", l: "Announcer voice", o: [[2, "AI"], [1, "Browser"], [0, "Off"]], g: () => V.ANNV, s: (v) => ((V.ANNV = v), v && V.VOICE && comment("clutch")), h: "AI = the recorded announcer + PA voice (falls back to the browser's speech)." },
+  vcmd: { k: "vcmd", l: "Voice commands (beta)", o: [[0, "Off"], [1, "On"]], g: () => V.VCMD, s: (v) => ((V.VCMD = v), import("../voicecmd").then((m) => { if (v) m.enableVoiceCommands().then((ok) => { if (!ok) V.VCMD = 0; }); else m.disableVoiceCommands(); })), h: "Hold ` and say: timeout · sub · call horns / spain / post · switch · pause. Turning it on asks for the microphone and downloads Whisper tiny (~41 MB model + ~25 MB runtime, once); speech stays on your device." },
   mu: { k: "mu", l: "Arena music", o: onoff, g: () => V.MUSIC, s: (v) => (V.MUSIC = v) },
   vc: { k: "vc", l: "Crowd volume", o: CRN, g: () => crowd.vol, s: (v) => (crowd.vol = v) },
   ch: { k: "ch", l: "Crowd chants", o: onoff, g: () => (crowd.on ? 1 : 0), s: (v) => (crowd.on = v), h: "DE-FENSE · LET'S GO · M-V-P · AIR BALL · boos and roars" },
@@ -177,7 +178,7 @@ function panels(c: Ctx) {
     `<section class="sgrp"><h3>Menus</h3><div class="kref">${NAVK.map(([a, b]) => `<span>${a}</span><kbd>${b}</kbd>`).join("")}</div></section>` +
     `<section class="sgrp"><h3>Touch</h3><p class="hint">Thumb on the left half of the court = analog stick (push to the edge to sprint); hold the right half to shoot or jump. The buttons under the court do the rest.</p></section>`;
   const display = grp(c, "Camera & quality", ["cm", "pre", "q", "fx", "ao", "gp"]) + grp(c, "Look", ["gr", "fg", "wx"]) + grp(c, "Performance", ["hsr", "hsrm", "tfps", "fpsc"]) + grp(c, "Interface", ["mh", "th"]);
-  const audio = grp(c, "Broadcast", ["cmt", "anv"]) + grp(c, "Arena", ["mu", "vc", "ch"]);
+  const audio = grp(c, "Broadcast", ["cmt", "anv", "vcmd"]) + grp(c, "Arena", ["mu", "vc", "ch"]);
   const access = grp(c, "Vision", ["ts", "cb", "bm", "hc"]) + grp(c, "Motion", ["rm"]) + grp(c, "Input", ["spt", "au"]);
   return { gameplay, controls, display, audio, access } as Record<string, string>;
 }
