@@ -3,6 +3,7 @@
 Rules for every item: fictional brands, schools, companies and celebrities only (no real logos, chains, apps or
 likenesses); PG-13; works offline (AI via the artifact `sample` capability is optional, procedural fallback always);
 single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick items off here as they ship.
+> **Part 2:** 5000 more features (#1302-#6301, tiers 52-153) are in docs/LIFE_FEATURES_5K.md.
 
 > **Status / next item** (LIFE stages 1-3 shipped: `src/life/`; tests/life.ts, tests/browser_life.mjs,
 > tests/browser_life_career.mjs). `[x]` = shipped, `[~]` = partly (see CLAUDE.md LIFE section). **Next:** Tier 4 fame &
