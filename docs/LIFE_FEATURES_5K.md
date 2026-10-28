@@ -5206,5 +5206,6 @@ In-game money only - nothing ever asks for real payment details. Tick items `[x]
 6297. Kids playing as you in pickup
 6298. Your number banned in town league (honour)
 6299. Your story, saved forever in your save file
-6300. The End... or the beginning
+6300. Your career, ready to share as a card
+6301. The End... or the beginning
 
