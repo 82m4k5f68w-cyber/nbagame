@@ -130,7 +130,7 @@ function skinPatch(m: THREE.MeshStandardMaterial) {
           THREE.ShaderChunk.lights_physical_pars_fragment.replace(
             "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );",
             "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );\n" +
-              "  reflectedLight.directDiffuse += h2kSkin * max( saturate( ( dot( geometryNormal, directLight.direction ) + 0.5 ) / 1.5 ) - dotNL, 0.0 ) * directLight.color * BRDF_Lambert( material.diffuseContribution ) * vec3( 0.95, 0.42, 0.3 );"
+              "  reflectedLight.directDiffuse += h2kSkin * max( saturate( ( dot( geometryNormal, directLight.direction ) + 0.4 ) / 1.4 ) - dotNL, 0.0 ) * directLight.color * BRDF_Lambert( material.diffuseContribution ) * vec3( 0.55, 0.22, 0.15 );"
           )
         )
         .replace(
@@ -139,7 +139,7 @@ function skinPatch(m: THREE.MeshStandardMaterial) {
         )
         .replace(
           "#include <opaque_fragment>",
-          "{ float fr = pow( 1.0 - saturate( dot( normal, normalize( vViewPosition ) ) ), 3.0 );\n  outgoingLight += h2kRim * fr * ( 0.55 + 0.45 * normal.y ) * ( 0.35 + 0.65 * h2kSkin * ( 0.6 + 0.6 * h2kSweat ) ); }\n#include <opaque_fragment>"
+          "{ float fr = pow( 1.0 - saturate( dot( normal, normalize( vViewPosition ) ) ), 3.0 );\n  outgoingLight += h2kRim * fr * ( 0.55 + 0.45 * normal.y ) * ( 0.3 + 0.35 * h2kSkin * ( 0.6 + 0.6 * h2kSweat ) ); }\n#include <opaque_fragment>"
         );
   };
   m.customProgramCacheKey = () => "h2k-body-v6";

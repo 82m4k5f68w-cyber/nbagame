@@ -69,7 +69,7 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   (`palmAt` FK of the candidate pose) until release; catch-and-dip in mode 'c'.
   `footIK` plants stance feet (two-bone IK) and keeps planted feet flat. Animation Studio (`client/animview.ts`): pause menu
   or `?anim`; `H2K.studio()`, `H2K.studioPose(i, t, camAngle)` freezes a pose for screenshots (orbit camera `V.studio`).
-- Post-processing (`client/fx3d.ts`, three r186): MSAA HDR render -> SSAO (High) -> Bokeh DOF (replays only, `setDof`) ->
+- Post-processing (`client/fx3d.ts`, three r186; v6 changes below): MSAA HDR render -> N8AO (was SSAO) -> Bokeh DOF (replays + intro, `setDof`) ->
   bloom (threshold 3.2: HDR input) -> motion blur -> color grade (`setGrade`: contrast/saturation/vignette + home-team tint)
   -> OutputPass (ACES + sRGB; r153+ tone-maps only the final output) -> SMAA (low-res tiers). Floor = glossy physical
   plane (per-board roughnessMap + seam bumpMap + scuffs) over a `Reflector` (High, 2048 on desktop). Toggle: `V.FX`.
@@ -712,6 +712,46 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
 - Lessons: `backdrop-filter` / `transform` (incl. a running entry animation) on an ancestor make `position:fixed`
   children relative to it (the phone's sticky TIP OFF); headless rAF is slow, hold stubbed pad buttons >= 200 ms.
 
+## Graphics v6 (render3d.ts + gfx3d.ts + gfxtex.ts, fx3d.ts, fxgpu.ts, rig3d.ts materials, view.ts)
+- Presets (`view.ts PRESETS`, `applyPreset`, settings `pre`): Chromebook = Medium + HSR Auto, no AO (the old Medium:
+  must never get slower) / Balanced = + half-res AO / High = native, full AO, mirror, 4K shadows / Ultra = new `V.QL` 3
+  (DPR/MAXR as High + 4K soft shadows r5, AO 16 samples, 3600-fan crowd with the upper deck, live jumbotron cam, mirror
+  at internal res x1). `QLN` names; LIFE gets `min(2, QL)`. New V fields (saved via settings KEYS): `PRE` (-1 custom),
+  `AO` (-1 auto = full on QL>=2, `aoLevel()`), `GRADE` (`GRADES`: Broadcast / Vivid / Film / Neutral), `GRAIN`, `WX`.
+- Environment: no RoomEnvironment; `gfx3d arenaEnv(home)` (dark bowl, catwalk light grid, LED fascia in the home colour,
+  warm court bounce) / `skyEnv(wx)` -> PMREM (`envSet(key)`, regenerated only when the home colour / weather changes).
+- Lights: hemi .16 (house lights down), key `sun` (shadows; PCF radius 2.5/3.5/5 by tier), `back` (cool, high: a low
+  back light threw a blown-out specular streak across the clearcoat floor), warm `fill`, the 4 catwalk spots. Player
+  pop comes from rig3d's fresnel rim (`RIM` uniform, warm at sunset).
+- Floor: CC0 ambientCG maple via `gfxtex.ts` (KTX2; imports ONLY wood + asphalt; uses three's own inlined transcoder -
+  an extra `?inline` copy cost 0.8 MB). WebGL: `detail()` multiplies the wood colour (normalised by its smallest mip)
+  into the painted court and the canvas drops its own boards (`woodOn`); WebGPU keeps canvas boards + normal/rough.
+  `mipBias(mat)` (fx3d `HSRBIAS`, log2(scale) x .85 while temporal HSR runs) on court + street. Fictional centre crest
+  (`DECAL`), no real logos. Mirror RT = internal res x .75 (x1 Ultra), resized in fxLevel.
+- Bowl (gfx3d `bowl`): `ROWS` 20 (`rowY/rowOff`: lower 0-11, upper deck 12-19 behind an LED fascia band on the front
+  face of row 12), aisles (`AISLE_X/Z`, `inAisle`, stairs), rails, dark vertex-gradient shell (no black void), suite
+  ring, tunnel portals, roof trusses + catwalks; `scorerTable` (z -26.2, in the courtside gap), `photographers`.
+  Crowd: per-fan size + house-light dimming (`cpos[i][8..9]`), counts Low 0 / Medium 1300 / High 2600 / Ultra 3600.
+- LED takeover `ledFx` (score: team colour strobe + "3 POINTS!/SLAM!/AND ONE!"), jumbotron KISS CAM / DANCE CAM during
+  timeouts (`drawFanCam`, cartoon fans), Ultra live feed (`liveFeed`: 512x288 HalfFloat RT every 2nd frame, shadow maps
+  reused, mirror hidden; compact score bar under it). Intro (S "intro"): crane flyover + pyro (`makePyro`, instanced
+  additive quads) + cutscene DOF; pyro again at the tip and the final buzzer.
+- Street weather (`V.WX`, `applyWx`, gfx3d `SKY`): day / sunset / night / rain / snow (auto = local time + a rainy /
+  snowy day by date): sky dome + stars, sun/moon colour + elevation, exposure, lamp SpotLights, `makePrecip` (rain
+  streaks / snow, CPU instanced), wet asphalt (puddle roughness + alpha map: the Reflector shows through on High+),
+  snow cover. Light shafts are hidden on street courts (fxLevel runs there on weather changes).
+- Players (rig3d): per-player body material clone (same program; three uploads material uniforms only on a material
+  switch) for `mesh.userData.sweat` (fatigue + game depth -> shinier skin, darker damp jersey); skin wrap/scatter in
+  RE_Direct; class mask in the data texture's B channel (`BCLS`); hair roughness .62 (sheen). WebGL only.
+- Post: GradeShader gains split toning (`warm`), film grain (`grain`, luma-weighted) + `setLook`; bloom by tier;
+  N8AO via `N8AOPass` with `autoRenderBeauty: false` and our scene buffer as its beauty target (both composer buffers
+  get a resolved DepthTexture while AO is on; never let its setSize touch our buffer). WebGPU: look only, no AO/grain.
+- HSR fixes: dynamic res judges every 4 frames and steps x.7 when frames are > 2x the target (Auto now drops on a
+  crawling GPU); temporal resolve: motion /16 px, tighter clip (.55) and faster history falloff under motion.
+- Unity (cheap mirrors): Arena BackLight, PostFx SplitToning + FilmGrain.
+- tests/browser_gfx.mjs (presets, kiss cam / LED, weather), scratchpad shots via readPixels (pg.screenshot waits for
+  compositor frames = more full renders on SwiftShader).
+
 ## Known gaps / ideas
-replays/cameras in 2D, more teams, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
+replays/cameras in 2D, more teams, graphics v6 on WebGPU lacks AO / grain / skin patches / live jumbotron, custom 3-point distance (court lines are drawn at 23.75 ft), badge windows online,
 fouled-out flags / personal fouls in the online box score, commentary is text templates + browser speech, Classic has no new features.

@@ -37,7 +37,7 @@ export function arenaEnv(home: string) {
   );
   s.add(shell);
   // catwalk light grid: 3 x 6 bright panels overhead + softer panels around them
-  const hot = hdr(0xfff3e0, 22),
+  const hot = hdr(0xfff3e0, 6.5),
     soft = hdr(0xe8eeff, 3.5);
   for (let i = -2; i <= 2; i++)
     for (let j = -1; j <= 1; j++) {
@@ -142,8 +142,9 @@ export function bowl(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.Materia
   });
   add(rI);
   // fascia LED band at the deck break (replaces the floating ring) + a dark facing above/below it
+  // on the front face of the first upper-deck step (its box starts half a step in front of the row line)
   const fy = rowY(12) - 1.6,
-    fo = rowOff(12) - 1.2;
+    fo = rowOff(12) - (rowOff(12) - rowOff(11) + 0.02) / 2 - 0.08;
   const fas: THREE.Mesh[] = [];
   for (const [x, z, ry, w] of [
     [0, -(25 + fo), 0, 94 + 2 * fo],
@@ -163,7 +164,7 @@ export function bowl(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.Materia
   }
   // arena shell: dark walls + roof (vertex gradient), so there is no black void above the crowd
   const shell = new THREE.Mesh(
-    vtxGrad(new THREE.BoxGeometry(200, 64, 150, 1, 4, 1), (y) => new THREE.Color(0x141826).lerp(new THREE.Color(0x05060b), Math.min(1, Math.max(0, (y + 10) / 40)))),
+    vtxGrad(new THREE.BoxGeometry(200, 64, 150, 1, 4, 1), (y) => new THREE.Color(0x1c2234).lerp(new THREE.Color(0x07080f), Math.min(1, Math.max(0, (y + 10) / 40)))),
     new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })
   );
   shell.position.y = 30;
@@ -178,13 +179,13 @@ export function bowl(S: THREE.Scene, ARENA: THREE.Object3D[], led: THREE.Materia
     x.fillRect(0, 0, 1024, 32);
     for (let i = 0; i < 64; i++) {
       const lit = (i * 37) % 7 !== 0;
-      x.fillStyle = lit ? `hsl(${32 + ((i * 13) % 14)},70%,${55 + ((i * 7) % 20)}%)` : "#141620";
+      x.fillStyle = lit ? `hsl(${28 + ((i * 13) % 20)},${45 + ((i * 11) % 30)}%,${38 + ((i * 7) % 22)}%)` : "#141620";
       x.fillRect(i * 16 + 2, 6, 12, 20);
     }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = THREE.RepeatWrapping;
-    const sm = new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(1.6, 1.5, 1.4) });
+    const sm = new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(0.9, 0.85, 0.8) });
     const sy = rowY(ROWS - 1) + 3.5,
       so = rowOff(ROWS - 1) + 3;
     for (const [x2, z, ry, w] of [

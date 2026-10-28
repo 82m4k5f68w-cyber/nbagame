@@ -135,8 +135,9 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     S.add(sun, sun.target);
     // Broadcast back light (behind the far sideline, low and cool: rims every player's head and shoulders for the
     // main camera) + a soft warm fill from the camera side. No shadows (cheap on every tier).
-    const back = new THREE.DirectionalLight(0xcfe0ff, 0.75 * PI);
-    back.position.set(6, 22, -60);
+    // (kept high and moderate: a low back light threw a blown-out specular streak across the glossy floor)
+    const back = new THREE.DirectionalLight(0xcfe0ff, 0.38 * PI);
+    back.position.set(6, 48, -50);
     const fill = new THREE.DirectionalLight(0xffe6cc, 0.18 * PI);
     fill.position.set(-10, 14, 60);
     S.add(back, fill);
@@ -633,6 +634,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       dome = new THREE.Mesh(domeG, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
     domeG.setAttribute("color", new THREE.BufferAttribute(new Float32Array(domeG.attributes.position.count * 3), 3));
     dome.renderOrder = -1;
+    dome.visible = false;
     S.add(dome);
     STREET.push(dome);
     const starG = new THREE.BufferGeometry(),
@@ -644,6 +646,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
     }
     starG.setAttribute("position", new THREE.Float32BufferAttribute(sp0, 3));
     const stars = new THREE.Points(starG, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85 }));
+    stars.visible = false;
     S.add(stars);
     const precip = makePrecip(S),
       pud = puddleMaps();
@@ -723,7 +726,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
       hemi.color.set(0xdfe8ff);
       hemi.groundColor.set(0x2a1d10);
       hemi.intensity = 0.16 * PI;
-      back.intensity = 0.75 * PI;
+      back.intensity = 0.38 * PI;
       fill.intensity = 0.18 * PI;
       R.toneMappingExposure = 0.9;
       RIM.value.setRGB(0.55, 0.62, 0.75);
@@ -1679,7 +1682,7 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
         S.traverse((o: any) => o.material && [].concat(o.material).forEach((mm: any) => (mm.needsUpdate = true)));
       }
       sun.shadow.mapSize.setScalar(ql >= 3 || (ql > 1 && !mob) ? 4096 : ql > 0 ? 2048 : 1024);
-      for (const m of shafts) m.visible = ql >= 1 && lvl >= 3;
+      for (const m of shafts) m.visible = ql >= 1 && lvl >= 3 && !streetOn; // (fxLevel runs on street courts too: weather changes)
       fx.setGrade(on && ql >= 1 && lvl >= 4);
       if (sun.shadow.map) {
         sun.shadow.map.dispose();
