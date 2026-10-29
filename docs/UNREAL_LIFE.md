@@ -13,19 +13,6 @@ The web version (this repo) is the reference design. Port its rules; don't reinv
 - Roadmap: `docs/LIFE_FEATURES.md` and `docs/LIFE_FEATURES_5K.md`.
 - The CLAUDE.md "LIFE" section explains all of it.
 
-## Non-negotiable rules
-- **Fictional everything:**
-  - Fictional people, faces, teams, schools, colleges, brands and logos. MetaHumans must be original faces, never real players.
-  - Fictional apps only: ZipRide (rides), BoxBay (shopping), GameVault (games store), PhonePay (wallet), Hoopr (social).
-- **Money:** in-game money only. Never ask the player for real payment details.
-- **PG-13.** Relationships and family are story choices that fade to black.
-- **Basketball:**
-  - The green window is at the **top** of the shot meter, and a green release always goes in unless the shot is blocked.
-  - Steals are off.
-  - Per-player shooting forms come from `data.ts formOf/SIG`.
-- **Tooling:** commit to git after every working step. Keep generator scripts (Blender, ffmpeg, ImageMagick) in
-  `Tools/` so every asset can be rebuilt.
-
 ## Quality bar
 - **Feel first.** Movement is responsive (no input lag over 100 ms) and every action has an animation, a sound and feedback.
 - **Seamless world.** No loading screens inside the town:
@@ -163,7 +150,7 @@ Prices go up at rush hour, rain and night, and rides can be cancelled.
   - HS, college and NBA games in Summit Arena with crowd, broadcast camera, score bug and replays.
 - **Results:** your stats feed grades, coach trust, followers and draft stock.
 
-**Acceptance:** playable 5v5 game in the arena, the green at the top of the meter, no steals.
+**Acceptance:** playable 5v5 game in the arena.
 
 ### M10. Career
 - **Stages:**
@@ -177,7 +164,7 @@ Prices go up at rush hour, rain and night, and rides can be cancelled.
 
 ### M11+. Roadmap
 - Work through `docs/LIFE_FEATURES_5K.md` tier by tier.
-- Add an apartment and car you can buy, jobs, a family story (PG-13), endorsements, a social life and side activities.
+- Add an apartment and car you can buy, jobs, a family story, endorsements, a social life and side activities.
 
 ## Workflow for the agent
 - Use the unreal-mcp tools to build in the live editor. Use C++ for rules, Blueprints for glue and content.
