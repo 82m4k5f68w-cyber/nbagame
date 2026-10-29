@@ -89,7 +89,7 @@ def build(part, rows):
     return np.array(X), np.array(Y), G
 
 
-HP = {"low": {"h": 48, "wd": 1e-3, "noise": 0.0}, "upp": {"h": int(os.environ.get("UH", 16)), "wd": float(os.environ.get("UWD", 0.1)), "noise": float(os.environ.get("UN", 1.5))}}
+HP = {"low": {"h": 48, "wd": float(os.environ.get("LWD", 1e-3)), "noise": float(os.environ.get("LN", 0.3))}, "upp": {"h": int(os.environ.get("UH", 16)), "wd": float(os.environ.get("UWD", 0.1)), "noise": float(os.environ.get("UN", 1.5))}}
 
 
 def fit(part, train, epochs=EPOCHS, verbose=False):
