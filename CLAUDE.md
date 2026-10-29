@@ -405,6 +405,10 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   screener (c >= 78) ghosts and pops (50%); roll vs pop reads the coverage (hedge -> dive, CPU drop -> c >= 74 pops).
 
 ## Smooth play (v5.2)
+- **Oct 2026 user decision: Chromebook smoothness is NO LONGER a constraint ("no limits").** Every real GPU starts on High
+  (`view.ts gpuTier`: only phones -> Medium, software GPU -> Low), the probe never caps for CPU/Chromebook
+  (`probepick.ts`), and the render3d frame-rate guard no longer lowers effects or `V.QL` on its own. Build for looks/features
+  first; the only hard ceiling left is the published artifact's 16 MB page limit (stream heavy assets lazily).
 - Default graphics by GPU (`view.ts gpuTier`, WEBGL_debug_renderer_info): software -> Low; integrated (Intel/UHD/Iris,
   Mali/Adreno, AMD APU), Chromebooks, <= 4 cores, touch -> Medium; discrete -> High. Saved only when picked (`h2k_set.q2`;
   the old always-saved `q` is ignored). Frame-rate guard (render3d draw): ema judged every 30 frames (5 when crawling),

@@ -2,19 +2,17 @@
 import { P, CT, W3, QTRLEN } from "../core/sim";
 import { pj } from "./canvas";
 
-/** Starting quality: High only on a GPU that can afford it. Integrated / mobile / software GPUs, Chromebooks and
- * 4-core machines start on Medium (High re-renders the scene for the floor mirror + SSAO + 4K shadows). */
+/** Starting quality: High on every real GPU (Chromebooks and integrated GPUs included - no longer capped, user
+ * request); phones/tablets start on Medium; software rendering (no GPU) on Low. */
 function gpuTier(): number {
   try {
     if (typeof matchMedia !== "undefined" && matchMedia("(pointer:coarse)").matches) return 1;
-    if (typeof navigator !== "undefined" && (/CrOS/.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4)) return 1;
     const gl = typeof document !== "undefined" ? (document.createElement("canvas").getContext("webgl") as WebGLRenderingContext | null) : null;
     if (!gl) return 1;
     const ext = gl.getExtension("WEBGL_debug_renderer_info"),
       r = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
     (gl.getExtension("WEBGL_lose_context") as any)?.loseContext();
     if (/swiftshader|llvmpipe|software|basic render|microsoft basic/i.test(r)) return 0;
-    if (/intel|uhd|iris|hd graphics|mali|adreno|powervr|vivante|videocore|radeon\(tm\) (r\d|vega)|radeon graphics|vega \d/i.test(r)) return 1;
     return 2;
   } catch {
     return 1;

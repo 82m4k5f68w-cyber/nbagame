@@ -87,7 +87,8 @@ for (const [kit, r] of Object.entries<any>(rep)) {
   ok(tris > 100, `${kit}: ${tris} triangles`);
 }
 const ml = fs.readFileSync("src/client/models.ts", "utf8");
-for (const k of Object.keys(rep)) ok(ml.includes(`assets/models/${k}.glb?inline`), `models.ts does not import ${k}`);
+const lp = fs.readFileSync("src/life/props.ts", "utf8");
+for (const k of Object.keys(rep)) ok(ml.includes(`assets/models/${k}.glb?inline`) || lp.includes(`assets/models/${k}.glb?inline`), `no loader imports ${k}`);
 ok(mb <= 2 * 1024 * 1024, `models ${mb} B base64 > 2 MB`);
 console.log(`models: ${Object.keys(rep).length} kits, ${Object.values<any>(rep).reduce((a, r) => a + r.models.length, 0)} models, ${(mb / 1048576).toFixed(2)} MB base64`);
 
@@ -100,9 +101,9 @@ for (const f of fs.existsSync("assets/models/props") ? fs.readdirSync("assets/mo
 
 // ---------- device probe -> preset ----------
 const { pickPreset } = await import("../src/client/probepick");
-ok(pickPreset(0.6, 3, false) === 3 && pickPreset(1.0, 3, false) === 2 && pickPreset(0.6, 2, false) === 2, "pickPreset fast desktop");
-ok(pickPreset(1.8, 3, false) === 1 && pickPreset(3, 3, false) === 0 && pickPreset(0.6, 3, true) === 1, "pickPreset slow cpu / mobile caps");
-ok(pickPreset(0.5, 0, false) === -1 && pickPreset(0.5, 1, false) === 0, "pickPreset unknown gpu keeps the default, tier 1 = Chromebook");
+ok(pickPreset(0.6, 3, false) === 3 && pickPreset(1.0, 3, false) === 3 && pickPreset(0.6, 2, false) === 2, "pickPreset desktop");
+ok(pickPreset(1.8, 3, false) === 3 && pickPreset(3, 1, false) === 2 && pickPreset(0.6, 3, true) === 1, "pickPreset: no CPU / Chromebook caps, phones Medium");
+ok(pickPreset(0.5, 0, false) === -1 && pickPreset(0.5, 1, false) === 2, "pickPreset unknown gpu keeps the default, tier 1 = High");
 
 // ---------- three-mesh-bvh: accelerated raycasts on a dense mesh ----------
 {
@@ -150,6 +151,32 @@ ok(pickPreset(0.5, 0, false) === -1 && pickPreset(0.5, 1, false) === 0, "pickPre
   ok(paths >= 5, `navmesh paths found: ${paths}`);
   ok(inside === 0, `navmesh path samples inside buildings: ${inside}`);
   console.log(`recast-navigation: ${paths} door-to-door paths, ${inside} samples inside buildings`);
+}
+
+// ---------- LIFE baked navmesh (scripts/life/navbake.ts) -> navgraph.ts: every door to every door, never through a building
+{
+  const { makeNav } = await import("../src/life/navgraph");
+  const { PLACES: PL, blocked: bl, doorOf } = await import("../src/life/places");
+  const N = makeNav();
+  let okN = 0, failN = 0, insideN = 0;
+  const t0 = performance.now();
+  for (const a of PL)
+    for (const b of PL) {
+      if (a === b) continue;
+      const da = doorOf(a), db = doorOf(b);
+      const s = N.snap({ x: da.x - Math.cos(da.f) * 4, z: da.z - Math.sin(da.f) * 4 }), e = N.snap({ x: db.x - Math.cos(db.f) * 4, z: db.z - Math.sin(db.f) * 4 });
+      const P = s && e ? N.path(s, e) : [];
+      if (!P.length) { failN++; continue; }
+      okN++;
+      let pv = s!;
+      for (const q of P) {
+        for (let j = 1; j < 16; j++) if (bl(pv.x + ((q.x - pv.x) * j) / 16, pv.z + ((q.z - pv.z) * j) / 16, 0.1)) insideN++;
+        pv = q;
+      }
+    }
+  ok(failN === 0, `navgraph: ${failN} door pairs unreachable`);
+  ok(insideN === 0, `navgraph: ${insideN} path samples inside buildings`);
+  console.log(`navgraph: ${N.tris} baked triangles, ${okN} door-to-door paths in ${(performance.now() - t0).toFixed(0)} ms, 0 through buildings`);
 }
 
 console.log(bad ? `assets: ${bad} FAILED` : "assets OK");

@@ -1965,13 +1965,10 @@ function build(C: HTMLCanvasElement, GPU: any, makeFxGPU: any) {
             const old = lvl;
             if (ema > 21 && dynOn && dres.scale > lo + 0.001) good = 0; // still room to lower the resolution
             else if (ema > 21) {
+              // no automatic downgrades any more (user request): the chosen preset is what draws; only HSR Auto's
+              // dynamic resolution above still adapts, and only when the player picked it
               good = 0;
-              if (lvl > 0) lvl = Math.max(0, lvl - (ema > 34 ? 2 : 1));
-              else if (QL > 0 && ++bad >= 2) {
-                bad = 0;
-                V.QL = QL - 1;
-                V.QAUTO = "Graphics lowered to " + QLN[V.QL] + " for a smoother game";
-              }
+              void bad;
             } else if (ema < 13 && lvl < 6 && ++good >= 4) (good = 0), lvl++;
             if (lvl !== old) (fxLevel(), (settle = now + 350), (settleN = 2));
             const h = fx.hsr;
