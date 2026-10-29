@@ -1,6 +1,8 @@
 // @ts-nocheck -- hub UI ported verbatim from the legacy template
 // Hub: mode picker, update log, controls. Boots the shared engine in-page (no document.write) except the legacy Classic mode.
 import { boot } from "./game";
+import * as SV from "./save";
+import { initSaveUI, openSaveHub } from "./saveui";
 import "./ui/tokens.css";
 import "./ui/kit.css";
 import { loadSet, openSettings } from "./ui/settings";
@@ -18,6 +20,7 @@ const FLAGS: Record<string, { np: number; r3d: boolean }> = {
   "1v1-2d": { np: 1, r3d: false },
 };
 let hubRaf = 0;
+let lifePick: { slot: number; data: any } | null = null; // save hub -> LIFE: open this slot directly
 function go(k: string, my: number, mp: number, online: any = false, quick: any = null) {
   if (k === "life") {
     // LIFE (src/life): its own open-world shell; the game engine boots later, on the first game
@@ -25,7 +28,7 @@ function go(k: string, my: number, mp: number, online: any = false, quick: any =
     hubRaf = -1;
     (document.getElementById("hcss") as HTMLStyleElement).media = "not all";
     document.getElementById("hub")!.remove();
-    import("../life/index").then((m) => m.startLife());
+    import("../life/index").then((m) => m.startLife(lifePick));
     return;
   }
   if (k === "classic") {
@@ -102,12 +105,13 @@ const K4=[['Move','arrow keys'],['Shoot','Enter (hold and release)'],['Pass','/'
 const K5=[['Move','left stick'],['Shoot','A (hold and release)'],['Pass / lob','X / B'],['Step-back','Y'],['Hesi / spin','LB / RB'],['Post / sprint','LT / RT'],['Camera','Select']];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+initSaveUI(); // save system (save.ts): migrate old keys, indicator, quicksave, recovery toasts, cloud
 loadSet(); // theme / text size / motion / contrast before the first paint; the hub's settings drawer edits the same h2k_set
 // device probe (perfprobe.ts): 200 ms of sim + bundled detect-gpu tables -> default preset if none was picked
 if (!/[?&]noprobe\b/.test(location.search)) setTimeout(() => import("./perfprobe").then((m) => m.probeDevice()).catch(() => {}), 400);
 import("./pwa").then((m) => m.initPwa(document.getElementById("hinst"))).catch(() => {}); // installable + offline on http(s) only
 if (import.meta.env.DEV && /[?&]dev\b/.test(location.search)) import("./devtools").then((m) => m.initDevtools()); // stats-gl / lil-gui / spectorjs (dev server only)
-let LP:any=null,RC:any={w:0,l:0,st:0,best:0},MY:any=null;try{LP=JSON.parse(localStorage.getItem('h2k_lastplay')||'null');RC={...RC,...JSON.parse(localStorage.getItem('h2k_rec')||'{}')};MY=JSON.parse(localStorage.getItem('h2k_myp')||'null')}catch(e){}
+let LP:any=null,RC:any={w:0,l:0,st:0,best:0},MY:any=null;try{LP=SV.get('h2k_lastplay',null);RC={...RC,...SV.get('h2k_rec',{})};MY=SV.get('h2k_myp',null)}catch(e){}
 const MODE_N:any={'5v5-3d':'5v5 3D','5v5-2d':'5v5 2D','1v1-3d':'1v1 3D','1v1-2d':'1v1 2D'};
 const LAST=LOG[0].v;
 const btn=(b,i)=>`<button type="button" class="btn${i===0&&!b[4]?' pri':''}${b[4]?' ghost':''}" data-g="${b[1]}" data-my="${b[2]||0}" data-mp="${b[3]||0}" data-on="${b[5]||0}">${b[0]}</button>`;
@@ -138,12 +142,13 @@ const kh=(id,a)=>$(id).innerHTML=a.map(x=>`<div><span>${x[0]}</span><kbd>${x[1]}
 $('#qpb').onclick=()=>LP&&MODE_N[LP.mode]?go(LP.mode,0,0,false,{sel:LP.sel,opp:LP.opp}):go('5v5-3d',0,0,false,{sel:0,opp:-1});
 document.querySelectorAll<HTMLElement>('#hub [data-g]').forEach(b=>b.onclick=()=>go(b.dataset.g!,+b.dataset.my!,+b.dataset.mp!,b.dataset.on==='host'?{host:true}:b.dataset.on==='1'));
 const hc=$('#hc'),hj=$('#hj'),joinIt=()=>{const c=(hc.value||'').toUpperCase().replace(/[^A-Z]/g,'');if(c.length!==4){$('#hcm').textContent='Enter the 4-letter code';hc.focus();return}go('5v5-3d',0,0,{join:c})};
-if(hc){hc.oninput=()=>{hc.value=hc.value.toUpperCase().replace(/[^A-Z]/g,'');$('#hcm').textContent=''};hc.onkeydown=e=>{if(e.key==='Enter')joinIt()};hj.onclick=joinIt;try{const l=localStorage.getItem('h2k_last');if(l)hc.placeholder=l}catch(e){}}
-try{if(localStorage.getItem('h2k_seen')===LAST)$('#nw').hidden=true}catch(e){}
-const tab=(t)=>{document.querySelectorAll<HTMLElement>('#hub nav [data-t]').forEach(x=>{const on=x.dataset.t===t;x.classList.toggle('on',on);x.setAttribute('aria-current',on?'page':'false')});['play','log','how'].forEach(k=>$('#'+k).hidden=k!==t);if(t==='log'){$('#nw').hidden=true;try{localStorage.setItem('h2k_seen',LAST)}catch(e){}}window.scrollTo(0,0)};
+if(hc){hc.oninput=()=>{hc.value=hc.value.toUpperCase().replace(/[^A-Z]/g,'');$('#hcm').textContent=''};hc.onkeydown=e=>{if(e.key==='Enter')joinIt()};hj.onclick=joinIt;try{const l=SV.getRaw('h2k_last');if(l)hc.placeholder=l}catch(e){}}
+try{if(SV.getRaw('h2k_seen')===LAST)$('#nw').hidden=true}catch(e){}
+const tab=(t)=>{document.querySelectorAll<HTMLElement>('#hub nav [data-t]').forEach(x=>{const on=x.dataset.t===t;x.classList.toggle('on',on);x.setAttribute('aria-current',on?'page':'false')});['play','log','how'].forEach(k=>$('#'+k).hidden=k!==t);if(t==='log'){$('#nw').hidden=true;SV.setRaw('h2k_seen',LAST)}window.scrollTo(0,0)};
 document.querySelectorAll<HTMLElement>('#hub nav [data-t]').forEach(b=>b.onclick=()=>tab(b.dataset.t));
 document.querySelectorAll<HTMLElement>('#hub [data-goto]').forEach(b=>b.onclick=()=>{tab(b.dataset.goto);($('#hub nav [data-t="'+b.dataset.goto+'"]') as HTMLElement).focus()});
 $('#hset').onclick=()=>openSettings(undefined,'hub');
+$('#hsav').onclick=()=>openSaveHub({ctx:'hub',onPlay:(slot,data)=>{lifePick={slot,data};go('life',0,0)}});
 setNavBase({active:()=>!!document.getElementById('hub'),root:()=>document.getElementById('hub'),back:()=>$('#play').hidden&&tab('play'),esc:()=>$('#play').hidden&&tab('play'),primary:()=>$('#qpb').click(),pad:(b)=>b==='select'&&openSettings(undefined,'hub')});
 // ---- animated arena backdrop (static with reduced motion; colours follow the theme tokens)
 const cv=$('#bg'),c=cv.getContext('2d');let W,H,pts=[],tk={a:'#1c2257',b:'#0a0c1c',z:'#05060d',l:'255,170,80'};

@@ -673,6 +673,36 @@ The sim never touches the DOM: it emits `FX` (floating texts anchored in world o
   (hometowns differ by name only), the player's hair override (`hs`) isn't used by the engine's game rig (formOf),
   no interiors in 3D (place screens), NPCs don't path around buildings (sidewalk graph only).
 
+## Saves (`client/save.ts` data, `client/saveui.ts` UI; tests/save.ts, tests/browser_save.mjs)
+- ONE module for all persistent data: never call localStorage directly. Live game keys (h2k_myp, h2k_rec, h2k_set,
+  h2k_keys, h2k_lastplay, h2k_season_*, mode bests, h2k_name/elo) stay plain JSON (Unity page shape) via `SV.get/set/
+  getRaw/setRaw/del`; writes snapshot them (3 s debounce, sync codec) into the record "game", and a damaged key is
+  restored from it synchronously on `get`. LIFE slots are records "life0".."life5" (`SV.put(id, data, lifeMeta(L))`
+  async, one write per record, superseded saves dropped; `SV.load(id)`). Device-only keys (h2k_tok, h2k_probe, h2k_seen,
+  h2k_last) are not bundled.
+- Storage: index `h2k_sv` (cards `Meta`: name/sub/stage/day/rec/money/pt/t/sum/sz/dev, backups, cloud base sums, last
+  slot), record `h2k_sv_<id>` = envelope "H2K1|codec|sum|t|payload" (sum = FNV-1a + length of the JSON), backups
+  `h2k_sv_<id>~<k>` (ring MAX_BK 4, at most one per BK_GAP 2 min unless a milestone: sleep, after a game, quicksave,
+  pause Save), thumbnail `h2k_sv_<id>#th` (224x126 webp from the LIFE canvas right after a drawn frame). Codecs: j plain,
+  d deflate-raw (CompressionStream) base64, l sync LZW 15 bits/char (no CompressionStream, the `pagehide` flush, the game
+  record). A damaged main copy -> newest backup that verifies (toast); a damaged index is rebuilt from the records.
+  Quota errors prune the oldest backups (records with 2+ first), then thumbnails, then report ("Storage is full").
+- Migration (`SV.migrate`, idempotent, run by `initSaveUI`/`SV.init`): old `h2k_life_<n>` -> life<n>, read back and
+  verified before the old key is removed; `h2k_life` -> index.last. LIFE `pt` = real seconds played (new field).
+- Save hub (`openSaveHub({ctx, onPlay, host, head, foot})`): main hub header "💾 Saves" (onPlay -> `startLife({slot,
+  data})`), the LIFE title IS the hub inline, LIFE pause -> Saves (manage only). Cards (thumbnail, stage, day, W-L,
+  money, playtime, saved when / other device, size), Backups list with Restore (the replaced copy becomes a backup),
+  Export (per record) / Export all / Import (bundle, single record into a slot, or an old plain LIFE file), Delete.
+  Files go through the `downloads` capability when present, else a Blob link. Indicator `#svi` (Saving… / Saved),
+  toasts `#svt` (`H2K_SAVE.toasts` logs them for tests), quicksave F5 / Ctrl+S (`setQuick`: LIFE saves the life).
+  LIFE autosaves every 2 real minutes in the world + after every event (the old 30-game-minute timer is gone).
+- Cloud: artifact `db` + `user` capabilities; docs `data/users/<uid>/<rec>` {m, t, sum, dev, n, z | chunks
+  `.../<rec>/c/<i>` of 60K chars, th}. `cloudSync()` on start (`?nocloud` skips): three-way on the checksum vs `base`:
+  only local changed -> push, only cloud -> pull, both -> conflict prompt (newer preselected, the other copy stays a
+  backup). Saves push 15 s later, one write per doc at a time. db/user null (off claude.ai, signed out) = offline.
+- Published artifact capabilities needed: `sample`, `downloads`, `room`, `db`, `user`.
+- Debug: `window.H2K_SAVE = { SV, openSaveHub, quickSave, toasts }`, `H2K_LIFE.SV`, `SV.corrupt(id)`.
+
 ## UI v6 (design system; `src/client/ui/`)
 - Tokens: `ui/tokens.css` (colour / type / spacing / radii / shadows / motion as CSS vars: `--ink-0..3`, `--glass`,
   `--line`, `--tx/-2/-3`, `--acc`/`--acc-2`/`--acc-grad`, `--ff-display` (Oswald variable, OFL, inlined 28 KB in

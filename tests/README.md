@@ -102,6 +102,13 @@ Harness trick: `G.start(team)` then `G.setup(0); G.setInb(0)` then feed edge inp
 - life.ts — LIFE core (src/life, DOM-free): day/time + needs, schedule windows + late penalties, GPA/probation, sleep +
   alarm, diet, workout gains, games/followers/deals, HS -> Signing Day -> college -> declare -> draft -> NBA, save/load +
   migration, procedural questions (always valid) + the handwritten bank, Hoopr templates/moderation/AI screening.
+- save.ts — save system (src/client/save.ts): LZW + deflate codecs round trip, checksums catch damage, lossless
+  migration of h2k_life_<n> + the game keys, rolling backups (ring of 4, BK_GAP), corruption -> newest good backup,
+  damaged game key / index rebuilt, quota pruning, export / import (all, per slot, old plain LIFE files), unload flush,
+  cloud push / pull / chunking / three-way conflict with a fake db, offline no-op.
+- browser_save.mjs — save hub in Chromium: migration on first load, 6 slot cards + game card, export all (Blob
+  download), hub Continue -> LIFE, F5 quicksave + thumbnail, corrupt save recovered with a toast, Restore backup UI,
+  import into a wiped browser, damaged h2k_rec restored. ~4 min on SwiftShader.
 - browser_life.mjs — LIFE end to end in Chromium (`?life&lifetest`): create, walk, enter a class (offline bank), quiz,
   phone (calendar, Hoopr post + replies, messages), sleep, a real engine game from the arena and back. SHOTS=dir saves
   screenshots. ~5 min on SwiftShader.

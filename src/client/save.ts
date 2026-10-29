@@ -783,7 +783,7 @@ export async function cloudInit(o: { db?: any; uid?: string | null } = {}): Prom
       const to = <T>(p: Promise<T>) => Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), 2500))]);
       cdb = await to(c.use("db").catch(() => null));
       const u: any = cdb ? await to(c.use("user").catch(() => null)) : null;
-      uid = u && u.id ? await to(u.id()).catch(() => null) : null;
+      uid = u && u.id ? ((await to(u.id()).catch(() => null)) as string | null) : null;
     }
   } catch (e) {
     cdb = null;

@@ -1,7 +1,7 @@
 // LIFE (MyLife) state machine - DOM-free so tests/life.ts can drive it in Node.
 // Time is absolute game minutes since the life began (day = floor(t / 1440), weekday 0 = Monday).
 // Stages: high-school senior -> college (4 years, or declare early) -> NBA Draft -> NBA seasons.
-// Everything a save needs lives in one plain JSON object (Life); localStorage keys h2k_life_<slot>.
+// Everything a save needs lives in one plain JSON object (Life); stored by client/save.ts as records life<slot> (saveLife/loadLife below = plain-store helpers for tests).
 import { hashStr, mkRng, pick, clamp, rint, type Rng } from "./rng";
 import { makeLeague, simGame, COLLEGES, HS_TEAMS, type Club } from "./teams";
 
@@ -199,6 +199,7 @@ export interface Life {
   major: string; // college major ("" = undeclared)
   agent: string; // NBA agent (AGENTS key, "" = none yet)
   story: string[]; // queued story cards (UI shows them when the player is free)
+  pt: number; // real seconds played (save cards)
   fav: number; // team (TM index) that loved your pre-draft interview, -1 none
 }
 
@@ -263,6 +264,7 @@ export function newLife(o: { seed?: number; slot?: number; p?: Partial<LifeP>; t
     v: LIFE_VER,
     seed,
     slot: o.slot ?? 0,
+    pt: 0,
     t: 7 * 60 + 30,
     stage: "hs",
     yr: 1,

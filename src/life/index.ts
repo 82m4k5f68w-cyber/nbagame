@@ -17,19 +17,10 @@ import { V } from "../client/view";
 import { STK_R } from "../client/input";
 import { gameXP } from "../client/career";
 import type { Act } from "./anim";
+import * as SV from "../client/save";
+import { initSaveUI, openSaveHub, setQuick, snapThumb, toast as svToast } from "../client/saveui";
 
 const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
-const LS: Storage | any = (() => {
-  try {
-    const k = "__h2k_t";
-    localStorage.setItem(k, "1");
-    localStorage.removeItem(k);
-    return localStorage;
-  } catch (e) {
-    const m = new Map<string, string>();
-    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
-  }
-})();
 
 // ---------------------------------------------------------------- shell state
 let root: HTMLElement,
@@ -50,7 +41,8 @@ let mode: "title" | "world" | "screen" | "game" = "title";
 let raf = 0,
   lastT = 0,
   accMin = 0,
-  saveAcc = 0,
+  saveAcc = 0, // real seconds since the last autosave
+  thumbWant = false,
   hudAcc = 0,
   movedFt = 0,
   coverN = 0;
@@ -63,7 +55,7 @@ let G: any = null; // game.ts module (lazy: the hub already bundles it)
 let SIM: any = null;
 
 /** Entry from the hub (main.ts go("life")). */
-export function startLife() {
+export function startLife(pick?: { slot: number; data: any } | null) {
   if (!document.getElementById("lifecss")) {
     const st = document.createElement("style");
     st.id = "lifecss";
@@ -76,7 +68,12 @@ export function startLife() {
   document.body.appendChild(root);
   for (let i = 0; i < 14 && i < TM.length; i++) S.NBA_NAMES[i] = TM[i][0];
   bindKeys();
-  title();
+  initSaveUI();
+  if (pick) {
+    const l = pick.data ? S.deserialize(JSON.stringify(pick.data)) : null;
+    if (l) (l.slot = pick.slot), begin(l);
+    else create(pick.slot);
+  } else title();
   (window as any).H2K_LIFE = DBG;
 }
 
@@ -125,8 +122,13 @@ function cut(kick: string, h: string, p: string, btn = "Continue ▶"): Promise<
     b.onclick = () => (d.remove(), res());
   });
 }
-function save() {
-  if (L) S.saveLife(L, LS);
+/** Save the life to its slot (save.ts: compressed, checksummed, rolling backups, cloud). milestone = also keep a backup
+ * of the previous version now. A thumbnail of the town view is grabbed on the next drawn frame. */
+function save(milestone = false) {
+  if (!L) return;
+  saveAcc = 0;
+  thumbWant = true;
+  void SV.put(SV.lifeId(L.slot), L, SV.lifeMeta(L), { milestone });
 }
 const pfx = () => ((W as any) ? W!.P : { x: 0, z: 0, f: 0 });
 
@@ -134,50 +136,22 @@ const pfx = () => ((W as any) ? W!.P : { x: 0, z: 0, f: 0 });
 function title() {
   mode = "title";
   cancelAnimationFrame(raf);
-  const slots = [0, 1, 2].map((i) => S.loadLife(LS, i));
-  root.innerHTML = `<div class="scr" style="background:radial-gradient(ellipse at 50% 20%,#2a1d4a,#06070e 70%)"><div class="card" style="width:min(640px,100%)">
-   <div style="display:flex;align-items:center;gap:12px"><div style="font-size:48px">🏙️</div><div><h2>LIFE</h2><div class="sub">Your life, your call: classes, food, friends, followers - and the road from a high-school senior to the NBA.</div></div></div>
-   <h3>Save slots</h3><div class="grid" style="grid-template-columns:1fr">${slots
-     .map(
-       (s, i) =>
-         `<div class="opt" style="flex-direction:row;align-items:center;gap:10px"><div style="flex:1"><b>Slot ${i + 1}</b><small>${s ? esc(S.slotInfo(s)) : "Empty"}</small></div>${s ? `<button class="go" data-cont="${i}">Continue ▶</button><button class="gh" data-exp="${i}" title="Export save">⬇</button><button class="gh" data-del="${i}" title="Delete">🗑</button>` : `<button class="go" data-new="${i}">New life ▶</button>`}</div>`,
-     )
-     .join("")}</div>
-   <div class="row"><label class="gh" style="cursor:pointer">⬆ Import save<input type="file" accept=".json,application/json" id="limp" hidden></label><button class="gh" id="lback">← Hub</button></div>
-   <p class="note">Unofficial fan project. Every school, brand, business and person in LIFE is fictional.</p></div></div>`;
-  on("[data-cont]", (b) => begin(slots[+b.dataset.cont!]!));
-  on("[data-new]", (b) => create(+b.dataset.new!));
-  on("[data-del]", (b) => {
-    if (confirm("Delete this life? This can't be undone.")) (LS.removeItem(S.SAVE_KEY(+b.dataset.del!)), title());
+  setQuick(null);
+  root.innerHTML = `<div class="scr" style="background:radial-gradient(ellipse at 50% 20%,#2a1d4a,#06070e 70%);align-items:flex-start;overflow:auto"><div class="kit" id="lsv" style="width:min(1100px,100%)"></div></div>`;
+  openSaveHub({
+    ctx: "life",
+    host: root.querySelector("#lsv") as HTMLElement,
+    head: `<div style="display:flex;align-items:center;gap:12px"><div style="font-size:48px">🏙️</div><div><h2 class="disp" style="margin:0">LIFE</h2><div class="sub">Your life, your call: classes, food, friends, followers - and the road from a high-school senior to the NBA.</div></div></div>`,
+    foot: `<div class="row"><button class="btn ghost" id="lback">← Hub</button></div><p class="note">Unofficial fan project. Every school, brand, business and person in LIFE is fictional.</p>`,
+    onPlay: (slot, data) => {
+      if (!data) return create(slot);
+      const l = S.deserialize(JSON.stringify(data));
+      if (!l) return svToast("⚠️ That save could not be read.", "bad");
+      l.slot = slot;
+      begin(l);
+    },
   });
-  on("[data-exp]", (b) => exportSave(slots[+b.dataset.exp!]!));
   (root.querySelector("#lback") as HTMLElement).onclick = () => location.reload();
-  (root.querySelector("#limp") as HTMLInputElement).onchange = (e: any) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    f.text().then((t: string) => {
-      const l = S.deserialize(t);
-      if (!l) return alert("That file isn't a LIFE save.");
-      const free = [0, 1, 2].find((i) => !slots[i]);
-      l.slot = free ?? 2;
-      S.saveLife(l, LS);
-      title();
-    });
-  };
-}
-async function exportSave(l: S.Life) {
-  const data = S.serialize(l),
-    name = `life-${l.p.n.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-slot${l.slot + 1}.json`;
-  try {
-    const c = (globalThis as any).claude;
-    const dl = c && c.use ? await Promise.race([c.use("downloads"), new Promise((r) => setTimeout(() => r(null), 1500))]) : null;
-    if (dl) return void (await (dl as any).save({ filename: name, data }));
-  } catch (e) {}
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 function create(slot: number) {
   const SK = ["#f1c27d", "#e0ac69", "#c68642", "#8d5524", "#6b4226", "#e8b88f"],
@@ -185,7 +159,7 @@ function create(slot: number) {
   const d: any = { n: "", arch: "Slasher", ht: 6.6, sk: "#c68642", hr: 1, bd: 0, no: 1, town: 0, bk: 1 };
   let myp: any = null;
   try {
-    myp = JSON.parse(LS.getItem("h2k_myp") || "null");
+    myp = SV.get("h2k_myp", null);
   } catch (e) {}
   const draw = () => {
     root.innerHTML = `<div class="scr" style="background:radial-gradient(ellipse at 50% 20%,#2a1d4a,#06070e 70%)"><div class="card">
@@ -222,7 +196,8 @@ function create(slot: number) {
       const a = S.ARCH[d.arch];
       const l = S.newLife({ slot, town: d.town, p: { n, pos: a[0], c: a[1], i: a[2], s: a[3], d: a[4], j: a[5], st: a[6], ht: d.ht, sk: d.sk, hr: d.hr, bd: d.bd, bk: d.bk, no: d.no } });
       l.school = S.TOWNS[d.town].n + " Central High";
-      S.saveLife(l, LS);
+      L = l;
+      save(true);
       begin(l, true);
     };
   };
@@ -264,7 +239,7 @@ function buildShell() {
   (root.querySelector("#bact") as HTMLElement).onclick = interact;
   const bsp = root.querySelector("#bsp") as HTMLElement;
   bsp.onclick = () => ((TOUCH.sprint = !TOUCH.sprint), bsp.classList.toggle("big", TOUCH.sprint));
-  PH = makePhone({ L: () => L, root, travel, save, toast, refresh: hud, quit: () => (save(), location.reload()), settingsChanged: applySettings });
+  PH = makePhone({ L: () => L, root, travel, save, toast, refresh: hud, quit: () => (save(true), SV.flush(), location.reload()), settingsChanged: applySettings });
   bindPointer();
 }
 function applySettings() {
@@ -279,6 +254,8 @@ function look() {
 }
 function begin(l: S.Life, fresh = false) {
   L = l;
+  setQuick(() => save(true));
+  SV.init();
   buildShell();
   applySettings();
   try {
@@ -315,6 +292,9 @@ function loop(now: number) {
   }
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
+  L.pt = (L.pt || 0) + dt; // playtime (save cards)
+  saveAcc += dt;
+  if (saveAcc >= 120 && mode === "world") save(); // autosave every 2 real minutes (+ after every event)
   const st = stick(),
     moving = Math.hypot(st.mx, st.mz) > 0.05,
     free = mode === "world";
@@ -326,14 +306,17 @@ function loop(now: number) {
       const m = Math.floor(accMin);
       accMin -= m;
       S.advance(L, m, sprint ? "sprint" : moving ? "walk" : "idle");
-      saveAcc += m;
-      if (saveAcc >= 30) (saveAcc = 0), save();
       lateNight();
       if (L.pend && mode === "world") decide();
     }
   }
   const act: Act = PH.isOpen() ? "phone" : "";
   W!.frame(dt, free ? { ...st, sprint } : { mx: 0, mz: 0, sprint: false }, S.minOf(L.t), { speedK: L.energy < 12 ? 0.7 : L.inj ? 0.75 : 1, act, fame: Math.min(0.9, Math.log10(1 + L.followers) / 6), frozen: !free });
+  if (thumbWant && free) {
+    thumbWant = false; // right after the draw (the WebGL buffer is still there)
+    const u = snapThumb(canvas);
+    if (u) SV.setThumb(SV.lifeId(L.slot), u);
+  }
   movedFt += W!.P.sp * dt;
   L.pos.x = W!.P.x;
   L.pos.z = W!.P.z;
@@ -774,7 +757,7 @@ function doSleep(p: Place) {
     const d = doorOf(p);
     W!.put(d.x + Math.cos(d.f) * -2.5, d.z + Math.sin(d.f) * -2.5, d.f + Math.PI);
     toast(`Slept ${h.toFixed(1)} h · ⚡ ${Math.round(e0)} → ${Math.round(L.energy)}`, "🌅");
-    save();
+    save(true); // new day: milestone backup
     hud();
     if (L.pend) decide();
     else place(p); // wake up at home (the morning screen)
@@ -955,7 +938,7 @@ async function ensureGame() {
   if (!gameBooted) {
     gameBooted = true;
     try {
-      localStorage.setItem("h2k_myp_bak", localStorage.getItem("h2k_myp") || "");
+      SV.setRaw("h2k_myp_bak", SV.getRaw("h2k_myp") || "");
     } catch (e) {}
     G.boot({ np: 5, r3d: true, my: 1, mode: "5v5-3d" });
   }
@@ -1111,8 +1094,8 @@ function backToLife() {
   const ov = document.getElementById("ov");
   if (ov) ov.style.display = "none";
   try {
-    const b = localStorage.getItem("h2k_myp_bak");
-    if (b != null) b ? localStorage.setItem("h2k_myp", b) : localStorage.removeItem("h2k_myp");
+    const b = SV.getRaw("h2k_myp_bak");
+    if (b != null) b ? SV.setRaw("h2k_myp", b) : SV.del("h2k_myp");
   } catch (e) {}
   root.style.display = "";
   mode = "screen";
@@ -1122,7 +1105,7 @@ function backToLife() {
 function postgame(p: Place, ev: S.Ev, r: S.GameRes, xp: number) {
   const f0 = L.followers;
   const lv = xp ? S.addXP(L, xp) : 0;
-  save();
+  save(true); // after a game: milestone backup
   const last = ev.rd && ev.big ? S.ROUNDS[ev.big].length : 0,
     champ = r.won && ev.rd === last && last > 0,
     big = champ ? (ev.big === "state" ? "STATE CHAMPIONS" : "NATIONAL CHAMPIONS") : ev.rd ? (r.won ? "ADVANCES · " + S.ROUNDS[ev.big!][ev.rd] : "ELIMINATED") : "";
@@ -1618,19 +1601,21 @@ function bindPointer() {
 function pauseMenu() {
   mode = "screen";
   scr(`<h2>Paused</h2><div class="sub">${esc(L.p.n)} · ${esc(S.STAGE_N[L.stage])} · ${esc(S.dateStr(L))} · ${S.hhmm(S.minOf(L.t))}</div><div class="grid">
-   <button class="opt" id="pzr"><b>▶ Resume</b><small>Esc</small></button><button class="opt" id="pzs"><b>💾 Save</b><small>Slot ${L.slot + 1}</small></button><button class="opt" id="pzp"><b>📱 Settings</b><small>Day length, alarm, quarters, AI, accessibility</small></button><button class="opt" id="pzh"><b>❓ Controls</b><small>Keys, touch, gamepad</small></button><button class="opt" id="pzt"><b>🏠 Title screen</b><small>Saves first</small></button><button class="opt" id="pzq"><b>⏏ Quit to hub</b><small>Saves first</small></button></div>`);
+   <button class="opt" id="pzr"><b>▶ Resume</b><small>Esc</small></button><button class="opt" id="pzs"><b>💾 Save</b><small>Slot ${L.slot + 1} · F5 / Ctrl+S</small></button><button class="opt" id="pzv"><b>🗂 Saves</b><small>Backups, export / import, cloud</small></button><button class="opt" id="pzp"><b>📱 Settings</b><small>Day length, alarm, quarters, AI, accessibility</small></button><button class="opt" id="pzh"><b>❓ Controls</b><small>Keys, touch, gamepad</small></button><button class="opt" id="pzt"><b>🏠 Title screen</b><small>Saves first</small></button><button class="opt" id="pzq"><b>⏏ Quit to hub</b><small>Saves first</small></button></div>`);
   const res = () => (closeScr(), (mode = "world"));
   (root.querySelector("#pzr") as HTMLElement).onclick = res;
-  (root.querySelector("#pzs") as HTMLElement).onclick = () => (save(), toast("Saved to slot " + (L.slot + 1), "💾"));
+  (root.querySelector("#pzs") as HTMLElement).onclick = () => (save(true), toast("Saved to slot " + (L.slot + 1), "💾"));
+  (root.querySelector("#pzv") as HTMLElement).onclick = () => (save(true), openSaveHub({ ctx: "life" }));
   (root.querySelector("#pzp") as HTMLElement).onclick = () => (res(), PH.open("set"));
   (root.querySelector("#pzh") as HTMLElement).onclick = () =>
     scr(`<h2>Controls</h2><table><tr><td>Move</td><td>WASD / arrows · left thumb (touch) · left stick</td></tr><tr><td>Sprint</td><td>Shift · RUN button · push the stick to the edge · RT</td></tr><tr><td>Interact / enter</td><td>E or Enter · the yellow button · A</td></tr><tr><td>Phone</td><td>P or Tab · 📱 · Y</td></tr><tr><td>Look</td><td>Drag the mouse / right thumb · right stick · wheel = zoom</td></tr><tr><td>Answer a quiz</td><td>1-4 or click</td></tr><tr><td>Back / pause</td><td>Esc</td></tr></table><div class="row"><button class="go" id="pzr">Back ▶</button></div>`) &&
     ((root.querySelector("#pzr") as HTMLElement).onclick = res);
-  (root.querySelector("#pzt") as HTMLElement).onclick = () => (save(), location.reload());
-  (root.querySelector("#pzq") as HTMLElement).onclick = () => (save(), location.reload());
+  (root.querySelector("#pzt") as HTMLElement).onclick = () => (save(true), SV.flush(), location.reload());
+  (root.querySelector("#pzq") as HTMLElement).onclick = () => (save(true), SV.flush(), location.reload());
 }
 // ---------------------------------------------------------------- debug / test handle
 const DBG = {
+  SV,
   get L() {
     return L;
   },

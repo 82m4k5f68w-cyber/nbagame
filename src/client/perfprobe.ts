@@ -2,6 +2,7 @@
 // CDN) -> default graphics preset for players who never picked one (ST.QPICK = 0). Crowd size follows the preset
 // (render3d counts by V.QL) and so does LIFE's NPC count (world.ts: [6, 10, 14][QL]); `V.DEV.npc` is the suggested
 // LIFE density multiplier for when LIFE reads it. Cached per GPU in localStorage h2k_probe (re-run: ?probe).
+import * as SV from "./save";
 import * as G from "../core/sim";
 import { V, applyPreset } from "./view";
 import { ST } from "./ui/settings";
@@ -48,7 +49,7 @@ export async function probeDevice(force = /[?&]probe\b/.test(location.search)): 
   } catch {}
   let pr: Probe | null = null;
   try {
-    const c = JSON.parse(localStorage.getItem("h2k_probe") || "null");
+    const c: any = SV.get("h2k_probe", null);
     if (!force && c && c.v === 1 && c.gpu === gpuName && Date.now() - c.at < 30 * 864e5) pr = c;
   } catch {}
   if (!pr) {
@@ -63,7 +64,7 @@ export async function probeDevice(force = /[?&]probe\b/.test(location.search)): 
     const preset = pickPreset(cpuMs, tier, mobile);
     pr = { v: 1, cpuMs: +cpuMs.toFixed(3), gpuTier: tier, gpu: gpuName, type, preset, npc: cpuMs > 2.5 ? 0.6 : cpuMs > 1.4 ? 0.8 : 1, at: Date.now() };
     try {
-      localStorage.setItem("h2k_probe", JSON.stringify(pr));
+      SV.set("h2k_probe", pr);
     } catch {}
   }
   (V as any).DEV = pr;

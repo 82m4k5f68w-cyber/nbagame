@@ -164,12 +164,13 @@ await pg.waitForFunction(() => H2K_LIFE.mode === "world", null, { polling: 100, 
 await pg.waitForTimeout(1500);
 await shot("16-after");
 // save round trip
-const sv = await ev(() => {
+const sv = await ev(async () => {
   H2K_LIFE.save();
-  const s = JSON.parse(localStorage.getItem("h2k_life_0"));
-  return { gp: s.line.gp, n: s.p.n };
+  await H2K_LIFE.SV.settle();
+  const s = await H2K_LIFE.SV.load("life0");
+  return { gp: s.line.gp, n: s.p.n, env: (localStorage.getItem("h2k_sv_life0") || "").slice(0, 7) };
 });
-ok(sv.gp === 1 && sv.n === "TEST KID", "saved to slot 1");
+ok(sv.gp === 1 && sv.n === "TEST KID" && sv.env === "H2K1|d|", "saved to slot 1 (deflate envelope) " + sv.env);
 ok(!errs.length, "no page errors" + (errs.length ? ": " + errs.slice(0, 5).join(" | ") : ""));
 console.log(fails.length ? "LIFE BROWSER FAIL (" + fails.length + ")" : "LIFE BROWSER OK");
 await b.close();

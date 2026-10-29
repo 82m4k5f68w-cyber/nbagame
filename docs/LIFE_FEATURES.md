@@ -28,7 +28,7 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 15. [~] Stats app (ratings, career stats, badges)
 16. [x] Game days: walk into the arena to play a real engine game
 17. [x] Post-game summary (stats, grade, XP, followers, money)
-18. [x] Save/load (localStorage) + 3 save slots
+18. [x] Save/load (localStorage) + 6 save slots (save hub, client/save.ts)
 19. [x] Export/import save as a file (downloads capability)
 20. [x] Tutorial first day with guided objectives
 21. [x] Pause menu (resume, settings, save, quit to hub)
@@ -1019,9 +1019,9 @@ single inlined HTML build; Chromebook-friendly. Work top to bottom by tier; tick
 926. Night lights optimisation
 927. HSR upscaler support in LIFE
 928. Save compression
-929. Autosave
+929. [x] Autosave
 930. Cloud-free backup reminders
-931. Crash-safe saves
+931. [x] Crash-safe saves (checksums, rolling backups, auto-recovery, unload flush)
 932. Performance overlay
 933. Bug report screen (local)
 934. Telemetry-free design
