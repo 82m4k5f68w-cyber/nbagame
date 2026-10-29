@@ -85,6 +85,29 @@
    "Car Kit 3.1"
   ]
  },
+ "town": {
+  "file": "assets/models/town.glb",
+  "bytes": 137436,
+  "models": [
+   "bench",
+   "trashcan",
+   "dumpster",
+   "construction-cone",
+   "planter",
+   "fence-low",
+   "sedan",
+   "suv",
+   "hatchback-sports",
+   "van",
+   "delivery"
+  ],
+  "source": [
+   "Furniture Kit 2.0",
+   "City Kit Roads 2.2",
+   "City Kit Suburban 2.0",
+   "Car Kit 3.1"
+  ]
+ },
  "furniture": {
   "file": "assets/models/furniture.glb",
   "bytes": 169792,

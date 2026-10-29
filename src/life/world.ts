@@ -9,6 +9,8 @@ import { makeRig, applyPose, clothStep, type Rig } from "../client/rig3d";
 import { PLACES, ROADS, WORLD, doorOf, blocked, type Place } from "./places";
 import { mkBody, animate, type Body, type Act } from "./anim";
 import { mkRng, hashStr, pick } from "./rng";
+import { makeNav } from "./navgraph";
+import { addTownProps } from "./props";
 
 export interface Look {
   n: string;
@@ -26,11 +28,22 @@ export interface Stick {
   mz: number; // -1..1 forward
   sprint: boolean;
 }
+// Navmesh walkers (baked by scripts/life/navbake.ts with recast-navigation): NPCs run errands door to door around the
+// buildings instead of looping the sidewalk graph. Built lazily (first walker), ~1 ms.
+let NAVG: ReturnType<typeof makeNav> | null = null;
+const navG = () => (NAVG ||= makeNav());
+function errandTo(r: () => number) {
+  const p = PLACES[Math.floor(r() * PLACES.length)],
+    d = doorOf(p);
+  return { x: d.x - Math.cos(d.f) * 4 + (r() - 0.5) * 3, z: d.z - Math.sin(d.f) * 4 + (r() - 0.5) * 3 };
+}
 export interface Npc {
   b: Body;
   rig: Rig | null;
   look: any;
-  path: number[]; // node indices (walkers) or [] (idlers)
+  path: number[]; // node indices (sidewalk-graph walkers) or [] (idlers / navmesh walkers)
+  route?: { x: number; z: number }[]; // navmesh walkers: corner points to the next door (navgraph.ts)
+  wait?: number; // navmesh walkers: pause at a door before the next errand
   seg: number;
   x: number;
   z: number;
@@ -197,7 +210,7 @@ for (let zi = 0; zi < ZS.length; zi++) for (let xi = 0; xi < XS.length - 1; xi++
 for (let xi = 1; xi <= 2; xi++) for (let zi = 0; zi < ZS.length - 1; zi++) link(zi * 4 + xi, (zi + 1) * 4 + xi);
 link(16, 1), link(17, 2), link(18, 13), link(19, 14);
 
-export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: number }) {
+export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: number; nav?: boolean }) {
   const QL = opt.ql;
   const R = new THREE.WebGLRenderer({ canvas, antialias: QL >= 1, powerPreference: "high-performance" });
   R.setPixelRatio(Math.min(devicePixelRatio || 1, [1, 1.25, 1.75][QL] || 1));
@@ -277,7 +290,8 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
   ground.receiveShadow = true;
   S.add(ground);
   const rt = roadTex(),
-    walkM = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.9 });
+    walkM = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.9 }),
+    roadMs: { m: THREE.Mesh; len: number }[] = [];
   for (const r of ROADS) {
     const w = r.x1 - r.x0,
       d = r.z1 - r.z0,
@@ -291,6 +305,7 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
     m.position.set((r.x0 + r.x1) / 2, 0.03, (r.z0 + r.z1) / 2);
     m.receiveShadow = true;
     S.add(m);
+    roadMs.push({ m, len: horiz ? w : d });
     // sidewalks both sides (curb height 0.5 ft)
     for (const s of [-1, 1]) {
       const sw = new THREE.Mesh(new THREE.BoxGeometry(horiz ? w : 9, 0.5, horiz ? 9 : d), walkM);
@@ -614,6 +629,8 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
     wheelG = new THREE.CylinderGeometry(1.2, 1.2, 0.8, 10),
     glassM = new THREE.MeshStandardMaterial({ color: 0x1b2631, roughness: 0.1, metalness: 0.7 }),
     tireM = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.9 });
+  let parkedUse: [number, number, number][] = [],
+    hideParked = () => {};
   {
     const spots: [number, number, number][] = [];
     for (let k = 0; k < 14; k++) spots.push([85 + k * 11.5, -255, Math.PI / 2], [85 + k * 11.5, -275, -Math.PI / 2]);
@@ -635,7 +652,13 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
     });
     bI.castShadow = QL >= 1;
     S.add(bI, cI);
+    parkedUse = use;
+    hideParked = () => (bI.visible = cI.visible = false);
   }
+  // CC0 street furniture, Kenney cars, Blender playground + hoops, KTX2 sidewalk / road detail (Medium+, async)
+  let propStats: any = null;
+  if (QL >= 1 && !/[?&]noprops\b/.test(location.search))
+    addTownProps(S, R, { QL, lampP, parked: parkedUse, hideParked, walkM, roads: roadMs, boxes }).then((st) => (propStats = st));
   type Car = { g: THREE.Group; lane: number; u: number; v: number; vmax: number };
   const LANES: { x0: number; z0: number; x1: number; z1: number }[] = [
     { x0: -340, z0: 8, x1: 340, z1: 8 },
@@ -745,6 +768,11 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
       x = idl[0];
       z = idl[1];
       b.act = idl[2];
+    } else if (QL >= 1 || opt.nav) {
+      // errand walker: starts at a door, walks the navmesh to another one
+      const s0 = errandTo(r);
+      x = s0.x;
+      z = s0.z;
     } else {
       let n0 = Math.floor(r() * NODES.length);
       path = [n0];
@@ -756,6 +784,7 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
       [x, z] = NODES[path[0]];
     }
     const n: Npc = { b, rig: null, look, path, seg: 0, x, z, f: r() * 6.28, spd: 4 + r() * 1.6, idle: idl ? idl[2] : undefined, talkT: 0, fan: r() };
+    if (!idl && !path.length) (n.route = []), (n.wait = r() * 2);
     if (idl && idl[2] === "talk") n.f = i % 4 === 1 ? Math.PI / 2 : -Math.PI / 2;
     n.rig = rigOf(look, 0);
     S.add(n.rig.G);
@@ -958,6 +987,38 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
         n.talkT -= dt;
         n.f = Math.atan2(P.z - n.z, P.x - n.x);
         n.b.act = n.talkT > 0 ? (n.fan < fame ? "wave" : "talk") : n.idle || "";
+      } else if (n.route) {
+        if (!n.route.length) {
+          // at a door: linger, then the next errand
+          n.b.act = n.wait! > 0.6 ? "phone" : "";
+          if ((n.wait = (n.wait || 0) - dt) <= 0) {
+            n.route = navG().path({ x: n.x, z: n.z }, errandTo(npcR));
+            n.wait = 1 + npcR() * 4;
+            n.b.act = "";
+          }
+        } else {
+          const tgt = n.route[0],
+            dx = tgt.x - n.x,
+            dz = tgt.z - n.z,
+            d = Math.hypot(dx, dz);
+          if (d < 0.8) n.route.shift();
+          else {
+            sp = n.spd * (dP < 3.5 ? 0.5 : 1);
+            const st = Math.min(d, sp * dt);
+            n.x += (dx / d) * st;
+            n.z += (dz / d) * st;
+            let df = Math.atan2(dz, dx) - n.f;
+            df = Math.atan2(Math.sin(df), Math.cos(df));
+            n.f += df * Math.min(1, dt * 6);
+          }
+        }
+        if (dP < 3) {
+          const ax = n.x - P.x,
+            az = n.z - P.z,
+            l = Math.hypot(ax, az) || 1;
+          n.x += (ax / l) * (3 - dP) * 0.5;
+          n.z += (az / l) * (3 - dP) * 0.5;
+        }
       } else if (n.path.length) {
         const tgt = NODES[n.path[(n.seg + 1) % n.path.length]],
           dx = tgt[0] - n.x,
@@ -997,6 +1058,8 @@ export function createWorld(canvas: HTMLCanvasElement, opt: { ql: number; npc?: 
   }
   let last = { min: 0 };
   return {
+    props: () => propStats,
+    nav: () => NAVG,
     R,
     S,
     cam,

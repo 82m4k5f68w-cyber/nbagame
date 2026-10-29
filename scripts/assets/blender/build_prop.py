@@ -3,6 +3,7 @@
   blender -b --factory-startup -P scripts/assets/blender/build_prop.py -- bleachers assets/models/props/bleachers.glb [--rows 6] [--width 8]
   blender -b --factory-startup -P scripts/assets/blender/build_prop.py -- scorer_table out.glb
   blender -b --factory-startup -P scripts/assets/blender/build_prop.py -- corner_store out.glb [--floors 2]   (LIFE building)
+  ... -- playground out.glb   /   ... -- hoop out.glb   (LIFE park + driveway hoops)
 Optionally compress afterwards: npx gltf-transform meshopt out.glb out.glb
 """
 import sys
@@ -83,6 +84,43 @@ def corner_store():
             box(f"win{f}_{i}", (1.3, 0.1, 1.5), (-3.6 + i * 2.4, -D / 2 - 0.02, f * H + 0.9), glass)
 
 
-{"bleachers": bleachers, "scorer_table": scorer_table, "corner_store": corner_store}[kind]()
+def playground():
+    """Swing set + slide + sandbox (LIFE park), ~6 x 5 m."""
+    steel, red, blue, sand, wood = mat("steel", (0.55, 0.57, 0.6), 0.35, 0.8), mat("red", (0.75, 0.12, 0.1), 0.5), mat("blue", (0.1, 0.35, 0.75), 0.5), mat("sand", (0.85, 0.75, 0.5), 0.95), mat("wood", (0.55, 0.38, 0.22), 0.8)
+    for x in (-2.4, -0.2):  # swing A-frames
+        for z in (-0.6, 0.6):
+            box(f"leg{x}{z}", (0.08, 0.08, 2.4), (x, z, 0), steel)
+    box("beam", (2.4, 0.1, 0.1), (-1.3, 0, 2.35), steel)
+    for i, x in enumerate((-1.8, -0.8)):
+        box(f"seat{i}", (0.45, 0.2, 0.05), (x, 0, 0.5), red)
+        for dx in (-0.2, 0.2):
+            box(f"chain{i}{dx}", (0.02, 0.02, 1.8), (x + dx, 0, 0.55), steel)
+    box("deck", (1.0, 1.0, 0.1), (1.8, 0, 1.2), wood)
+    for dx in (-0.45, 0.45):
+        for dz in (-0.45, 0.45):
+            box(f"post{dx}{dz}", (0.08, 0.08, 1.9), (1.8 + dx, dz, 0), wood)
+    slide = box("slide", (0.6, 2.2, 0.06), (1.8, 1.55, 0.6), blue)  # deck edge (z 1.2) down to the ground
+    slide.rotation_euler = (-0.53, 0, 0)
+    box("ladder", (0.5, 0.06, 1.2), (1.8, -0.55, 0), steel)
+    box("sandbox", (1.6, 1.6, 0.15), (-1.2, 2.4, 0), wood)
+    box("sand", (1.45, 1.45, 0.16), (-1.2, 2.4, 0), sand)
+
+
+def hoop():
+    """Driveway / park hoop: pole, backboard, rim (10 ft = 3.05 m)."""
+    steel, board, orange = mat("steel", (0.25, 0.27, 0.3), 0.4, 0.8), mat("board", (0.92, 0.92, 0.95), 0.3), mat("rim", (0.95, 0.35, 0.05), 0.4, 0.6)
+    box("base", (0.6, 0.6, 0.12), (0, 0, 0), steel)
+    box("pole", (0.11, 0.11, 3.25), (0, 0, 0), steel)
+    box("arm", (0.08, 0.6, 0.08), (0, 0.3, 3.05), steel)
+    box("board", (1.8, 0.04, 1.05), (0, 0.62, 2.85), board)
+    box("square", (0.6, 0.045, 0.45), (0, 0.615, 3.05), orange)
+    for i in range(12):  # rim as a 12-gon of bars
+        import math
+        a = i / 12 * math.tau
+        r = box(f"rim{i}", (0.13, 0.02, 0.02), (math.cos(a) * 0.23, 0.87 + math.sin(a) * 0.23, 3.05), orange)
+        r.rotation_euler = (0, 0, a + math.pi / 2)
+
+
+{"bleachers": bleachers, "scorer_table": scorer_table, "corner_store": corner_store, "playground": playground, "hoop": hoop}[kind]()
 bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB", export_yup=True, export_apply=True)
 print(f"build_prop: {kind} -> {dst} ({len(bpy.context.scene.objects)} parts)")

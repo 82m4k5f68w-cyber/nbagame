@@ -2,6 +2,7 @@
 // Runs inside the fixed-step sim (so the release point is the same on every machine and on the server).
 import { CL, CK, isLaySv, isDunkSv } from "./data";
 import { MC_RAW, MC_CH, MC_JUMP } from "./mocap";
+import { MM_T, MM_DLOAD, MM_KB, MM_TYPES } from "./mmshot";
 
 // ---- motion capture base layer (CMU mocap retargeted by scripts/mocap/retarget.ts) ----
 /** Clean a captured cycle in place (n frames x 20 channels, MC_CH order) so every loop is seamless and natural:
@@ -143,13 +144,57 @@ function smp(a: number[] | undefined, k: number) {
 }
 const CLIPK = ["aR", "eR", "aL", "eL", "tL", "tR", "kL", "kR", "ln", "sz", "cr", "rz", "ty", "wR", "wL", "zL", "oR", "oL"];
 const CO: Record<string, number> = {};
+// ---- shot motion matching (v5.6, cfg.MM; C# twin Pose.MM.cs): jumpers sample curves learned from CMU mocap ----
+// (src/core/mmshot.ts, baked by scripts/ml/bake_shot.ts: rows = CLIPK + hR hL, MM_KB uniform keys over k)
+const MMI: Record<string, number> = { cs: 0, pull: 1, deep: 2, fade: 3, step: 4, quick: 5 };
+const MMT = MM_TYPES.map((t) => MM_T[t]);
+/** Which learned table a shot uses (-1 = the classic clip): jumpers only - finishes, floaters, hooks, runners,
+ *  leaners and Curry's one-motion clip keep theirs. Stateless (same answer every tick of the shot). */
+export function mmType(p: Player) {
+  if (cfg.MM === 0 || !cfg.PRO) return -1;
+  const kind = CK[p.sv];
+  if (kind === "quick") return MMI.quick;
+  if (kind === "fade") return MMI.fade;
+  if (kind === "step") return MMI.step;
+  if (kind !== "jump" && kind !== "mshot") return -1;
+  if (p.sqn === 3 || p.sqn === 4) return MMI.pull; // (Pro Play v2: on the move / created space = off the dribble)
+  return Math.hypot(hoop(p.tm) - p.x, HY - p.y) >= 265 ? MMI.deep : MMI.cs;
+}
+/** Uniform Catmull-Rom over one baked row (k clamped to 0..1). */
+function mmRow(r: number[], k: number) {
+  const u = Math.min(1, Math.max(0, k)) * (MM_KB - 1),
+    i = Math.min(MM_KB - 2, Math.floor(u)),
+    f = u - i,
+    p0 = r[i > 0 ? i - 1 : 0],
+    p1 = r[i],
+    p2 = r[i + 1],
+    p3 = r[i + 2 < MM_KB ? i + 2 : MM_KB - 1];
+  return p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
+}
+/** The player's load on the learned form axis: deeper dip / more leg (form dp, k), bigs flick it with less leg. */
+export function mmLoad(p: Player) {
+  const g = p.sg || {};
+  return clamp((((g.dp || 0) - 0.225) / 0.225) * 0.7 + (((g.k || 0) - 0.08) / 0.08) * 0.3 - ((p.ht || 6.5) - 6.6) * 0.6, -1.5, 1.5);
+}
 /** Sample the player's shot clip at phase k (0..1), with signature tweaks. Returns a shared object. */
 export function clip(p: Player, k: number) {
   const c = CL[CK[p.sv]] || CL.jump,
-    o = CO;
-  for (const n of CLIPK) {
-    const v = smp(c[n], k);
-    o[n] = v == null ? (smp(CL.jump[n], k) ?? 0) : v;
+    o = CO,
+    mt = mmType(p);
+  if (mt >= 0) {
+    const T0 = MMT[mt],
+      L = mmLoad(p);
+    for (let j = 0; j < 20; j++) {
+      const n = j < 18 ? CLIPK[j] : j === 18 ? "hR" : "hL";
+      o[n] = mmRow(T0[j], k) + L * mmRow(MM_DLOAD[j], k);
+    }
+    o.mm = 1;
+  } else {
+    for (const n of CLIPK) {
+      const v = smp(c[n], k);
+      o[n] = v == null ? (smp(CL.jump[n], k) ?? 0) : v;
+    }
+    o.mm = 0;
   }
   const g = p.sg || {},
     up = Math.min(1, k / 0.7);
@@ -336,6 +381,11 @@ export function pose3(p: Player) {
     zL = o.zL;
     oR = o.oR;
     oL = o.oL;
+    if (o.mm) {
+      // (MM: the learned humeral twists - the elbow plane of the captured gather and rise)
+      hR = o.hR;
+      hL = o.hL;
+    }
     const kind = CK[p.sv];
     if (kind !== "hang" && p.z > 0) {
       // momentum shapes every jumper: drifting sideways tilts the body, fading falls back, attacking leans in

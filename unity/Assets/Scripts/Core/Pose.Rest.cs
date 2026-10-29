@@ -318,6 +318,8 @@ namespace Hoops.Core
             return r;
         }
         public static readonly Q CO = new Q();
+        /// <summary>TS CO.mm: the last clip() came from the learned tables (its hR / hL are meant to be used).</summary>
+        public static int CO_MM;
         static readonly Form NOFORM = new Form();
         static string CKof(double sv) { int i = (int)sv; return sv == i && i >= 0 && i < CK.Length ? CK[i] : cfg.UP != 0 && sv == i ? upCK(i) : null; }
 
@@ -328,11 +330,21 @@ namespace Hoops.Core
             Clip c = ck != null && CL.TryGetValue(ck, out var cc) && cc != null ? cc : CL["jump"];
             var o = CO;
             var jump = CL["jump"];
-            for (int i = 0; i < CLIPK.Length; i++)
+            int mt = mmType(p); // (v5.6 shot motion matching, Pose.MM.cs)
+            if (mt >= 0)
             {
-                string n = CLIPK[i];
-                double? v = smp(Trk(c, n), k);
-                o[CLIPI[i]] = v == null ? (smp(Trk(jump, n), k) ?? 0) : v.Value;
+                mmClip(p, mt, k, o);
+                CO_MM = 1;
+            }
+            else
+            {
+                for (int i = 0; i < CLIPK.Length; i++)
+                {
+                    string n = CLIPK[i];
+                    double? v = smp(Trk(c, n), k);
+                    o[CLIPI[i]] = v == null ? (smp(Trk(jump, n), k) ?? 0) : v.Value;
+                }
+                CO_MM = 0;
             }
             var g = p.sg ?? NOFORM;
             double up = Math.Min(1, k / 0.7);

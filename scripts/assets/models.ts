@@ -32,6 +32,13 @@ const KITS: Record<string, [string, string[]][]> = {
   ],
   roads: [["city-kit-roads", ["road-straight", "road-bend", "road-crossroad", "road-intersection", "road-end", "road-side", "construction-cone", "construction-barrier", "dumpster", "light-square", "light-curved", "traffic-light", "road-sign-stop", "electricity-pole", "tile-low"]]],
   cars: [["car-kit", ["sedan", "suv", "taxi", "police", "van", "truck", "hatchback-sports", "ambulance", "delivery", "garbage-truck", "firetruck", "race", "cone", "box"]]],
+  // LIFE town props (src/life/props.ts): small on purpose, it ships in the game build
+  town: [
+    ["furniture-kit", ["bench", "trashcan"]],
+    ["city-kit-roads", ["dumpster", "construction-cone"]],
+    ["city-kit-suburban", ["planter", "fence-low"]],
+    ["car-kit", ["sedan", "suv", "hatchback-sports", "van", "delivery"]],
+  ],
   furniture: [["furniture-kit", ["bench", "benchCushion", "chair", "chairCushion", "chairModernCushion", "stoolBar", "table", "tableRound", "tableCoffee", "loungeSofa", "loungeChair", "trashcan", "speaker", "televisionModern", "pottedPlant", "plantSmall1", "lampSquareFloor", "bookcaseOpen", "bedSingle", "bedDouble", "desk", "kitchenFridge", "kitchenStove", "kitchenSink", "rugRectangle", "cardboardBoxClosed", "doorway", "wall", "wallWindow", "floorFull", "stairs", "ceilingFan", "laptop", "computerScreen", "radio", "kitchenBar", "stoolBarSquare"]]],
 };
 

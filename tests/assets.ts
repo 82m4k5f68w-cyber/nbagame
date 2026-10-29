@@ -29,7 +29,11 @@ const players = TM.flatMap((t) => t[2].map((p) => p[0]));
 for (const n of players) ok(ix.c[vnorm(n)] && ix.p[vnorm(n)], `name ${n} missing from the bank`);
 for (const t of TM) ok(ix.c[vnorm(t[0])], `team ${t[0]} missing`);
 for (let k = 0; k < 100; k++) ok(ix.p[String(k)] && ix.c[String(k)], `number ${k} missing`);
-for (const k of ["threeeee", "and one", "from downtown", "number", "your starting lineup"]) ok(ix.p[k], `PA ${k} missing`);
+for (const k of ["threeeee", "and one", "from downtown", "number", "your starting lineup", "timeout", "halftime", "final", "dunk", "end of the quarter"]) ok(ix.p[k], `PA ${k} missing`);
+{
+  const { LIFE_LINES } = await import("../src/client/lifelines");
+  for (const k of Object.keys(LIFE_LINES)) ok(ix.l && ix.l[k], `LIFE line ${k} missing from the bank (re-run voice.ts)`);
+}
 // real commentary lines must be fully covered (no browser fallback mid-game for the common calls)
 const lines = [
   "Curry from downtown... BANG!",

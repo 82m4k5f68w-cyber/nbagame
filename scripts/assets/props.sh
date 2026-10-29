@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 T="${H2K_TOOLS:-/home/user/tools}"
 mkdir -p assets/models/props scripts/assets/.cache/props
-for p in bleachers scorer_table corner_store; do
+for p in bleachers scorer_table corner_store playground hoop; do
   "$T/bin/blender" -b --factory-startup -P scripts/assets/blender/build_prop.py -- "$p" "scripts/assets/.cache/props/$p.glb" 2>/dev/null | grep build_prop
   npx tsx scripts/assets/uv_unwrap.ts "scripts/assets/.cache/props/$p.glb" "assets/models/props/$p.glb" --meshopt | grep uv_unwrap
 done

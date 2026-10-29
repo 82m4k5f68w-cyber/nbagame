@@ -4,6 +4,9 @@
 // PA announcer (second voice with arena echo): "Threeeee!", "And one!", lineup intros ("Number 30 ... Curry!").
 import bankUrl from "../../assets/voice/bank.bin?inline";
 import { actx } from "./audio";
+import { V } from "./view";
+import { LIFE_LINES } from "./lifelines";
+export { LIFE_LINES };
 import { parseBank, matchLine, vnorm, type VoiceIndex } from "./voicekey";
 
 let ix: VoiceIndex | null = null,
@@ -31,11 +34,11 @@ export function voiceReady(): Promise<boolean> {
 /** True once the bank is parsed and this browser decoded at least one clip (or none tried yet). */
 export const voiceOk = () => !!ix && !failed;
 
-function clip(ns: "c" | "p", key: string): Promise<AudioBuffer | null> {
+function clip(ns: "c" | "p" | "l", key: string): Promise<AudioBuffer | null> {
   const id = ns + ":" + key;
   let p = cache.get(id);
   if (!p) {
-    const e = ix && ix[ns][key];
+    const e = ix && ix[ns] && ix[ns]![key];
     p = !e
       ? Promise.resolve(null)
       : actx()
@@ -48,7 +51,7 @@ function clip(ns: "c" | "p", key: string): Promise<AudioBuffer | null> {
 }
 
 // ---- playback queue: one line at a time, like the browser speech queue ----
-type Line = { ns: "c" | "p"; keys: string[]; rate: number; vol: number; gap: number };
+type Line = { ns: "c" | "p" | "l"; keys: string[]; rate: number; vol: number; gap: number };
 const Q: Line[] = [];
 let busy = false,
   playing: AudioBufferSourceNode[] = [],
@@ -133,8 +136,31 @@ export function paSay(keys: string[], now = false): boolean {
 }
 /** PA stinger for a commentary event key (broadcast.ts comment()). */
 export function paEvent(e: string) {
-  const k = e === "three" || e === "splash" ? "threeeee" : e === "and1" || e === "dunkAnd1" ? "and one" : "";
+  const k =
+    e === "three" || e === "splash" ? "threeeee" : e === "and1" || e === "dunkAnd1" ? "and one" : e === "dunk" ? "dunk" : e === "timeout" ? "timeout" : e === "half" ? "halftime" : e === "qend" ? "end of the quarter" : e === "final" ? "final" : "";
   if (k) paSay([k]);
+}
+/** LIFE voice (radio / voicemail, LIFE_LINES keys): the bank's `l` clips, else browser speech of the same text.
+ * Respects the announcer setting (V.ANNV: 2 AI, 1 browser speech, 0 off). */
+export function lifeSay(keys: string[], now = false) {
+  if (!V.ANNV) return false;
+  if (V.ANNV === 2 && ix && !failed && ix.l) {
+    const k = keys.filter((x) => ix!.l![x]);
+    if (k.length === keys.length) {
+      if (now) stopAll();
+      Q.push({ ns: "l", keys: k, rate: 1, vol: 0.95, gap: 0.35 });
+      pump();
+      return true;
+    }
+  } else if (V.ANNV === 2 && !ix) voiceReady();
+  try {
+    if (typeof speechSynthesis === "undefined") return false;
+    if (now) speechSynthesis.cancel();
+    for (const k of keys) if (LIFE_LINES[k]) speechSynthesis.speak(new SpeechSynthesisUtterance(LIFE_LINES[k]));
+    return true;
+  } catch {
+    return false;
+  }
 }
 /** Lineup intro card: "Number 30 ... Curry!" (short = surname only, for the quick 5v5 cards). */
 export function paIntro(num: number, name: string, short: boolean) {

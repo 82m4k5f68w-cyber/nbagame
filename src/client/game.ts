@@ -800,7 +800,7 @@ function drainFx() {
     if (f.k === "s") audio.snd(f.f, f.d, f.ty, f.v);
     else if (f.k === "t") TX.push({ s: f.s, x: f.x, y: f.y, z: f.z, sx: f.sx, sy: f.sy, c: f.c, t: 1.2, oy: 0 });
     else if (f.k === "x") audio.EXC = f.v;
-    else if (f.k === "end" && cfg.GM === "game") endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200); // let the confetti fall first
+    else if (f.k === "end" && cfg.GM === "game") (endAt = performance.now() + (V.r3d && V.GL ? 4000 : 1200)), comment("final"); // let the confetti fall first; PA "That's the final!"
     else if (f.k === "shake") (V.shake && !V.RM && V.shake(f.v), rumble(f.v, 120 + f.v * 200));
     else if (f.k === "slow" && !NET.role) slowT = Math.max(slowT, f.v);
     else if (f.k === "ban") {

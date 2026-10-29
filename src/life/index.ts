@@ -18,6 +18,7 @@ import { STK_R } from "../client/input";
 import { gameXP } from "../client/career";
 import type { Act } from "./anim";
 import * as SV from "../client/save";
+import { lifeSay } from "../client/voice";
 import { initSaveUI, openSaveHub, setQuick, snapThumb, toast as svToast } from "../client/saveui";
 
 const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
@@ -259,7 +260,7 @@ function begin(l: S.Life, fresh = false) {
   buildShell();
   applySettings();
   try {
-    W = createWorld(canvas, { ql: Math.min(2, V.QL), npc: /[?&]lifetest\b/.test(location.search) ? 0 : undefined });
+    W = createWorld(canvas, { ql: Math.min(2, V.QL), npc: /[?&]lifetest\b/.test(location.search) ? 0 : Math.max(4, Math.round(([6, 10, 14][Math.min(2, V.QL)] || 10) * ((V as any).DEV?.npc ?? 1))) /* device probe density */ });
   } catch (e) {
     root.innerHTML = `<div class="scr"><div class="card"><h2>3D unavailable</h2><p class="note">LIFE needs WebGL. ${esc(String(e))}</p><button class="gh" onclick="location.reload()">Back</button></div></div>`;
     return;
@@ -430,8 +431,19 @@ function notes() {
   for (const n of L.notes)
     if (!shownNotes.has(n)) {
       shownNotes.add(n);
-      if (L.t - n.t < 90) toast(n.x, n.ic);
+      if (L.t - n.t < 90) toast(n.x, n.ic), voicemail(n);
     }
+}
+/** A text from Mom / Coach / the agent / a friend also leaves a voicemail (generic lines, at most one a minute). */
+let vmAt = 0;
+function voicemail(n: { x: string; ic: string }) {
+  if (n.ic !== "💬" || performance.now() - vmAt < 60000) return;
+  const by = (id: string) => L.contacts.find((c) => c.id === id)?.n || "~",
+    x = n.x;
+  const k = x.startsWith(by("coach")) || x.startsWith("Coach") ? "vm_coach" + (1 + Math.floor(Math.random() * 3)) : x.startsWith(by("agent")) ? "vm_agent" : x.startsWith(by("mom")) ? "vm_mom" : x.startsWith(by("dre")) ? "vm_friend" : "";
+  if (!k) return;
+  vmAt = performance.now();
+  lifeSay(["vm_new", k, "vm_end"]);
 }
 // ---------------------------------------------------------------- proximity + interaction
 function sense() {
@@ -512,6 +524,7 @@ function travel(id: string) {
     S.advance(L, mins, "drive");
     W!.put(d.x + Math.cos(d.f) * -5, d.z + Math.sin(d.f) * -5, d.f + Math.PI);
     toast(`ZipRide to ${p.n} · ${mins} min · $${RIDE_COST}`, "🚗");
+    lifeSay(["radio_id", "radio_" + (1 + Math.floor(Math.random() * 6))], true); // car radio (voice bank / speech)
     save();
   }, 500);
 }

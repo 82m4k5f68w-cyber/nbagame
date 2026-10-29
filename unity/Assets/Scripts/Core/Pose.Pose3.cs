@@ -264,6 +264,12 @@ namespace Hoops.Core
                 zL = o.zL;
                 oR = o.oR;
                 oL = o.oL;
+                if (CO_MM != 0)
+                {
+                    // (MM: the learned humeral twists - the elbow plane of the captured gather and rise)
+                    hR = o.hR;
+                    hL = o.hL;
+                }
                 string kind = kind0;
                 if (kind != "hang" && p.z > 0)
                 {

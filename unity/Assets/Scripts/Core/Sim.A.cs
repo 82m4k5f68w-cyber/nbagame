@@ -21,6 +21,7 @@ namespace Hoops.Core
         public int AVOID = 1; // arms/shoulders kept out of other players' torsos (0 = off, A/B tests)
         public int PLANT = 1; // stance feet pinned to the floor in the core pose (0 = off)
         public int INZ = 1; // inertialized animation blending (0 = old exponential smoothing)
+        public int MM = 1; // shot motion matching v5.6 (shared with TS cfg.MM; Pose.MM.cs): jumpers use the learned CMU curves; 0 = classic clips
         public int AP = 1; // animation pack v5.4 (shared with TS cfg.AP): the Pose.UP.cs pose layer runs with AP or UP; 0 = v5.3 poses
         public int TP = 1; // team play pack v5.4 (Sim.TP.cs); 0 = off (A/B tests)
         public int PP = 2; // Pro Play level (shared with the TS sim: cfg.PP): 2 = v5.4 (Sim.PP2.cs: reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (Sim.UP.cs), 0 = the v5.2 game

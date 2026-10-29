@@ -60,6 +60,7 @@ export const cfg = {
   AVOID: 1, // arms/shoulders kept out of other players' torsos in the pose (0 = off, for A/B tests)
   PLANT: 1, // stance feet pinned to the floor in the core pose (0 = off, for A/B tests)
   INZ: 1, // inertialized animation blending (0 = the old exponential smoothing, for A/B tests)
+  MM: 1, // shot motion matching v5.6 (pose.ts clip, C# Pose.MM.cs): jumpers use curves learned from CMU mocap (src/core/mmshot.ts); 0 = the classic clips (A/B)
   AP: 1, // animation pack v5.4 (pose.ts, C# Pose.UP.cs): shot loads / follow-through by form, finishes, move anticipation, D variety, exact guide palm; 0 = v5.3 poses (A/B)
   TP: 1, // team play pack v5.4 (named sets, ATO, ICE / blitz, box-and-one); 0 = off (A/B tests)
   PP: 2, // Pro Play level: 2 = v5.4 (defender reads, pull-ups, body-ups, post battles, off-ball calls), 1 = v5.3 pack (moves, gathers, floaters, stance D, deflections), 0 = the v5.2 game (A/B tests)

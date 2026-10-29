@@ -19,7 +19,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../.
 const TOOLS = process.env.H2K_TOOLS || "/home/user/tools";
 const PY = `${TOOLS}/venv/bin/python`;
 const VC = process.env.H2K_VOICE_C || "en_US-joe-medium",
-  VP = process.env.H2K_VOICE_P || "en_US-norman-medium";
+  VP = process.env.H2K_VOICE_P || "en_US-norman-medium",
+  VL = process.env.H2K_VOICE_L || "en_US-john-medium"; // LIFE radio + voicemail
 const CACHE = path.join(ROOT, "scripts/assets/.cache/voice"),
   OUT = path.join(ROOT, "assets/voice");
 const argv = process.argv.slice(2),
@@ -54,7 +55,7 @@ const players = [...new Set([...TM.flatMap((t) => t[2].map((p) => p[0])), ...RNA
 const teams = [...new Set([...TM.map((t) => t[0]), "Team Gold", "Team Ice"])];
 
 // ---------- 3. the job list ----------
-type Job = { key: string; text: string; v: "c" | "p"; ls: number; fx?: string };
+type Job = { key: string; text: string; v: "c" | "p" | "l"; ls: number; fx?: string };
 const jobs = new Map<string, Job>();
 /** Speakable text: em dashes -> commas, SHOUTED words -> normal case (Piper spells unknown capitals). */
 const speakable = (s: string) =>
@@ -63,7 +64,7 @@ const speakable = (s: string) =>
     .replace(/\b[A-Z]{2,}\b/g, (w) => (/^(MVP|ATO)$/.test(w) ? w : w[0] + w.slice(1).toLowerCase()))
     .replace(/^[\s,.;:!?]+/, "")
     .trim();
-function add(v: "c" | "p", text: string, ls = 1, key = vnorm(text), fx?: string) {
+function add(v: "c" | "p" | "l", text: string, ls = 1, key = vnorm(text), fx?: string) {
   if (!key) return;
   const id = v + ":" + key;
   if (!jobs.has(id)) jobs.set(id, { key, text: speakable(text) || text, v, ls, fx });
@@ -113,17 +114,27 @@ for (const n of players) add("p", n + "!", 1.15, vnorm(n), ECHO);
 for (const t of teams) add("p", "the " + t + "!", 1.15, vnorm(t), ECHO);
 for (let k = 0; k < 100; k++) add("p", String(k) + ",", 1.1, String(k), ECHO);
 
+// LIFE (namespace l, third voice): phone voicemail (telephone band) and car radio (AM-ish band + room) - generic lines
+// only, no names, so the set stays small. client/voice.ts LIFE_LINES holds the same texts for the speech fallback.
+const PHONE = "highpass=f=320,lowpass=f=3300,acompressor=threshold=-18dB:ratio=3",
+  RADIO = "highpass=f=180,lowpass=f=5200,aecho=0.6:0.3:25:0.15";
+const { LIFE_LINES } = await import("../../src/client/lifelines");
+for (const [k, t] of Object.entries(LIFE_LINES)) add("l", t, 1.0, k, k.startsWith("vm") ? PHONE : RADIO);
+// extra PA calls for the game (timeouts / quarter breaks / scores)
+for (const [k, t] of [["end of the quarter", "That's the end of the quarter!"], ["three points", "Three points!"], ["two points", "Two points!"], ["free throw", "Free throw."]] as [string, string][]) add("p", t, 1.15, k, ECHO);
+
 // ---------- 4. render (cached by text + settings) ----------
-const voicePath = (v: string) => `${TOOLS}/voices/${v === "c" ? VC : VP}.onnx`;
+const vName = (v: string) => (v === "c" ? VC : v === "p" ? VP : VL);
+const voicePath = (v: string) => `${TOOLS}/voices/${vName(v)}.onnx`;
 const hash = (j: Job) =>
   crypto
     .createHash("sha1")
-    .update(JSON.stringify([j.text, j.v === "c" ? VC : VP, j.ls, j.fx || "", KBPS, 3]))
+    .update(JSON.stringify([j.text, vName(j.v), j.ls, j.fx || "", KBPS, 3]))
     .digest("hex")
     .slice(0, 16);
 const all = [...jobs.values()];
 const need = all.filter((j) => FORCE || !fs.existsSync(path.join(CACHE, hash(j) + ".webm")));
-console.log(`voice: ${all.length} clips (${all.filter((j) => j.v === "p").length} PA), ${need.length} to render`);
+console.log(`voice: ${all.length} clips (${all.filter((j) => j.v === "p").length} PA, ${all.filter((j) => j.v === "l").length} LIFE), ${need.length} to render`);
 if (need.length) {
   if (!fs.existsSync(PY)) throw new Error(`Piper venv missing: run bash scripts/assets/setup.sh python voices`);
   const jl = path.join(CACHE, "jobs.jsonl");
@@ -158,7 +169,7 @@ const dur = (f: string) => {
   const o = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]).toString().trim();
   return Math.round(+o * 1000) || 0;
 };
-const ix: VoiceIndex = { v: 1, mime: "audio/webm;codecs=opus", mw: 1, c: {}, p: {}, voices: { c: VC, p: VP } };
+const ix: VoiceIndex = { v: 1, mime: "audio/webm;codecs=opus", mw: 1, c: {}, p: {}, l: {}, voices: { c: VC, p: VP, l: VL } };
 const parts: Buffer[] = [];
 let off = 0,
   ms = 0;

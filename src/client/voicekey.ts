@@ -23,7 +23,9 @@ export type VoiceIndex = {
   c: Record<string, [number, number, number]>;
   /** PA announcer voice, same layout */
   p: Record<string, [number, number, number]>;
-  voices: { c: string; p: string };
+  /** LIFE radio + voicemail voice (optional: older banks have none) */
+  l?: Record<string, [number, number, number]>;
+  voices: { c: string; p: string; l?: string };
 };
 export function parseBank(buf: ArrayBuffer): { ix: VoiceIndex; data: Uint8Array } {
   const u = new Uint8Array(buf);
