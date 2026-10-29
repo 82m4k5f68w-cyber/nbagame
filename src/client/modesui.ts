@@ -1,5 +1,6 @@
 // Mode shell: the mode picker on the matchup screen, HUD panels, result screens for Practice / Tutorial / 3-Point
 // Contest / Dunk Contest / HORSE / Clutch Challenges, and Season mode (schedule, standings, playoffs; localStorage).
+import * as SV from "./save";
 import * as G from "../core/sim";
 import { cfg, nChoices, RO } from "../core/sim";
 import { M, TUT, CLUTCH, startPractice, start3pt, startDunk, startHorse, startClutch, stopMode, startStreet, startKing, startAllStar, startDaily, dailySpec } from "../core/modes";
@@ -29,14 +30,14 @@ export const MODES: [string, string, string][] = [
 ];
 const lsGet = (k: string, d: any) => {
   try {
-    return JSON.parse(localStorage.getItem(k) || "null") ?? d;
+    return SV.get(k, d);
   } catch (e) {
     return d;
   }
 };
 const lsPut = (k: string, v: any) => {
   try {
-    localStorage.setItem(k, JSON.stringify(v));
+    SV.set(k, v);
   } catch (e) {}
 };
 /** One line per mode for the tiles (UI v6) and the accent colour. */

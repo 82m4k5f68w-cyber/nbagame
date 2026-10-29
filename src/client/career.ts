@@ -1,6 +1,7 @@
 // My Player career: XP from every game he plays (offline, vs the CPU), levels that raise the attribute cap of the
 // builder (more points to spend), and badge progress (badges come from ratings: the builder shows what the next one
 // needs). Saved with the player in localStorage h2k_myp (MYP.d.xp / MYP.d.lv / MYP.d.gp / MYP.d.car).
+import * as SV from "./save";
 import { MYP, BADGE, QTRLEN, type Player } from "../core/sim";
 
 export const LV_MAX = 30;
@@ -47,7 +48,7 @@ export function awardXP(p: Player, won: boolean) {
   c.ast += p.stt.ast;
   c.hi = Math.max(c.hi, p.stt.pts);
   try {
-    localStorage.setItem("h2k_myp", JSON.stringify(d));
+    SV.set("h2k_myp", d);
   } catch (e) {}
   return { xp, lv0, lv1: d.lv, pts: 3 * (d.lv - lv0) };
 }

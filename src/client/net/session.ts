@@ -1,5 +1,6 @@
 // Online play in the browser: lobby (create / join by code, sides, team picks, ready-up), host & guest wiring,
 // connection HUD (ping, host, stalls) and reconnect tokens.
+import * as SV from "../save";
 import * as G from "../../core/sim";
 import { cfg, CT, type Ctrl, type Input } from "../../core/sim";
 import { TM } from "../../core/data";
@@ -17,14 +18,14 @@ const esc = (s: any) => String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt
 const store = {
   get(k: string, d = "") {
     try {
-      return localStorage.getItem(k) || d;
+      return SV.getRaw(k) || d;
     } catch {
       return d;
     }
   },
   set(k: string, v: string) {
     try {
-      localStorage.setItem(k, v);
+      SV.setRaw(k, v);
     } catch {}
   },
 };

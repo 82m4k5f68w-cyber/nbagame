@@ -1,5 +1,6 @@
 // Local input: keyboard (P1 WASD/arrows, P2 arrows + Enter / . , when local 2-player), touch buttons, gamepad.
 // Produces one Input per sim tick per local controller; edge events are consumed when read.
+import * as SV from "./save";
 import { CT, P, type Input, type Player } from "../core/sim";
 import { V, CAMN, MN } from "./view";
 
@@ -32,13 +33,13 @@ export const KMAP: Record<string, string> = {};
 export function loadKeys() {
   let o: any = {};
   try {
-    o = JSON.parse(localStorage.getItem("h2k_keys") || "{}");
+    o = SV.get("h2k_keys", {});
   } catch (e) {}
   for (const [id, , d] of ACTS) KMAP[id] = o[id] || d;
 }
 export function saveKeys() {
   try {
-    localStorage.setItem("h2k_keys", JSON.stringify(KMAP));
+    SV.set("h2k_keys", KMAP);
   } catch (e) {}
 }
 loadKeys();

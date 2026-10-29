@@ -2,6 +2,7 @@
 // and the tabbed settings drawer #sd (Gameplay / Controls / Display / Audio / Accessibility). Opened from the hub
 // (before any game boots), the matchup screen and the pause menu. Every tab panel is in the DOM (inactive ones
 // hidden), so `[data-<key>]` selectors always resolve. Options are segmented buttons `data-<key>="<value>"`.
+import * as SV from "../save";
 import { cfg } from "../../core/sim";
 import { V, CAMN, MN, HSRN, PAL, QLN, PRESETS, applyPreset, GRADES, WXN } from "../view";
 import { IN, ACTS, KMAP, saveKeys } from "../input";
@@ -19,7 +20,7 @@ export const ST = {
 const KEYS = ["PRE", "AO", "GRADE", "GRAIN", "WX", "COMM", "VOICE", "ANNV", "MUSIC", "RUMBLE", "CB", "BIGM", "AUTO", "INTRO", "THEME", "TXT", "RM", "HC", "MINHUD", "SPT"];
 export function loadSet() {
   try {
-    const o = JSON.parse(localStorage.getItem("h2k_set") || "{}");
+    const o: any = SV.get("h2k_set", {});
     if (o.m != null) V.METER = o.m;
     if (o.s != null) IN.TEMPO = o.s;
     if (o.p != null) cfg.PRO = o.p;
@@ -49,7 +50,7 @@ export function saveSet() {
       CROWD: crowd.vol, CHANTS: crowd.on,
     };
     for (const k of KEYS) o[k] = (V as any)[k];
-    localStorage.setItem("h2k_set", JSON.stringify(o));
+    SV.set("h2k_set", o);
   } catch (e) {}
 }
 /** Root switches for tokens.css: theme, text size, reduced motion, high contrast. */

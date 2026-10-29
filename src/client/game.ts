@@ -1,5 +1,6 @@
 // Game shell for every main mode: team/My Player menus, local controllers, fixed 60 Hz loop, FX (texts, sound, crowd),
 // drawing via the three.js or canvas renderer, and the box score.
+import * as SV from "./save";
 import * as G from "../core/sim";
 import { cfg, P, B, CT, MYP, mkT, RO, ALL, nChoices, ovr } from "../core/sim";
 import { TM, PRE, ov2, formOf } from "../core/data";
@@ -96,7 +97,7 @@ export function boot(o: { np: number; r3d: boolean; my?: number; mp?: number; mo
     }
   };
   try {
-    Object.assign(MYP.d, JSON.parse(localStorage.getItem("h2k_myp") || "{}"));
+    Object.assign(MYP.d, SV.get("h2k_myp", {}));
   } catch (e) {}
   mkT();
   rapInit();
@@ -340,14 +341,14 @@ type Rec = { w: number; l: number; st: number; best: number; last?: any };
 export const rec = {
   get(): Rec {
     try {
-      return { w: 0, l: 0, st: 0, best: 0, ...JSON.parse(localStorage.getItem("h2k_rec") || "{}") };
+      return { w: 0, l: 0, st: 0, best: 0, ...SV.get("h2k_rec", {}) };
     } catch (e) {
       return { w: 0, l: 0, st: 0, best: 0 };
     }
   },
   put(r: Rec) {
     try {
-      localStorage.setItem("h2k_rec", JSON.stringify(r));
+      SV.set("h2k_rec", r);
     } catch (e) {}
   },
 };
@@ -460,7 +461,7 @@ export function menu(focus?: string) {
   const tip = () => {
     saveSet();
     try {
-      localStorage.setItem("h2k_lastplay", JSON.stringify({ mode: GS.mode, sel: SEL, opp: OPP }));
+      SV.set("h2k_lastplay", { mode: GS.mode, sel: SEL, opp: OPP });
     } catch (e) {}
     startLocal(SEL, OPP >= 0 ? { j: OPP } : {});
   };
@@ -586,7 +587,7 @@ function edMy() {
     d.no = +($("#mno") as HTMLInputElement).value || 0;
     mkT();
     try {
-      localStorage.setItem("h2k_myp", JSON.stringify(d));
+      SV.set("h2k_myp", d);
     } catch (e) {}
     menu();
   };
