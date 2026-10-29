@@ -183,10 +183,12 @@ export function clip(p: Player, k: number) {
     mt = mmType(p);
   if (mt >= 0) {
     const T0 = MMT[mt],
-      L = mmLoad(p);
+      L = mmLoad(p),
+      // (tables are keyed with the release at .7; the quick release (RELK .46) is warped onto that key)
+      km = mt === 5 ? (k <= 0.46 ? (k * 0.7) / 0.46 : 0.7 + ((k - 0.46) / 0.54) * 0.3) : k;
     for (let j = 0; j < 20; j++) {
       const n = j < 18 ? CLIPK[j] : j === 18 ? "hR" : "hL";
-      o[n] = mmRow(T0[j], k) + L * mmRow(MM_DLOAD[j], k);
+      o[n] = mmRow(T0[j], km) + L * mmRow(MM_DLOAD[j], km);
     }
     o.mm = 1;
   } else {

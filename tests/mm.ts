@@ -112,7 +112,9 @@ function run(mm: number): Res {
   await rapInit();
   const a = run(0),
     b = run(1),
-    b2 = run(1);
+    b2 = run(1),
+    a2 = process.env.DBG ? run(0) : a;
+  if (process.env.DBG) console.log("classic twice equal:", a.sum === a2.sum, "MM twice equal:", b.sum === b2.sum, b.rel.length, b2.rel.length);
   const mean = (x: number[]) => x.reduce((s, v) => s + v, 0) / Math.max(1, x.length),
     pct = (x: number[], q: number) => x.slice().sort((u, v) => u - v)[Math.floor(x.length * q)] || 0;
   console.log(`jumpers launched: classic ${a.rel.length}, MM ${b.rel.length}; MM shot ticks ${b.mmTicks}`);

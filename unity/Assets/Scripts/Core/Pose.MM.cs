@@ -51,10 +51,11 @@ namespace Hoops.Core
         static void mmClip(Player p, int mt, double k, Q o)
         {
             var T0 = MM_T[mt];
-            double L = mmLoad(p);
+            double L = mmLoad(p),
+                km = mt == MM_QUICK ? (k <= 0.46 ? (k * 0.7) / 0.46 : 0.7 + ((k - 0.46) / 0.54) * 0.3) : k; // (quick release warped onto key .7)
             for (int j = 0; j < 20; j++)
             {
-                double v = mmRow(T0[j], k) + L * mmRow(MM_DLOAD[j], k);
+                double v = mmRow(T0[j], km) + L * mmRow(MM_DLOAD[j], km);
                 if (j < 18) o[CLIPI[j]] = v;
                 else if (j == 18) o.hR = v;
                 else o.hL = v;
